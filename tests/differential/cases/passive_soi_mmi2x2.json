@@ -1,0 +1,162 @@
+{
+  "schema_version": "beamz.differential/v1",
+  "name": "passive_soi_mmi2x2",
+  "description": "Generic-PDK 2x2 MMI from Liu and Poon's Lumerical/Tidy3D comparison.",
+  "dimension": 3,
+  "wavelength_m": 1.55e-06,
+  "resolution_m": 7.430973447933325e-08,
+  "oracle": {
+    "kind": "solver_consensus",
+    "reference": "Liu and Poon, arXiv:2506.16665v3, Sec. 3.3 and Fig. 12"
+  },
+  "materials": {
+    "silicon_n_at_1p55_um": 3.47644,
+    "silica_n_at_1p55_um": 1.44402
+  },
+  "geometry": {
+    "kind": "gdsfactory_component",
+    "component": "mmi2x2_with_sbend",
+    "settings": {},
+    "source_generator_requirement": "gdsfactory==7.8.*",
+    "paper_revision": "arXiv:2506.16665v3",
+    "source_repository": "https://github.com/JPPhotonics/fdtd-pipeline",
+    "source_revision": "622e0a9b7429eaf2335b1000b39e283544a198c4",
+    "source_gds_path": "gds_library/cells_from_gds/gdsfactory_generic_pdk/mmi2x2_with_sbend.gds",
+    "source_gds_sha256": "a7f689c984135f44105bf0b4b9d604d9fa30c73df3d5d3f9800c8d3a6216c78a",
+    "layer_stack_reference": {
+      "source_path": "stack_universal.json and gds_library/pdk_universal.py",
+      "z_reference": "Layer zmin values are measured from the shared silicon substrate plane at z=0 um"
+    },
+    "layers": {
+      "core": {
+        "gds": [
+          1,
+          0
+        ],
+        "zmin_um": 0.0,
+        "thickness_m": 2.2e-07,
+        "union_sha256": "427689baef8dd2b4048276240b4057054633290a6ef828b61c5f7de50fb3f082"
+      }
+    },
+    "ports": {
+      "o1": {
+        "center_um": [
+          -12.0,
+          -2.25
+        ],
+        "orientation_deg": 180.0,
+        "width_um": 0.5
+      },
+      "o2": {
+        "center_um": [
+          -12.0,
+          2.25
+        ],
+        "orientation_deg": 180.0,
+        "width_um": 0.5
+      },
+      "o3": {
+        "center_um": [
+          20.0,
+          2.25
+        ],
+        "orientation_deg": 0.0,
+        "width_um": 0.5
+      },
+      "o4": {
+        "center_um": [
+          20.0,
+          -2.25
+        ],
+        "orientation_deg": 0.0,
+        "width_um": 0.5
+      }
+    },
+    "simulation": {
+      "domain_bounds_um": {
+        "x": [
+          -13,
+          21
+        ],
+        "y": [
+          -3.75,
+          3.75
+        ],
+        "z": [
+          -2,
+          2
+        ]
+      },
+      "wavelength_center_um": 1.55,
+      "wavelength_spans_nm": [
+        20.0
+      ],
+      "wavelength_step_nm": 5.0,
+      "frequency_sampling": "Uniform frequency samples between c / wavelength_stop and c / wavelength_start, matching the reference Tidy3D pipeline.",
+      "resolutions_cells_per_wavelength": [
+        6
+      ],
+      "resolution_m_basis": "The top-level resolution_m is the 6 cells-per-wavelength spacing in silicon at 1550 nm, used as the automatic mesh criterion.",
+      "grid": "BeamZ GridSpec.auto with the requested minimum cells per wavelength, a 1.4 maximum adjacent-cell scale, and no mesh overrides, matching the reference automatic non-uniform policy.",
+      "subpixel": "BeamZ diagonal Farjadpour interface averaging; Tidy3D uses ContourPathAveraging, for which BeamZ has no identical implementation.",
+      "source_port": "o1",
+      "source_mode": "TE0",
+      "source_plane_offset_um": 0.0,
+      "input_monitor_inward_offset_um": 0.5,
+      "reference_output_monitor_inward_offset_um": 0.0,
+      "beamz_output_monitor_inward_offset_um": 0.5,
+      "beamz_output_monitor_offset_rationale": "The reference output planes coincide with the inner absorbing-boundary interface. BeamZ moves the power-only monitors along the same straight lossless ports to avoid coarse-grid absorbing-region fields.",
+      "source_time": "Gaussian pulse with fwidth equal to the simulated frequency span",
+      "source_offset": "Tidy3D default: 5 temporal widths; BeamZ equivalent: 5 / (2 pi)",
+      "source_mode_profiles": "Three profiles for the 20 nm span. BeamZ uses its native Chebyshev reconstruction nodes.",
+      "output_ports": [
+        "o3",
+        "o4"
+      ],
+      "cross_port": "o3",
+      "through_port": "o4",
+      "reference_boundaries": {
+        "lumerical": "PML on all sides",
+        "tidy3d": "PML on all sides"
+      },
+      "beamz_boundary": "A 1 um CPML physical absorbing layer on every side.",
+      "reference_port_transverse_span_um": 4.5,
+      "beamz_port_transverse_span_um": 3.0,
+      "beamz_port_span_rationale": "An in-domain symmetric 3 um plane centered on each waveguide.",
+      "port_extension_um": 10.0,
+      "run_time_rule": "15 * domain_x * 2 / c",
+      "auto_shutoff": "BeamZ field-energy decay threshold 1e-5 with the configured run time as a hard upper bound, matching Tidy3D's published shutoff threshold as closely as available.",
+      "material_model_limitation": "BeamZ currently uses nondispersive silicon and silica evaluated at 1550 nm; the paper uses fitted dispersive material models.",
+      "published_cross_power_1550nm_span20nm": {
+        "value_basis": "Section 3.3 explicitly states both 6 cells-per-wavelength values. Only the lowest-resolution case is enabled for now.",
+        "6": {
+          "lumerical": 0.376,
+          "tidy3d": 0.358,
+          "source": "prose"
+        }
+      },
+      "published_runtime_s_span20nm": {
+        "6": {
+          "tidy3d": 11,
+          "lumerical_local": 98,
+          "lumerical_cloud": 12
+        }
+      }
+    }
+  },
+  "observables": [
+    {
+      "name": "cross_te0_power",
+      "unit": "fraction",
+      "tolerance": "cross_solver"
+    },
+    {
+      "name": "total_output_te0_power",
+      "unit": "fraction",
+      "tolerance": "cross_solver"
+    }
+  ],
+  "adapters": [
+    "beamz"
+  ]
+}

@@ -67,3 +67,24 @@ coupler, an explicit mesh override, snapping points, and an enforced coarse
 override. Keeping the fixture immutable makes changes to mesh density and
 grading explicit in review while leaving the normal test suite independent of
 external packages.
+
+## 2x2 MMI (initial lowest-resolution case)
+
+The MMI uses the paper's `mmi2x2_with_sbend` layout, pinned to the physical
+fingerprint of its reference GDS at the same source revision as the crossing
+and directional coupler. The MMI and directional coupler share the four-port
+adapter in `passive_soi/four_port.py`.
+
+Only 6 cells per wavelength and a 20 nm source bandwidth are enabled for the
+MMI so far. Run its geometry checks and lowest-resolution comparison with:
+
+```console
+uv run pytest tests/differential/test_mmi2x2.py \
+  --validation-report=validation-results-mmi2x2-6ppw.json
+```
+
+The comparison uses the explicitly reported 1550 nm cross-power values from
+[Section 3.3 of the paper](https://arxiv.org/html/2506.16665v3): 0.376 for
+Lumerical and 0.358 for Tidy3D, with the suite's existing cross-solver tolerance.
+It also checks the passive-device output-power bound. Passing at this coarse
+resolution does not establish mesh convergence.
