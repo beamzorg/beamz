@@ -219,6 +219,26 @@ def _generate_layout(component_name: str, settings_json: str) -> Any:
 def generate_layout(case: DifferentialCase) -> Any:
     """Generate a case layout using the explicit passive-SOI PDK."""
     geometry = case.geometry
+    if geometry.get("kind") == "reference_polygons":
+        fixture = Path(__file__).parent / "layouts" / geometry["polygon_fixture"]
+        raw = fixture.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != geometry["polygon_fixture_sha256"]:
+            raise ValueError(f"reference polygon checksum mismatch for {case.name}")
+        payload = json.loads(raw)
+        gf = _gdsfactory()
+        _layout_pdk().activate()
+        component = gf.Component()
+        for points in payload["polygons_um"]:
+            component.add_polygon(points, layer=tuple(payload["layer"]))
+        for name, port in geometry["ports"].items():
+            component.add_port(
+                name=name,
+                center=tuple(port["center_um"]),
+                width=port["width_um"],
+                orientation=port["orientation_deg"],
+                layer=tuple(payload["layer"]),
+            )
+        return component
     if geometry.get("kind") != "gdsfactory_component":
         raise ValueError(f"case {case.name!r} is not a GDSFactory component")
     settings_json = json.dumps(geometry.get("settings", {}), sort_keys=True)

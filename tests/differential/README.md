@@ -88,3 +88,40 @@ The comparison uses the explicitly reported 1550 nm cross-power values from
 Lumerical and 0.358 for Tidy3D, with the suite's existing cross-solver tolerance.
 It also checks the passive-device output-power bound. Passing at this coarse
 resolution does not establish mesh convergence.
+
+## Mode converter and polarization splitter rotator
+
+Both conversion cases currently enable only **6 cells per wavelength** with a
+**20 nm source bandwidth**. Run their geometry checks and simulations with:
+
+```console
+uv run pytest tests/differential/test_mode_conversion.py \
+  --validation-report=validation-results-mode-conversion-6ppw.json
+```
+
+Use `-k mode_converter` or `-k polarization_splitter_rotator` to select one
+case. The mode converter launches TE0 and measures TE1 conversion plus TE0
+crosstalk at the wide output. The splitter rotator launches TM0 and measures
+TE0 conversion plus TM0 crosstalk at the upper output. Its nitride top cladding
+starts at the silicon substrate plane, matching the reference pipeline.
+Both channels share each output's DFT monitor, with distinct modal projections.
+The power bound sums the measured output modes; it is not a measurement of
+all guided and radiated power.
+
+The silicon polygons in `passive_soi/layouts/` are extracted from the pinned
+reference GDS files. Modern GDSFactory changes the mode-converter layout and
+cannot reproduce the reference splitter rotator's 405 nm port width on its
+2 nm port grid. These fixtures preserve the original geometry without a
+runtime download or a dependency on the older GDSFactory release. Manifests
+record the source revision, GDS checksum, fixture checksum, physical-union
+fingerprint, and original YAML ports. Layer-1 silicon alone determines the
+physical bounds; annotation layers do not enlarge the simulation domain.
+
+The comparison ranges use values explicitly stated in Sections 3.4 and 3.5 of
+[the paper](https://arxiv.org/html/2506.16665v3). Both devices are strongly
+resolution-dependent at 6 ppw, so these tests do not establish convergence.
+The current BeamZ results are strict expected failures against those published
+ranges: the mode converter measures 0.200 TE1 power and the splitter rotator
+measures 0.871 TE0 power at 1550 nm. Pytest will fail with an unexpected pass
+when either comparison starts agreeing, requiring its marker and documentation
+to be updated.

@@ -134,6 +134,17 @@ def _four_port_design(case: DifferentialCase):
         background=silica,
     )
 
+    if "top_cladding" in case.geometry:
+        cladding = case.geometry["top_cladding"]
+        cladding_z = float(cladding["zmin_um"])
+        design += Rectangle(
+            position=(0.0, 0.0, (cladding_z - bounds["z"][0]) * µm),
+            width=width_um * µm,
+            height=height_um * µm,
+            depth=(bounds["z"][1] - cladding_z) * µm,
+            material=Material(case.materials[cladding["material"]] ** 2),
+        )
+
     for layer in case.geometry["layers"].values():
         thickness = float(layer["thickness_m"])
         beamz_z_um = float(layer["zmin_um"]) - bounds["z"][0]
@@ -223,7 +234,12 @@ def build_four_port_simulation(
         max_total_cells=None,
     )
 
-    mode_spec = ModeSpec(polarization="te")
+    source_name = protocol.get("source_port", "o1")
+    mode_candidates = int(protocol.get("mode_candidates", 1))
+    mode_spec = ModeSpec(
+        polarization=protocol.get("source_polarization", "te"),
+        num_modes=mode_candidates,
+    )
     transverse_span = float(protocol["beamz_port_transverse_span_um"]) * µm
     z_span = 2.0 * µm
     ports = tuple(
@@ -242,12 +258,16 @@ def build_four_port_simulation(
                 inward_offset_um=0.5,
                 z_center=z_center,
             )[1],
-            mode_spec=mode_spec,
+            mode_spec=(
+                mode_spec
+                if name == source_name
+                else ModeSpec(polarization="te", num_modes=mode_candidates)
+            ),
         )
         for name in case.geometry["ports"]
     )
     source_center, source_direction = port_center_and_direction(
-        case, "o1", inward_offset_um=0.0, z_center=z_center
+        case, source_name, inward_offset_um=0.0, z_center=z_center
     )
     source_port = Port(
         center=source_center,
