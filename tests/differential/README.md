@@ -159,3 +159,24 @@ to 0.2011. Enabling full Farjadpour interface averaging under CPML changes it
 to 0.2129. The latter still shows a 1.136 peak selected-output ratio at a band
 edge. Boundary reflection and diagonal-only interface averaging therefore do
 not account for the published-power gap or broadband normalization error.
+
+Cross-section and retained-field analysis instead identifies coarse-grid phase
+matching as the leading explanation. On the exact 6 ppw raster, isolated
+wide-guide TE1 and narrow-guide TE0 effective indices are 2.4926 and 2.5062.
+The ordinary coupled-section solve returns 2.5204 and 2.4865, which would imply
+a 22.8 um transfer length. Applying the same rectilinear Yee refinement used by
+the source changes the coupled pair to 2.4822 and 2.4374, for a 17.3 um
+transfer length. Independent spatial system identification of the retained
+Ex/Ey fields gives 2.4742 and 2.4251, or 15.8 um. This agreement shows that the
+time-domain field follows the refined Yee phase advance rather than the
+ordinary cross-section eigenvalues.
+
+The refined modes are also strongly detuned: their electric-field localization
+is approximately 12% and 85% in the wide guide. A two-mode estimate therefore
+limits ideal transfer to about 46% before bend, taper, and power-normalization
+effects. Static refined-mode checks are nonmonotonic across 6, 8, and 10 ppw,
+with estimated transfer lengths of 17.3, 18.7, and 17.6 um. This is consistent
+with the paper's report that the converter is unusually sensitive to mesh size
+and to shifted spectral peaks and valleys. A mesh-placement sweep and internal
+coupled-supermode monitors are the next diagnostics; simply changing the
+absorber or increasing the mode count is not expected to resolve the mismatch.
