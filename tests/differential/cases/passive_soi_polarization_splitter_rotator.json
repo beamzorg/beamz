@@ -132,7 +132,7 @@
           "tidy3d": 0.051
         }
       },
-      "mode_candidates": 4
+      "mode_candidates": 5
     },
     "polygon_fixture": "polarization_splitter_rotator.json",
     "polygon_fixture_sha256": "8f0ed982f0c87c9b9005b2ee1a4eccd880fae91be97a8096c0a4d91b3af20337",

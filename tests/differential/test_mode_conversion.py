@@ -44,8 +44,8 @@ def test_conversion_setup_uses_distinct_source_and_output_modes(name):
     assert (
         simulation.sources[0].mode_spec.polarization == protocol["source_polarization"]
     )
-    assert simulation.sources[0].mode_spec.num_modes == 4
-    assert all(m.mode_spec.num_modes == 4 for m in simulation.monitors)
+    assert simulation.sources[0].mode_spec.num_modes == 5
+    assert all(m.mode_spec.num_modes == 5 for m in simulation.monitors)
     assert ports["o1"].polarization == protocol["source_polarization"]
     assert ports["conversion"].mode_index == protocol["conversion_mode_index"]
     assert ports["conversion"].polarization == "te"

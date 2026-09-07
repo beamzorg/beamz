@@ -141,7 +141,7 @@
         }
       },
       "absorber_from_ppw": 6,
-      "mode_candidates": 4
+      "mode_candidates": 5
     },
     "polygon_fixture": "mode_converter.json",
     "polygon_fixture_sha256": "7a473075a502dc15dad64f403d79514a16a9b250122f79dd9198399306251e47",

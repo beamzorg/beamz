@@ -52,8 +52,8 @@ def build_mode_conversion_simulation(
     )
     ports = {port.name: port for port in physical_ports}
     target = ports[protocol["conversion_port"]]
-    # Both projections read the same DFT aperture. At least four candidates
-    # allow polarization ordering to distinguish TE1 from the fundamental TM.
+    # Both projections read the same DFT aperture. Five candidates match the
+    # reference setup and allow polarization ordering to distinguish TE1 from TM0.
     projections = tuple(
         replace(
             target,
@@ -62,7 +62,7 @@ def build_mode_conversion_simulation(
             mode_spec=ModeSpec(
                 polarization=protocol[f"{channel}_polarization"],
                 mode_index=protocol[f"{channel}_mode_index"],
-                num_modes=4,
+                num_modes=int(protocol["mode_candidates"]),
             ),
         )
         for channel in ("conversion", "crosstalk")

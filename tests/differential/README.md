@@ -105,6 +105,8 @@ crosstalk at the wide output. The splitter rotator launches TM0 and measures
 TE0 conversion plus TM0 crosstalk at the upper output. Its nitride top cladding
 starts at the silicon substrate plane, matching the reference pipeline.
 Both channels share each output's DFT monitor, with distinct modal projections.
+The physical sources and mode monitors solve five candidate modes, matching the
+reference pipeline's `mode_num=5` setting.
 The power bound sums the measured output modes; it is not a measurement of
 all guided and radiated power.
 
@@ -150,3 +152,10 @@ target-plane flux and TE1 projection agree, so aperture projection does not
 explain its low conversion. Retained artifacts now include per-port modal
 powers, effective indices, projection residuals, condition numbers, and raw
 flux comparisons for future runs.
+
+Two controlled 6 ppw mode-converter reruns further isolate the discrepancy.
+Replacing the graded absorber with CPML changes TE1 conversion only from 0.2003
+to 0.2011. Enabling full Farjadpour interface averaging under CPML changes it
+to 0.2129. The latter still shows a 1.136 peak selected-output ratio at a band
+edge. Boundary reflection and diagonal-only interface averaging therefore do
+not account for the published-power gap or broadband normalization error.
