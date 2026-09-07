@@ -125,3 +125,28 @@ ranges: the mode converter measures 0.200 TE1 power and the splitter rotator
 measures 0.871 TE0 power at 1550 nm. Pytest will fail with an unexpected pass
 when either comparison starts agreeing, requiring its marker and documentation
 to be updated.
+
+Offline analysis of the retained 6 ppw DFT fields rules out output-mode
+misidentification as the source of these differences. At 1550 nm, the mode
+converter's target-plane flux is 0.216 and its unnormalized TE1 projection is
+0.217; the splitter rotator's values are 0.860 and 0.856 for TE0. The output
+projection residual is about 7% in both cases and its condition number is 1.
+The corresponding source-plane residuals are 5.1% and 2.7%. The discrepancy is
+therefore already present in the coarse-grid propagated fields.
+
+The splitter-rotator reference selects raw solver mode index 2 for its nominal
+TM0 source. BeamZ instead orders candidates by polarization and selects the
+highest-effective-index TM mode. At 6 ppw BeamZ finds TE0, TM0, and TE1 at
+effective indices 2.652, 2.266, and 1.976, respectively. This avoids treating a
+resolution-dependent raw mode index as physical mode identity and may explain
+why BeamZ produces the paper's converged-like splitter behavior at the lowest
+resolution. This is an inference from the source code and computed modes, not a
+confirmed diagnosis of either reference solver.
+
+The mode converter has an additional broadband normalization limitation. Its
+measured incident modal power ranges from 0.856 to 1.119 across the 20 nm band,
+and the selected output-power ratio reaches 1.123 at one edge. At 1550 nm its
+target-plane flux and TE1 projection agree, so aperture projection does not
+explain its low conversion. Retained artifacts now include per-port modal
+powers, effective indices, projection residuals, condition numbers, and raw
+flux comparisons for future runs.

@@ -370,6 +370,31 @@ def _save_four_port_artifacts(
     }
     for (output, source), values in scattering.s_matrix.items():
         arrays[f"S_{output}_{source}"] = np.asarray(values)
+    for port_name, wave in scattering.diagnostics["waves"].items():
+        for diagnostic_name in (
+            "P_plus",
+            "P_minus",
+            "mode_neff",
+            "projection_residual",
+            "condition_number",
+            "projected_signed_power",
+        ):
+            if diagnostic_name in wave:
+                arrays[f"diagnostic_{port_name}__{diagnostic_name}"] = np.asarray(
+                    wave[diagnostic_name]
+                )
+    for port_name, flux in scattering.diagnostics["monitor_flux_checks"].items():
+        for diagnostic_name in (
+            "monitor_flux",
+            "P_modal_sum",
+            "P_modal_net",
+            "P_selected",
+            "P_rejected",
+            "P_selected_modal_net",
+        ):
+            arrays[f"flux_{port_name}__{diagnostic_name}"] = np.asarray(
+                flux[diagnostic_name]
+            )
     for monitor_name, monitor_results in results.monitors.items():
         arrays[f"{monitor_name}__frequencies_hz"] = np.asarray(
             monitor_results.get_dft_frequencies()
