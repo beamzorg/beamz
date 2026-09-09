@@ -94,7 +94,7 @@
       "source_mode": "TE0",
       "output_port": "o2",
       "input_monitor_inward_offset_um": 0.5,
-      "beamz_output_monitor_inward_offset_um": 0.5,
+      "beamz_output_monitor_inward_offset_um": 0.0,
       "source_time": "Gaussian pulse with fwidth equal to the 20 nm simulated frequency span.",
       "source_offset": "Tidy3D default: 5 temporal widths; BeamZ equivalent: 5 / (2 pi).",
       "source_mode_profiles": 3,
@@ -104,7 +104,7 @@
         "lumerical": "PML on all sides"
       },
       "beamz_boundary": "A 1 um physical graded-conductivity absorber on every side.",
-      "beamz_port_transverse_span_um": 3.0,
+      "beamz_port_transverse_span_um": 4.5,
       "port_extension_um": 10.0,
       "run_time_rule": "15 * domain_x * 2 / c",
       "auto_shutoff": "BeamZ field-energy decay threshold 1e-5 with the configured run time as a hard upper bound.",

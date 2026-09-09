@@ -20,6 +20,8 @@ from tests.differential.passive_soi.four_port import (
     _save_four_port_artifacts,
 )
 
+RING_FIELD_DECAY_THRESHOLD = 1e-5
+
 
 @dataclass(frozen=True)
 class RingResonatorResult:
@@ -41,6 +43,7 @@ class RingResonatorResult:
     steps: int
     grid_shape: tuple[int, int, int]
     termination_reason: str
+    terminal_field_decay: float
 
 
 def extract_ring_resonances(wavelengths_um, through_power):
@@ -137,12 +140,30 @@ def build_ring_resonator_simulation(*, resolution_ppw: int = 6, diagnostics=Fals
     ports = tuple(
         Port(
             center=port_center_and_direction(
-                case, name, inward_offset_um=0.5, z_center=z_center
+                case,
+                name,
+                inward_offset_um=float(
+                    protocol[
+                        "input_monitor_inward_offset_um"
+                        if name == "o1"
+                        else "beamz_output_monitor_inward_offset_um"
+                    ]
+                ),
+                z_center=z_center,
             )[0],
             size=(0.0, transverse_span, 2.0 * µm),
             name=name,
             direction=port_center_and_direction(
-                case, name, inward_offset_um=0.5, z_center=z_center
+                case,
+                name,
+                inward_offset_um=float(
+                    protocol[
+                        "input_monitor_inward_offset_um"
+                        if name == "o1"
+                        else "beamz_output_monitor_inward_offset_um"
+                    ]
+                ),
+                z_center=z_center,
             )[1],
             mode_spec=mode_spec,
         )
@@ -221,7 +242,9 @@ def run_ring_resonator_benchmark(
             progress=progress,
             backend=execution_backend,
             termination=AutoTermination(
-                field_decay=1e-5, monitor_change=None, consecutive_checks=1
+                field_decay=RING_FIELD_DECAY_THRESHOLD,
+                monitor_change=None,
+                consecutive_checks=1,
             ),
         )
     scattering = s_parameters(
@@ -271,4 +294,9 @@ def run_ring_resonator_benchmark(
         steps=int(performance.steps),
         grid_shape=tuple(int(value) for value in simulation.grid.shape),
         termination_reason=termination.reason if termination else "time_limit",
+        terminal_field_decay=(
+            float(termination.field_decay)
+            if termination is not None and termination.field_decay is not None
+            else float("inf")
+        ),
     )

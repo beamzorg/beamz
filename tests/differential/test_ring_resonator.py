@@ -16,6 +16,7 @@ from tests.differential.passive_soi.common import (
     write_layout_gds,
 )
 from tests.differential.passive_soi.ring_resonator import (
+    RING_FIELD_DECAY_THRESHOLD,
     build_ring_resonator_simulation,
     extract_ring_resonances,
     run_ring_resonator_benchmark,
@@ -38,6 +39,8 @@ def test_ring_fixture_matches_pinned_gds_geometry_and_ports(tmp_path):
 
 
 def test_ring_setup_uses_supplementary_lowest_resolution_protocol():
+    from beamz import LIGHT_SPEED, µm
+
     simulation, ports, frequencies = build_ring_resonator_simulation()
 
     np.testing.assert_allclose(
@@ -51,6 +54,16 @@ def test_ring_setup_uses_supplementary_lowest_resolution_protocol():
     assert simulation.sources[0].mode_spec.polarization == "te"
     assert simulation.sources[0].mode_spec.num_modes == 5
     assert simulation.sources[0].mode_spec.num_freqs == 3
+    assert simulation.sources[0].size == pytest.approx((0.0, 4.5 * µm, 2.0 * µm))
+    port_by_name = {port.name: port for port in ports}
+    assert port_by_name["o1"].center[0] == pytest.approx(1.5 * µm)
+    assert port_by_name["o2"].center[0] == pytest.approx(31.0 * µm)
+    assert all(
+        port.size == pytest.approx((0.0, 4.5 * µm, 2.0 * µm)) for port in ports
+    )
+    assert simulation.run_time == pytest.approx(
+        15.0 * 32.0 * µm * 2.0 / LIGHT_SPEED
+    )
     assert simulation.boundaries[0].formulation == "sponge"
     assert simulation.boundaries[0].thickness == pytest.approx(1e-6)
     assert not simulation.grid.is_uniform
@@ -77,7 +90,16 @@ def test_ring_resonance_extraction_reports_fsr_q_and_extinction():
 
 @pytest.mark.hardware
 @pytest.mark.slow
-def test_ring_lowest_resolution_has_passive_resonant_response(validation_metrics):
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "the pinned supplementary 3.20 ps runtime reaches its time limit before "
+        "the 1e-5 field-decay convergence criterion"
+    ),
+)
+def test_ring_repository_runtime_converges_before_resonance_validation(
+    validation_metrics,
+):
     case = load_passive_soi_case("ring_resonator")
     protocol = case.geometry["simulation"]
     artifact_root = os.environ.get("BEAMZ_VALIDATION_ARTIFACT_DIR")
@@ -100,10 +122,19 @@ def test_ring_lowest_resolution_has_passive_resonant_response(validation_metrics
         "steps": result.steps,
         "grid_shape": result.grid_shape,
         "termination_reason": result.termination_reason,
+        "terminal_field_decay": result.terminal_field_decay,
         "reference_result_limitation": protocol["reference_result_limitation"],
     }
     assert np.all(np.isfinite(result.through_power_spectrum))
     assert np.all(np.isfinite(result.reflection_power_spectrum))
+    validation_metrics.check_upper(
+        "ring terminal field-decay ratio",
+        measured=result.terminal_field_decay,
+        upper_bound=RING_FIELD_DECAY_THRESHOLD,
+        unit="ratio",
+        resolution="6 cells per wavelength",
+        metadata=metadata,
+    )
     validation_metrics.check_upper(
         "ring center-frequency selected modal output power",
         measured=result.center_total_output_power,
