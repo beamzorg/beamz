@@ -192,3 +192,29 @@ with the paper's report that the converter is unusually sensitive to mesh size
 and to shifted spectral peaks and valleys. A mesh-placement sweep is the next
 diagnostic; simply changing the absorber or increasing the mode count is not
 expected to resolve the mismatch.
+
+## Single-bus ring resonator
+
+Issue #104's maintainer audit adds a sixth device beyond the five cases reported
+in the paper: the supplementary repository's default `ring_single`. The case
+pins its GDS at the same source revision and runs the repository's lowest
+setting of 6 cells per wavelength over 1540--1560 nm with 0.2 nm sampling.
+
+```console
+uv run pytest tests/differential/test_ring_resonator.py \
+  --validation-report=validation-results-ring-6ppw.json
+```
+
+The supplementary repository does not commit Lumerical or Tidy3D ring results,
+so this case does not invent a cross-solver target. It records the complex TE0
+through and reflection spectra, resonance wavelengths, median free spectral
+range, loaded Q, runtime, and grid size. Gates cover passivity and the presence
+of a physically plausible resonant response; the manifest records this oracle
+limitation explicitly.
+
+The 6 ppw CUDA run contains 3,615,840 cells and identifies the dominant TE0
+resonances at 1541.78, 1549.14, and 1556.77 nm. Their median spacing is 7.49 nm;
+the deepest dip has a sampled loaded Q of 740 and the normalized through-port
+extinction is 7.71 dB. The 24,199-step run reached its 3.20 ps time limit with a
+remaining field-decay ratio of 0.121, so Q is recorded as a lowest-setting
+diagnostic rather than a converged linewidth claim.

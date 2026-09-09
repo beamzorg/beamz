@@ -1,0 +1,150 @@
+{
+  "schema_version": "beamz.differential/v1",
+  "name": "passive_soi_ring_resonator",
+  "description": "Pinned generic-PDK single-bus ring resonator from the issue-104 supplementary repository.",
+  "dimension": 3,
+  "wavelength_m": 1.55e-06,
+  "resolution_m": 7.430973447933325e-08,
+  "oracle": {
+    "kind": "invariant",
+    "reference": "Issue #104 audit and JPPhotonics/fdtd-pipeline ring project at revision 622e0a9b7429eaf2335b1000b39e283544a198c4"
+  },
+  "materials": {
+    "silicon_n_at_1p55_um": 3.47644,
+    "silica_n_at_1p55_um": 1.44402
+  },
+  "geometry": {
+    "kind": "reference_polygons",
+    "component": "ring_single",
+    "settings": {
+      "gap_um": 0.2,
+      "radius_um": 10.0,
+      "length_x_um": 4.0,
+      "length_y_um": 0.6,
+      "waveguide_width_um": 0.5
+    },
+    "source_generator_requirement": "gdsfactory==7.8.*",
+    "source_repository": "https://github.com/JPPhotonics/fdtd-pipeline",
+    "source_revision": "622e0a9b7429eaf2335b1000b39e283544a198c4",
+    "source_gds_path": "gds_library/cells_from_gds/gdsfactory_generic_pdk/ring.gds",
+    "source_gds_sha256": "8f32ae9d3b907d15bd2ddebc36ac3db47e636d829c0b49a3a636ecbf154a3aa2",
+    "polygon_fixture": "ring.json",
+    "polygon_fixture_sha256": "96818b8fa810f262fc1ceec75e7977bbf519867d965d16c59dfa797ad8c16a33",
+    "layer_stack_reference": {
+      "source_path": "stack_universal.json and gds_library/pdk_universal.py",
+      "z_reference": "Layer zmin values are measured from the shared silicon substrate plane at z=0 um"
+    },
+    "layers": {
+      "core": {
+        "gds": [
+          1,
+          0
+        ],
+        "zmin_um": 0.0,
+        "thickness_m": 2.2e-07,
+        "union_sha256": "b638cb37d6c6d8562c53c9ce3ff6e173ee279a139a4dc37bd31c101ec3e74a0f"
+      }
+    },
+    "ports": {
+      "o1": {
+        "center_um": [
+          -17.0,
+          0.0
+        ],
+        "orientation_deg": 180.0,
+        "width_um": 0.5
+      },
+      "o2": {
+        "center_um": [
+          13.0,
+          0.0
+        ],
+        "orientation_deg": 0.0,
+        "width_um": 0.5
+      }
+    },
+    "simulation": {
+      "domain_bounds_um": {
+        "x": [
+          -18.0,
+          14.0
+        ],
+        "y": [
+          -1.5,
+          22.55
+        ],
+        "z": [
+          -2.0,
+          2.0
+        ]
+      },
+      "wavelength_center_um": 1.55,
+      "wavelength_spans_nm": [
+        20.0
+      ],
+      "wavelength_step_nm": 0.2,
+      "frequency_sampling": "101 uniform frequency samples between c / wavelength_stop and c / wavelength_start, matching projects/FDTD_solvers/ring/ring.py.",
+      "resolutions_cells_per_wavelength": [
+        6
+      ],
+      "resolution_m_basis": "The top-level resolution_m is the supplementary ring project default of 6 cells per wavelength in silicon at 1550 nm.",
+      "grid": "BeamZ GridSpec.auto with the requested minimum cells per wavelength and a 1.4 maximum adjacent-cell scale.",
+      "subpixel": "BeamZ diagonal Farjadpour interface averaging; the reference Tidy3D setup uses ContourPathAveraging.",
+      "source_port": "o1",
+      "source_mode": "TE0",
+      "output_port": "o2",
+      "input_monitor_inward_offset_um": 0.5,
+      "beamz_output_monitor_inward_offset_um": 0.5,
+      "source_time": "Gaussian pulse with fwidth equal to the 20 nm simulated frequency span.",
+      "source_offset": "Tidy3D default: 5 temporal widths; BeamZ equivalent: 5 / (2 pi).",
+      "source_mode_profiles": 3,
+      "mode_candidates": 5,
+      "reference_boundaries": {
+        "tidy3d": "Absorber on all sides",
+        "lumerical": "PML on all sides"
+      },
+      "beamz_boundary": "A 1 um physical graded-conductivity absorber on every side.",
+      "beamz_port_transverse_span_um": 3.0,
+      "port_extension_um": 10.0,
+      "run_time_rule": "15 * domain_x * 2 / c",
+      "auto_shutoff": "BeamZ field-energy decay threshold 1e-5 with the configured run time as a hard upper bound.",
+      "material_model_limitation": "BeamZ uses nondispersive silicon and silica evaluated at 1550 nm; the supplementary solvers use fitted dispersive models.",
+      "reference_result_limitation": "The supplementary repository contains the ring setup and analysis script but no committed Lumerical or Tidy3D output values.",
+      "expected_fsr_nm_bounds": [
+        5.0,
+        16.0
+      ],
+      "expected_minimum_extinction_db": 0.1
+    }
+  },
+  "observables": [
+    {
+      "name": "through_te0_power_spectrum",
+      "unit": "fraction",
+      "tolerance": "invariant"
+    },
+    {
+      "name": "reflection_te0_power_spectrum",
+      "unit": "fraction",
+      "tolerance": "invariant"
+    },
+    {
+      "name": "resonance_wavelengths",
+      "unit": "m",
+      "tolerance": "invariant"
+    },
+    {
+      "name": "free_spectral_range",
+      "unit": "m",
+      "tolerance": "invariant"
+    },
+    {
+      "name": "loaded_q",
+      "unit": "dimensionless",
+      "tolerance": "invariant"
+    }
+  ],
+  "adapters": [
+    "beamz"
+  ]
+}

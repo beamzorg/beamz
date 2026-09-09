@@ -1,0 +1,155 @@
+"""Differential validation of the issue-104 single-bus ring resonator."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from tests.differential.passive_soi.common import (
+    expected_layer_fingerprints,
+    generate_layout,
+    layer_union_sha256,
+    load_passive_soi_case,
+    write_layout_gds,
+)
+from tests.differential.passive_soi.ring_resonator import (
+    build_ring_resonator_simulation,
+    extract_ring_resonances,
+    run_ring_resonator_benchmark,
+)
+
+
+def test_ring_fixture_matches_pinned_gds_geometry_and_ports(tmp_path):
+    case = load_passive_soi_case("ring_resonator")
+    component = generate_layout(case)
+
+    for layer, expected in expected_layer_fingerprints(case).items():
+        assert layer_union_sha256(component, layer) == expected
+    assert {port.name for port in component.ports} == set(case.geometry["ports"])
+    for port in component.ports:
+        expected = case.geometry["ports"][port.name]
+        np.testing.assert_allclose(port.dcenter, expected["center_um"], atol=1e-12)
+        assert port.dwidth == pytest.approx(expected["width_um"])
+        assert port.orientation == pytest.approx(expected["orientation_deg"])
+    assert write_layout_gds(case, tmp_path / "ring.gds").is_file()
+
+
+def test_ring_setup_uses_supplementary_lowest_resolution_protocol():
+    simulation, ports, frequencies = build_ring_resonator_simulation()
+
+    np.testing.assert_allclose(
+        (simulation.design.width, simulation.design.height, simulation.design.depth),
+        np.asarray((32.0, 24.05, 4.0)) * 1e-6,
+        rtol=0.0,
+        atol=1e-15,
+    )
+    assert {port.name for port in ports} == {"o1", "o2"}
+    assert frequencies.size == 101
+    assert simulation.sources[0].mode_spec.polarization == "te"
+    assert simulation.sources[0].mode_spec.num_modes == 5
+    assert simulation.sources[0].mode_spec.num_freqs == 3
+    assert simulation.boundaries[0].formulation == "sponge"
+    assert simulation.boundaries[0].thickness == pytest.approx(1e-6)
+    assert not simulation.grid.is_uniform
+    with pytest.raises(ValueError, match="unsupported supplementary resolution"):
+        build_ring_resonator_simulation(resolution_ppw=10)
+
+
+def test_ring_resonance_extraction_reports_fsr_q_and_extinction():
+    wavelengths = np.linspace(1.54, 1.56, 101)
+    power = np.ones_like(wavelengths)
+    for center in (1.544, 1.554):
+        power -= 0.8 / (1.0 + ((wavelengths - center) / 0.0005) ** 2)
+
+    resonances, fsr_nm, loaded_q, extinction_db, normalized = extract_ring_resonances(
+        wavelengths, power
+    )
+
+    np.testing.assert_allclose(resonances, (1.544, 1.554), atol=2e-4)
+    assert fsr_nm == pytest.approx(10.0, abs=0.3)
+    assert loaded_q > 1_000.0
+    assert extinction_db > 6.0
+    assert max(normalized) == pytest.approx(1.0)
+
+
+@pytest.mark.hardware
+@pytest.mark.slow
+def test_ring_lowest_resolution_has_passive_resonant_response(validation_metrics):
+    case = load_passive_soi_case("ring_resonator")
+    protocol = case.geometry["simulation"]
+    artifact_root = os.environ.get("BEAMZ_VALIDATION_ARTIFACT_DIR")
+    result = run_ring_resonator_benchmark(
+        resolution_ppw=6,
+        progress=True,
+        artifact_dir=(
+            Path(artifact_root) / "ring_resonator" / "6ppw" if artifact_root else None
+        ),
+    )
+    metadata = {
+        "execution_backend": result.backend,
+        "resonance_wavelengths_um": result.resonance_wavelengths_um,
+        "free_spectral_range_nm": result.free_spectral_range_nm,
+        "loaded_q": result.loaded_q,
+        "extinction_db": result.extinction_db,
+        "runtime_s": result.runtime_s,
+        "gcups": result.gcups,
+        "cells": result.cells,
+        "steps": result.steps,
+        "grid_shape": result.grid_shape,
+        "termination_reason": result.termination_reason,
+        "reference_result_limitation": protocol["reference_result_limitation"],
+    }
+    assert np.all(np.isfinite(result.through_power_spectrum))
+    assert np.all(np.isfinite(result.reflection_power_spectrum))
+    validation_metrics.check_upper(
+        "ring center-frequency selected modal output power",
+        measured=result.center_total_output_power,
+        upper_bound=1.02,
+        unit="fraction",
+        resolution="6 cells per wavelength",
+        metadata=metadata,
+    )
+    validation_metrics.check_lower(
+        "ring resonance count across 20 nm",
+        measured=len(result.resonance_wavelengths_um),
+        lower_bound=2,
+        unit="count",
+        resolution="6 cells per wavelength",
+        metadata=metadata,
+    )
+    fsr_lower, fsr_upper = protocol["expected_fsr_nm_bounds"]
+    validation_metrics.check_lower(
+        "ring median free spectral range",
+        measured=result.free_spectral_range_nm,
+        lower_bound=fsr_lower,
+        unit="nm",
+        resolution="6 cells per wavelength",
+        metadata=metadata,
+    )
+    validation_metrics.check_upper(
+        "ring median free spectral range",
+        measured=result.free_spectral_range_nm,
+        upper_bound=fsr_upper,
+        unit="nm",
+        resolution="6 cells per wavelength",
+        metadata=metadata,
+    )
+    validation_metrics.check_lower(
+        "ring through-port extinction",
+        measured=result.extinction_db,
+        lower_bound=protocol["expected_minimum_extinction_db"],
+        unit="dB",
+        resolution="6 cells per wavelength",
+        metadata=metadata,
+    )
+    validation_metrics.check_lower(
+        "ring loaded Q",
+        measured=result.loaded_q,
+        lower_bound=10.0,
+        unit="dimensionless",
+        resolution="6 cells per wavelength",
+        metadata=metadata,
+    )

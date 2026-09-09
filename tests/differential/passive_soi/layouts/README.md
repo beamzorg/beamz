@@ -16,7 +16,7 @@ Port positions, widths, and orientations come from the accompanying reference
 YAML, not from newer component factories. No annotation or pin layers are
 extruded into the silicon stack.
 
-The conversion cases solve four candidate eigenmodes on the physical source
+The conversion cases solve five candidate eigenmodes on the physical source
 and every physical mode monitor before selecting polarization and mode order.
 A single candidate cannot distinguish TE0 from TM0; increasing only the
 analysis port's candidate count does not update its physical monitor.
