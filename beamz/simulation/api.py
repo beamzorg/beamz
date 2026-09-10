@@ -28,7 +28,10 @@ from beamz.design.grid_spec import (
 )
 from beamz.design.materials import Material, MaterialProtocol
 from beamz.design.structures import Box
-from beamz.devices.boundaries import normalize_boundaries
+from beamz.devices.boundaries import (
+    normalize_boundaries,
+    validate_boundary_compatibility,
+)
 from beamz.devices.monitors.monitors import (
     FieldMonitor,
     FieldRecorder,
@@ -516,7 +519,7 @@ class Simulation:
         Immutable source specifications to inject during execution.
     monitors : sequence of monitor specifications, optional
         Quantities to record. Results are keyed by monitor name.
-    boundaries : sequence of PEC, PML, or Absorber, optional
+    boundaries : sequence of PEC, PML, Absorber, or Periodic, optional
         Domain boundary conditions. An all-edge PEC boundary is used when omitted.
     resolution : float, default=0.02 * um
         Uniform cell spacing in metres when ``grid_spec`` does not override it.
@@ -732,6 +735,7 @@ class Simulation:
                 )
         time = _normalize_time(time)
         boundaries = normalize_boundaries(boundaries)
+        validate_boundary_compatibility(boundaries, is_3d=is_3d, plane_2d=plane_2d)
         if raster_options is not None:
             from beamz.design.raster import RasterOptions
 

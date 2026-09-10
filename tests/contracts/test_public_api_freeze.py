@@ -65,6 +65,7 @@ EXPECTED_EXPORTS = {
         "PML",
         "PEC",
         "Absorber",
+        "Periodic",
         "display_status",
         "create_plain_progress",
         "get_si_scale_and_label",
@@ -163,6 +164,7 @@ EXPECTED_EXPORTS = {
         "PML",
         "PEC",
         "Absorber",
+        "Periodic",
     ),
 }
 
