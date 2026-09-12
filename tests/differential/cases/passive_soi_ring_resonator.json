@@ -121,27 +121,27 @@
     {
       "name": "through_te0_power_spectrum",
       "unit": "fraction",
-      "tolerance": "invariant"
+      "tolerance": "strict_bound"
     },
     {
       "name": "reflection_te0_power_spectrum",
       "unit": "fraction",
-      "tolerance": "invariant"
+      "tolerance": "strict_bound"
     },
     {
       "name": "resonance_wavelengths",
       "unit": "m",
-      "tolerance": "invariant"
+      "tolerance": "strict_bound"
     },
     {
       "name": "free_spectral_range",
       "unit": "m",
-      "tolerance": "invariant"
+      "tolerance": "strict_bound"
     },
     {
       "name": "loaded_q",
       "unit": "dimensionless",
-      "tolerance": "invariant"
+      "tolerance": "strict_bound"
     }
   ],
   "adapters": [
