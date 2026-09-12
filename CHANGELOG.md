@@ -1,6 +1,36 @@
 # Changelog
 
-## Unreleased (target: v0.5.0)
+## v0.5.1 - 2026-09-12
+
+### Added
+
+- Added an optional native CUDA execution backend for supported 3D simulations,
+  with fused Yee updates, graph replay, and source, CPML, and DFT monitor
+  acceleration. CUDA sources are included in the package for optional builds.
+- Added GDSFactory component preparation and S-parameter workflows, with
+  executable documentation and distribution-level smoke coverage.
+- Added and refreshed MMI, ring resonator, and grating coupler notebooks, including
+  rendered outputs and v0.5 API migration examples.
+
+### Changed
+
+- Improved simulation progress reporting and performance statistics, separating
+  compilation time from execution throughput.
+- Default PML thickness now resolves to 12 grid cells per selected face when no
+  physical thickness is specified.
+- Improved layout cross-sections with smooth geometry and removed seams between
+  overlapping structures. Face-on sources and monitors render as rectangles.
+- Made field plot colorbars aspect-aware and separated horizontal colorbars from
+  axis labels.
+
+### Fixed
+
+- Fixed mode refinement on rectilinear Yee grids.
+- Preserved 2D mode-source profiles and corrected mode-source launch power
+  calibration, centered 3D source symmetry, and reverse source placement.
+- Corrected 3D GDS placement and hardened packaged GDSFactory workflow validation.
+
+## v0.5.0 - 2026-08-19
 
 This is a breaking, pre-1.0 architecture release. BeamZ now separates immutable
 simulation configuration, compiled execution, evolving runtime state, and detached

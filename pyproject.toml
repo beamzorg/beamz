@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "beamz"
-version = "0.5.0"
+version = "0.5.1"
 dynamic = []
 authors = [
     { name = "Quentin Wach", email = "quentin.wach+beamz@gmail.com" },
