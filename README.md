@@ -27,7 +27,7 @@
 - CPU-capable for **fast prototyping**, even on your laptop.
 - Intuitive and **familiar API**.
 - Native **FDFD mode solver** with discrete Yee-grid refinement and validation.
-- **CPML**, absorbing layers and PEC boundaries.
+- Zero-phase **periodic** boundaries (JAX backend), plus CPML, absorbing-layer, and PEC boundaries.
 - Unidirectional **mode sources** (single freq. and broadband, Huygens fields + TFSF, TE/TM).
 - **Gaussian sources**, e.g. for grating coupler simulations.
 - Integrated **rasterization module**.
@@ -45,6 +45,8 @@ Try out notebooks from our growing **[example library](https://beamz.tech/exampl
 - [1) Mode Sources and Monitors](https://beamz.tech/examples/modal_sources_monitors)
 - [2) Waveguide Crossing with Cosine Tapers](https://beamz.tech/examples/cosine_waveguide_crossing)
 - [3) Topology Optimized 90° Bend (2D)](https://beamz.tech/examples/ceviche_bend)
+- [4) CMOS RGB Image Sensor](https://beamz.tech/examples/cmos_rgb_sensor)
+- [5) High-Q Silicon Resonator](https://beamz.tech/examples/high_q_silicon_resonator)
 <!--- [Broadband Mode Sources]() (coming soon)
 - [Straight & Curved Waveguide Benchmark]() (coming soon)-->
 <!--- [Mode Converter (3D)]() (coming soon)

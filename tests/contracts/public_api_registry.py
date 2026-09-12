@@ -175,6 +175,7 @@ CONFIGURATION_CASES = (
     PublicConfigCase("PML", bz.PML),
     PublicConfigCase("PEC", bz.PEC),
     PublicConfigCase("Absorber", bz.Absorber),
+    PublicConfigCase("Periodic", bz.Periodic),
 )
 
 

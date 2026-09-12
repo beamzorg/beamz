@@ -23,6 +23,7 @@ from beamz.devices._boundary_compile import (
     BoundaryData,
     lower_boundaries,
 )
+from beamz.devices.boundaries import Periodic
 from beamz.devices.monitors.compiler import compile_monitor_specs
 from beamz.devices.sources.compiler import compile_source_specs
 from beamz.lattice import (
@@ -206,7 +207,9 @@ def _inverse_permittivity_components(values):
     return jnp.asarray(np.stack(cofactors, axis=-1) / determinant[..., None])
 
 
-def _compile_derivative_metrics(material_grid) -> DerivativeMetricPlan:
+def _compile_derivative_metrics(
+    material_grid, periodic_axes: frozenset[int] = frozenset()
+) -> DerivativeMetricPlan:
     """Precompute O(nx + ny + nz) staggered inverse-distance metrics."""
     kind = material_grid.metric_kind
     empty = jnp.zeros((0,), dtype=jnp.float32)
@@ -217,6 +220,8 @@ def _compile_derivative_metrics(material_grid) -> DerivativeMetricPlan:
     active_axes = ("x", "y", "z") if len(material_grid.shape) == 3 else ("x", "y")
     forward = {}
     backward = {}
+    storage_axes = ("z", "y", "x") if len(material_grid.shape) == 3 else ("y", "x")
+    periodic_names = {storage_axes[index] for index in periodic_axes}
     for axis in active_axes:
         widths = material_grid.grid.cell_widths(axis)
         if kind == "axis_uniform":
@@ -230,6 +235,10 @@ def _compile_derivative_metrics(material_grid) -> DerivativeMetricPlan:
         inverse_backward[-1] = 1.0 / widths[-1]
         if widths.size > 1:
             inverse_backward[1:-1] = 2.0 / (widths[:-1] + widths[1:])
+        if axis in periodic_names:
+            seam_inverse = 2.0 / (widths[-1] + widths[0])
+            inverse_backward[0] = seam_inverse
+            inverse_backward[-1] = seam_inverse
         forward[axis] = jnp.asarray(inverse_forward, dtype=jnp.float32)
         backward[axis] = jnp.asarray(inverse_backward, dtype=jnp.float32)
     return DerivativeMetricPlan(
@@ -524,6 +533,7 @@ def _compile_boundary(fields, cpml, boundary_data, *, is_3d: bool) -> BoundaryPl
     masks = fields.metallic_masks
     return BoundaryPlan(
         metallic_edges_2d=(frozenset() if is_3d else boundary_data.metallic_edges),
+        periodic_axes=boundary_data.periodic_axes,
         cpml=cpml,
         metallic=MetallicPlan(
             masks["Ex"],
@@ -533,6 +543,7 @@ def _compile_boundary(fields, cpml, boundary_data, *, is_3d: bool) -> BoundaryPl
             masks["Hy"],
             masks["Hz"],
         ),
+        material_shape=tuple(int(value) for value in fields.material_grid.shape),
         logical_component_shapes=fields.component_shapes,
     )
 
@@ -547,6 +558,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         request.domain.size,
         request.run.dt,
         polarization_2d=request.domain.polarization_2d,
+        plane_2d=request.domain.plane_2d,
     )
     logical_grid = _compile_grid(request, boundary_data)
     setup = _prepare_compilation(request, logical_grid)
@@ -779,7 +791,8 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         update_coefficients, boundary, sharding_layout
     )
     metrics = lower_derivative_metrics(
-        _compile_derivative_metrics(request.materials), sharding_layout
+        _compile_derivative_metrics(request.materials, boundary_data.periodic_axes),
+        sharding_layout,
     )
     return CompiledProgram(
         grid=logical_grid,
@@ -841,6 +854,9 @@ def compile_program(
     )
     cuda_material_supported = not material_grid.uses_full_permittivity
     cuda_sharding_supported = not sharding_token[0] or sharding_token[2] == 1
+    cuda_periodic_supported = not any(
+        isinstance(boundary, Periodic) for boundary in simulation.boundaries
+    )
     if requested_backend not in {"auto", "jax"} and not cuda_grid_supported:
         requirement = (
             "a 3D simulation"
@@ -861,8 +877,16 @@ def compile_program(
             "CUDA execution currently supports one GPU; use backend='jax' for "
             "multi-device sharding."
         )
+    if requested_backend not in {"auto", "jax"} and not cuda_periodic_supported:
+        raise CudaBackendUnavailable(
+            "CUDA execution does not yet support periodic boundaries; "
+            "use backend='jax'."
+        )
     cuda_problem_supported = (
-        cuda_grid_supported and cuda_material_supported and cuda_sharding_supported
+        cuda_grid_supported
+        and cuda_material_supported
+        and cuda_sharding_supported
+        and cuda_periodic_supported
     )
     resolved_backend = (
         "jax"

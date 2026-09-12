@@ -43,7 +43,7 @@ from beamz.design.structures import (
     Sphere,
     Taper,
 )
-from beamz.devices.boundaries import PEC, PML, Absorber
+from beamz.devices.boundaries import PEC, PML, Absorber, Periodic
 from beamz.devices.monitors import FieldMonitor, FieldRecorder, FluxMonitor, ModeMonitor
 from beamz.devices.ports import Port
 from beamz.devices.sources import (
@@ -126,6 +126,7 @@ __all__ = [
     "PML",
     "PEC",
     "Absorber",
+    "Periodic",
     "display_status",
     "create_plain_progress",
     "get_si_scale_and_label",
