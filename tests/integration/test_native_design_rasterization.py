@@ -160,6 +160,7 @@ def test_full_tensor_conversion_rejects_unsupported_material_couplings(
     result = rasterize(
         Scene((Material(epsilon_r=epsilon, conductivity=conductivity),)),
         Grid.uniform((0, 0, 0), (1, 1, 1), shape),
+        options=RasterOptions(smoothing="farjadpour_full"),
     )
 
     with pytest.raises(ValueError, match=message):

@@ -12,6 +12,7 @@ blake3.workspace = true
 geo.workspace = true
 parry3d-f64.workspace = true
 rayon.workspace = true
+robust.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

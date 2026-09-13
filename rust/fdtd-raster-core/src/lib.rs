@@ -3,6 +3,7 @@
 mod error;
 mod geometry;
 mod grid;
+mod laminar;
 mod mesh;
 mod raster;
 mod scene;

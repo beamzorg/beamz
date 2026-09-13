@@ -201,6 +201,7 @@ dependencies = [
  "parry3d-f64",
  "proptest",
  "rayon",
+ "robust",
  "serde",
  "serde_json",
  "thiserror",

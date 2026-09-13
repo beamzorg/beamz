@@ -397,6 +397,15 @@ fn rasterize_impl(
     let epsilon_components = material_component_count(scene, |material| material.epsilon_r);
     let mu_components = material_component_count(scene, |material| material.mu_r);
     let conductivity_components = material_component_count(scene, |material| material.conductivity);
+    if options.smoothing == SmoothingMode::FarjadpourDiagonal
+        && [epsilon_components, mu_components, conductivity_components].contains(&6)
+    {
+        return Err(crate::RasterError::InvalidMaterial(
+            "farjadpour_diagonal cannot preserve intrinsic off-diagonal material coefficients; \
+             use farjadpour_full or volume smoothing"
+                .into(),
+        ));
+    }
     let scalar_volume = options.smoothing == SmoothingMode::Volume
         && epsilon_components == 1
         && mu_components == 1
@@ -827,7 +836,29 @@ fn integrate_mixture(
             };
         }
     }
+    if let Some((fractions, _normal, tests)) = crate::laminar::integrate(scene, volume, candidates)
+    {
+        return Mixture {
+            fractions: Some(fractions),
+            interface: classify_interface(scene, volume, candidates, options, 0.0),
+            error: 0.0,
+            path: SamplePath::Exact,
+            candidate_tests: candidate_tests + tests,
+            uniform_owner: None,
+        };
+    }
 
+    if let Some((fractions, tests)) = crate::laminar::integrate_partition(scene, volume, candidates)
+    {
+        return Mixture {
+            fractions: Some(fractions),
+            interface: classify_interface(scene, volume, candidates, options, 0.0),
+            error: 0.0,
+            path: SamplePath::Exact,
+            candidate_tests: candidate_tests + tests,
+            uniform_owner: None,
+        };
+    }
     let mut volumes = vec![0.0; scene.materials.len()];
     let mut estimated_error_volume = 0.0;
     let mut adaptive_output = AdaptiveOutput {
@@ -867,9 +898,6 @@ fn classify_interface(
     if options.smoothing == SmoothingMode::Volume {
         return InterfaceClass::None;
     }
-    if candidates.len() != 1 {
-        return InterfaceClass::Ambiguous(FallbackReason::MultipleObjects);
-    }
     // The coarse/fine fraction disagreement is an a-posteriori estimate, not a
     // strict mathematical bound. Only reject smoothing when it says most of
     // the support remains unresolved.
@@ -881,9 +909,35 @@ fn classify_interface(
     if unresolved_fraction > 0.5 + 256.0 * f64::EPSILON {
         return InterfaceClass::Ambiguous(FallbackReason::UnresolvedGeometry);
     }
+    // Only the evidence query is inset: integration bounds and partition
+    // planes remain exact. Include coordinate magnitude so the inset remains
+    // representable after translation, and use each axis independently.
+    let mut evidence_volume = *volume;
+    for axis in 0..3 {
+        let width = volume.max[axis] - volume.min[axis];
+        let inset = 8.0
+            * f64::EPSILON
+            * width
+                .max(volume.min[axis].abs())
+                .max(volume.max[axis].abs());
+        let lower = volume.min[axis] + inset;
+        let upper = volume.max[axis] - inset;
+        // Do not collapse a support whose width is itself only a few ULPs.
+        if lower < upper {
+            evidence_volume.min[axis] = lower;
+            evidence_volume.max[axis] = upper;
+        }
+    }
+    if candidates.len() != 1 {
+        return match crate::laminar::interface_normal(scene, &evidence_volume, candidates) {
+            Some(InterfaceAssessment::Laminar(normal)) => InterfaceClass::Laminar(normal),
+            Some(_) => InterfaceClass::Ambiguous(FallbackReason::MultipleOrientations),
+            None => InterfaceClass::Ambiguous(FallbackReason::MultipleObjects),
+        };
+    }
     match scene.objects[candidates[0]]
         .geometry
-        .interface_evidence(volume, options.minimum_normal_alignment)
+        .interface_evidence(&evidence_volume, options.minimum_normal_alignment)
         .assess()
     {
         InterfaceAssessment::Laminar(normal) => InterfaceClass::Laminar(normal),
@@ -928,7 +982,7 @@ fn adaptive_integrate(
         )] += volume.volume();
         return;
     }
-    let (mut fine, mut coarse) =
+    let (mut fine, coarse) =
         octant_material_volumes(scene, volume, &intersecting, output.candidate_tests);
     let mut estimated_error = mixture_difference(&coarse, &fine);
     let mut occupied = fine
@@ -936,14 +990,6 @@ fn adaptive_integrate(
         .filter(|occupied_volume| **occupied_volume > 32.0 * f64::EPSILON * volume.volume())
         .count();
     if occupied <= 1 {
-        let center_owner = owner_at_counted(
-            scene,
-            &intersecting,
-            volume.center(),
-            output.candidate_tests,
-        );
-        coarse.fill(0.0);
-        coarse[center_owner] = volume.volume();
         estimated_error = mixture_difference(&coarse, &fine);
         // A surface is known to cross this node. Agreement on one owner can be
         // aliasing rather than convergence, so force refinement. At the depth
@@ -998,7 +1044,11 @@ fn octant_material_volumes(
     candidate_tests: &mut u64,
 ) -> (Vec<f64>, Vec<f64>) {
     let mut all = vec![0.0; scene.materials.len()];
-    let mut checkerboard = vec![0.0; scene.materials.len()];
+    // A checkerboard subset of the octants aliases any geometry extruded
+    // along an axis: both histograms then agree identically, regardless of
+    // accuracy. Compare with the independent parent-center estimate instead.
+    let mut coarse = vec![0.0; scene.materials.len()];
+    coarse[owner_at_counted(scene, candidates, volume.center(), candidate_tests)] = volume.volume();
     for child in 0_usize..8 {
         let owner = owner_at_counted(
             scene,
@@ -1007,11 +1057,8 @@ fn octant_material_volumes(
             candidate_tests,
         );
         all[owner] += volume.volume() / 8.0;
-        if child.count_ones() % 2 == 0 {
-            checkerboard[owner] += volume.volume() / 4.0;
-        }
     }
-    (all, checkerboard)
+    (all, coarse)
 }
 
 fn stratified_material_volumes(
@@ -1320,6 +1367,37 @@ mod tests {
         .unwrap();
         let result = rasterize(&scene, &grid, &IntegrationOptions::default()).unwrap();
         assert_abs_diff_eq!(result.epsilon[1].values[0], 3.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn adaptive_estimator_detects_axis_invariant_interfaces() {
+        for axis in 0..3 {
+            let mut upper = [2.0; 3];
+            upper[axis] = 0.37;
+            let scene = Scene::new(
+                vec![Material::default(), Material::new(4.0, 1.0, 0.0).unwrap()],
+                vec![Object {
+                    id: 1,
+                    material_id: 1,
+                    priority: 0,
+                    geometry: Geometry::Box {
+                        bounds: Aabb::new([-1.0; 3], upper).unwrap(),
+                    },
+                }],
+                0,
+            )
+            .unwrap();
+            let mut tests = 0;
+            let (fine, coarse) = octant_material_volumes(
+                &scene,
+                &Aabb::new([0.0; 3], [1.0; 3]).unwrap(),
+                &[0],
+                &mut tests,
+            );
+            assert_abs_diff_eq!(fine[1], 0.5, epsilon = 1e-15);
+            assert_abs_diff_eq!(mixture_difference(&coarse, &fine), 0.5, epsilon = 1e-15);
+            assert_eq!(tests, 9);
+        }
     }
 
     #[test]
@@ -1734,7 +1812,7 @@ mod tests {
     }
 
     #[test]
-    fn multiple_candidate_objects_have_an_explicit_fallback_reason() {
+    fn overlapping_parallel_objects_respect_painter_order_and_smooth() {
         let scene = Scene::new(
             vec![
                 Material::default(),
@@ -1774,7 +1852,19 @@ mod tests {
             ..IntegrationOptions::default()
         };
         let result = rasterize(&scene, &grid, &options).unwrap();
-        assert!(result.diagnostics.fallback_multiple_objects > 0);
+        assert_eq!(result.diagnostics.fallback_multiple_objects, 0);
+        assert!(result.diagnostics.smoothed_samples > 0);
+        // The higher-priority object wins the overlap [0.4, 0.6].
+        assert_abs_diff_eq!(
+            result.cell_epsilon.values[0],
+            1.0 / (0.4 / 2.0 + 0.6 / 4.0),
+            epsilon = 1e-6
+        );
+        assert_abs_diff_eq!(
+            result.cell_epsilon.values[1],
+            0.4 * 2.0 + 0.6 * 4.0,
+            epsilon = 1e-6
+        );
     }
 
     #[test]

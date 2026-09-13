@@ -8,7 +8,7 @@ use parry3d_f64::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::geometry::InterfaceEvidence;
+use crate::geometry::{InterfaceEvidence, PlanarPatch};
 use crate::{Aabb, RasterError, Result, Vec3};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -59,7 +59,7 @@ impl TriangleMesh {
                 "mesh is not a consistently oriented watertight manifold: {report:?}"
             )));
         }
-        if report.signed_volume.abs() <= 128.0 * f64::EPSILON * bounds.volume() {
+        if !resolved_component_volumes(&vertices, &triangles, &report, bounds) {
             return Err(RasterError::InvalidMesh(
                 "mesh has zero enclosed volume".into(),
             ));
@@ -83,13 +83,12 @@ impl TriangleMesh {
 
     pub fn validate(&self) -> Result<()> {
         validate_closed_size(&self.vertices, &self.triangles)?;
-        let (_, actual_bounds) = validate_mesh(&self.vertices, &self.triangles)?;
+        let (report, actual_bounds) = validate_mesh(&self.vertices, &self.triangles)?;
         if actual_bounds != self.bounds {
             return Err(RasterError::InvalidMesh(
                 "serialized mesh bounds do not match its vertices".into(),
             ));
         }
-        let report = Self::inspect(&self.vertices, &self.triangles)?;
         if report.boundary_edges > 0
             || report.nonmanifold_edges > 0
             || report.inconsistent_edges > 0
@@ -100,7 +99,7 @@ impl TriangleMesh {
                 "mesh is not a consistently oriented watertight manifold: {report:?}"
             )));
         }
-        if report.signed_volume.abs() <= 128.0 * f64::EPSILON * actual_bounds.volume() {
+        if !resolved_component_volumes(&self.vertices, &self.triangles, &report, actual_bounds) {
             return Err(RasterError::InvalidMesh(
                 "mesh has zero enclosed volume".into(),
             ));
@@ -147,8 +146,81 @@ impl TriangleMesh {
             let a = self.vertices[triangle[0] as usize];
             let b = self.vertices[triangle[1] as usize];
             let c = self.vertices[triangle[2] as usize];
-            triangle_box_intersects(a, b, c, volume)
+            triangle_crosses_interior(a, b, c, volume)
         })
+    }
+
+    /// Integrate a closed, connected polyhedral surface exactly (up to
+    /// floating-point clipping error), without sampling mesh occupancy.
+    pub fn exact_overlap_volume(&self, volume: &Aabb) -> Option<f64> {
+        let acceleration = self.acceleration();
+        // Disconnected/nested shells currently use parity containment. Their
+        // independently chosen windings need not define the same signed solid,
+        // so retain adaptive integration for those meshes.
+        if !acceleration.single_component {
+            return None;
+        }
+        if !self.bounds.intersects(volume) {
+            return Some(0.0);
+        }
+        // Divergence theorem with F=(0,0,clamp(z-z_min,0,height)) inside the
+        // support's XY rectangle. Side faces contribute zero flux; original
+        // mesh faces above z_max contribute their projected area times height.
+        // Query the whole upward column, including faces outside the support.
+        let column = Aabb {
+            min: volume.min,
+            max: [volume.max[0], volume.max[1], self.bounds.max[2]],
+        };
+        let height = volume.max[2] - volume.min[2];
+        let mut total = 0.0;
+        let mut correction = 0.0;
+        for index in acceleration.aabb_candidates(&column) {
+            let triangle = self.triangles[index];
+            // Work relative to the support to avoid subtracting large world
+            // coordinates in the area/volume sum.
+            let mut polygon: Vec<Vec3> = triangle
+                .map(|vertex| sub(self.vertices[vertex as usize], volume.min))
+                .to_vec();
+            for axis in 0..2 {
+                polygon = clip_polygon(&polygon, axis, 0.0, true);
+                polygon = clip_polygon(&polygon, axis, volume.max[axis] - volume.min[axis], false);
+            }
+            polygon = clip_polygon(&polygon, 2, 0.0, true);
+            let within = clip_polygon(&polygon, 2, height, false);
+            let above = clip_polygon(&polygon, 2, height, true);
+            // A triangle lying exactly on the top plane belongs to only one
+            // piece. Otherwise the inclusive clipping would count it twice.
+            let upper_flux = if polygon.iter().any(|point| point[2] > height) {
+                projected_flux(&above, Some(height))
+            } else {
+                0.0
+            };
+            let flux = projected_flux(&within, None) + upper_flux;
+            let adjusted = flux - correction;
+            let next = total + adjusted;
+            correction = (next - total) - adjusted;
+            total = next;
+        }
+        // Both globally inward and outward orientations are accepted by the
+        // mesh API. A connected closed surface has a consistent global sign.
+        Some(total.abs().min(volume.volume()))
+    }
+
+    pub(crate) fn planar_patches(&self, volume: &Aabb) -> Vec<PlanarPatch> {
+        self.acceleration()
+            .aabb_candidates(volume)
+            .filter_map(|index| {
+                let face = self.triangles[index];
+                let [a, b, c] = face.map(|vertex| self.vertices[vertex as usize]);
+                (triangle_crosses_interior(a, b, c, volume)
+                    && clipped_triangle_area(a, b, c, volume) > 0.0)
+                    .then(|| PlanarPatch {
+                        point: a,
+                        normal: cross(sub(b, a), sub(c, a)),
+                        plane_points: [a, b, c],
+                    })
+            })
+            .collect()
     }
 
     pub(crate) fn interface_evidence(
@@ -162,7 +234,7 @@ impl TriangleMesh {
             let a = self.vertices[triangle[0] as usize];
             let b = self.vertices[triangle[1] as usize];
             let c = self.vertices[triangle[2] as usize];
-            if !triangle_box_intersects(a, b, c, volume) {
+            if !triangle_crosses_interior(a, b, c, volume) {
                 continue;
             }
             let normal = cross(sub(b, a), sub(c, a));
@@ -183,6 +255,7 @@ impl TriangleMesh {
 #[derive(Debug)]
 struct MeshBvh {
     nodes: Vec<BvhNode>,
+    single_component: bool,
 }
 
 #[derive(Debug)]
@@ -199,7 +272,10 @@ enum BvhKind {
 
 impl MeshBvh {
     fn build(vertices: &[Vec3], triangles: &[[u32; 3]]) -> Self {
-        let mut result = Self { nodes: Vec::new() };
+        let mut result = Self {
+            nodes: Vec::new(),
+            single_component: triangle_components(triangles) == 1,
+        };
         let mut indices: Vec<usize> = (0..triangles.len()).collect();
         result.build_node(vertices, triangles, &mut indices);
         result
@@ -257,7 +333,12 @@ impl MeshBvh {
         let mut stack = vec![0usize];
         while let Some(index) = stack.pop() {
             let node = &self.nodes[index];
-            if !node.bounds.intersects(query) {
+            // BVH bounds can be flat (e.g. a leaf containing only a mesh cap).
+            // Use closed intersection here; callers decide whether touching
+            // a support boundary contributes area, flux, or neither.
+            if (0..3).any(|axis| {
+                node.bounds.max[axis] < query.min[axis] || node.bounds.min[axis] > query.max[axis]
+            }) {
                 continue;
             }
             match &node.kind {
@@ -419,33 +500,86 @@ fn parry_triangle(vertices: &[Vec3], triangle: [u32; 3]) -> Triangle {
 }
 
 fn triangle_components(triangles: &[[u32; 3]]) -> usize {
-    let mut vertex_to_triangles: HashMap<u32, Vec<usize>> = HashMap::new();
+    triangle_component_ids(triangles)
+        .into_iter()
+        .max()
+        .map_or(0, |value| value + 1)
+}
+
+fn resolved_component_volumes(
+    vertices: &[Vec3],
+    triangles: &[[u32; 3]],
+    report: &MeshReport,
+    bounds: Aabb,
+) -> bool {
+    if report.connected_components == 1 {
+        return report.signed_volume.is_finite()
+            && report.signed_volume.abs() > 128.0 * f64::EPSILON * bounds.volume();
+    }
+    // Independent shell orientations may cancel in the global signed sum.
+    // Validate each shell relative to its own origin and bounds instead.
+    let labels = triangle_component_ids(triangles);
+    let count = report.connected_components;
+    let mut origins = vec![None; count];
+    let mut minima = vec![[f64::INFINITY; 3]; count];
+    let mut maxima = vec![[f64::NEG_INFINITY; 3]; count];
+    let mut sums = vec![0.0; count];
+    let mut corrections = vec![0.0; count];
+    for (triangle, label) in triangles.iter().zip(labels) {
+        let [a, b, c] = triangle.map(|i| vertices[i as usize]);
+        let origin = *origins[label].get_or_insert(a);
+        for vertex in [a, b, c] {
+            for axis in 0..3 {
+                minima[label][axis] = minima[label][axis].min(vertex[axis]);
+                maxima[label][axis] = maxima[label][axis].max(vertex[axis]);
+            }
+        }
+        let term = dot(sub(a, origin), cross(sub(b, origin), sub(c, origin)));
+        let adjusted = term - corrections[label];
+        let next = sums[label] + adjusted;
+        corrections[label] = (next - sums[label]) - adjusted;
+        sums[label] = next;
+    }
+    (0..count).all(|index| {
+        let volume = (0..3)
+            .map(|axis| maxima[index][axis] - minima[index][axis])
+            .product::<f64>();
+        sums[index].is_finite() && sums[index].abs() > 6.0 * 128.0 * f64::EPSILON * volume
+    })
+}
+
+fn triangle_component_ids(triangles: &[[u32; 3]]) -> Vec<usize> {
+    // Surface shells are connected through edges. Two solids meeting at just
+    // one vertex may have independent winding and must not share a signed
+    // volume integral.
+    let edges = |[a, b, c]: [u32; 3]| [[a, b], [b, c], [c, a]].map(|[u, v]| (u.min(v), u.max(v)));
+    let mut edge_to_triangles: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
     for (index, triangle) in triangles.iter().enumerate() {
-        for vertex in triangle {
-            vertex_to_triangles.entry(*vertex).or_default().push(index);
+        for edge in edges(*triangle) {
+            edge_to_triangles.entry(edge).or_default().push(index);
         }
     }
-    let mut seen = vec![false; triangles.len()];
+    let mut seen = vec![usize::MAX; triangles.len()];
     let mut components = 0;
     for start in 0..triangles.len() {
-        if seen[start] {
+        if seen[start] != usize::MAX {
             continue;
         }
-        components += 1;
         let mut stack = vec![start];
-        seen[start] = true;
+        seen[start] = components;
         while let Some(index) = stack.pop() {
-            for vertex in triangles[index] {
-                for &neighbor in &vertex_to_triangles[&vertex] {
-                    if !seen[neighbor] {
-                        seen[neighbor] = true;
+            for edge in edges(triangles[index]) {
+                for &neighbor in &edge_to_triangles[&edge] {
+                    if seen[neighbor] == usize::MAX {
+                        seen[neighbor] = components;
                         stack.push(neighbor);
                     }
                 }
             }
         }
+        components += 1;
     }
-    components
+    seen
 }
 
 fn triangle_bounds(a: Vec3, b: Vec3, c: Vec3) -> Aabb {
@@ -527,6 +661,29 @@ fn triangle_box_intersects(a: Vec3, b: Vec3, c: Vec3, bounds: &Aabb) -> bool {
             extent[0] * axis[0].abs() + extent[1] * axis[1].abs() + extent[2] * axis[2].abs();
         max >= -radius && min <= radius
     })
+}
+
+fn triangle_crosses_interior(a: Vec3, b: Vec3, c: Vec3, bounds: &Aabb) -> bool {
+    (0..3).all(|axis| {
+        a[axis].max(b[axis]).max(c[axis]) > bounds.min[axis]
+            && a[axis].min(b[axis]).min(c[axis]) < bounds.max[axis]
+    }) && triangle_box_intersects(a, b, c, bounds)
+}
+
+// Signed XY area times the mean (linear) flux height on each fan triangle.
+fn projected_flux(polygon: &[Vec3], constant_height: Option<f64>) -> f64 {
+    if polygon.len() < 3 {
+        return 0.0;
+    }
+    let a = polygon[0];
+    (1..polygon.len() - 1)
+        .map(|index| {
+            let b = polygon[index];
+            let c = polygon[index + 1];
+            let area = 0.5 * cross(sub(b, a), sub(c, a))[2];
+            area * constant_height.unwrap_or((a[2] + b[2] + c[2]) / 3.0)
+        })
+        .sum()
 }
 
 fn ray_intersects_aabb(origin: Vec3, direction: Vec3, bounds: &Aabb) -> bool {
@@ -679,6 +836,123 @@ mod tests {
     }
 
     #[test]
+    fn exact_tetrahedron_clipping_matches_analytic_integral() {
+        // Inclusion/exclusion of the simplex x+y+z <= 1, independently of
+        // the surface-flux implementation. Exercise caps above the support,
+        // partial XY clipping, exterior cells, translations, scales, windings.
+        let edges: [f64; 8] = [-0.2, 0.0, 0.13, 0.37, 0.5, 0.79, 1.0, 1.2];
+        for scale in [1e-9, 1.0, 1e9] {
+            for reverse in [false, true] {
+                let offset = [7.0 * scale, -3.0 * scale, 11.0 * scale];
+                let mut mesh = tetrahedron();
+                mesh.vertices = mesh
+                    .vertices
+                    .iter()
+                    .map(|point| std::array::from_fn(|axis| offset[axis] + point[axis] * scale))
+                    .collect();
+                mesh.bounds = Aabb::new(offset, offset.map(|value| value + scale)).unwrap();
+                if reverse {
+                    mesh.triangles.iter_mut().for_each(|face| face.swap(1, 2));
+                }
+                for x in edges.windows(2) {
+                    for y in edges.windows(2) {
+                        for z in edges.windows(2) {
+                            let intervals = [x, y, z];
+                            let support = Aabb::new(
+                                std::array::from_fn(|axis| {
+                                    offset[axis] + scale * intervals[axis][0]
+                                }),
+                                std::array::from_fn(|axis| {
+                                    offset[axis] + scale * intervals[axis][1]
+                                }),
+                            )
+                            .unwrap();
+                            let mut expected = 0.0;
+                            if intervals.iter().all(|interval| interval[1] > 0.0) {
+                                for corner in 0u32..8 {
+                                    let remaining = 1.0
+                                        - (0..3)
+                                            .map(|axis| {
+                                                intervals[axis][((corner >> axis) & 1) as usize]
+                                                    .max(0.0)
+                                            })
+                                            .sum::<f64>();
+                                    expected += if corner.count_ones() % 2 == 0 {
+                                        1.0
+                                    } else {
+                                        -1.0
+                                    } * remaining.max(0.0).powi(3)
+                                        / 6.0;
+                                }
+                            }
+                            let actual =
+                                mesh.exact_overlap_volume(&support).unwrap() / scale.powi(3);
+                            assert!(
+                                (actual - expected).abs() < 2e-14,
+                                "{intervals:?}: {actual} != {expected} at scale {scale}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn disconnected_shells_retain_parity_integration() {
+        let base = tetrahedron();
+        let mut vertices = base.vertices.clone();
+        vertices.extend(base.vertices.iter().map(|point| point.map(|v| v + 2.0)));
+        let mut triangles = base.triangles.clone();
+        triangles.extend(base.triangles.iter().map(|face| face.map(|v| v + 4)));
+        let mesh = TriangleMesh::new(vertices, triangles).unwrap();
+        assert!(
+            mesh.exact_overlap_volume(&Aabb::new([0.0; 3], [3.0; 3]).unwrap())
+                .is_none()
+        );
+        assert!(mesh.contains([0.1; 3]));
+        assert!(mesh.contains([2.1; 3]));
+        assert!(!mesh.contains([1.5; 3]));
+    }
+
+    #[test]
+    fn vertex_touching_shells_do_not_combine_independent_windings() {
+        let mut vertices = tetrahedron().vertices;
+        vertices.extend([[-0.5, 0.0, 0.0], [0.0, -0.5, 0.0], [0.0, 0.0, -0.5]]);
+        let mut triangles = tetrahedron().triangles;
+        triangles.extend([[0, 5, 4], [0, 4, 6], [4, 5, 6], [5, 0, 6]]);
+        let mesh = TriangleMesh::new(vertices, triangles).unwrap();
+        assert!(
+            mesh.exact_overlap_volume(&Aabb::new([-1.0; 3], [1.0; 3]).unwrap())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn nested_shells_retain_parity_independent_of_winding() {
+        for reverse in [false, true] {
+            let base = tetrahedron();
+            let mut vertices = base.vertices.clone();
+            vertices.extend(base.vertices.iter().map(|p| p.map(|v| 0.1 + 0.2 * v)));
+            let mut triangles = base.triangles.clone();
+            triangles.extend(base.triangles.iter().map(|face| {
+                let mut face = face.map(|v| v + 4);
+                if reverse {
+                    face.swap(1, 2);
+                }
+                face
+            }));
+            let mesh = TriangleMesh::new(vertices, triangles).unwrap();
+            assert!(
+                mesh.exact_overlap_volume(&Aabb::new([0.0; 3], [1.0; 3]).unwrap())
+                    .is_none()
+            );
+            assert!(mesh.contains([0.05; 3]));
+            assert!(!mesh.contains([0.12; 3]));
+        }
+    }
+
+    #[test]
     fn containment_is_scale_invariant() {
         for scale in [1e-9, 1.0, 1e9] {
             let mesh = TriangleMesh::new(
@@ -708,7 +982,7 @@ mod tests {
                 tetrahedron().triangles,
             )
             .unwrap();
-            let support = Aabb::new([0.0; 3], [0.6 * scale; 3]).unwrap();
+            let support = Aabb::new([-0.1 * scale; 3], [0.6 * scale; 3]).unwrap();
             assert_eq!(
                 mesh.interface_evidence(&support, 0.995).assess(),
                 InterfaceAssessment::MultipleOrientations

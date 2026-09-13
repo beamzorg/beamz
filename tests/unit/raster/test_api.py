@@ -25,7 +25,9 @@ def test_raster_and_design_material_are_one_public_type():
 
 def test_uniform_result_uses_solver_facing_yee_shapes():
     result = raster.rasterize(
-        box_scene(), raster.Grid.uniform((0, 0, 0), (1, 1, 1), (2, 3, 4))
+        box_scene(),
+        raster.Grid.uniform((0, 0, 0), (1, 1, 1), (2, 3, 4)),
+        options=raster.RasterOptions(smoothing="farjadpour_full"),
     )
 
     assert result.tensors["epsilon"].shape == (3, 4, 3, 2)
@@ -92,7 +94,9 @@ def test_two_dimensional_te_omits_unused_components():
     result = raster.rasterize(
         box_scene(),
         raster.Grid.uniform((0, 0, 0), (1, 1, 1), (2, 2, 1)),
-        options=raster.RasterOptions(components="two_dimensional_te"),
+        options=raster.RasterOptions(
+            components="two_dimensional_te", smoothing="farjadpour_full"
+        ),
     )
 
     assert set(result.yee_tensors) == {
@@ -122,6 +126,24 @@ def test_compiled_scene_reuse_and_cache_recovery(tmp_path):
     assert not recovered.cache_hit
     np.testing.assert_array_equal(
         first.tensors["epsilon"], recovered.tensors["epsilon"]
+    )
+
+
+@pytest.mark.parametrize("old_schema", [4, 5, 6, 7, 8, 9, 10])
+def test_pre_mesh_fix_cache_is_rejected_and_recomputed(tmp_path, old_schema):
+    scene = raster.compile_scene(box_scene())
+    grid = raster.Grid.uniform((0, 0, 0), (1, 1, 1), (2, 2, 2))
+    expected = scene.rasterize(grid, cache_directory=tmp_path)
+    cache_file = next(tmp_path.glob("*.npz"))
+    with np.load(cache_file) as cached:
+        payload = {name: cached[name] for name in cached.files}
+    payload["cache_schema"] = np.asarray(old_schema)
+    payload["tensor_epsilon"] = np.full_like(payload["tensor_epsilon"], 99)
+    np.savez_compressed(cache_file, **payload)
+    actual = scene.rasterize(grid, cache_directory=tmp_path)
+    assert not actual.cache_hit
+    np.testing.assert_array_equal(
+        actual.tensors["epsilon"], expected.tensors["epsilon"]
     )
 
 
@@ -169,13 +191,34 @@ def test_scene_hash_and_cache_include_materials_and_nonuniform_edges(tmp_path):
 
 
 def test_invalid_public_options_fail_early():
-    assert raster.RasterOptions().smoothing == "farjadpour_full"
+    assert raster.RasterOptions().smoothing == "farjadpour_diagonal"
     with pytest.raises(ValueError, match="quality"):
         raster.RasterOptions(quality="custom")
     with pytest.raises(ValueError, match="smoothing"):
         raster.RasterOptions(smoothing="electrostatic_cell")
     with pytest.raises(ValueError, match="components"):
         raster.RasterOptions(components="ex")
+
+
+@pytest.mark.parametrize("property_name", ["epsilon_r", "mu_r", "conductivity"])
+def test_diagonal_default_never_silently_discards_intrinsic_couplings(property_name):
+    material = raster.Material(**{property_name: (3, 2, 1.5, 0.2, 0, 0.1)})
+    scene = raster.Scene((material,))
+    grid = raster.Grid.uniform((0, 0, 0), (1, 1, 1), (1, 1, 1))
+    with pytest.raises(ValueError, match="intrinsic off-diagonal"):
+        raster.rasterize(scene, grid)
+    for smoothing in ("farjadpour_full", "volume"):
+        result = raster.rasterize(
+            scene, grid, options=raster.RasterOptions(smoothing=smoothing)
+        )
+        tensor_name = {
+            "epsilon_r": "epsilon",
+            "mu_r": "mu",
+            "conductivity": "conductivity",
+        }[property_name]
+        np.testing.assert_allclose(
+            result.tensors[tensor_name][:, 0, 0, 0], (3, 2, 1.5, 0.2, 0, 0.1)
+        )
 
 
 @pytest.mark.parametrize(
@@ -238,6 +281,7 @@ def test_intrinsic_full_tensors_are_retained_at_their_constitutive_supports():
     result = raster.rasterize(
         raster.Scene((raster.Material(epsilon, mu, conductivity),)),
         raster.Grid.uniform((0, 0, 0), (1, 1, 1), (2, 3, 4)),
+        options=raster.RasterOptions(smoothing="farjadpour_full"),
     )
 
     for name in ("epsilon_ex", "epsilon_ey", "epsilon_ez", "epsilon_node"):
