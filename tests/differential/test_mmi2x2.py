@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -15,11 +16,12 @@ from tests.differential.passive_soi.common import (
     load_passive_soi_case,
     write_layout_gds,
 )
+from tests.differential.passive_soi.four_port import converged_power_reference
 from tests.differential.passive_soi.mmi2x2 import (
     build_mmi2x2_simulation,
-    paper_cross_power_range,
     run_mmi2x2_benchmark,
 )
+from tests.validation.tolerances import Tolerance
 
 
 def _port_values(port):
@@ -90,12 +92,19 @@ def test_mmi2x2_simulation_uses_paper_stack_and_domain():
 
 @pytest.mark.hardware
 @pytest.mark.slow
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "BeamZ measures 0.374 TE0 cross power at 6 ppw, below the 0.485 "
+        "converged consensus."
+    ),
+)
 @pytest.mark.parametrize(
     "resolution_ppw",
     [6],
     ids=lambda value: f"{value}ppw",
 )
-def test_mmi2x2_cross_power_agrees_with_published_solver_range(
+def test_mmi2x2_cross_power_agrees_with_converged_reference(
     resolution_ppw, validation_metrics
 ):
     case = load_passive_soi_case("mmi2x2")
@@ -110,10 +119,12 @@ def test_mmi2x2_cross_power_agrees_with_published_solver_range(
         progress=True,
         artifact_dir=artifact_dir,
     )
-    lower, upper = paper_cross_power_range(case, resolution_ppw)
+    reference = converged_power_reference(
+        case, "published_converged_cross_power_1550nm_span20nm"
+    )
     metadata = {
         "execution_backend": result.backend,
-        "published_lumerical_tidy3d_range": [lower, upper],
+        "published_converged_reference": asdict(reference),
         "through_te0_power": result.through_power,
         "total_output_te0_power": result.total_output_power,
         "excess_loss": result.excess_loss,
@@ -125,24 +136,22 @@ def test_mmi2x2_cross_power_agrees_with_published_solver_range(
         "termination_reason": result.termination_reason,
         "wavelength_span_nm": result.wavelength_span_nm,
     }
-    validation_metrics.check_lower(
+    validation_metrics.check(
         "2x2 MMI TE0 cross power at 1550 nm",
         measured=result.cross_power,
-        lower_bound=lower,
-        tolerance="cross_solver",
+        reference=reference.nominal,
+        tolerance=Tolerance(
+            name="published_converged_solver_variance",
+            absolute=reference.absolute_tolerance,
+            relative=0.0,
+            rationale=(
+                "Observed maximum deviation across the converged Lumerical and "
+                "Tidy3D series, with digitization precision as a floor."
+            ),
+        ),
         unit="fraction",
         resolution=f"{resolution_ppw} cells per wavelength",
-        backend="beamz-vs-published-lumerical-tidy3d-range",
-        metadata=metadata,
-    )
-    validation_metrics.check_upper(
-        "2x2 MMI TE0 cross power at 1550 nm",
-        measured=result.cross_power,
-        upper_bound=upper,
-        tolerance="cross_solver",
-        unit="fraction",
-        resolution=f"{resolution_ppw} cells per wavelength",
-        backend="beamz-vs-published-lumerical-tidy3d-range",
+        backend="beamz-vs-published-converged-consensus",
         metadata=metadata,
     )
     validation_metrics.check_upper(

@@ -134,11 +134,33 @@
       "crosstalk_polarization": "te",
       "crosstalk_mode_index": 0,
       "published_conversion_power_1550nm_span20nm": {
-        "value_basis": "Explicit lowest-resolution values in Section 3.4; coarse-grid comparison does not establish convergence.",
+        "value_basis": "Values at 6 cells per wavelength are stated in Section 3.4; remaining values are digitized to approximately 0.001 from Fig. 16(a).",
         "6": {
           "lumerical": 0.967,
           "tidy3d": 0.357
+        },
+        "10": {
+          "lumerical": 0.512,
+          "tidy3d": 0.260
+        },
+        "15": {
+          "lumerical": 0.443,
+          "tidy3d": 0.492
+        },
+        "20": {
+          "lumerical": 0.481,
+          "tidy3d": 0.479
+        },
+        "25": {
+          "lumerical": 0.512,
+          "tidy3d": 0.431
         }
+      },
+      "published_converged_conversion_power_1550nm_span20nm": {
+        "series_key": "published_conversion_power_1550nm_span20nm",
+        "convergence_start_ppw": 15,
+        "digitization_absolute_uncertainty": 0.002,
+        "value_basis": "Section 3.4 identifies convergence from 15 cells per wavelength while documenting remaining fluctuations. The consensus and tolerance use both solvers at 15, 20, and 25 cells per wavelength."
       },
       "absorber_from_ppw": 6,
       "mode_candidates": 5

@@ -128,12 +128,38 @@
       "auto_shutoff": "BeamZ field-energy decay threshold 1e-5 with the configured run time as a hard upper bound, matching Tidy3D's published shutoff threshold as closely as available.",
       "material_model_limitation": "BeamZ currently uses nondispersive silicon and silica evaluated at 1550 nm; the paper uses fitted dispersive material models.",
       "published_cross_power_1550nm_span20nm": {
-        "value_basis": "Section 3.3 explicitly states both 6 cells-per-wavelength values. Only the lowest-resolution case is enabled for now.",
+        "value_basis": "Values at 6 and 15 cells per wavelength are stated in Section 3.3; remaining values are digitized to approximately 0.001 from Fig. 12(a).",
         "6": {
           "lumerical": 0.376,
           "tidy3d": 0.358,
           "source": "prose"
+        },
+        "10": {
+          "lumerical": 0.459,
+          "tidy3d": 0.460,
+          "source": "figure_digitized"
+        },
+        "15": {
+          "lumerical": 0.483,
+          "tidy3d": 0.479,
+          "source": "prose_and_figure_digitized"
+        },
+        "20": {
+          "lumerical": 0.486,
+          "tidy3d": 0.484,
+          "source": "figure_digitized"
+        },
+        "25": {
+          "lumerical": 0.489,
+          "tidy3d": 0.489,
+          "source": "figure_digitized"
         }
+      },
+      "published_converged_cross_power_1550nm_span20nm": {
+        "series_key": "published_cross_power_1550nm_span20nm",
+        "convergence_start_ppw": 15,
+        "digitization_absolute_uncertainty": 0.001,
+        "value_basis": "Section 3.3 identifies 15 cells per wavelength as sufficient. The consensus and tolerance use both solvers at 15, 20, and 25 cells per wavelength."
       },
       "published_runtime_s_span20nm": {
         "6": {
