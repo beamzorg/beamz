@@ -1567,6 +1567,7 @@ class CompiledStepContext:
     dt: float
     dt_scalar: jnp.ndarray
     is_3d: bool
+    sharding_plan: Any = None
 
 
 @dataclass(frozen=True)
@@ -1593,10 +1594,9 @@ def select_update_kernel(ctx: CompiledStepContext) -> StepUpdateKernel:
                 "CUDA execution currently requires a three-dimensional grid"
             )
         if ctx.config.sharding.enabled:
-            raise ValueError(
-                "CUDA execution currently supports one GPU; use backend='jax' "
-                "for sharded multi-GPU execution"
-            )
+            from beamz.simulation.cuda.sharding import select_sharded_kernel
+
+            return select_sharded_kernel(ctx)
         from beamz.simulation.cuda import update_e, update_h
 
         return StepUpdateKernel(ctx.config.backend, update_h, update_e)

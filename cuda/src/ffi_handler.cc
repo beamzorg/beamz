@@ -302,6 +302,11 @@ ffi::Error Dispatch(Launcher launcher, void* stream, ffi::RemainingArgs args,
   }
   const size_t payload_count = 13 + 4 * static_cast<size_t>(nterms);
   const size_t output_count = 3 + static_cast<size_t>(nterms);
+  const bool sharded = launcher == BeamzLaunchSharded;
+  if (args.size() != payload_count + 3 + (sharded ? 1 : 0) ||
+      rets.size() != output_count) {
+    return ffi::Error::InvalidArgument("invalid BeamZ CUDA phase buffer count");
+  }
   BeamzLaunch launch = InitializeLaunch(abi_version, cuda_flags, phase, nterms,
                                         metric_kind, dt, resolution,
                                         boundary_code);
@@ -317,6 +322,12 @@ ffi::Error Dispatch(Launcher launcher, void* stream, ffi::RemainingArgs args,
   }
   if (auto error = DecodeRets(rets, launch.outputs, output_count);
       error.failure()) return error;
+  if (sharded) {
+    auto decoded = args.get<ffi::AnyBuffer>(payload_count + 3);
+    if (!decoded) return decoded.error();
+    if (auto error = DecodeBuffer(*decoded, &launch.shard_geometry);
+        error.failure()) return error;
+  }
   const int error = launcher(stream, launch);
   return error == 0 ? ffi::Error::Success()
                     : ffi::Error::Internal("BeamZ CUDA kernel launch failed: " +
@@ -332,6 +343,29 @@ ffi::Error StreamedHandler(void* stream, ffi::RemainingArgs args,
                   cuda_flags, phase, nterms, dt, resolution, boundary_code,
                   metric_kind);
 }
+
+ffi::Error ShardedHandler(void* stream, ffi::RemainingArgs args,
+                          ffi::RemainingRets rets, int32_t abi_version,
+                          int32_t cuda_flags, int32_t phase, int32_t nterms,
+                          float dt, float resolution, int32_t boundary_code,
+                          int32_t metric_kind) {
+  return Dispatch(BeamzLaunchSharded, stream, args, rets, abi_version,
+                  cuda_flags, phase, nterms, dt, resolution, boundary_code,
+                  metric_kind);
+}
+
+#ifdef BEAMZ_CUDA_CPU_CONTRACT
+// The test harness executes the same cell arithmetic and typed FFI decoder on
+// CPU. CPU FFI contexts have no CUDA stream; production builds use the GPU bind.
+ffi::Error ShardedHostHandler(ffi::RemainingArgs args, ffi::RemainingRets rets,
+                              int32_t abi_version, int32_t cuda_flags,
+                              int32_t phase, int32_t nterms, float dt,
+                              float resolution, int32_t boundary_code,
+                              int32_t metric_kind) {
+  return ShardedHandler(nullptr, args, rets, abi_version, cuda_flags, phase,
+                        nterms, dt, resolution, boundary_code, metric_kind);
+}
+#endif
 
 ffi::Error StreamedStepsHandler(void* stream, ffi::RemainingArgs args,
                                 ffi::RemainingRets rets, int32_t abi_version,
@@ -722,6 +756,25 @@ ffi::Error HopperHandler(void* stream, ffi::RemainingArgs args,
 XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_streamed, StreamedHandler,
                               ffi::Ffi::Bind()
                                   .Ctx<ffi::PlatformStream<void*>>()
+                                  .RemainingArgs()
+                                  .RemainingRets()
+                                  .Attr<int32_t>("abi_version")
+                                  .Attr<int32_t>("cuda_flags")
+                                  .Attr<int32_t>("phase")
+                                  .Attr<int32_t>("nterms")
+                                  .Attr<float>("dt")
+                                  .Attr<float>("resolution")
+                                  .Attr<int32_t>("boundary_code")
+                                  .Attr<int32_t>("metric_kind"));
+
+#ifdef BEAMZ_CUDA_CPU_CONTRACT
+XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_sharded, ShardedHostHandler,
+                              ffi::Ffi::Bind()
+#else
+XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_sharded, ShardedHandler,
+                              ffi::Ffi::Bind()
+                                  .Ctx<ffi::PlatformStream<void*>>()
+#endif
                                   .RemainingArgs()
                                   .RemainingRets()
                                   .Attr<int32_t>("abi_version")

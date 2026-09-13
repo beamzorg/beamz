@@ -62,6 +62,8 @@ and final diagnostics. It remains `None` for an ordinary full-grid run.
   mathematics. PML, sponge, and PEC profile lowering lives with the boundary
   specifications in `beamz.devices._boundary_compile`.
 - `sharding.py`: optional multi-device lowering, padding, placement, and cropping.
+- `cuda/sharding.py`: explicit neighbor exchange and packed CPML ownership for
+  sharded streamed CUDA phases; sources and monitors share the JAX timestep.
 - `observe.py`: monitor accumulation plus the numerical interpretation and
   source normalization of those acquisitions.
 - `results.py`: immutable execution-owned run outputs, decoding, and retained

@@ -496,7 +496,11 @@ def forward_step(
         "h",
         dense_single_slab=cfg.source_single_slab_dense,
     )
-    cuda_owns_pec = cfg.backend == "cuda_streamed" and not program.sources
+    cuda_owns_pec = (
+        cfg.backend == "cuda_streamed"
+        and not cfg.sharding.enabled
+        and not program.sources
+    )
     if not cuda_owns_pec:
         hx, hy, hz = update_runtime.apply_post_source_boundaries(
             (state.hx, state.hy, state.hz),
@@ -572,6 +576,7 @@ def build_scan(program, *, donate_state: bool = False):
         dt=dt,
         dt_scalar=dt_scalar,
         is_3d=is_3d,
+        sharding_plan=program.sharding,
     )
     update_kernel = update_runtime.select_update_kernel(step_context)
     graph_source_groups = tuple(
@@ -594,6 +599,7 @@ def build_scan(program, *, donate_state: bool = False):
     packed_graph_monitors = None
     if (
         cfg.backend == "cuda_streamed"
+        and not cfg.sharding.enabled
         and graph_monitors_supported
         and not bool(jax.config.read("jax_enable_x64"))
     ):
@@ -602,6 +608,7 @@ def build_scan(program, *, donate_state: bool = False):
         packed_graph_monitors = pack_dft_monitors(program.monitors)
     cuda_multi_step = (
         cfg.backend == "cuda_streamed"
+        and not cfg.sharding.enabled
         and (not program.monitors or packed_graph_monitors is not None)
         and (not program.sources or source_groups_supported)
     )
@@ -851,13 +858,17 @@ def initial_program_state(
         dtype = dtype if psi_dtype is None else psi_dtype
         shapes = tuple(term.slab.shape for term in terms)
         if len(old) == len(shapes) and all(
-            tuple(value.shape) == shape
-            for value, shape in zip(old, shapes, strict=True)
+            tuple(value.shape)
+            in (shape, sharding_runtime.logical_cpml_shape(layout, term))
+            for value, shape, term in zip(old, shapes, terms, strict=True)
         ):
-            if all(np.dtype(value.dtype) == np.dtype(dtype) for value in old):
-                return old
             converter = np.asarray if layout.enabled else jnp.asarray
-            return tuple(converter(value, dtype=dtype) for value in old)
+            return tuple(
+                sharding_runtime._pad_high_to_shape(
+                    converter(value, dtype=dtype), shape, pad_value=0.0
+                )
+                for value, shape in zip(old, shapes, strict=True)
+            )
         return tuple(zeros(shape, dtype) for shape in shapes)
 
     old_h = () if continuation is None else continuation.cpml_psi_h_terms
