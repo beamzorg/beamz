@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -363,7 +363,6 @@ def mode_data(results, name):
         If no monitor result exists under ``name``.
     """
     from beamz.analysis import sparameters as _sp
-    from beamz.devices.modes.specs import ModeSpec
     from beamz.devices.ports import Port
 
     data = analysis_data(results, name)
@@ -380,9 +379,9 @@ def mode_data(results, name):
             name=f"{monitor_name}_m{idx}",
             monitor_name=monitor_name,
             direction="+",
-            mode_spec=ModeSpec(
+            mode_spec=replace(
+                monitor.mode_spec,
                 mode_index=idx,
-                num_modes=num_modes,
                 polarization=monitor.mode_spec.polarization
                 or (data.coordinates.polarization_2d if not data.is_3d else "te"),
             ),

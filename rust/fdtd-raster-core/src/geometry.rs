@@ -978,7 +978,8 @@ fn normalize_ring(mut ring: Vec<[f64; 2]>, ccw: bool, name: &str) -> Result<Vec<
                     + (b[1] - a[1]).abs()
                     + (c[0] - b[0]).abs()
                     + (c[1] - b[1]).abs();
-                if cross.abs() <= f64::EPSILON * scale.max(1.0) {
+                // A cross product has area units; use a relative area tolerance.
+                if cross.abs() <= f64::EPSILON * scale.powi(2) {
                     ring.remove(i);
                     changed = true;
                     break;
@@ -1092,6 +1093,30 @@ mod tests {
         .unwrap();
         assert_eq!(polygon.exterior.len(), 4);
         assert!(signed_area(&polygon.exterior) > 0.0);
+    }
+
+    #[test]
+    fn polygon_normalization_preserves_nanometre_features() {
+        for scale in [1.0_f64, 1e-6, 1e-9] {
+            let x = 1.7e-6;
+            let y = 3.55e-6;
+            let polygon = Polygon2::new(
+                vec![
+                    [x, y],
+                    [x + scale, y],
+                    [x + scale, y + scale],
+                    [x, y + scale],
+                ],
+                vec![],
+            )
+            .unwrap();
+            assert_eq!(polygon.exterior.len(), 4);
+            assert_abs_diff_eq!(
+                polygon.area(),
+                scale * scale,
+                epsilon = scale * scale * 1e-8
+            );
+        }
     }
 
     #[test]

@@ -611,6 +611,52 @@ def _build_port_projection(
     return projection
 
 
+def _modal_coefficient_rows_3d(projections):
+    """Linear rows for the ordinary coupled forward/backward overlap system.
+
+    Rows multiply concatenated, colocated tangential E/H samples. Keeping this
+    reduction explicit lets optimization differentiate the same modal measurement.
+    """
+    first = projections[0]
+    components = first["components"]
+    axis = first["axis"]
+    pairs = {
+        "x": (("Ey", "Hz"), ("Ez", "Hy")),
+        "y": (("Ez", "Hx"), ("Ex", "Hz")),
+        "z": (("Ex", "Hy"), ("Ey", "Hx")),
+    }[axis]
+    measure = first.get("integration_weights", first["d_area"])
+    basis = [
+        p[key]
+        for p in projections
+        for key in ("mode_components", "mode_components_bwd")
+    ]
+    rhs_rows = []
+    for mode in basis:
+        row = {}
+        for (e, h), sign in zip(pairs, (1, -1), strict=True):
+            weights = np.asarray(
+                measure[e] if isinstance(measure, dict) else measure
+            ).reshape(-1)
+            scale = 0.25 * first["direction_sign"] * sign * weights
+            row[e] = scale * np.conj(np.asarray(mode[h]).ravel())
+            row[h] = scale * np.conj(np.asarray(mode[e]).ravel())
+        rhs_rows.append(np.concatenate([row[c] for c in components]))
+    rhs_rows = np.asarray(rhs_rows)
+    mode_matrix = np.column_stack(
+        [
+            np.concatenate([np.asarray(mode[c]).ravel() for c in components])
+            for mode in basis
+        ]
+    )
+    system = rhs_rows @ mode_matrix
+    if not np.isfinite(system).all():
+        raise ValueError("Invalid 3D modal overlap system.")
+    if np.linalg.cond(system) < 1e8:
+        return np.linalg.solve(system, rhs_rows)
+    return np.linalg.pinv(system) @ rhs_rows
+
+
 def _project_modal_coefficients_3d_group(field_components, projections):
     """Project one 3D monitor field onto a coupled forward/backward mode set."""
     projections = tuple(projections)

@@ -75,6 +75,31 @@ def _centered_transverse_symmetry_axes(source, fields, grid, resolution):
     """Return transverse storage axes that are physically mirror symmetric."""
     permittivity = np.asarray(fields.permittivity)
     normal_position = _STORAGE_AXES_3D.index(source.axis)
+    # A fixed modal source depends on its local cross-section, not on distant
+    # device geometry. Global symmetry tests changed the launch when a topology
+    # update elsewhere broke symmetry, invalidating independent verification.
+    normal_edges = (
+        np.asarray(grid.axis_edges(source.axis), dtype=float)
+        if grid is not None
+        else np.arange(permittivity.shape[normal_position] + 1) * resolution
+    )
+    plane = int(
+        np.clip(
+            np.searchsorted(
+                normal_edges,
+                source.center[_PUBLIC_AXIS_POSITION[source.axis]],
+                side="right",
+            )
+            - 1,
+            0,
+            permittivity.shape[normal_position] - 1,
+        )
+    )
+    local = [slice(None)] * 3
+    local[normal_position] = slice(
+        max(0, plane - 1), min(permittivity.shape[normal_position], plane + 2)
+    )
+    material = np.asarray(permittivity[tuple(local)], dtype=float)
     symmetric = []
     for storage_position, axis in enumerate(_STORAGE_AXES_3D):
         if storage_position == normal_position:
@@ -103,7 +128,6 @@ def _centered_transverse_symmetry_axes(source, fields, grid, resolution):
             atol=tolerance,
         ):
             continue
-        material = np.asarray(permittivity, dtype=float)
         material_scale = max(float(np.max(np.abs(material))), 1.0)
         if not np.allclose(
             material,
@@ -570,6 +594,9 @@ def _plan_2d_mode_source(
         measure = np.asarray(metric_grid.cell_widths(transverse_axis))[
             int(interval.start) : int(interval.stop)
         ]
+        if polarization == "tm":
+            # TM profiles occupy the bounding nodes, rather than cell centres.
+            measure = 0.5 * (np.pad(measure, (1, 0)) + np.pad(measure, (0, 1)))
     else:
         grid_edges = None
         measure = None

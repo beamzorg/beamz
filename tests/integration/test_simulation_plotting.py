@@ -730,3 +730,29 @@ def test_2d_layout_material_grid_preserves_geometry_and_origin():
         np.testing.assert_allclose(ax.get_ylim(), [-1, 1])
     finally:
         plt.close(fig)
+
+
+@pytest.mark.parametrize("normal", ["x", "y", "z"])
+def test_permittivity_slices_use_physical_axis_and_material_values(normal):
+    values = 1 + np.arange(24, dtype=float).reshape(2, 3, 4)
+    materials = MaterialGrid(
+        permittivity=values,
+        conductivity=np.zeros_like(values),
+        permeability=np.ones_like(values),
+        resolution=1e-6,
+        shape=values.shape,
+    )
+    sim = bz.Simulation(material_grid=materials, time=np.array([0.0, 1e-16]))
+    fig, ax = sim.plot_eps(**{normal: 0.5e-6}, colorbar=False)
+    try:
+        np.testing.assert_array_equal(
+            np.asarray(ax.collections[0].get_array()).reshape(-1),
+            np.take(values, 0, axis={"x": 2, "y": 1, "z": 0}[normal]).reshape(-1),
+        )
+        horizontal, vertical = {"x": ("y", "z"), "y": ("x", "z"), "z": ("x", "y")}[
+            normal
+        ]
+        assert ax.get_xlabel() == f"{horizontal} (um)"
+        assert ax.get_ylabel() == f"{vertical} (um)"
+    finally:
+        plt.close(fig)

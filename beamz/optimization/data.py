@@ -64,6 +64,7 @@ class ModeAmplitudes:
 @dataclass(frozen=True)
 class ModeData:
     amps: ModeAmplitudes
+    source_power: float = 1.0
 
 
 def bind_modal_data(results, program, names, cache=None):
@@ -111,7 +112,8 @@ def bind_modal_data(results, program, names, cache=None):
                         ),
                         ("direction", "f", "mode_index"),
                         coords,
-                    )
+                    ),
+                    source_power=float(results.sources[0].power),
                 )
                 for name, amplitudes, coords in plans
             }

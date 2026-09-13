@@ -1,11 +1,11 @@
-"""Fixed-plan material binding for the 2D topology optimization backend."""
+"""Fixed-plan material binding for the 2D/3D topology optimization backend."""
 
 from __future__ import annotations
 
 import jax.numpy as jnp
 import numpy as np
 
-from beamz.lattice import canonical_component_2d
+from beamz.lattice import canonical_component_2d, component_axis_offsets_3d
 from beamz.simulation.kernels import precompute_e_update_coefficients
 
 # Histories created before the symmetric material/source/projection corrections
@@ -16,15 +16,19 @@ TOPOLOGY_NUMERICS_VERSION = 3
 def _cell_centers_to_yee(values, component, polarization):
     """Interpolate cell centers onto Yee supports without a preferred side."""
     values = jnp.asarray(values)
-    canonical = canonical_component_2d(component, "xy", polarization)
-    if canonical is None:
-        return values[:1, :1]
-    node_axes = {"Ex": (0,), "Ey": (1,), "Ez": (0, 1)}[canonical]
+    if values.ndim == 3:
+        offsets = component_axis_offsets_3d(component)
+        node_axes = tuple(i for i, axis in enumerate("zyx") if offsets[axis] == 0)
+    else:
+        canonical = canonical_component_2d(component, "xy", polarization)
+        if canonical is None:
+            return values[:1, :1]
+        node_axes = {"Ex": (0,), "Ey": (1,), "Ez": (0, 1)}[canonical]
     for axis in node_axes:
-        padding = [(0, 0), (0, 0)]
+        padding = [(0, 0)] * values.ndim
         padding[axis] = (1, 1)
         padded = jnp.pad(values, padding, mode="edge")
-        lower, upper = [slice(None)] * 2, [slice(None)] * 2
+        lower, upper = [slice(None)] * values.ndim, [slice(None)] * values.ndim
         lower[axis], upper[axis] = slice(None, -1), slice(1, None)
         values = 0.5 * (padded[tuple(lower)] + padded[tuple(upper)])
     return values
@@ -57,7 +61,7 @@ def topology_yee_permittivity(program, permittivity, mask):
 
 
 def topology_coefficients(program, permittivity, mask):
-    """Bind scalar design permittivity to an existing 2D JAX execution plan."""
+    """Bind scalar design permittivity to an existing JAX execution plan."""
     updates = {}
     for axis, component, eps in zip(
         "xyz",
@@ -65,6 +69,9 @@ def topology_coefficients(program, permittivity, mask):
         topology_yee_permittivity(program, permittivity, mask),
         strict=True,
     ):
+        if program.config.is_3d:
+            updates[f"e_permittivity_{axis}"] = eps
+            continue
         decay, source = precompute_e_update_coefficients(
             shape=program.grid.component_shapes[component],
             conductivity=getattr(program.grid, f"sig_{axis}"),

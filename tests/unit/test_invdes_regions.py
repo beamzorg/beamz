@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from beamz.plugins.invdes import (
+from beamz.optimization import (
     CustomInitializationSpec,
     ErosionDilationPenalty,
     FilterProject,
@@ -60,3 +60,11 @@ def test_region_initialization_and_transform_order():
     assert np.any(copy.params != 0)
     with pytest.raises(ValueError):
         copy.create_parameters((3, 4))
+
+
+def test_unseeded_random_initialization_is_stable_within_spec():
+    spec = RandomInitializationSpec(min_value=0.45, max_value=0.55)
+    assert spec.seed is not None
+    np.testing.assert_array_equal(
+        spec.create_parameters((4, 5)), spec.create_parameters((4, 5))
+    )

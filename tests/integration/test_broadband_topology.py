@@ -27,12 +27,12 @@ def test_multiport_optimization_resume_and_spectra(problem, tmp_path):
     fresh = TopologyProblem(problem.simulation, problem.topology, problem.objective)
     resumed = fresh.run(5, resume=fresh.load(tmp_path / "wdm.npz"))
     assert partial.completed_steps == 2
-    np.testing.assert_array_equal(resumed.state.density, full.state.density)
+    np.testing.assert_array_equal(resumed.final_params, full.final_params)
     np.testing.assert_array_equal(
-        resumed.state.objective_history, full.state.objective_history
+        [h.objective for h in resumed.history], [h.objective for h in full.history]
     )
     assert full.objective > full.initial_objective + 0.03
-    spectra = problem.spectra(full.state.density, beta=full.beta)
+    spectra = problem.spectra(full.final_params, beta=full.beta)
     assert [len(s) for s in spectra] == [3, 3, 3, 3, 6]
     np.testing.assert_allclose(
         full.objective,

@@ -1573,7 +1573,7 @@ class Simulation:
         """Plot the simulation's actual relative-permittivity raster.
 
         Uses the supplied MaterialGrid when present, including optimized density
-        designs. Accepts one ``z`` or ``y`` slice for 3D, source/monitor marker
+        designs. Accepts one ``x``, ``y``, or ``z`` slice for 3D, source/monitor marker
         controls, and Matplotlib axes/color limits. Returns ``(figure, axes)``.
         Slice positions are metres; display axes are micrometres.
         """

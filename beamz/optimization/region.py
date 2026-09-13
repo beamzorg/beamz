@@ -1,13 +1,14 @@
-"""Tidy3D-style design-region specifications using BeamZ's SI units."""
+"""Topology design regions, initialization, and transforms in metre units."""
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
 from jax.scipy.signal import convolve2d
 
-from beamz.optimization.projections import smoothed_heaviside
+from ._validation import check_density
+from .projections import smoothed_heaviside
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,10 @@ class RandomInitializationSpec(Specification):
     def __post_init__(self):
         if not 0 <= self.min_value <= self.max_value <= 1:
             raise ValueError("Require 0 <= min_value <= max_value <= 1.")
+        if self.seed is None:
+            object.__setattr__(
+                self, "seed", int(np.random.SeedSequence().generate_state(1)[0])
+            )
 
     def create_parameters(self, shape):
         return (
@@ -72,7 +77,7 @@ class FilterProject(Specification):
         if self.padding not in ("reflect", "edge"):
             raise ValueError("padding must be 'reflect' or 'edge'.")
 
-    def evaluate(self, spatial_data, design_region_dl):
+    def evaluate(self, spatial_data, design_region_dl, *, beta=None):
         radius = self.radius / design_region_dl
         if radius > 0:
             pad = int(np.ceil(radius))
@@ -86,7 +91,13 @@ class FilterProject(Specification):
             )
         # Convolution/projection can overshoot by one float32 ulp at a constant
         # zero/one region. Preserve the transformation's declared density range.
-        return jnp.clip(smoothed_heaviside(spatial_data, self.beta, self.eta), 0, 1)
+        return jnp.clip(
+            smoothed_heaviside(
+                spatial_data, self.beta if beta is None else beta, self.eta
+            ),
+            0,
+            1,
+        )
 
     __call__ = evaluate
 
@@ -149,10 +160,11 @@ class ErosionDilationPenalty(Specification):
 
 @dataclass(frozen=True)
 class TopologyDesignRegion(Specification):
-    """Rectangular 2D density region in the simulation's public coordinates.
+    """Planar density region in the simulation's public coordinates.
 
-    All lengths are metres. Parameters have BeamZ's (y, x) order. The first
-    implementation requires grid-aligned bounds and pixel_size == resolution.
+    All lengths are metres. Parameters have BeamZ's (y, x) order and are
+    uniform along z through the specified thickness in 3D simulations. Bounds
+    must align to the grid, with pixel_size == resolution.
     """
 
     size: tuple[float, float, float]
@@ -162,8 +174,11 @@ class TopologyDesignRegion(Specification):
     transformations: tuple = ()
     penalties: tuple = ()
     initialization_spec: Any = UniformInitializationSpec()
+    penalty_input: str = field(default="density", metadata={"beamz_cache": False})
 
     def __post_init__(self):
+        if self.penalty_input not in ("density", "parameters"):
+            raise ValueError("penalty_input must be density or parameters.")
         for name in ("size", "center", "eps_bounds", "transformations", "penalties"):
             object.__setattr__(self, name, tuple(getattr(self, name)))
         if (
@@ -215,27 +230,34 @@ class TopologyDesignRegion(Specification):
         return params
 
     def check_params(self, params):
-        if (
-            np.shape(params) != self.params_shape
-            or not np.isfinite(params).all()
-            or np.any((params < 0) | (params > 1))
-        ):
-            raise ValueError(
-                "Parameters must match params_shape and be finite in [0, 1]."
-            )
+        check_density(params, self.params_shape, "Parameters")
 
-    def material_density(self, params):
+    def material_density(self, params, *, beta=None):
         params = jnp.asarray(params)
         if params.shape != self.params_shape:
             raise ValueError("Parameters must match design_region.params_shape.")
+        if beta is not None and not any(
+            isinstance(t, FilterProject) for t in self.transformations
+        ):
+            raise ValueError("A beta override requires a FilterProject transformation.")
         for transform in self.transformations:
-            params = transform(params, self.pixel_size)
+            params = (
+                transform.evaluate(params, self.pixel_size, beta=beta)
+                if isinstance(transform, FilterProject)
+                else transform(params, self.pixel_size)
+            )
         return params
 
-    def eps_values(self, params):
+    def eps_values(self, params, *, beta=None):
         low, high = self.eps_bounds
-        return low + (high - low) * self.material_density(params)
+        return low + (high - low) * self.material_density(params, beta=beta)
 
-    def penalty_value(self, params):
-        density = self.material_density(params)
+    def penalty_value(self, params, *, beta=None):
+        if not self.penalties:
+            return 0.0
+        density = (
+            jnp.asarray(params)
+            if self.penalty_input == "parameters"
+            else self.material_density(params, beta=beta)
+        )
         return sum(penalty(density, self.pixel_size) for penalty in self.penalties)

@@ -215,11 +215,19 @@ class TopologySpec:
         import jax.numpy as jnp
 
         density = transform_density(
-            jnp.asarray(state.density),
-            jnp.asarray(self.region_mask),
-            beta,
-            self.projection_eta,
-            self.filter_radius_cells,
+            jnp.asarray(state.density), beta=beta, **self._transform_options
+        )
+        return _readonly_array(density, float)
+
+    @property
+    def _transform_options(self):
+        """Use identical filter/projection settings for forward maps and VJPs."""
+        import jax.numpy as jnp
+
+        return dict(
+            mask=jnp.asarray(self.region_mask),
+            eta=self.projection_eta,
+            radius=self.filter_radius_cells,
             filter_type=self.filter_type,
             morphology_operation=self.morphology_operation,
             morphology_tau=self.morphology_smooth_tau,
@@ -227,7 +235,6 @@ class TopologySpec:
             projection_type=self.projection_type,
             ssp_smoothing_radius=self.ssp_smoothing_radius,
         )
-        return _readonly_array(density, float)
 
     def density_for_step(
         self, state: TopologyState, step: int, total_steps: int
@@ -267,16 +274,8 @@ class TopologySpec:
         grad_param = compute_parameter_gradient_vjp(
             jnp.asarray(state.density),
             jnp.asarray(grad_physical),
-            jnp.asarray(self.region_mask),
-            beta,
-            self.projection_eta,
-            self.filter_radius_cells,
-            filter_type=self.filter_type,
-            morphology_operation=self.morphology_operation,
-            morphology_tau=self.morphology_smooth_tau,
-            fixed_structure_mask=jnp.asarray(self.fixed_structure_mask),
-            projection_type=self.projection_type,
-            ssp_smoothing_radius=self.ssp_smoothing_radius,
+            beta=beta,
+            **self._transform_options,
         )
         return self.apply_parameter_gradient(state, grad_param)
 

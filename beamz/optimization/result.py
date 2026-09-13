@@ -1,134 +1,219 @@
-"""Portable, non-pickle checkpoints for topology optimization."""
+"""One inspectable result and non-pickle checkpoint format for inverse design."""
 
 from __future__ import annotations
 
 import json
-import os
-import tempfile
-from dataclasses import asdict, dataclass
-from pathlib import Path
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 
-from .topology import TopologyState
+from ._checkpoint import load_optimizer_state, save_checkpoint
+from ._validation import check_density
+from .schedules import OptimizationSchedule
+from .topology import _readonly_array
 
 
 @dataclass(frozen=True)
 class OptimizationStep:
-    """One completed update, evaluated at the recorded projection strength."""
+    """One update; objective is None unless the new parameters were evaluated."""
 
     step: int
-    beta: float
+    beta: float | None
     objective_before: float
-    objective: float
-    gradient_norm: float
-    max_update: float
-    elapsed_seconds: float
+    objective: float | None = None
+    gradient_norm: float = 0.0
+    max_update: float = 0.0
+    elapsed_seconds: float = 0.0
+    post_process_val: float = 0.0
+    penalty: float = 0.0
 
 
 @dataclass(frozen=True)
-class TopologyResult:
-    """Optimization state and history; the owning problem supplies geometry maps.
+class InverseDesignResult:
+    """Latest resumable state, scalar update records, and optional snapshots.
 
-    ``state`` is the state *after* all recorded updates. ``beta`` is the strength
-    used for the final recorded objective. A checkpoint also records the total
-    continuation length, so restarting cannot silently alter the beta schedule.
+    History scores belong to the parameters before each update. Use
+    simulation_data() to evaluate final_params, which includes the last update.
+    Only the latest optimizer state is stored, even when snapshots are enabled.
     """
 
-    state: TopologyState
-    history: tuple[OptimizationStep, ...]
-    initial_objective: float
-    beta: float
-    total_steps: int
-    problem_fingerprint: str
+    design: Any
+    params: tuple
+    optimizer_state: Any
+    history: tuple[OptimizationStep, ...] = ()
+    grad: tuple = ()
+    fingerprint: str = ""
+    schedule: OptimizationSchedule | None = None
+    initial_objective: float | None = None
+    total_steps: int | None = None
+    _initial_beta: float | None = None
 
     @property
     def completed_steps(self):
         return len(self.history)
 
     @property
+    def final_params(self):
+        return self.params[-1]
+
+    @property
+    def beta(self):
+        return self.history[-1].beta if self.history else self._initial_beta
+
+    @property
     def objective(self):
         return self.history[-1].objective if self.history else self.initial_objective
 
+    def settings(self, index=-1):
+        index = range(len(self.params))[index]
+        step = min(
+            max(0, self.completed_steps - 1),
+            self.completed_steps + 1 - len(self.params) + index,
+        )
+        return {} if self.schedule is None else self.schedule.values(step)
+
+    @property
+    def schedule_history(self):
+        return (
+            ()
+            if self.schedule is None
+            else tuple(self.schedule.values(i) for i in range(self.completed_steps))
+        )
+
+    def to_simulation(self, index=-1):
+        beta = self.beta if self.schedule is None else self.settings(index)["beta"]
+        return self.design.to_simulation(self.params[index], beta=beta)
+
+    def simulation_data(self, index=-1):
+        beta = self.beta if self.schedule is None else self.settings(index)["beta"]
+        return self.design.to_simulation_data(self.params[index], beta=beta)
+
+    def export_design(self, index=-1, *, threshold=0.5):
+        if hasattr(self.design, "topology"):
+            return self.design.export_design(self, threshold=threshold)
+        return self.design.export_design(
+            self.params[index],
+            threshold=threshold,
+            beta=self.settings(index).get("beta"),
+        )
+
+    def plot_optimization(self, ax=None):
+        import matplotlib.pyplot as plt
+
+        if ax is None:
+            _, ax = plt.subplots()
+        for label, values in (
+            ("Objective", "objective_before"),
+            ("Post-process", "post_process_val"),
+            ("Penalty", "penalty"),
+        ):
+            ax.plot([getattr(h, values) for h in self.history], label=label)
+        ax.set(xlabel="Iteration", ylabel="Value")
+        ax.legend()
+        return ax
+
+    def _append(
+        self, params, optimizer_state, record, *, gradient=None, snapshots=False
+    ):
+        params = _readonly_array(params)
+        return replace(
+            self,
+            params=(*self.params, params) if snapshots else (params,),
+            optimizer_state=optimizer_state,
+            history=(*self.history, record),
+            grad=()
+            if gradient is None
+            else (
+                (*self.grad, _readonly_array(gradient))
+                if snapshots
+                else (_readonly_array(gradient),)
+            ),
+            initial_objective=(
+                record.objective_before
+                if self.initial_objective is None
+                else self.initial_objective
+            ),
+        )
+
     def save(self, path):
-        """Atomically save arrays and JSON metadata without serializing code."""
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        leaves = jax.tree.leaves(self.state.optimizer_state)
-        metadata = {
-            "schema": 1,
-            "history": [asdict(item) for item in self.history],
-            "initial_objective": self.initial_objective,
-            "beta": self.beta,
-            "total_steps": self.total_steps,
-            "problem_fingerprint": self.problem_fingerprint,
-            "optimizer_leaf_count": len(leaves),
-        }
-        fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
-        try:
-            with os.fdopen(fd, "wb") as stream:
-                payload: dict[str, Any] = {
-                    "metadata": json.dumps(metadata, allow_nan=False),
-                    "density": self.state.density,
-                    **{
-                        f"optimizer_{i}": np.asarray(leaf)
-                        for i, leaf in enumerate(leaves)
-                    },
-                }
-                np.savez_compressed(stream, **payload)
-            os.replace(temporary, path)
-        finally:
-            Path(temporary).unlink(missing_ok=True)
+        leaves = jax.tree.leaves(self.optimizer_state)
+        save_checkpoint(
+            path,
+            dict(
+                schema=2,
+                fingerprint=self.fingerprint,
+                history=[asdict(h) for h in self.history],
+                initial_objective=self.initial_objective,
+                total_steps=self.total_steps,
+                beta=self.beta,
+                leaf_count=len(leaves),
+            ),
+            params=np.asarray(self.params),
+            grad=np.asarray(self.grad),
+            **{f"opt_{i}": np.asarray(v) for i, v in enumerate(leaves)},
+        )
 
 
-def load_result(path, *, topology, fingerprint):
-    """Load optimizer arrays using the problem's known optimizer tree schema."""
+TopologyResult = InverseDesignResult
+
+
+def load_result(path, *, design, fingerprint, optimizer, shape, schedule=None):
+    """Restore against a known design and optimizer; never deserialize code."""
     with np.load(path, allow_pickle=False) as saved:
         meta = json.loads(str(saved["metadata"]))
-        if meta.get("schema") != 1:
-            raise ValueError("Unsupported topology checkpoint schema.")
-        if meta["problem_fingerprint"] != fingerprint:
-            raise ValueError("Checkpoint belongs to a different optimization problem.")
-        density = np.array(saved["density"])
-        if (
-            density.shape != topology.region_mask.shape
-            or not np.isfinite(density).all()
-        ):
-            raise ValueError("Invalid checkpoint density.")
-        if np.any((density < 0) | (density > 1)):
-            raise ValueError("Checkpoint density must lie in [0, 1].")
-        template = topology._optimizer().init(jnp.asarray(density, dtype=jnp.float32))
-        expected, tree = jax.tree.flatten(template)
-        if meta["optimizer_leaf_count"] != len(expected):
-            raise ValueError("Checkpoint optimizer state is incompatible.")
-        leaves = []
-        for i, target in enumerate(expected):
-            leaf = np.array(saved[f"optimizer_{i}"])
-            if (
-                leaf.shape != target.shape
-                or leaf.dtype != target.dtype
-                or not np.isfinite(leaf).all()
+        if meta.get("schema") != 2:
+            raise ValueError(
+                "Unsupported optimization checkpoint schema; start a new run."
+            )
+        if meta.get("fingerprint") != fingerprint:
+            raise ValueError(
+                "Checkpoint belongs to a different design or a different optimization problem."
+            )
+        params, grads = np.array(saved["params"]), np.array(saved["grad"])
+        try:
+            history = tuple(OptimizationStep(**h) for h in meta["history"])
+            n = len(history)
+            if [h.step for h in history] != list(range(1, n + 1)) or any(
+                not np.isscalar(v) or not np.isfinite(v)
+                for h in history
+                for v in asdict(h).values()
+                if v is not None
             ):
-                raise ValueError("Checkpoint optimizer arrays are incompatible.")
-            leaves.append(leaf)
-    history = tuple(OptimizationStep(**item) for item in meta["history"])
-    if [item.step for item in history] != list(range(1, len(history) + 1)):
-        raise ValueError("Checkpoint history is not consecutive.")
-    if not 0 <= len(history) <= meta["total_steps"]:
+                raise ValueError("Invalid scalar checkpoint history.")
+        except (TypeError, KeyError) as exc:
+            raise ValueError("Invalid scalar checkpoint history.") from exc
+        if params.ndim != len(shape) + 1 or not 1 <= len(params) <= n + 1:
+            raise ValueError("Invalid checkpoint parameter history.")
+        check_density(params, (len(params), *shape), "Checkpoint parameters")
+        if (
+            grads.shape != (0,)
+            and (
+                grads.ndim != len(shape) + 1
+                or grads.shape[1:] != shape
+                or not 0 <= len(grads) <= n
+            )
+        ) or not np.isfinite(grads).all():
+            raise ValueError("Invalid checkpoint gradient shape or values.")
+        state = load_optimizer_state(
+            saved,
+            optimizer.init(jax.numpy.asarray(params[-1], dtype=jax.numpy.float32)),
+            count=meta["leaf_count"],
+            prefix="opt_",
+        )
+    total = meta.get("total_steps")
+    if total is not None and not 0 <= n <= total:
         raise ValueError("Checkpoint history exceeds its continuation schedule.")
-    state = TopologyState(
-        density,
-        jax.tree.unflatten(tree, leaves),
-        tuple(item.objective for item in history),
-    )
-    return TopologyResult(
+    return InverseDesignResult(
+        design,
+        tuple(_readonly_array(v) for v in params),
         state,
         history,
-        meta["initial_objective"],
-        meta["beta"],
-        meta["total_steps"],
+        tuple(_readonly_array(v) for v in grads),
         fingerprint,
+        schedule,
+        meta.get("initial_objective"),
+        total,
+        meta.get("beta"),
     )

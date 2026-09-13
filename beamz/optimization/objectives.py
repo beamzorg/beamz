@@ -14,8 +14,11 @@ from beamz.analysis.modal_projection.geometry import (
     _modal_projection_spatial_phase,
     _monitor_projection_phase,
 )
-from beamz.analysis.mode_projection import _build_port_projection
-from beamz.devices.modes.specs import ModeSpec
+from beamz.analysis.mode_projection import (
+    _build_port_projection,
+    _modal_coefficient_rows_3d,
+)
+from beamz.analysis.sparameters import _wave_selectors
 from beamz.devices.monitors import ModeMonitor
 from beamz.devices.ports import Port
 from beamz.simulation.observe import normalization_from_result
@@ -141,9 +144,31 @@ class ModePower(ModalObjective):
     def weights(self):
         return (1.0,)
 
+    def __call__(self, data):
+        def power(name, direction, mode_index):
+            amps = data[name].amps.sel(direction=direction, mode_index=mode_index)
+            if self.frequencies is not None:
+                amps = amps.sel(f=self.frequencies)
+            return jnp.abs(amps.values) ** 2
+
+        values = power(self.monitor, self.direction, self.mode_index)
+        if self.reference_monitor is not None:
+            incident = power(
+                self.reference_monitor,
+                self.reference_direction,
+                self.reference_mode_index,
+            )
+            values = values / jnp.where(incident > 1e-12, incident, jnp.nan)
+        else:
+            values = values / data[self.monitor].source_power
+        return self._reduce(values)
+
+    def _reduce(self, values):
+        return jnp.mean(values)
+
     def bind(self, results, program, cache=None):
         spectrum = self.bind_spectrum(results, program, cache)
-        return lambda state: jnp.mean(spectrum(state))
+        return lambda state: self._reduce(spectrum(state))
 
     def bind_spectrum(self, results, program, cache=None):
         """Bind per-frequency powers; retain requested order when selecting a band."""
@@ -205,12 +230,12 @@ class ModePower(ModalObjective):
         port = Port(
             center=monitor.center,
             size=monitor.size,
-            name=self.monitor,
-            mode_spec=ModeSpec(
-                num_modes=monitor.mode_spec.num_modes,
+            name=f"{self.monitor}_mode_{self.mode_index}",
+            mode_spec=replace(
+                monitor.mode_spec,
                 mode_index=self.mode_index,
                 polarization=monitor.mode_spec.polarization
-                or program.config.polarization_2d,
+                or ("te" if program.config.is_3d else program.config.polarization_2d),
             ),
             direction="+",
         )
@@ -235,14 +260,52 @@ class ModePower(ModalObjective):
         if not np.isfinite(incident_power) or incident_power <= 0:
             raise ValueError("The incident source power must be positive.")
         rows, phase_rows = [], []
-        mode_cache = {}
+        # Share physical mode bases across objectives, directions, and modes.
+        # This cache belongs to one fixed simulation; it never follows updates.
+        mode_cache = cache.setdefault(("mode_projections", self.monitor), {})
         for frequency in np.asarray(data.frequencies)[selected]:
-            projection = _build_port_projection(
-                data, port, monitor, float(frequency), mode_cache
-            )
-            components = projection["components"]
-            pinv = projection["pinv"][0 if self.direction == "+" else 1]
-            rows.append(pinv * projection.get("projection_weights", np.ones(pinv.size)))
+            if program.config.is_3d:
+                group_key = ("coupled_rows", self.monitor, float(frequency))
+                if group_key not in cache:
+                    projections = [
+                        _build_port_projection(
+                            data,
+                            port.updated_copy(
+                                name=f"{self.monitor}_mode_{m}",
+                                mode_spec=replace(port.mode_spec, mode_index=m),
+                            ),
+                            monitor,
+                            float(frequency),
+                            mode_cache,
+                        )
+                        for m in range(monitor.mode_spec.num_modes)
+                    ]
+                    cache[group_key] = (
+                        projections,
+                        _modal_coefficient_rows_3d(projections),
+                    )
+                projections, coefficient_rows = cache[group_key]
+                projection = projections[self.mode_index]
+                components = projection["components"]
+                positive, negative = _wave_selectors(port, is_3d=True)
+                branch = positive if self.direction == "+" else negative
+                row = coefficient_rows[2 * self.mode_index + (branch == "minus")]
+                # Canonical ModeMonitor fields are already sampled at the common
+                # analysis-plane coordinates used by ordinary modal extraction.
+                if row.size != len(components) * spec.dft_point_count:
+                    raise ValueError(
+                        "3D modal projection and monitor sampling shapes differ."
+                    )
+                rows.append(row)
+            else:
+                projection = _build_port_projection(
+                    data, port, monitor, float(frequency), mode_cache
+                )
+                components = projection["components"]
+                pinv = projection["pinv"][0 if self.direction == "+" else 1]
+                rows.append(
+                    pinv * projection.get("projection_weights", np.ones(pinv.size))
+                )
             phase_rows.append(
                 [
                     _monitor_projection_phase(c, [frequency], data.dt)[0]
@@ -305,11 +368,8 @@ class SoftMinModePower(ModePower):
             raise ValueError("temperature must be a finite positive scalar.")
         object.__setattr__(self, "temperature", float(self.temperature))
 
-    def bind(self, results, program, cache=None):
-        spectrum = self.bind_spectrum(results, program, cache)
-        return lambda state: (
-            -self.temperature * logsumexp(-spectrum(state) / self.temperature)
-        )
+    def _reduce(self, values):
+        return -self.temperature * logsumexp(-values / self.temperature)
 
 
 @dataclass(frozen=True, init=False)
@@ -340,6 +400,11 @@ class WeightedObjective(ModalObjective):
     @property
     def weights(self):
         return self._weights
+
+    def __call__(self, data):
+        return jnp.sum(
+            jnp.asarray(self.weights) * jnp.stack([term(data) for term in self.terms])
+        )
 
     def canonical_spec(self):
         return self.terms, self.weights

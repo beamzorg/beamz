@@ -1489,6 +1489,7 @@ def _plot_3d_cross_sections(
 def plot_simulation_permittivity(
     sim,
     *,
+    x=None,
     z=None,
     y=None,
     ax=None,
@@ -1507,7 +1508,7 @@ def plot_simulation_permittivity(
     """Plot the actual material raster, including inverse-design material grids.
 
     Positions are in metres in the public simulation frame; display axes are
-    micrometres. A 3D simulation accepts one z or y slice (z=0 by default).
+    micrometres. A 3D simulation accepts one x, y, or z slice (z=0 by default).
     """
     materials = sim._material_grid()
     eps = np.real(np.asarray(materials.permittivity))
@@ -1517,11 +1518,16 @@ def plot_simulation_permittivity(
         axis: np.asarray(grid.axis_edges(axis)) - grid.origin[index] - origin[index]
         for index, axis in enumerate(("x", "y", "z"))
     }
-    if y is not None and z is not None:
-        raise ValueError("Specify one permittivity slice, y or z.")
-    normal = "y" if y is not None else "z"
+    selected = [
+        (axis, value)
+        for axis, value in (("x", x), ("y", y), ("z", z))
+        if value is not None
+    ]
+    if len(selected) > 1:
+        raise ValueError("Specify one permittivity slice, x, y, or z.")
+    normal, position = selected[0] if selected else ("z", 0.0)
     if eps.ndim == 3:
-        position = float(y if y is not None else (0.0 if z is None else z))
+        position = float(position)
         if not edges[normal][0] <= position <= edges[normal][-1]:
             raise ValueError("Permittivity slice lies outside the simulation.")
         index = np.clip(
@@ -1530,7 +1536,7 @@ def plot_simulation_permittivity(
             len(edges[normal]) - 2,
         )
         eps = np.take(eps, int(index), axis=_AXIS_INDEX[normal])
-    elif sim.plane_2d != "xy" or y is not None:
+    elif sim.plane_2d != "xy" or normal != "z":
         raise ValueError("2D permittivity plotting currently supports the xy plane.")
     vertical, horizontal = _PLANE_AXES[normal]
     x_edges, y_edges = edges[horizontal] / _UM, edges[vertical] / _UM
@@ -1540,15 +1546,14 @@ def plot_simulation_permittivity(
     )
     if colorbar:
         _add_field_colorbar(fig, ax, image, label="Relative permittivity")
-    for devices, enabled, source, color in (
-        (sim.sources, source_markers, True, "#2ca02c"),
-        (sim.monitors, monitor_markers, False, "#ff9800"),
-    ):
-        if enabled:
-            for device in devices:
-                _draw_device_slice_overlay(
-                    ax, device, normal=normal, origin=origin, color=color, source=source
-                )
+    _overlay_layout_devices(
+        ax,
+        sim,
+        normal=normal,
+        origin=origin,
+        source_markers=source_markers,
+        monitor_markers=monitor_markers,
+    )
     ax.set(
         xlabel=f"{horizontal} (um)",
         ylabel=f"{vertical} (um)",
@@ -1669,7 +1674,7 @@ def plot_simulation(
             xlim=xlim,
             ylim=ylim,
         )
-    if bool(getattr(sim, "is_3d", False)) and (z is not None or y is not None):
+    if z is not None or y is not None:
         if ax is not None:
             raise ValueError("3D cross-section plots create their own axes.")
         if not categorical_cross_sections:

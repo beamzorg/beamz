@@ -574,7 +574,8 @@ def test_rectilinear_mode_monitor_compiles_with_exact_integration_weights():
     np.testing.assert_allclose(program.monitors[0].integration_weights, expected)
 
 
-def test_rectilinear_2d_mode_source_and_monitor_compile_on_auto_grid():
+@pytest.mark.parametrize("polarization", ["tm", "te"])
+def test_rectilinear_2d_mode_source_and_monitor_compile_on_auto_grid(polarization):
     wavelength = 1.55 * bz.um
     frequency = bz.LIGHT_SPEED / wavelength
     design = bz.Design(
@@ -589,7 +590,7 @@ def test_rectilinear_2d_mode_source_and_monitor_compile_on_auto_grid():
             material=bz.Material(permittivity=4.0),
         )
     )
-    mode_spec = bz.ModeSpec(polarization="tm", target_neff=1.8)
+    mode_spec = bz.ModeSpec(polarization=polarization, target_neff=1.8)
     source = bz.ModeSource(
         center=(0.4 * bz.um, 0.75 * bz.um, 0.0),
         size=(0.0, 1.2 * bz.um, 1.0),
@@ -614,13 +615,16 @@ def test_rectilinear_2d_mode_source_and_monitor_compile_on_auto_grid():
         run_time=1e-15,
         sources=[source],
         monitors=[monitor],
+        polarization=polarization,
     )
 
     program = simulation.compile()
 
     assert simulation.grid.metric_kind_for(("x", "y")) == "rectilinear"
     assert program.config.metric_kind == "rectilinear"
-    assert {spec.component for spec in program.sources} == {"Ez", "Hy"}
+    assert {spec.component for spec in program.sources} == (
+        {"Ez", "Hy"} if polarization == "tm" else {"Ey", "Hz"}
+    )
     assert np.asarray(program.monitors[0].integration_weights).size > 1
 
 

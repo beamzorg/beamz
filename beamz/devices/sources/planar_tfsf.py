@@ -322,7 +322,8 @@ def component_slices_from_cell_bounds(
     for axis, (lo, hi), dim in zip(
         ("z", "y", "x"), cell_bounds, field_shape, strict=True
     ):
-        stop = int(hi) - (1 if float(offsets[axis]) == 0.5 else 0)
+        # Complete Yee supports include both bounding nodes on zero-offset axes.
+        stop = int(hi) + int(float(offsets[axis]) == 0.0)
         start = max(0, min(int(lo), int(dim)))
         stop = max(start, min(stop, int(dim)))
         out.append(slice(start, stop))

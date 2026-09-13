@@ -1,4 +1,4 @@
-"""Spectral Maxwell adjoint for the lossless 2D Yee/CPML topology problem.
+"""Spectral Maxwell adjoint for the lossless 2D/3D Yee/CPML topology problem.
 
 The forward solve is ordinary pulsed FDTD. Only electric DFTs in the design
 region are retained. A custom simulation VJP constructs pulsed adjoint sources
@@ -8,7 +8,7 @@ linear Maxwell step and differentiates the objective and material map.
 
 The spectral equations omit terminal-state terms: the pulse response must decay.
 This is not the exact derivative of a truncated time-domain experiment. Sources
-are grouped by frequency; proportional spatial patterns are not yet combined.
+can be grouped by frequency or a numerically verified broadband spatial basis.
 """
 
 from __future__ import annotations
@@ -39,10 +39,13 @@ class SpectralAdjoint:
         self.program = program = problem.program
         self.decay_tolerance = decay_tolerance
         self.last_diagnostics = None
-        self.e_names = (
-            ("ez",) if program.config.polarization_2d == "tm" else ("ex", "ey")
-        )
-        self.h_names = ("hx", "hy") if self.e_names == ("ez",) else ("hz",)
+        if program.config.is_3d:
+            self.e_names, self.h_names = ("ex", "ey", "ez"), ("hx", "hy", "hz")
+        else:
+            self.e_names = (
+                ("ez",) if program.config.polarization_2d == "tm" else ("ex", "ey")
+            )
+            self.h_names = ("hx", "hy") if self.e_names == ("ez",) else ("hz",)
         self.names = self.e_names + self.h_names
         self.shapes = {
             name: getattr(problem._initial, name).shape for name in self.names
@@ -58,12 +61,12 @@ class SpectralAdjoint:
         # Only frequencies that influence the objective require stored fields or
         # adjoint solves. The ordinary monitors can still record other frequencies.
         frequencies = []
-        for term in problem.objective.terms:
-            mon = next(m for m in program.monitors if m.name == term.monitor)
+        for name, requested in problem.frequency_requests:
+            mon = next(m for m in program.monitors if m.name == name)
             selected = (
                 np.asarray(mon.freq_hz)
-                if term.frequencies is None
-                else np.asarray(term.frequencies, dtype=np.float32)
+                if requested is None
+                else np.asarray(requested, dtype=np.float32)
             )
             frequencies.extend(selected.tolist())
         self.frequencies = np.unique(frequencies)
@@ -156,7 +159,7 @@ class SpectralAdjoint:
                 for idx in indices
             )
 
-            def step(carry, unused):
+            def step(carry, _):
                 state, dfts, peak = carry
                 state = forward_step(
                     state,
@@ -244,60 +247,83 @@ class SpectralAdjoint:
             values = fields + state.cpml_psi_h_terms + state.cpml_psi_e_terms
             return tuple(v * scale for v, scale in zip(values, scales, strict=True))
 
-        self._transition = jax.jit(transition)
-
-        def run(coefficients, source, frequency):
+        def run(coefficients, source, frequencies):
+            frequency = jnp.mean(frequencies)
             # One complex simulation is two real quadrature simulations sharing
             # the same real Maxwell operator. Normalize the pulse's measured DFT.
             transpose_step = jax.linear_transpose(
                 lambda x: transition(x, coefficients), zero
             )
-            dfts = tuple(jnp.zeros(idx.size, dtype=jnp.complex64) for idx in indices)
+            dfts = tuple(
+                jnp.zeros((frequencies.size, idx.size), dtype=jnp.complex64)
+                for idx in indices
+            )
             # Several cycles and a negligible leading tail reduce off-band/DC
             # excitation of slowly decaying dual CPML states. The measured pulse
             # DFT below preserves the same frequency-domain source normalization.
             sigma = 3.0 / frequency
             center = 8.0 * sigma
 
-            def step(carry, i):
-                physics, dfts, pulse_dft, peak = carry
+            def carrier(t):
+                return jnp.exp(-0.5 * ((t - center) / sigma) ** 2) * jnp.exp(
+                    -2j * jnp.pi * frequency * t
+                )
+
+            # Stop after 512 quiet steps beyond the pulse, checking the complete
+            # dual state. Long forward windows need not force long adjoint runs.
+            stopping_ratio = min(1e-7, self.decay_tolerance * 1e-3)
+
+            def condition(carry):
+                i, _, _, _, _, quiet = carry
+                return (i < program.config.num_steps) & (quiet < 512)
+
+            def advance(carry):
+                i, physics, dfts, pulse_dft, peak, quiet = carry
                 t = (i + 1) * ctx.dt_scalar
-                phase = jnp.exp(2j * jnp.pi * frequency * t)
-                carrier = jnp.exp(-0.5 * ((t - center) / sigma) ** 2) * jnp.conj(phase)
-                previous_t = i * ctx.dt_scalar
-                previous = jnp.exp(
-                    -0.5 * ((previous_t - center) / sigma) ** 2
-                ) * jnp.exp(-2j * jnp.pi * frequency * previous_t)
+                phase = jnp.exp(2j * jnp.pi * frequencies * t)
                 # A discrete temporal difference suppresses the zero-frequency
                 # component that can excite stationary dual Maxwell/CPML states.
                 # Its measured DFT still normalizes the desired frequency exactly.
-                pulse = carrier - jnp.where(i == 0, 0.0j, previous)
+                pulse = carrier(t) - jnp.where(i == 0, 0.0j, carrier(i * ctx.dt_scalar))
                 physics = tuple(
                     v + pulse * src
                     for v, src in zip(transpose_step(physics)[0], source, strict=True)
                 )
                 dfts = tuple(
-                    acc + phase * field.ravel()[idx]
+                    acc + phase[:, None] * field.ravel()[idx][None, :]
                     for acc, field, idx in zip(
                         dfts, physics[: len(self.e_names)], indices, strict=True
                     )
                 )
                 energy = sum(jnp.sum(jnp.abs(v) ** 2) for v in physics)
+                peak = jnp.maximum(peak, energy)
+                small = (energy < stopping_ratio**2 * peak) & (t > center + 8 * sigma)
                 return (
+                    i + 1,
                     physics,
                     dfts,
                     pulse_dft + pulse * phase,
-                    jnp.maximum(peak, energy),
-                ), None
+                    peak,
+                    jnp.where(small, quiet + 1, 0),
+                )
 
-            (physics, dfts, pulse_dft, peak), _ = jax.lax.scan(
-                step,
-                (zero, dfts, jnp.asarray(0j, dtype=jnp.complex64), jnp.asarray(0.0)),
-                jnp.arange(program.config.num_steps),
+            steps, physics, dfts, pulse_dft, peak, _ = jax.lax.while_loop(
+                condition,
+                advance,
+                (
+                    jnp.asarray(0),
+                    zero,
+                    dfts,
+                    jnp.zeros(frequencies.size, dtype=jnp.complex64),
+                    jnp.asarray(0.0),
+                    jnp.asarray(0),
+                ),
             )
             terminal = sum(jnp.sum(jnp.abs(v) ** 2) for v in physics)
-            return tuple(v / pulse_dft for v in dfts), jnp.sqrt(
-                terminal / jnp.maximum(peak, 1e-30)
+            return (
+                tuple(v / pulse_dft[:, None] for v in dfts),
+                jnp.sqrt(terminal / jnp.maximum(peak, 1e-30)),
+                steps,
             )
 
         self._adjoint_run = jax.jit(run)
@@ -343,6 +369,74 @@ class SpectralAdjoint:
                     np.add.at(rhs[self.slices[name]], indices.ravel(), values.ravel())
             yield rhs
 
+    def _source_groups(self, sources):
+        """Use fewer broadband basis solves only after checking every source row.
+
+        A basis vector has one fixed spatial profile. Its complex weights at
+        each frequency are applied after the solve. SVD keeps frequency-varying
+        modal profiles rather than assuming they are identical across a band.
+        """
+        assert self.last_diagnostics is not None
+        # The shared three-cycle pulse must have useful spectrum throughout
+        # the group. Wide bands retain independent, individually centered pulses.
+        center_frequency = np.mean(self.frequencies)
+        narrow_band = (
+            np.max(np.abs(self.frequencies - center_frequency))
+            <= 0.1 * center_frequency
+        )
+        if (
+            self.problem.adjoint_source_grouping == "auto"
+            and len(self.frequencies) > 1
+            and narrow_band
+        ):
+            support = np.unique(
+                np.concatenate(
+                    [
+                        self.slices[name].start
+                        + np.asarray(mon.dft_flat_idx[_COMPONENTS.index(name)]).ravel()
+                        for mon in self.program.monitors
+                        for name in self.names
+                    ]
+                )
+            )
+            compact = np.stack([source[support] for source in sources])
+            norms = np.linalg.norm(compact, axis=1)
+            active = np.flatnonzero(norms > 0)
+            if active.size:
+                normalized = compact[active] / norms[active, None]
+                u, singular, vh = np.linalg.svd(normalized, full_matrices=False)
+                for rank in range(1, active.size):
+                    reconstructed = (u[:, :rank] * singular[:rank]) @ vh[:rank]
+                    error = float(
+                        np.max(np.linalg.norm(normalized - reconstructed, axis=1))
+                    )
+                    if error <= 1e-7:
+                        self.last_diagnostics.update(
+                            source_grouping="broadband_basis",
+                            source_basis_rank=rank,
+                            source_reconstruction_error=error,
+                            active_frequencies=int(active.size),
+                        )
+                        for k in range(rank):
+                            source = np.zeros(self.size, dtype=np.complex128)
+                            source[support] = vh[k]
+                            yield active, source, norms[active] * u[:, k] * singular[k]
+                        return
+            # No smaller accurate basis: retain independent frequency solves.
+            self.last_diagnostics.update(
+                source_grouping="frequency", active_frequencies=int(active.size)
+            )
+            for fi in active:
+                source = np.zeros(self.size, dtype=np.complex128)
+                source[support] = compact[fi] / norms[fi]
+                yield np.array([fi]), source, np.array([norms[fi]])
+            return
+        self.last_diagnostics.update(source_grouping="frequency")
+        for fi, source in enumerate(sources):
+            norm = np.linalg.norm(source)
+            if norm:
+                yield np.array([fi]), source / norm, np.array([norm])
+
     def _checked_forward(self, density, beta):
         state, electric_dfts, tail = self._forward(density, beta)
         tail = float(tail)
@@ -375,45 +469,46 @@ class SpectralAdjoint:
         material = tuple(np.asarray(v) for v in self._material_map(density, beta))
         cotangent = tuple(np.zeros_like(v, dtype=np.float64) for v in material)
         adjoint_tails = []
-        for fi, source in enumerate(sources):
-            source_norm = np.linalg.norm(source)
-            if source_norm == 0:
-                continue
+        adjoint_steps = []
+        for freq_indices, source, weights in self._source_groups(sources):
             fields = tuple(
                 jnp.asarray(
-                    (source[self.slices[name]] / source_norm).reshape(
-                        self.shapes[name]
-                    ),
+                    source[self.slices[name]].reshape(self.shapes[name]),
                     dtype=jnp.complex64,
                 )
                 for name in self.names
             )
             adjoint_source = fields + self._zero_physics[len(fields) :]
-            adjoint, adjoint_tail = self._adjoint_run(
+            frequencies = self.frequencies[freq_indices]
+            adjoint, adjoint_tail, steps = self._adjoint_run(
                 coefficients,
                 adjoint_source,
-                jnp.asarray(self.frequencies[fi], dtype=jnp.float32),
+                jnp.asarray(frequencies, dtype=jnp.float32),
             )
             adjoint_tail = float(adjoint_tail)
             adjoint_tails.append(adjoint_tail)
+            adjoint_steps.append(int(steps))
             self.last_diagnostics.update(
                 adjoint_solves=len(adjoint_tails),
                 adjoint_terminal_field_ratios=tuple(adjoint_tails),
+                adjoint_timesteps=tuple(adjoint_steps),
             )
             if not np.isfinite(adjoint_tail) or adjoint_tail > self.decay_tolerance:
                 raise ValueError(
-                    f"adjoint pulse has not decayed at {self.frequencies[fi]:g} Hz: terminal/peak ratio {adjoint_tail:.3g} exceeds {self.decay_tolerance:.3g}. Increase run_time or use gradient_backend='autodiff'."
+                    f"adjoint pulse has not decayed near {np.mean(frequencies):g} Hz: terminal/peak ratio {adjoint_tail:.3g} exceeds {self.decay_tolerance:.3g}. Increase run_time or use gradient_backend='autodiff'."
                 )
-            q = np.exp(2j * np.pi * self.frequencies[fi] * self.program.config.dt)
+            q = np.exp(2j * np.pi * frequencies * self.program.config.dt)
             for adj, efield, eps_e, grad in zip(
                 adjoint, electric_dfts, material, cotangent, strict=True
             ):
                 grad += np.real(
-                    -np.asarray(adj)
-                    * source_norm
-                    * (1 - q)
-                    * np.asarray(efield[fi])
-                    / eps_e
+                    np.sum(
+                        -np.asarray(adj)
+                        * (weights * (1 - q))[:, None]
+                        * np.asarray(efield)[freq_indices]
+                        / eps_e[None, :],
+                        axis=0,
+                    )
                 )
         self.last_diagnostics.update(
             stored_design_dft_values=sum(v.size for v in electric_dfts)

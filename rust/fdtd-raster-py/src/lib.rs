@@ -7,7 +7,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
+const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-geometry-2");
 
 #[pyclass(module = "beamz.design.raster._native")]
 struct NativeCompiledScene {

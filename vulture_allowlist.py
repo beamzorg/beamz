@@ -88,3 +88,18 @@ _.run_sparameters
 _.plot_sparameters
 _.check_reciprocity
 _.check_passivity
+
+# Public inverse-design and plotting entry points are exercised by notebooks
+# and downstream callers, outside Vulture's package-only scan.
+plot_simulation_permittivity
+_.plot_eps
+_.initial_simulation
+_.make_objective_fn
+_.eps_values
+_.gradient_norm
+_.elapsed_seconds
+_.post_process_val
+_.schedule_history
+_.plot_optimization
+get_amps
+sum_abs_squared

@@ -37,20 +37,20 @@ def test_optimization_resume_and_independent_export(problem, tmp_path):
     loaded = fresh_problem.load(tmp_path / "state.npz")
     resumed = fresh_problem.run(6, resume=loaded)
     assert partial.completed_steps == loaded.completed_steps == 2
-    np.testing.assert_array_equal(full.state.density, resumed.state.density)
+    np.testing.assert_array_equal(full.final_params, resumed.final_params)
     np.testing.assert_array_equal(
-        full.state.objective_history, resumed.state.objective_history
+        [h.objective for h in full.history], [h.objective for h in resumed.history]
     )
     for a, b in zip(
-        jax.tree.leaves(full.state.optimizer_state),
-        jax.tree.leaves(resumed.state.optimizer_state),
+        jax.tree.leaves(full.optimizer_state),
+        jax.tree.leaves(resumed.optimizer_state),
         strict=True,
     ):
         np.testing.assert_array_equal(a, b)
-    np.testing.assert_array_equal(full.state.density[~mask], density[~mask])
+    np.testing.assert_array_equal(full.final_params[~mask], density[~mask])
     assert full.objective > full.initial_objective + 0.1
     np.testing.assert_allclose(
-        full.objective, problem.value(full.state.density, beta=full.beta), rtol=1e-6
+        full.objective, problem.value(full.final_params, beta=full.beta), rtol=1e-6
     )
     exported = problem.export_design(full)
     assert exported != problem.simulation.design
@@ -85,6 +85,22 @@ def test_checkpoint_rejects_different_problem_and_schedule(problem, tmp_path):
         other.load(tmp_path / "initial.npz")
     with pytest.raises(ValueError, match="different optimization problem"):
         other.export_design(result)
+
+
+def test_sgd_continuation_preserves_update_history(problem, tmp_path):
+    problem = TopologyProblem(
+        problem.simulation,
+        replace(problem.topology, optimizer="sgd"),
+        problem.objective,
+    )
+    full = problem.run(3)
+    path = tmp_path / "sgd.npz"
+    problem.run(3, stop_after=1, checkpoint=path)
+    resumed = problem.run(3, resume=problem.load(path))
+    np.testing.assert_array_equal(full.final_params, resumed.final_params)
+    np.testing.assert_array_equal(
+        [h.objective for h in full.history], [h.objective for h in resumed.history]
+    )
 
 
 @pytest.mark.parametrize(
@@ -123,6 +139,14 @@ def test_rejects_moving_ports_and_absorber_overlap(problem):
 
 
 def test_rejects_invalid_objective_and_density(problem):
+    with pytest.raises(TypeError, match="modal objectives"):
+        TopologyProblem(problem.simulation, problem.topology, lambda data: 1)
+    with pytest.raises(ValueError, match="Supply an objective"):
+        TopologyProblem(problem.simulation, problem.topology)
+
+    for count in (True, -1, 1.5, np.nan, np.inf):
+        with pytest.raises(ValueError, match="num_steps"):
+            problem.run(count)
     with pytest.raises(ValueError, match="mode_index"):
         TopologyProblem(
             problem.simulation, problem.topology, ModePower("output", mode_index=10)

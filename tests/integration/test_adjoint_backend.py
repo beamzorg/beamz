@@ -27,7 +27,7 @@ def test_adjoint_optimizer_resume_and_backend_identity(base, tmp_path):
     )
     resumed = fresh.run(3, resume=fresh.load(path))
     assert partial.completed_steps == 1
-    np.testing.assert_array_equal(full.state.density, resumed.state.density)
+    np.testing.assert_array_equal(full.final_params, resumed.final_params)
     assert full.objective > full.initial_objective
     with pytest.raises(ValueError, match="different optimization problem"):
         base.load(path)

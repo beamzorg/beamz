@@ -36,7 +36,7 @@
 - Built-in layout flow (GDSII import/export).
 - **DFT monitors** and S-parameter extraction workflow for compact modeling.
 - Streamlined **parametric design** module.
-- 2D topology **inverse design** with selectable JAX autodiff or spectral adjoint FDTD gradients.
+- 2D and extruded 3D topology **inverse design** in `beamz.optimization`, with selectable JAX autodiff or spectral adjoint FDTD gradients.
 
 
 ## Examples
@@ -50,6 +50,8 @@ Try out notebooks from our growing **[example library](https://beamz.tech/exampl
 - [6) Broadband Inverse-designed Wavelength Demultiplexer](examples/notebooks/topology_broadband_demultiplexer.ipynb)
 - [7) Meep's Broadband Bend: Nominal and Fabrication-Robust Inverse Design](examples/notebooks/meep_filtered_waveguide_bend.ipynb)
 - [8) Tidy3D-style Inverse Design: 1-to-3 Splitter](examples/notebooks/tidy3d_inverse_design_splitter.ipynb)
+- [9) Tidy3D Reference: 3D Topology Waveguide Bend](examples/notebooks/tidy3d_topology_bend_3d.ipynb)
+- [10) Tidy3D Reference: Scheduled Four-channel WDM](examples/notebooks/tidy3d_wdm_4channel.ipynb)
 <!--- [Broadband Mode Sources]() (coming soon)
 - [Straight & Curved Waveguide Benchmark]() (coming soon)-->
 <!--- [Mode Converter (3D)]() (coming soon)

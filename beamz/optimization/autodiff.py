@@ -8,6 +8,14 @@ from jax.scipy.signal import convolve2d
 
 from .projections import project_density, smoothed_heaviside  # noqa: F401
 
+_TRANSFORM_STATIC_ARGS = (
+    "radius",
+    "filter_type",
+    "morphology_operation",
+    "projection_type",
+    "ssp_smoothing_radius",
+)
+
 
 @partial(jax.jit, static_argnames=["radius"])
 def generate_conic_kernel(radius: int):
@@ -16,20 +24,9 @@ def generate_conic_kernel(radius: int):
     w(r) = max(0, 1 - r/R)
     """
     radius = int(max(1, radius))
-
-    # Create coordinate grids
     y, x = jnp.ogrid[-radius : radius + 1, -radius : radius + 1]
-
-    # Calculate distance from center
-    dist = jnp.sqrt(x**2 + y**2)
-
-    # Conic weights: linear decay, 0 outside radius
-    weights = jnp.maximum(0.0, 1.0 - dist / radius)
-
-    # Normalize
-    weights = weights / jnp.sum(weights)
-
-    return weights
+    weights = jnp.maximum(0.0, 1.0 - jnp.sqrt(x**2 + y**2) / radius)
+    return weights / jnp.sum(weights)
 
 
 @partial(jax.jit, static_argnames=["radius"])
@@ -45,28 +42,17 @@ def masked_conic_filter(values, mask, radius: int, fixed_structure_mask=None):
     """
     radius = int(max(0, radius))
     if radius <= 0:
-        # No filtering - just apply hard mask
         return jnp.where(mask, values, 0.0), jnp.ones_like(mask)
 
-    # Provide fixed structure context for better filter behavior
-    # This gives the filter visibility into waveguide geometry without forcing values
-    filter_input = values
-    if fixed_structure_mask is not None:
-        filter_input = jnp.where(fixed_structure_mask, 1.0, values)
-
-    # Generate conic kernel
-    kernel = generate_conic_kernel(radius)
-
-    # Pad for convolution
-    padded_values = jnp.pad(jnp.asarray(filter_input), radius, mode="edge")
-
-    # Convolve
-    filtered = convolve2d(padded_values, kernel, mode="valid")
-
-    # Apply HARD mask (boolean) - no soft blending
-    filtered = jnp.where(mask, filtered, 0.0)
-
-    return filtered, jnp.ones_like(mask)
+    # Fixed waveguides supply filter context without extending the design mask.
+    filter_input = (
+        values
+        if fixed_structure_mask is None
+        else jnp.where(fixed_structure_mask, 1.0, values)
+    )
+    padded = jnp.pad(jnp.asarray(filter_input), radius, mode="edge")
+    filtered = convolve2d(padded, generate_conic_kernel(radius), mode="valid")
+    return jnp.where(mask, filtered, 0.0), jnp.ones_like(mask)
 
 
 @partial(jax.jit, static_argnames=["axis"])
@@ -96,53 +82,21 @@ def grayscale_erosion(values, radius, tau=0.05):
     if radius <= 0:
         return values
 
-    # 2D shift helper
-    def shift_2d(arr, dy, dx):
-        if dy == 0 and dx == 0:
-            return arr
-
-        # Handle y shift
-        if dy > 0:
-            arr = jnp.pad(arr[:-dy, :], ((dy, 0), (0, 0)), mode="edge")
-        elif dy < 0:
-            arr = jnp.pad(arr[-dy:, :], ((0, -dy), (0, 0)), mode="edge")
-
-        # Handle x shift
-        if dx > 0:
-            arr = jnp.pad(arr[:, :-dx], ((0, 0), (dx, 0)), mode="edge")
-        elif dx < 0:
-            arr = jnp.pad(arr[:, -dx:], ((0, 0), (0, -dx)), mode="edge")
-
-        return arr
-
-    # Generate disk offsets
-    # This loop runs at trace time since radius is static
-    shifts = []
-    for dy in range(-radius, radius + 1):
-        for dx in range(-radius, radius + 1):
-            if dy * dy + dx * dx <= radius * radius:
-                shifts.append((dy, dx))
-
-    # Create stack of shifted images
-    stack = jnp.stack([shift_2d(values, dy, dx) for dy, dx in shifts], axis=0)
-
-    # Compute smooth min over the stack
-    eroded = smooth_min(stack, axis=0, tau=tau)
-
-    return eroded
+    # One halo handles every disk offset, including radii larger than the array.
+    padded = jnp.pad(values, radius, mode="edge")
+    ny, nx = values.shape
+    neighbors = [
+        padded[radius - dy : radius - dy + ny, radius - dx : radius - dx + nx]
+        for dy in range(-radius, radius + 1)
+        for dx in range(-radius, radius + 1)
+        if dy * dy + dx * dx <= radius * radius
+    ]
+    return smooth_min(jnp.stack(neighbors), axis=0, tau=tau)
 
 
 @partial(jax.jit, static_argnames=["radius"])
 def grayscale_dilation(values, radius, tau=0.05):
-    """
-    Grayscale dilation using smooth maximum filter.
-    Separable implementation.
-    """
-    radius = int(max(0, radius))
-    if radius <= 0:
-        return values
-
-    # Use relationship: Dilation(f) = -Erosion(-f)
+    """Disk dilation, the dual of erosion under sign reversal."""
     return -grayscale_erosion(-values, radius, tau)
 
 
@@ -174,21 +128,12 @@ def masked_morphological_filter(
         fixed_structure_mask: Optional boolean mask of fixed solid structures (e.g. waveguides)
                               used to provide context for filtering without forcing values.
     """
-    # Isolate design region values.
-    # For morphology, boundaries are important.
-
-    # Pad with fixed structures if provided
-    # Treat fixed structures as solid (1.0) to provide context for erosion/dilation
-    filter_input = values
-    if fixed_structure_mask is not None:
-        # We assume values is already density [0,1].
-        # We override fixed structure locations with 1.0
-        # NOTE: fixed_structure_mask should be a JAX array (tracer or concrete)
-        filter_input = jnp.where(fixed_structure_mask, 1.0, values)
-
-    # Apply filter to the padded/context-aware field
-    filtered = filter_input
-
+    # Treat fixed structures as solid context, then mask the filtered result.
+    filtered = (
+        values
+        if fixed_structure_mask is None
+        else jnp.where(fixed_structure_mask, 1.0, values)
+    )
     if operation == "erosion":
         filtered = grayscale_erosion(filtered, radius, tau)
     elif operation == "dilation":
@@ -203,20 +148,10 @@ def masked_morphological_filter(
             grayscale_opening(filtered, radius, tau), radius, tau
         )
 
-    # Apply hard mask - no soft blending (literature standard)
     return jnp.where(mask, jnp.asarray(filtered), 0.0)
 
 
-@partial(
-    jax.jit,
-    static_argnames=[
-        "radius",
-        "filter_type",
-        "morphology_operation",
-        "projection_type",
-        "ssp_smoothing_radius",
-    ],
-)
+@partial(jax.jit, static_argnames=_TRANSFORM_STATIC_ARGS)
 def transform_density(
     density,
     mask,
@@ -259,9 +194,7 @@ def transform_density(
             f"Unknown filter_type: {filter_type}. Use 'conic' or 'morphological'."
         )
 
-    # Project
-    # Note: Filters already apply hard masking, so no additional masking needed
-    projected = project_density(
+    return project_density(
         filtered,
         beta,
         eta,
@@ -269,19 +202,8 @@ def transform_density(
         ssp_smoothing_radius=ssp_smoothing_radius,
     )
 
-    return projected
 
-
-@partial(
-    jax.jit,
-    static_argnames=[
-        "radius",
-        "filter_type",
-        "morphology_operation",
-        "projection_type",
-        "ssp_smoothing_radius",
-    ],
-)
+@partial(jax.jit, static_argnames=_TRANSFORM_STATIC_ARGS)
 def compute_parameter_gradient_vjp(
     density,
     grad_physical,
@@ -317,8 +239,5 @@ def compute_parameter_gradient_vjp(
             ssp_smoothing_radius,
         )
 
-    # Compute VJP
-    _, vjp_fun = jax.vjp(transform_wrapper, density)
-    grad_density = vjp_fun(grad_physical)[0]
-
-    return grad_density
+    _, pullback = jax.vjp(transform_wrapper, density)
+    return pullback(grad_physical)[0]

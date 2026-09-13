@@ -135,3 +135,18 @@ def test_cropped_density_requires_true_cell_edge_origin():
 
     symmetric_diff = full_geometry.symmetric_difference(cropped_geometry)
     assert symmetric_diff.area == pytest.approx(0.0, abs=1e-9)
+
+
+def test_subnanometre_contour_survives_native_rasterization():
+    # Interpolating a value just above threshold can produce a small valid island.
+    density = np.full((3, 3), 0.49)
+    density[1, 1] = 0.5001
+    polygons = density_to_polygons(
+        density, material=Material(4.0), dx=50e-9, x0=1.5e-6, y0=1.25e-6
+    )
+    assert len(polygons) == 1
+    design = Design(width=5e-6, height=5e-6, material=Material(1.0))
+    design += polygons[0]
+    raster = design.rasterize(25e-9).permittivity
+    assert np.isfinite(raster).all()
+    assert raster.max() > 1.0

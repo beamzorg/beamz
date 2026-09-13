@@ -1,116 +1,97 @@
-# Beamz Optimization Module
+# BeamZ optimization
 
-This module provides tools for gradient-based optimization of electromagnetic devices, with a primary focus on topology optimization using the adjoint method and JAX for autodifferentiation.
+Use `beamz.optimization` for topology inverse design with BeamZ simulations,
+metre units, and JAX objectives. The same workflow supports full autodiff and
+spectral adjoint gradients.
 
-## Structure
+## Recommended workflow
 
-### `topology.py`
-The high-level interface for topology optimization.
-- **`TopologySpec`**: Immutable design mask, optimizer, filter, and projection configuration.
-- **`TopologyState`**: Immutable density, optimizer buffers, and objective history.
-  - **`density_for_step(state, step, total_steps)`**: Returns the continuation beta and physical density.
-  - **`apply_gradient(state, grad_eps, beta)`**: Returns updated state and the maximum parameter update.
-  - **`physical_density(state, beta)`**: Transforms latent parameters into physical density (0 to 1).
-- **Helper Functions**:
-  - `compute_overlap_gradient`: Calculates the gradient of the overlap integral (mode matching) using forward and adjoint fields.
-  - `create_optimization_mask`: Generates a boolean mask defining the design region.
-  - `get_fixed_structure_mask`: Identifies fixed structures (e.g., waveguides) outside the design region to ensure proper connectivity.
-
-### `autodiff.py`
-A library of JAX-based differentiable operations used for density filtering and projection.
-- **Morphological Filters**:
-  - `grayscale_erosion`, `grayscale_dilation`: Differentiable grayscale morphology using smooth min/max approximations (LogSumExp).
-  - `grayscale_opening`, `grayscale_closing`: Compound operations for noise removal and feature size control.
-  - `masked_morphological_filter`: Applies filters with support for a "fixed structure mask" to prevent erosion at waveguide connections.
-- **Conic Filters**:
-  - `masked_conic_filter`: A filter with a linear decay kernel (cone), used for enforcing geometric constraints like minimum linewidth and spacing.
-- **Blurring**:
-  - `masked_box_blur`: Standard box blur implementation.
-- **Projection**:
-  - `smoothed_heaviside`: A differentiable step function (using `tanh`) to binarize the density field.
-  - `transform_density`: Applies the selected filter and projection method.
-- **Backpropagation**:
-  - `compute_parameter_gradient_vjp`: Uses JAX's vector-Jacobian product (VJP) to automatically compute gradients through the entire filter-project pipeline.
-
-### `projections.py`
-Projection methods for filtered topology-optimization densities.
-- `smoothed_heaviside`: The default tanh-based projection method.
-- `subpixel_smoothed_projection`: Hammond SSP1 for smooth 2D density fields.
-
-## Key Features
-
-1.  **Differentiable Morphology**: Unlike standard blurring, this module supports differentiable morphological operations (erosion, dilation, opening, closing). This allows for strict control over minimum feature sizes and avoids "gray" boundaries often seen with Gaussian blurs.
-2.  **Geometric Constraints**: The **conic filter** option provides a method to enforce minimum length scales (linewidth and spacing) by using a cone-shaped kernel, as described in topology optimization literature.
-3.  **Connectivity Preservation**: The filtering pipeline includes a mechanism to "pad" the design region with information from fixed structures (like input/output waveguides). This prevents the optimization from creating gaps or disconnecting the device from the external circuit.
-4.  **Beta-Continuation**: Supports a beta-schedule for the Heaviside projection, gradually increasing the sharpness of the binarization to avoid getting stuck in local minima while ensuring a final binary design.
-5.  **Projection Selection**: Supports `projection_type="heaviside"` for the default tanh projection and `projection_type="ssp"` for Hammond subpixel-smoothed projection.
-6.  **JAX Integration**: All heavy lifting for density transformation and gradient chain-rule calculation is handled efficiently by JAX. Uses `optax` for JAX-native optimizer implementations (Adam, SGD).
-
-## Projection Methods
-
-The density transform follows:
-
-```text
-design density -> filter -> projection -> physical density
-```
-
-Available projection methods:
-
-- `projection_type="heaviside"`: the default tanh smoothed Heaviside projection.
-- `projection_type="ssp"`: Hammond SSP1, applied to the already-filtered 2D density field.
-
-SSP is intended for smooth or filtered 2D density inputs. It supports `beta=jnp.inf`
-without adding any runtime, optional, or test dependency. The smoothing radius is in
-density-grid cell units and defaults to `ssp_smoothing_radius=0.55`.
-
-Example:
+Given an ordinary `simulation` with fixed mode sources and monitors:
 
 ```python
 import jax.numpy as jnp
+import beamz.optimization as opt
 
-from beamz.optimization.autodiff import transform_density
-
-physical_density = transform_density(
-    density,
-    mask,
-    beta=jnp.inf,
-    eta=0.5,
-    radius=2,
-    filter_type="conic",
-    projection_type="ssp",
+region = opt.TopologyDesignRegion(
+    center=(2.5e-6, 2.5e-6, 1.1e-6),
+    size=(3e-6, 3e-6, 200e-9),
+    pixel_size=simulation.resolution,
+    eps_bounds=(1, 4),
+    transformations=[opt.FilterProject(radius=150e-9, beta=5)],
 )
+design = opt.InverseDesign(
+    simulation=simulation,
+    design_region=region,
+    output_monitor_names=["input", "output"],
+    gradient_backend="adjoint",  # or "autodiff"
+)
+
+
+def transmission(data):
+    incoming = opt.utils.get_amps(data, "input", direction="+", mode_index=0)
+    outgoing = opt.utils.get_amps(data, "output", direction="+", mode_index=0)
+    return jnp.mean(jnp.abs(outgoing / incoming) ** 2)
+
+
+optimizer = opt.AdamOptimizer(
+    design=design,
+    learning_rate=0.1,
+)
+result = optimizer.run(transmission, steps=10, checkpoint="results/inverse-design.npz")
+result.plot_optimization()
+final_data = result.simulation_data()
 ```
 
-## Usage Example
+Parameters use `(y, x)` order. In 3D, the planar pattern is extruded through the
+region's finite z thickness. The design must align to an unsharded uniform grid,
+use scalar lossless materials, and stay outside the absorber and fixed mode
+planes. The spectral adjoint additionally requires decayed fields and full-run
+rectangular DFT monitors.
+
+`FilterProject` and `ErosionDilationPenalty` provide differentiable smoothing,
+projection, and soft geometric penalties. They do not guarantee minimum feature
+sizes, connectivity, or a binary final design. Verify the exported geometry with
+an independent simulation and resolution checks.
+
+Use `OptimizationSchedule` with `LinearSchedule` or `StepSchedule` for projection,
+penalty, and objective-weight continuation. A schedule has its own fixed horizon;
+`steps` always means the target total number of updates:
 
 ```python
-from beamz.optimization.topology import TopologySpec, create_optimization_mask
-
-# 1. Setup Design and Mask
-mask = create_optimization_mask(grid, opt_region)
-
-# 2. Initialize immutable configuration and explicit state
-opt = TopologySpec(
-    design=design,
-    region_mask=mask,
-    resolution=DX,
-    filter_type="conic",  # Options: 'morphological', 'conic'
-    projection_type="ssp",
-    filter_radius=0.15 * µm,  # Physical units (e.g. microns)
-    ssp_smoothing_radius=0.55,  # Density-grid cell units
-)
-state = opt.initial_state()
-
-# 3. Optimization Loop
-for step in range(STEPS):
-    # Get current physical density
-    beta, phys_density = opt.density_for_step(state, step, STEPS)
-
-    # Update grid permittivity
-    grid.permittivity[mask] = EPS_MIN + phys_density[mask] * (EPS_MAX - EPS_MIN)
-
-    # ... Run FDTD & Compute Gradient (grad_eps) ...
-
-    # Update Parameters
-    state, max_update = opt.apply_gradient(state, grad_eps, beta)
+result = optimizer.run(transmission, steps=20, resume="results/inverse-design.npz")
+result.final_params
+result.history[-1].post_process_val
+simulation = result.to_simulation()
 ```
+
+By default, retain scalar history and the latest parameters, gradient, and optimizer
+state. Set `store_full_results=True` to retain parameter/gradient snapshots.
+`checkpoint_every=5` saves every five updates and at the final update; callbacks
+receive `callback(result)`. Both workflows share the same result and checkpoint
+format. The two checkpoint formats previously introduced on this branch are
+rejected explicitly; rerun the examples to generate current checkpoints.
+
+See the [workflow guide](../../docs/inverse-design-workflow.md) for schedules,
+restart semantics, native plotting, export, and executed notebook examples.
+
+## Lower-level control
+
+`TopologyProblem` binds a `TopologySpec` mask to a simulation and a composable
+modal objective. Its existing API remains available:
+
+```python
+problem = opt.TopologyProblem(
+    simulation,
+    topology,  # TopologySpec containing the design mask and optimizer settings
+    opt.ModePower("output", reference_monitor="input"),
+    gradient_backend="autodiff",
+)
+result = problem.run(steps=20, checkpoint="results/topology.npz")
+geometry = problem.export_design(result)
+```
+
+`ModePower` and `SoftMinModePower` combine using arithmetic, for example
+`transmission - 0.2 * reflection`. The [backend guide](../../docs/inverse-design.md)
+describes this workflow and gradient validation. `autodiff.py`, `projections.py`,
+and `polygonize.py` contain the density transforms, SSP projection, and geometry
+export helpers for custom loops.

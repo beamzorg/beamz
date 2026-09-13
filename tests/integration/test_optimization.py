@@ -20,6 +20,8 @@ from beamz import Design, Material, Rectangle
 from beamz.optimization.autodiff import (
     compute_parameter_gradient_vjp,
     generate_conic_kernel,
+    grayscale_dilation,
+    grayscale_erosion,
     masked_conic_filter,
     masked_morphological_filter,
     smoothed_heaviside,
@@ -32,6 +34,19 @@ from beamz.optimization.topology import (
     create_optimization_mask,
     fold_high_side_yee_padding_to_shape,
 )
+
+
+def test_disk_filter_radius_can_exceed_array_dimensions():
+    values = jnp.full((2, 3), 0.4)
+    # A radius-three disk contains 29 samples. For a constant input, the smooth
+    # min/max are exact scalar log-sum-exp expressions, even across padded edges.
+    correction = 0.05 * np.log(29)
+    np.testing.assert_allclose(
+        grayscale_erosion(values, 3), 0.4 - correction, atol=1e-7
+    )
+    np.testing.assert_allclose(
+        grayscale_dilation(values, 3), 0.4 + correction, atol=1e-7
+    )
 
 
 @pytest.mark.optimization
