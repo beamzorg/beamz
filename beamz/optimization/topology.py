@@ -90,8 +90,9 @@ class TopologySpec:
         Physical density-filter radius in metres.
     projection_eta : float, default=0.5
         Threshold of the smooth Heaviside projection.
-    projection_type : {"heaviside", "ssp"}, default="heaviside"
-        Density projection applied after filtering.
+    projection_type : {"heaviside", "ssp", "identity"}, default="heaviside"
+        Density projection applied after filtering. Use ``identity`` with a zero
+        filter radius when supplying externally mapped physical densities.
     ssp_smoothing_radius : float, default=0.55
         Hammond SSP smoothing radius in density-grid cell units.
     beta_schedule : tuple, default=(1.0, 20.0)
@@ -277,6 +278,16 @@ class TopologySpec:
             projection_type=self.projection_type,
             ssp_smoothing_radius=self.ssp_smoothing_radius,
         )
+        return self.apply_parameter_gradient(state, grad_param)
+
+    def apply_parameter_gradient(self, state: TopologyState, gradient):
+        """Advance using a gradient already differentiated to latent density."""
+        import jax.numpy as jnp
+
+        grad_param = jnp.asarray(gradient)
+        if grad_param.shape != state.density.shape:
+            raise ValueError("Parameter gradient must match the density shape.")
+        grad_param = jnp.where(self.region_mask, grad_param, 0.0)
         optimizer = self._optimizer()
         opt_state = state.optimizer_state
         if opt_state is None:

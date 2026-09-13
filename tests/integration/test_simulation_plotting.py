@@ -577,3 +577,156 @@ def test_flux_result_is_finite_for_notebook_style_line_plot():
         assert np.all(np.isfinite(ydata))
     finally:
         plt.close(fig)
+
+
+@pytest.mark.parametrize("origin", [(0.0, 0.0, 0.0), (-2e-6, -1e-6, 0.0)])
+def test_plot_eps_uses_material_grid_and_public_rectilinear_edges(origin):
+    eps = np.array([[1.0, 2.0, 4.0], [3.0, 5.0, 6.0]])
+    materials = MaterialGrid(
+        permittivity=eps,
+        conductivity=np.zeros_like(eps),
+        permeability=np.ones_like(eps),
+        resolution=1e-6,
+        shape=eps.shape,
+        origin=origin,
+    )
+    sim = bz.Simulation(material_grid=materials, time=np.array([0.0, 1e-16]))
+    fig, ax = sim.plot_eps(source_markers=False, monitor_markers=False, vmin=1, vmax=6)
+    try:
+        # Material-grid simulations have metadata-only Design objects; the plot
+        # must show their real optimized material data, not that empty geometry.
+        image = ax.collections[0]
+        np.testing.assert_array_equal(image.get_array(), eps)
+        coords = image.get_coordinates()
+        np.testing.assert_allclose(coords[0, :, 0], origin[0] / 1e-6 + np.arange(4))
+        np.testing.assert_allclose(coords[:, 0, 1], origin[1] / 1e-6 + np.arange(3))
+        assert image.get_clim() == (1, 6)
+        assert len(fig.axes) == 2
+        assert not ax.lines and not ax.patches
+    finally:
+        plt.close(fig)
+
+
+@pytest.mark.parametrize("normal", ["y", "z"])
+def test_plot_eps_3d_slices_actual_material_values(normal):
+    eps = np.arange(8).reshape(2, 2, 2) + 1.0
+    materials = MaterialGrid(
+        permittivity=eps,
+        conductivity=np.zeros_like(eps),
+        permeability=np.ones_like(eps),
+        resolution=1e-6,
+        shape=eps.shape,
+        origin=(-1e-6, -1e-6, -1e-6),
+    )
+    sim = bz.Simulation(material_grid=materials, time=np.array([0.0, 1e-16]))
+    fig, ax = sim.plot_eps(**{normal: 0.0}, colorbar=False)
+    try:
+        expected = eps[1] if normal == "z" else eps[:, 1, :]
+        np.testing.assert_array_equal(ax.collections[0].get_array(), expected)
+        np.testing.assert_allclose(ax.get_xlim(), [-1, 1])
+        assert ax.get_ylabel() == ("y (um)" if normal == "z" else "z (um)")
+    finally:
+        plt.close(fig)
+    with pytest.raises(ValueError, match="outside"):
+        sim.plot_eps(**{normal: 2e-6})
+
+
+@pytest.mark.parametrize("plane", ["xy", "xz", "yz"])
+def test_2d_layout_shares_3d_style_and_public_coordinates(monkeypatch, plane):
+    from matplotlib.patches import Circle
+
+    from beamz.lattice import grid_vector_to_physical_2d
+
+    def physical(values):
+        return grid_vector_to_physical_2d(values, plane)
+
+    design = bz.Design(background=bz.Material(1))
+    design += bz.Rectangle(
+        position=(-0.8 * bz.um, -0.25 * bz.um),
+        width=1.6 * bz.um,
+        height=0.5 * bz.um,
+        material=bz.Material(4),
+    )
+    source = bz.ModeSource(
+        center=physical((-bz.um, 0, 0)),
+        size=physical((0, bz.um, bz.um)),
+        source_time=bz.GaussianPulse(freq0=2e14, fwidth=2e13),
+        direction="+",
+    )
+    monitor = bz.ModeMonitor(
+        center=physical((bz.um, 0, 0)),
+        size=physical((0, bz.um, bz.um)),
+        freqs=[2e14],
+        name="out",
+    )
+    gaussian = bz.GaussianSource(
+        position=physical((0, 0, 0)), width=0.2 * bz.um, signal=np.zeros(2)
+    )
+    sim = bz.Simulation(
+        domain=(4 * bz.um, 3 * bz.um),
+        design=design,
+        plane_2d=plane,
+        sources=[source, gaussian],
+        monitors=[monitor],
+        resolution=0.5 * bz.um,
+        run_time=1e-15,
+        boundaries=[bz.PML(thickness=0.5 * bz.um)],
+    )
+
+    def fail(*args, **kwargs):
+        raise AssertionError("Analytic layout must not compile the numerical grid")
+
+    monkeypatch.setattr(bz.Simulation, "compile", fail)
+    fig, ax = sim.plot(show=False)
+    try:
+        assert not ax.images
+        core = [p for p in ax.patches if to_hex(p.get_facecolor()) == "#d81b60"]
+        assert len(core) == 1 and core[0].get_antialiased()
+        assert len([p for p in ax.patches if p.get_hatch() == "///"]) == 4
+        np.testing.assert_allclose(ax.get_xlim(), [-2, 2])
+        np.testing.assert_allclose(ax.get_ylim(), [-1.5, 1.5])
+        source_line = next(line for line in ax.lines if line.get_color() == "#2ca02c")
+        np.testing.assert_allclose(source_line.get_xdata(), [-1, -1])
+        circle = next(patch for patch in ax.patches if isinstance(patch, Circle))
+        np.testing.assert_allclose(circle.center, [0, 0])
+        assert any(line.get_color() == "#ff9800" for line in ax.lines)
+        assert ax.get_xlabel() == f"{plane[0]} (um)"
+        assert ax.get_ylabel() == f"{plane[1]} (um)"
+    finally:
+        plt.close(fig)
+    fig, ax = plt.subplots()
+    try:
+        _, same_ax = sim.plot(
+            ax=ax,
+            source_markers=False,
+            monitor_markers=False,
+            xlim=(-1, 1),
+            ylim=(-0.5, 0.5),
+            show=False,
+        )
+        assert same_ax is ax and not ax.lines
+        np.testing.assert_allclose(ax.get_xlim(), [-1, 1])
+    finally:
+        plt.close(fig)
+
+
+def test_2d_layout_material_grid_preserves_geometry_and_origin():
+    eps = np.array([[1, 4, 1], [1, 4, 1]], dtype=float)
+    materials = MaterialGrid(
+        permittivity=eps,
+        conductivity=np.zeros_like(eps),
+        permeability=np.ones_like(eps),
+        resolution=1e-6,
+        shape=eps.shape,
+        origin=(-1e-6, -1e-6, 0.0),
+    )
+    sim = bz.Simulation(material_grid=materials, time=np.array([0.0, 1e-16]))
+    fig, ax = sim.plot()
+    try:
+        mesh = ax.collections[0]
+        assert np.unique(mesh.get_array()).size == 2
+        np.testing.assert_allclose(mesh.get_coordinates()[0, :, 0], [-1, 0, 1, 2])
+        np.testing.assert_allclose(ax.get_xlim(), [-1, 2])
+        np.testing.assert_allclose(ax.get_ylim(), [-1, 1])
+    finally:
+        plt.close(fig)

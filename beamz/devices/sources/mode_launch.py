@@ -396,6 +396,10 @@ def _plan_2d_entries(
         e_aligned = _impedance_match_e_profile(
             e_raw * np.exp(-1j * phase_ref), h_aligned, z_target
         )
+        # TM tangential E/H live on transverse nodes. A cell interval [start,end)
+        # has end-start+1 bounding nodes; omitting the high node shifts the taper
+        # by half a cell and breaks an otherwise symmetric launch.
+        end = min(end + 1, len(h_aligned), len(e_aligned))
         window = _make_1d_window(end - start)
         h_crop, e_crop = h_aligned[start:end], e_aligned[start:end]
         if len(h_crop) == len(window):

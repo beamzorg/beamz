@@ -17,6 +17,7 @@ from beamz.devices._placement import (
     snap_plane_region_grid,
 )
 from beamz.devices.monitors.monitors import (
+    FieldMonitor,
     FieldRecorder,
     ModeMonitor,
     _line_integral_scale_2d,
@@ -140,10 +141,13 @@ def _compile_monitor_2d_interpolation(
     field_shape=None,
     grid=None,
     region=None,
+    sample_coords=None,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     from beamz.lattice import component_coordinates_2d_um
 
-    if grid is not None and region is not None:
+    if sample_coords is not None:
+        line_coords = sample_coords
+    elif grid is not None and region is not None:
         if region.normal_axis == "x":
             interval = region.axis_interval("y")
             dst_y_values = np.asarray(grid.centers("y"))[
@@ -468,6 +472,86 @@ def compile_monitor_specs(
         )
 
         if not is_3d:
+            # A z-normal FieldMonitor covers an area in a 2D xy simulation.
+            # The generic line path would otherwise sample only its diagonal.
+            if (
+                isinstance(monitor, FieldMonitor)
+                and monitor.size[0] > 0
+                and monitor.size[1] > 0
+                and monitor.size[2] == 0
+            ):
+                if plane_2d != "xy":
+                    raise ValueError(
+                        "Planar 2D FieldMonitor sampling requires the xy plane."
+                    )
+                region = (
+                    snap_plane_region_grid(
+                        center=monitor.center,
+                        size=monitor.size,
+                        plane_normal="z",
+                        grid=active_grid,
+                    )
+                    if active_grid is not None
+                    else monitor.get_snapped_region(
+                        dx=resolution,
+                        dy=resolution,
+                        dz=resolution,
+                        field_shape=(1, *fields.permittivity.shape),
+                    )
+                )
+                assert region is not None
+                coords = {}
+                for axis in ("x", "y"):
+                    interval = region.axis_interval(axis)
+                    assert interval is not None
+                    centers = (
+                        np.asarray(active_grid.centers(axis))
+                        if active_grid is not None
+                        else (
+                            np.arange(
+                                fields.permittivity.shape[1 if axis == "x" else 0]
+                            )
+                            + 0.5
+                        )
+                        * resolution
+                    )
+                    coords[axis] = centers[interval.start : interval.stop]
+                xx, yy = np.meshgrid(coords["x"], coords["y"], indexing="xy")
+                point_count = xx.size
+                active = (
+                    {"Ez", "Hx", "Hy"}
+                    if polarization_2d == "tm"
+                    else {"Ex", "Ey", "Hz"}
+                )
+                plans = tuple(
+                    _compile_monitor_2d_interpolation(
+                        monitor,
+                        component,
+                        fields,
+                        resolution,
+                        grid=active_grid,
+                        sample_coords=(xx.ravel(), yy.ravel()),
+                    )
+                    if component in active and dft_component_mask[index] > 0
+                    else _inactive_sampling_plan(point_count)
+                    for index, component in enumerate(
+                        ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
+                    )
+                )
+                specs.append(
+                    CompiledMonitorSpec(
+                        **common,
+                        power_scale=1.0,
+                        normal_axis=2,
+                        dft_point_count=point_count,
+                        sample_flat_idx=tuple(plan[0] for plan in plans),
+                        sample_weights=tuple(plan[1] for plan in plans),
+                        dft_flat_idx=tuple(plan[0] for plan in plans),
+                        dft_weights=tuple(plan[1] for plan in plans),
+                        sample_region=_compact_sample_region(region),
+                    )
+                )
+                continue
             region_2d = (
                 snap_axis_aligned_line_region_grid(
                     monitor.start, monitor.end, active_grid

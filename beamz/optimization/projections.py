@@ -6,7 +6,7 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 
-VALID_PROJECTION_TYPES = ("heaviside", "ssp")
+VALID_PROJECTION_TYPES = ("heaviside", "ssp", "identity")
 
 
 def validate_projection_options(
@@ -118,9 +118,16 @@ def project_density(
     projection_type: str = "heaviside",
     ssp_smoothing_radius: float = 0.55,
 ):
-    """Project a filtered density using the selected projection method."""
+    """Project a filtered density using the selected projection method.
+
+    ``identity`` leaves the filtered density unchanged. With a zero filter radius,
+    this lets external differentiable parameterizations supply physical densities
+    without applying a second projection.
+    """
     validate_projection_options(projection_type, ssp_smoothing_radius)
 
+    if projection_type == "identity":
+        return jnp.asarray(value)
     if projection_type == "heaviside":
         return smoothed_heaviside(value, beta, eta)
     return subpixel_smoothed_projection(

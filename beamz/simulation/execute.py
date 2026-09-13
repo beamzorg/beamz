@@ -471,6 +471,7 @@ def forward_step(
     coeffs: UpdateCoefficients,
     program,
     update_kernel: update_runtime.StepUpdateKernel,
+    time_origin,
 ):
     """Advance one compiled timestep."""
     cfg = ctx.config
@@ -521,7 +522,9 @@ def forward_step(
         state = state._replace(ex=ex, ey=ey, ez=ez)
 
     # 4. Observe only fully constrained end-of-step fields, then advance both clocks.
-    t_phys = state.t + ctx.dt_scalar
+    # Repeated float32 additions drift by a significant optical phase on long
+    # fine-grid runs. Derive observation time from the integer step counter.
+    t_phys = time_origin + (state.current_step + 1) * ctx.dt_scalar
     state = monitor_runtime.update_monitors(
         program,
         state,
@@ -541,38 +544,54 @@ def forward_step(
     )
 
 
-def build_scan(program, *, donate_state: bool = False):
-    """Build the jitted compiled scan for a program."""
+def build_step_context(program):
+    """Bind the ordinary source and boundary plan for a single JAX timestep."""
+    cfg = program.config
+    return update_runtime.CompiledStepContext(
+        config=cfg,
+        boundary=program.boundary,
+        source_batches=compiled_source_batches(program.sources),
+        metrics=program.metrics,
+        resolution=float(cfg.resolution),
+        dt=float(cfg.dt),
+        dt_scalar=jnp.asarray(cfg.dt, dtype=jnp.float32),
+        is_3d=cfg.is_3d,
+    )
+
+
+def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None):
+    """Build a compiled scan, optionally rematerializing chunks for reverse AD.
+
+    ``checkpoint_interval`` bounds the inner reverse-mode history while keeping
+    chunk-boundary states. It applies to the JAX backend and preserves the exact
+    timestep, CPML, source, and monitor transition used by ordinary execution.
+    """
+
+    if checkpoint_interval is not None:
+        if (
+            isinstance(checkpoint_interval, bool)
+            or int(checkpoint_interval) != checkpoint_interval
+            or checkpoint_interval < 1
+        ):
+            raise ValueError("checkpoint_interval must be a positive integer.")
+        if program.config.backend != "jax":
+            raise ValueError("Checkpointed differentiation requires backend='jax'.")
+        checkpoint_interval = int(checkpoint_interval)
 
     # 1. Pull immutable configuration out of the program before tracing. These values
     # select shapes and kernels, so they should remain static for executable reuse.
-    # TODO(adjoint-checkpointing): Once trainable material arrays are dynamic
-    # runtime inputs, expose chunked scan transitions here and rematerialize at
-    # chunk boundaries. Keep parameter *values* out of the compiled-program key
-    # so optimization iterations reuse one executable.
+    # Trainable material values can be supplied through run_scan's coefficient
+    # argument without rebuilding the fixed geometry/source/monitor plan.
 
     cfg = program.config
-    boundary = program.boundary
-    resolution = float(cfg.resolution)
-    dt = float(cfg.dt)
-    dt_scalar = jnp.asarray(dt, dtype=jnp.float32)
-    is_3d = cfg.is_3d
+    dt_scalar = jnp.asarray(cfg.dt, dtype=jnp.float32)
 
     # 2. Batch sources once; monitors are already canonical executable plans.
-    source_batches = compiled_source_batches(program.sources)
+    step_context = build_step_context(program)
+    source_batches = step_context.source_batches
 
     # 3. Assemble the shared step context and select the specialized update kernel before
     # JIT compilation begins.
-    step_context = update_runtime.CompiledStepContext(
-        config=cfg,
-        boundary=boundary,
-        source_batches=source_batches,
-        metrics=program.metrics,
-        resolution=resolution,
-        dt=dt,
-        dt_scalar=dt_scalar,
-        is_3d=is_3d,
-    )
     update_kernel = update_runtime.select_update_kernel(step_context)
     graph_source_groups = tuple(
         source_batches[(timing, component)][0]
@@ -610,6 +629,8 @@ def build_scan(program, *, donate_state: bool = False):
         state: SimulationState,
         coeffs: UpdateCoefficients,
     ):
+        # Preserve an explicit continuation clock, anchoring it once per run.
+        time_origin = state.t - state.current_step * dt_scalar
         # 4. Run the same transition through scan or fori_loop. The choice changes the
         # lowering strategy, not timestep semantics.
         if cuda_multi_step:
@@ -679,6 +700,31 @@ def build_scan(program, *, donate_state: bool = False):
                         tail_steps,
                         full_chunks * CUDA_GRAPH_MAX_STEPS,
                     )
+        elif checkpoint_interval is not None:
+
+            def step(carry, _unused):
+                return forward_step(
+                    carry,
+                    ctx=step_context,
+                    coeffs=coeffs,
+                    program=program,
+                    update_kernel=update_kernel,
+                    time_origin=time_origin,
+                ), None
+
+            def chunk(carry, _unused):
+                return jax.lax.scan(
+                    jax.checkpoint(step), carry, None, length=checkpoint_interval
+                )[0], None
+
+            chunks, tail = divmod(cfg.num_steps, checkpoint_interval)
+            scan_out, _ = jax.lax.scan(
+                jax.checkpoint(chunk), state, None, length=chunks
+            )
+            if tail:
+                scan_out, _ = jax.lax.scan(
+                    jax.checkpoint(step), scan_out, None, length=tail
+                )
         elif cfg.loop_kind == "scan":
 
             def _scan_body(carry, _unused):
@@ -690,6 +736,7 @@ def build_scan(program, *, donate_state: bool = False):
                         coeffs=coeffs,
                         program=program,
                         update_kernel=update_kernel,
+                        time_origin=time_origin,
                     ),
                     None,
                 )
@@ -710,6 +757,7 @@ def build_scan(program, *, donate_state: bool = False):
                     coeffs=coeffs,
                     program=program,
                     update_kernel=update_kernel,
+                    time_origin=time_origin,
                 ),
                 state,
             )

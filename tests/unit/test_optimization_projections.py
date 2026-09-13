@@ -6,9 +6,24 @@ import pytest
 
 import beamz.optimization as optimization
 from beamz.optimization.projections import (
+    project_density,
     smoothed_heaviside,
     subpixel_smoothed_projection,
 )
+
+
+def test_identity_projection_preserves_external_mapping_and_chain_rule():
+    values = jnp.array([[0.0, 0.2], [0.8, 1.0]])
+    weights = jnp.array([[1.0, -2.0], [3.0, 4.0]])
+    for beta in (1.0, 128.0):
+        result = project_density(values, beta, 0.55, projection_type="identity")
+        assert jnp.array_equal(result, values)
+        gradient = jax.grad(
+            lambda x, strength=beta: jnp.sum(
+                weights * project_density(x, strength, 0.55, projection_type="identity")
+            )
+        )(values)
+        assert jnp.array_equal(gradient, weights)
 
 
 @pytest.mark.optimization

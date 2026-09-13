@@ -128,18 +128,38 @@ def _monitor_profile_slice(sim, monitor, axis, pad_cells):
     if not points:
         raise ValueError(f"Monitor '{monitor.name}' contains no sample points.")
     p = np.asarray(points, dtype=float)
+    node_sampled = sim.coordinates.polarization_2d == "tm"
+
+    def transverse_material(profile):
+        if not node_sampled:
+            return profile
+        # Uniform TM monitors acquire Ez and tangential H on transverse nodes.
+        # Solve their basis on that same support, not on cell centers shifted by
+        # half a pixel. Do this before cropping so opposite ports retain exactly
+        # reflected material neighborhoods.
+        extended = np.pad(profile, (1, 1), mode="edge")
+        return 0.5 * (extended[:-1] + extended[1:])
+
     if axis == "x":
         x_idx = int(np.clip(round(float(np.mean(p[:, 0]))), 0, full_shape[1] - 1))
-        eps_profile_full = perm[:, x_idx - origin[1]]
+        eps_profile_full = transverse_material(perm[:, x_idx - origin[1]])
         sample_idx = np.asarray(
-            [int(np.clip(pi[1], 0, full_shape[0] - 1)) - origin[0] for pi in points],
+            [
+                int(np.clip(pi[1], 0, full_shape[0] - int(not node_sampled)))
+                - origin[0]
+                for pi in points
+            ],
             dtype=int,
         )
     else:
         y_idx = int(np.clip(round(float(np.mean(p[:, 1]))), 0, full_shape[0] - 1))
-        eps_profile_full = perm[y_idx - origin[0], :]
+        eps_profile_full = transverse_material(perm[y_idx - origin[0], :])
         sample_idx = np.asarray(
-            [int(np.clip(pi[0], 0, full_shape[1] - 1)) - origin[1] for pi in points],
+            [
+                int(np.clip(pi[0], 0, full_shape[1] - int(not node_sampled)))
+                - origin[1]
+                for pi in points
+            ],
             dtype=int,
         )
     lo = max(0, int(np.min(sample_idx)) - int(pad_cells))
@@ -500,6 +520,11 @@ def _build_port_projection_2d(
             weights * parts["signed_flux_sign"] * e_profile * np.conjugate(h_profile)
         )
     )
+    # The line-mode adapter retains legacy launch signs, including a magnetic
+    # sign reversal for y-normal planes. A port's '+' basis must instead carry
+    # positive physical flux along its normal, independent of that convention.
+    if power < 0:
+        h_profile = -h_profile
     normalization = np.sqrt(max(abs(power), 1e-30))
     e_forward = e_profile / normalization
     h_forward = h_profile / normalization

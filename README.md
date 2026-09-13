@@ -36,7 +36,7 @@
 - Built-in layout flow (GDSII import/export).
 - **DFT monitors** and S-parameter extraction workflow for compact modeling.
 - Streamlined **parametric design** module.
-- Optimization/autodiff utilities for gradient-based **inverse-design** with Jax.
+- 2D topology **inverse design** with selectable JAX autodiff or spectral adjoint FDTD gradients.
 
 
 ## Examples
@@ -45,6 +45,11 @@ Try out notebooks from our growing **[example library](https://beamz.tech/exampl
 - [1) Mode Sources and Monitors](https://beamz.tech/examples/modal_sources_monitors)
 - [2) Waveguide Crossing with Cosine Tapers](https://beamz.tech/examples/cosine_waveguide_crossing)
 - [3) Topology Optimized 90° Bend (2D)](https://beamz.tech/examples/ceviche_bend)
+- [4) Inverse-designed Mode Converter (2D)](examples/notebooks/topology_mode_converter.ipynb)
+- [5) Topology Gradient Checks: Autodiff and Adjoint FDTD](examples/notebooks/topology_gradient_checks.ipynb)
+- [6) Broadband Inverse-designed Wavelength Demultiplexer](examples/notebooks/topology_broadband_demultiplexer.ipynb)
+- [7) Meep's Broadband Bend: Nominal and Fabrication-Robust Inverse Design](examples/notebooks/meep_filtered_waveguide_bend.ipynb)
+- [8) Tidy3D-style Inverse Design: 1-to-3 Splitter](examples/notebooks/tidy3d_inverse_design_splitter.ipynb)
 <!--- [Broadband Mode Sources]() (coming soon)
 - [Straight & Curved Waveguide Benchmark]() (coming soon)-->
 <!--- [Mode Converter (3D)]() (coming soon)

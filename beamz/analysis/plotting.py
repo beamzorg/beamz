@@ -711,6 +711,29 @@ def _device_geometry(device):
 
 
 def _draw_device_slice_overlay(ax, device, *, normal, origin, color, source):
+    spec = visual_spec_from_device(device)
+    if spec is not None and (spec.style or {}).get("shape") == "circle":
+        from matplotlib.patches import Circle
+
+        vertical, horizontal = _PLANE_AXES[normal]
+        indices = tuple("xyz".index(axis) for axis in (horizontal, vertical))
+        center = (
+            spec.center
+            if len(spec.center) == 2
+            else tuple(spec.center[i] for i in indices)
+        )
+        patch = Circle(
+            tuple(
+                (value - origin[i]) / _UM
+                for value, i in zip(center, indices, strict=True)
+            ),
+            radius=0.5 * spec.size[0] / _UM,
+            fill=False,
+            edgecolor=color,
+            linewidth=2.0,
+        )
+        ax.add_patch(patch)
+        return patch
     geometry = _device_geometry(device)
     if geometry is None:
         return
@@ -823,7 +846,7 @@ def _layout_slice(normal, position, *, design, origin) -> AxisSlice:
     extents: dict[str, float] = {
         "x": float(design.width),
         "y": float(design.height),
-        "z": float(design.depth),
+        "z": float(design.depth or 0.0),
     }
     origin_by_axis: dict[str, float] = dict(zip(("x", "y", "z"), origin, strict=True))
     extent = (
@@ -1088,6 +1111,15 @@ def _draw_geometry_cross_section(ax, sim, *, normal, position, origin, colors):
         material = getattr(structure, "material", None)
         if material is None:
             continue
+        if not design.is_3d:
+            _path_patch(
+                ax,
+                _planar_structure_geometry(structure),
+                normal=normal,
+                origin=origin,
+                facecolor=_layout_color(material, colors),
+            )
+            continue
         _draw_structure_slice(
             ax,
             structure,
@@ -1251,22 +1283,46 @@ def overlay_simulation_devices(
     axes, sim, origin, *, source_markers=True, monitor_markers=True
 ):
     """Overlay projected sources and monitors on xy/xz slice axes."""
+    for ax, normal in zip(axes, ("z", "y"), strict=True):
+        _overlay_layout_devices(
+            ax,
+            sim,
+            normal=normal,
+            origin=origin,
+            source_markers=source_markers,
+            monitor_markers=monitor_markers,
+        )
+
+
+def _overlay_layout_devices(
+    ax, sim, *, normal, origin, source_markers, monitor_markers
+):
+    """Use the same device colors and glyphs in 2D and 3D layouts."""
     groups = []
     if source_markers:
         groups.append((getattr(sim, "sources", ()), "#2ca02c", True))
     if monitor_markers:
         groups.append((getattr(sim, "monitors", ()), "#ff9800", False))
-    for ax, normal in zip(axes, ("z", "y"), strict=True):
-        for devices, color, source in groups:
-            for device in devices:
-                _draw_device_slice_overlay(
-                    ax,
-                    device,
-                    normal=normal,
-                    origin=origin,
-                    color=color,
-                    source=source,
-                )
+    for devices, color, source in groups:
+        for device in devices:
+            _draw_device_slice_overlay(
+                ax, device, normal=normal, origin=origin, color=color, source=source
+            )
+
+
+def _overlay_layout_pml(ax, sim, *, normal, extent):
+    for thickness, edges in _pml_section_layers(sim, normal):
+        overlay_boundaries(
+            ax,
+            extent,
+            thickness / _UM,
+            edges=edges,
+            facecolor="#666666",
+            alpha=0.22,
+            hatch="///",
+            edgecolor="#666666",
+            linewidth=0.0,
+        )
 
 
 def _plot_3d_material_cross_sections(
@@ -1343,22 +1399,8 @@ def _plot_3d_geometry_cross_sections(
             colors=colors,
         )
 
-    style = dict(
-        facecolor="#666666",
-        alpha=0.22,
-        hatch="///",
-        edgecolor="#666666",
-        linewidth=0.0,
-    )
     for ax, item in zip(axes, slices, strict=True):
-        for thickness, edges in _pml_section_layers(sim, item.normal):
-            overlay_boundaries(
-                ax,
-                item.extent,
-                thickness / _UM,
-                edges=edges,
-                **style,
-            )
+        _overlay_layout_pml(ax, sim, normal=item.normal, extent=item.extent)
 
     overlay_simulation_devices(
         axes,
@@ -1444,6 +1486,156 @@ def _plot_3d_cross_sections(
     )
 
 
+def plot_simulation_permittivity(
+    sim,
+    *,
+    z=None,
+    y=None,
+    ax=None,
+    figsize=None,
+    show=True,
+    source_markers=True,
+    monitor_markers=True,
+    colorbar=True,
+    cmap="Greys",
+    vmin=None,
+    vmax=None,
+    xlim=None,
+    ylim=None,
+    title="Relative permittivity",
+):
+    """Plot the actual material raster, including inverse-design material grids.
+
+    Positions are in metres in the public simulation frame; display axes are
+    micrometres. A 3D simulation accepts one z or y slice (z=0 by default).
+    """
+    materials = sim._material_grid()
+    eps = np.real(np.asarray(materials.permittivity))
+    grid = materials.grid
+    origin = _simulation_origin(sim)
+    edges = {
+        axis: np.asarray(grid.axis_edges(axis)) - grid.origin[index] - origin[index]
+        for index, axis in enumerate(("x", "y", "z"))
+    }
+    if y is not None and z is not None:
+        raise ValueError("Specify one permittivity slice, y or z.")
+    normal = "y" if y is not None else "z"
+    if eps.ndim == 3:
+        position = float(y if y is not None else (0.0 if z is None else z))
+        if not edges[normal][0] <= position <= edges[normal][-1]:
+            raise ValueError("Permittivity slice lies outside the simulation.")
+        index = np.clip(
+            np.searchsorted(edges[normal], position, side="right") - 1,
+            0,
+            len(edges[normal]) - 2,
+        )
+        eps = np.take(eps, int(index), axis=_AXIS_INDEX[normal])
+    elif sim.plane_2d != "xy" or y is not None:
+        raise ValueError("2D permittivity plotting currently supports the xy plane.")
+    vertical, horizontal = _PLANE_AXES[normal]
+    x_edges, y_edges = edges[horizontal] / _UM, edges[vertical] / _UM
+    fig, ax = _figure_axes(ax, figsize=figsize or (7.0, 4.5))
+    image, _ = plot_field_view(
+        ax, eps, x_edges=x_edges, y_edges=y_edges, cmap=cmap, vmin=vmin, vmax=vmax
+    )
+    if colorbar:
+        _add_field_colorbar(fig, ax, image, label="Relative permittivity")
+    for devices, enabled, source, color in (
+        (sim.sources, source_markers, True, "#2ca02c"),
+        (sim.monitors, monitor_markers, False, "#ff9800"),
+    ):
+        if enabled:
+            for device in devices:
+                _draw_device_slice_overlay(
+                    ax, device, normal=normal, origin=origin, color=color, source=source
+                )
+    ax.set(
+        xlabel=f"{horizontal} (um)",
+        ylabel=f"{vertical} (um)",
+        title=title,
+        xlim=(x_edges[0], x_edges[-1]) if xlim is None else xlim,
+        ylim=(y_edges[0], y_edges[-1]) if ylim is None else ylim,
+    )
+    fig.tight_layout()
+    _maybe_show(fig, show=show)
+    return fig, ax
+
+
+def _plot_2d_layout(
+    sim,
+    *,
+    origin,
+    ax,
+    figsize,
+    show,
+    title,
+    source_markers,
+    monitor_markers,
+    xlim,
+    ylim,
+):
+    """Draw the stored 2D plane with the same visual language as 3D sections."""
+    from beamz.lattice import (
+        grid_axes_in_physical_frame_2d,
+        physical_vector_to_grid_2d,
+    )
+
+    origin = _simulation_origin(sim) if origin is None else origin
+    local_origin = physical_vector_to_grid_2d(origin, sim.plane_2d)
+    horizontal, vertical, normal = grid_axes_in_physical_frame_2d(sim.plane_2d)
+    item = _layout_slice("z", 0.0, design=sim.design, origin=local_origin)
+    fig, ax = _figure_axes(ax, figsize=figsize or (7.0, 4.5))
+    if sim.material_grid is None:
+        _draw_geometry_cross_section(
+            ax,
+            sim,
+            normal="z",
+            position=0.0,
+            origin=local_origin,
+            colors=_layout_material_colors(sim.design),
+        )
+    else:
+        # Imported/material-only simulations must show their actual design,
+        # rather than the placeholder analytic background.
+        materials = sim._material_grid()
+        grid = materials.grid
+        edges = [
+            (np.asarray(grid.axis_edges(axis)) - grid.origin[i] - local_origin[i]) / _UM
+            for i, axis in enumerate(("x", "y"))
+        ]
+        cmap, norm = _material_cmap()
+        plot_field_view(
+            ax,
+            _material_category_array(materials.permittivity),
+            x_edges=edges[0],
+            y_edges=edges[1],
+            cmap=cmap,
+            norm=norm,
+        )
+    # Boundary names refer to the stored plane; device positions are physical.
+    _overlay_layout_pml(ax, sim, normal="z", extent=item.extent)
+    _overlay_layout_devices(
+        ax,
+        sim,
+        normal=normal,
+        origin=origin,
+        source_markers=source_markers,
+        monitor_markers=monitor_markers,
+    )
+    ax.set(
+        title=title,
+        xlabel=f"{horizontal} (um)",
+        ylabel=f"{vertical} (um)",
+        xlim=item.extent[:2] if xlim is None else xlim,
+        ylim=item.extent[2:] if ylim is None else ylim,
+    )
+    ax.set_aspect("equal", adjustable="box")
+    ax.grid(False)
+    fig.tight_layout()
+    _maybe_show(fig, show=show)
+    return fig, ax
+
+
 def plot_simulation(
     sim,
     *,
@@ -1463,7 +1655,20 @@ def plot_simulation(
     title="Simulation Layout",
     **_kwargs,
 ):
-    """Plot a simulation layout or styled 3D cross sections."""
+    """Plot styled 2D layouts or 3D cross sections, with axes in micrometres."""
+    if not sim.is_3d:
+        return _plot_2d_layout(
+            sim,
+            origin=origin,
+            ax=ax,
+            figsize=figsize,
+            show=show,
+            title=title,
+            source_markers=source_markers,
+            monitor_markers=monitor_markers,
+            xlim=xlim,
+            ylim=ylim,
+        )
     if bool(getattr(sim, "is_3d", False)) and (z is not None or y is not None):
         if ax is not None:
             raise ValueError("3D cross-section plots create their own axes.")

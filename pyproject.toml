@@ -45,6 +45,7 @@ Documentation = "https://www.beamz.tech/docs/index"
 "Bug Tracker" = "https://github.com/beamzorg/beamz/issues"
 
 [project.optional-dependencies]
+mma = ["nlopt>=2.7,<3"]
 gds = [
     "gdsfactory>=8.0; python_version < '3.14'",
     "gdsfactory>=9.0; python_version >= '3.14'",

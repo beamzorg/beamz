@@ -1546,6 +1546,10 @@ class Simulation:
             ``ax``, ``figsize``, ``z``, ``y``, axis limits, and marker controls.
             ``show`` defaults to ``False`` for this method.
 
+            Two-dimensional layouts share the 3D material palette, shaded PML
+            bands, and source/monitor glyphs. Display coordinates and axis limits
+            are in micrometres; slice positions and simulation inputs use metres.
+
             For a native three-dimensional :class:`~beamz.Design`, passing ``z``
             or ``y`` creates antialiased geometry cross sections. These setup
             plots preserve polygon boundaries and do not compile or show the FDTD
@@ -1564,6 +1568,19 @@ class Simulation:
         """
         kwargs.setdefault("show", False)
         return _analysis_function("plotting", "plot_simulation")(self, **kwargs)
+
+    def plot_eps(self, **kwargs):
+        """Plot the simulation's actual relative-permittivity raster.
+
+        Uses the supplied MaterialGrid when present, including optimized density
+        designs. Accepts one ``z`` or ``y`` slice for 3D, source/monitor marker
+        controls, and Matplotlib axes/color limits. Returns ``(figure, axes)``.
+        Slice positions are metres; display axes are micrometres.
+        """
+        kwargs.setdefault("show", False)
+        return _analysis_function("plotting", "plot_simulation_permittivity")(
+            self, **kwargs
+        )
 
     def show(self, *, mode="auto", open_browser=True, **kwargs):
         """Display the simulation layout using Matplotlib.
