@@ -58,12 +58,8 @@ def test_ring_setup_uses_supplementary_lowest_resolution_protocol():
     port_by_name = {port.name: port for port in ports}
     assert port_by_name["o1"].center[0] == pytest.approx(1.5 * µm)
     assert port_by_name["o2"].center[0] == pytest.approx(31.0 * µm)
-    assert all(
-        port.size == pytest.approx((0.0, 4.5 * µm, 2.0 * µm)) for port in ports
-    )
-    assert simulation.run_time == pytest.approx(
-        15.0 * 32.0 * µm * 2.0 / LIGHT_SPEED
-    )
+    assert all(port.size == pytest.approx((0.0, 4.5 * µm, 2.0 * µm)) for port in ports)
+    assert simulation.run_time == pytest.approx(15.0 * 32.0 * µm * 2.0 / LIGHT_SPEED)
     assert simulation.boundaries[0].formulation == "sponge"
     assert simulation.boundaries[0].thickness == pytest.approx(1e-6)
     assert not simulation.grid.is_uniform

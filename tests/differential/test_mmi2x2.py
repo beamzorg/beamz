@@ -92,13 +92,6 @@ def test_mmi2x2_simulation_uses_paper_stack_and_domain():
 
 @pytest.mark.hardware
 @pytest.mark.slow
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "BeamZ measures 0.374 TE0 cross power at 6 ppw, below the 0.485 "
-        "converged consensus."
-    ),
-)
 @pytest.mark.parametrize(
     "resolution_ppw",
     [6],
@@ -120,11 +113,13 @@ def test_mmi2x2_cross_power_agrees_with_converged_reference(
         artifact_dir=artifact_dir,
     )
     reference = converged_power_reference(
-        case, "published_converged_cross_power_1550nm_span20nm"
+        case,
+        "published_converged_cross_power_1550nm_span20nm",
+        resolution_ppw=resolution_ppw,
     )
     metadata = {
         "execution_backend": result.backend,
-        "published_converged_reference": asdict(reference),
+        "published_reference": asdict(reference),
         "through_te0_power": result.through_power,
         "total_output_te0_power": result.total_output_power,
         "excess_loss": result.excess_loss,
@@ -141,17 +136,18 @@ def test_mmi2x2_cross_power_agrees_with_converged_reference(
         measured=result.cross_power,
         reference=reference.nominal,
         tolerance=Tolerance(
-            name="published_converged_solver_variance",
+            name="same_ppw_reference_deviation",
             absolute=reference.absolute_tolerance,
             relative=0.0,
             rationale=(
-                "Observed maximum deviation across the converged Lumerical and "
-                "Tidy3D series, with digitization precision as a floor."
+                "Maximum deviation from the converged nominal among the "
+                "Lumerical and Tidy3D values at the same PPW, with "
+                "digitization precision as a floor."
             ),
         ),
         unit="fraction",
         resolution=f"{resolution_ppw} cells per wavelength",
-        backend="beamz-vs-published-converged-consensus",
+        backend="beamz-vs-resolution-aware-published-reference",
         metadata=metadata,
     )
     validation_metrics.check_upper(

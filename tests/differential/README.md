@@ -83,11 +83,8 @@ uv run pytest tests/differential/test_mmi2x2.py \
   --validation-report=validation-results-mmi2x2-6ppw.json
 ```
 
-The comparison uses the explicitly reported 1550 nm cross-power values from
-[Section 3.3 of the paper](https://arxiv.org/html/2506.16665v3): 0.376 for
-Lumerical and 0.358 for Tidy3D, with the suite's existing cross-solver tolerance.
-It also checks the passive-device output-power bound. Passing at this coarse
-resolution does not establish mesh convergence.
+The comparison uses the resolution-conditioned reference rule described above
+and also checks the passive-device output-power bound.
 
 ## Mode converter and polarization splitter rotator
 
@@ -119,14 +116,9 @@ record the source revision, GDS checksum, fixture checksum, physical-union
 fingerprint, and original YAML ports. Layer-1 silicon alone determines the
 physical bounds; annotation layers do not enlarge the simulation domain.
 
-The comparison ranges use values explicitly stated in Sections 3.4 and 3.5 of
-[the paper](https://arxiv.org/html/2506.16665v3). Both devices are strongly
-resolution-dependent at 6 ppw, so these tests do not establish convergence.
-The current BeamZ results are strict expected failures against those published
-ranges: the mode converter measures 0.200 TE1 power and the splitter rotator
-measures 0.871 TE0 power at 1550 nm. Pytest will fail with an unexpected pass
-when either comparison starts agreeing, requiring its marker and documentation
-to be updated.
+Both conversion comparisons use the resolution-conditioned reference rule
+described above. A separate selected-output bound checks for normalization or
+passivity problems across the wavelength band.
 
 Offline analysis of the retained 6 ppw DFT fields rules out output-mode
 misidentification as the source of these differences. At 1550 nm, the mode

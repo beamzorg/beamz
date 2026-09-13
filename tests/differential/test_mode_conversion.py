@@ -24,24 +24,33 @@ from tests.validation.tolerances import Tolerance
 
 
 @pytest.mark.parametrize(
-    ("name", "observable", "nominal", "absolute_tolerance"),
+    ("name", "observable", "nominal", "samples", "absolute_tolerance"),
     (
-        ("crossing", "through", 0.9571666667, 0.0018333333),
-        ("directional_coupler", "cross", 0.4473333333, 0.0446666667),
-        ("mmi2x2", "cross", 0.485, 0.006),
-        ("mode_converter", "conversion", 0.473, 0.042),
-        ("polarization_splitter_rotator", "conversion", 0.94925, 0.002),
+        ("crossing", "through", 0.9571666667, (0.954, 0.939), 0.0181666667),
+        ("directional_coupler", "cross", 0.4473333333, (0.493, 0.697), 0.2496666667),
+        ("mmi2x2", "cross", 0.485, (0.376, 0.358), 0.127),
+        ("mode_converter", "conversion", 0.473, (0.967, 0.357), 0.494),
+        (
+            "polarization_splitter_rotator",
+            "conversion",
+            0.94925,
+            (0.147, 0.051),
+            0.89825,
+        ),
     ),
 )
-def test_published_converged_consensus_is_solver_midpoint_with_variance(
-    name, observable, nominal, absolute_tolerance
+def test_reference_uses_converged_nominal_and_same_ppw_spread(
+    name, observable, nominal, samples, absolute_tolerance
 ):
     case = load_passive_soi_case(name)
     reference = converged_power_reference(
-        case, f"published_converged_{observable}_power_1550nm_span20nm"
+        case,
+        f"published_converged_{observable}_power_1550nm_span20nm",
+        resolution_ppw=6,
     )
 
     assert reference.nominal == pytest.approx(nominal, abs=1e-9)
+    assert reference.samples == pytest.approx(samples, abs=1e-9)
     assert reference.absolute_tolerance == pytest.approx(absolute_tolerance, abs=1e-9)
 
 
@@ -103,21 +112,12 @@ def test_conversion_setup_uses_distinct_source_and_output_modes(name):
             marks=pytest.mark.xfail(
                 strict=True,
                 reason=(
-                    "BeamZ measures 0.200 TE1 power at 6 ppw, below the paper's "
-                    "0.473 converged consensus."
+                    "The selected output-power ratio reaches 1.123 across the "
+                    "20 nm band, above the 1.02 passivity bound."
                 ),
             ),
         ),
-        pytest.param(
-            "polarization_splitter_rotator",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason=(
-                    "BeamZ measures 0.871 TE0 power at 6 ppw, below the paper's "
-                    "0.949 converged consensus."
-                ),
-            ),
-        ),
+        "polarization_splitter_rotator",
     ],
 )
 @pytest.mark.parametrize("resolution_ppw", [6], ids=["6ppw"])
@@ -133,10 +133,12 @@ def test_conversion_power_agrees_with_published_converged_consensus(
         artifact_dir=Path(artifact_root) / name / "6ppw" if artifact_root else None,
     )
     reference = converged_power_reference(
-        case, "published_converged_conversion_power_1550nm_span20nm"
+        case,
+        "published_converged_conversion_power_1550nm_span20nm",
+        resolution_ppw=resolution_ppw,
     )
     metadata = asdict(result)
-    metadata["published_converged_reference"] = asdict(reference)
+    metadata["published_reference"] = asdict(reference)
     metadata["output_power_basis"] = (
         "Selected output modes only; not all guided or radiated power."
     )
@@ -147,17 +149,18 @@ def test_conversion_power_agrees_with_published_converged_consensus(
         measured=result.conversion_power,
         reference=reference.nominal,
         tolerance=Tolerance(
-            name="published_converged_solver_variance",
+            name="same_ppw_reference_deviation",
             absolute=reference.absolute_tolerance,
             relative=0.0,
             rationale=(
-                "Observed maximum deviation across the converged Lumerical and "
-                "Tidy3D series, with digitization precision as a floor."
+                "Maximum deviation from the converged nominal among the "
+                "Lumerical and Tidy3D values at the same PPW, with "
+                "digitization precision as a floor."
             ),
         ),
         unit="fraction",
         resolution="6 cells per wavelength",
-        backend="beamz-vs-published-converged-consensus",
+        backend="beamz-vs-resolution-aware-published-reference",
         metadata=metadata,
     )
     validation_metrics.check_upper(

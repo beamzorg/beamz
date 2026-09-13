@@ -75,9 +75,7 @@ def extract_ring_resonances(wavelengths_um, through_power):
         # A single-mode ring produces one dominant resonance family. Retain dips
         # with at least half the strongest prominence so shallow time-window and
         # broadband-normalization ripple does not halve the measured FSR.
-        dominant = properties["prominences"] >= 0.5 * np.max(
-            properties["prominences"]
-        )
+        dominant = properties["prominences"] >= 0.5 * np.max(properties["prominences"])
         minima = minima[dominant]
     resonances = wavelengths[minima]
     fsr_nm = (
