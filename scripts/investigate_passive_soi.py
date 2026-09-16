@@ -51,6 +51,39 @@ from tests.differential.passive_soi.straight_control import (
 )
 
 
+def build_experiment(device, ppw, options):
+    if device.startswith("converter_grid_"):
+        simulation, ports, outputs, frequencies = build_converter_grid_control(
+            device.removeprefix("converter_grid_"),
+            resolution_ppw=ppw,
+            options=options,
+        )
+    elif device.startswith("straight_"):
+        simulation, ports, outputs, frequencies = build_straight_control(
+            device.removeprefix("straight_"),
+            resolution_ppw=ppw,
+            options=options,
+        )
+    elif device == "ring_resonator":
+        simulation, ports, frequencies = build_ring_resonator_simulation(
+            resolution_ppw=ppw, diagnostics=True, options=options
+        )
+        outputs = ("o1", "o2")
+    elif device == "mmi2x2":
+        simulation, ports, frequencies = build_four_port_simulation(
+            load_passive_soi_case(device),
+            resolution_ppw=ppw,
+            diagnostics=True,
+            options=options,
+        )
+        outputs = ("o3", "o4")
+    else:
+        simulation, ports, outputs, frequencies = build_mode_conversion_simulation(
+            device, resolution_ppw=ppw, diagnostics=True, options=options
+        )
+    return simulation, ports, outputs, frequencies
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -98,35 +131,9 @@ def main():
     options = ExperimentOptions(
         **{k: getattr(args, k) for k in ExperimentOptions.__dataclass_fields__}
     )
-    if args.device.startswith("converter_grid_"):
-        simulation, ports, outputs, frequencies = build_converter_grid_control(
-            args.device.removeprefix("converter_grid_"),
-            resolution_ppw=args.ppw,
-            options=options,
-        )
-    elif args.device.startswith("straight_"):
-        simulation, ports, outputs, frequencies = build_straight_control(
-            args.device.removeprefix("straight_"),
-            resolution_ppw=args.ppw,
-            options=options,
-        )
-    elif args.device == "ring_resonator":
-        simulation, ports, frequencies = build_ring_resonator_simulation(
-            resolution_ppw=args.ppw, diagnostics=True, options=options
-        )
-        outputs = ("o1", "o2")
-    elif args.device == "mmi2x2":
-        simulation, ports, frequencies = build_four_port_simulation(
-            load_passive_soi_case(args.device),
-            resolution_ppw=args.ppw,
-            diagnostics=True,
-            options=options,
-        )
-        outputs = ("o3", "o4")
-    else:
-        simulation, ports, outputs, frequencies = build_mode_conversion_simulation(
-            args.device, resolution_ppw=args.ppw, diagnostics=True, options=options
-        )
+    simulation, ports, outputs, frequencies = build_experiment(
+        args.device, args.ppw, options
+    )
     frozen_grid = None
     if args.grid_from is not None:
         from beamz import Simulation
