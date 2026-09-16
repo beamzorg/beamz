@@ -109,6 +109,15 @@ matrix or a complete all-mode energy balance.
 | 12.8 ps | 9.25e-3 | 1.15025 | 0.62062 nm | 2484.1 |
 | 25.6 ps | 3.47e-4 | 1.00988 | 0.48048 nm | 3208.7 |
 
+At 25.6 ps, reflected input power reaches **72.54%** near resonance, while
+incoming power at the far output stays below 0.030%. That strong reflection
+remains unexplained. The empty-bus control preserves the ring mesh, source,
+ports, and absorber: at the default 6.4046-ps cap it has maximum transmission
+error **0.233%**, reflection **0.0454%**, and field decay **2.55e-9**. It rules out
+a comparably large gross reflection in the empty measurement setup, but is not
+a full boundary/mesh convergence study. An exactly matched 6.4-ps follow-up is
+being completed separately.
+
 The 51.2-ps-cap follow-up is still running. No completed duration pair passes
 the predeclared criteria: both endpoints below `1e-5` decay and 1.02 selected
 power, less than 1% FWHM/Q change, and less than 0.02 nm resonance drift.
@@ -132,6 +141,37 @@ Interpolation to 0.02 nm creates no new spectral information. Refine the actual
 DFT frequency grid before claiming 1% linewidth/Q stability. Do not tune an
 extraction window or a fitted Q to pass the published range.
 
+### Source-duration confound and residual diagnostics
+
+![Broadband profile drive audit](source_duration_audit.png)
+
+`audit_source_duration.py` replays the compiler's three-profile temporal
+partition using retained in-phase/quadrature samples. The individual subbands
+have periodic end-of-record tails around **4–6% of their own peaks** and change
+by about **5% of the larger run's subband peak** between adjacent duration
+records. The same requested Gaussian pulse therefore does not guarantee
+identical compiled profile drives. These are **not net injected-field or power
+fractions**: spatial profile coefficients can cancel individual subbands.
+The current source-off check conservatively examines individual compiled drives;
+its residual becomes zero by definition after the final source sample. A
+`converged` label at the cap does not by itself prove a long source-free decay
+window. This audit does not quantify the source effect on device powers.
+
+The duration sweep is useful evidence of sensitivity, but is not yet a strictly
+fixed-source truncation experiment. Future checkpoints must share one longest
+source record; source-profile sensitivity and net injection need separate
+validation. This confound is unresolved, not a third claimed production fix.
+
+`projection_quality.json` exposes every retained modal residual. These are
+relative field reconstruction norms, not errors in power. At 1550 nm, the
+15-PPW MMI output residuals are 7.56% and 11.00%; converter 10-PPW output-group
+residual is 6.56%, and PSR TE0 is 5.55%. Near-unit residuals occur at unselected
+or weak ports and in the separately projected PSR TM channel. The 25.6-ps ring
+through-port residual reaches 64.5% at a deep resonance. Missing fields have
+not all been physically identified; passing power checks or a well-conditioned
+coefficient solve does not establish complete modal reconstruction. Monitor,
+aperture, polarization/mode-completeness and radiation checks remain required.
+
 ## Validation and remaining work
 
 Validation completed during this campaign: 51 engine/runtime/clock checks,
@@ -146,9 +186,12 @@ uncommitted change, subsequently committed as `a049399a`.
 
 The remaining order is:
 
-1. Finish ring duration convergence with actual later endpoints, a denser DFT
+1. Freeze the compiled broadband profile drives on a common longest time record
+   and compare cumulative DFT checkpoints, rather than rebuilding FFT drives for
+   each duration. Audit 1/3/5-profile sensitivity and net spatial injection.
+   Then finish ring duration convergence with actual later endpoints, a denser DFT
    spectrum, and spatial ring/bus/boundary energy histories. Preserve the pinned
-   short-duration case as characterization. Follow with empty-bus and padded
+   short-duration case as characterization. Follow the initial empty-bus control with padded
    domain/absorber sweeps on the same interior mesh. The new clearance guard
    correctly rejects 2/3-µm absorbers that would engulf existing source/ports.
 2. Complete refined device-grid TE/TM controls, mode-overlap tracking, monitor

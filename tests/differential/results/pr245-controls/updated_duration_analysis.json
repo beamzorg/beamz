@@ -4,6 +4,11 @@
       "reprojected-ring-fixed-6p4",
       "reprojected-ring-fixed-12p8"
     ],
+    "actual_durations_ps": [
+      6.400119149929662,
+      12.800105593513411
+    ],
+    "actual_duration_doubled": false,
     "relative_fwhm_change": 0.34042553191496394,
     "relative_q_change": 0.5161290322582262,
     "maximum_resonance_drift_nm": 0.0,
@@ -15,6 +20,11 @@
       "reprojected-ring-fixed-12p8",
       "reprojected-ring-fixed-25p6"
     ],
+    "actual_durations_ps": [
+      12.800105593513411,
+      25.600079348042648
+    ],
+    "actual_duration_doubled": true,
     "relative_fwhm_change": 0.22580645161266089,
     "relative_q_change": 0.2916750531863648,
     "maximum_resonance_drift_nm": null,

@@ -164,14 +164,20 @@ def main():
             r["termination"]["field_decay"] <= 1e-5 and r["selected_output_max"] <= 1.02
             for r in (first, second)
         )
+        actual_times = [r["termination"]["time"] for r in (first, second)]
+        second_dt = actual_times[1] / second["termination"]["steps"]
+        duration_doubled = actual_times[1] + second_dt >= 2 * actual_times[0]
         duration_pairs.append(
             {
                 "runs": [first["run"], second["run"]],
+                "actual_durations_ps": [t * 1e12 for t in actual_times],
+                "actual_duration_doubled": duration_doubled,
                 "relative_fwhm_change": width_change,
                 "relative_q_change": q_change,
                 "maximum_resonance_drift_nm": drift,
                 "both_endpoints_physically_valid": endpoints_valid,
                 "proposed_time_convergence_passed": endpoints_valid
+                and duration_doubled
                 and same_count
                 and drift < 0.02
                 and max(width_change, q_change) < 0.01,
@@ -181,19 +187,26 @@ def main():
         json.dumps(duration_pairs, indent=2, allow_nan=False) + "\n"
     )
     if rings:
-        fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), constrained_layout=True)
+        fig, axes = plt.subplots(1, 3, figsize=(17, 4.5), constrained_layout=True)
         for idx, row in enumerate(rings):
             wl = np.asarray(row["wavelengths_um"]) * 1000
             order = np.argsort(wl)
-            label = f"{row['run_time_ps']:g} ps · {row['field_backend']}"
+            actual_ps = row["termination"]["time"] * 1e12
+            label = f"{actual_ps:.2f} ps (cap {row['run_time_ps']:g}) · {row['field_backend']}"
             axes[0].plot(
                 wl[order],
                 np.asarray(row["powers"]["o2"])[order],
                 color=COLORS[idx % len(COLORS)],
                 label=label,
             )
-            axes[1].scatter(
-                row["run_time_ps"],
+            axes[1].plot(
+                wl[order],
+                np.asarray(row["powers"]["o1"])[order],
+                color=COLORS[idx % len(COLORS)],
+                label=label,
+            )
+            axes[2].scatter(
+                actual_ps,
                 row["termination"]["field_decay"],
                 color=COLORS[idx % len(COLORS)],
                 label=label,
@@ -204,9 +217,33 @@ def main():
             ylabel="Through power / incident power",
             title="Corrected clock and modal sampling",
         )
-        axes[1].axhline(1e-5, color="#444444", ls="--", label="Required decay")
         axes[1].set(
-            xlabel="Configured duration (ps)",
+            xlabel="Wavelength (nm)",
+            ylabel="Reflected power / incident power",
+            title="Resonant reflection remains unresolved",
+        )
+        for control in (r for r in field_runs if r["device"] == "ring_bus"):
+            wl = np.asarray(control["wavelengths_um"]) * 1000
+            order = np.argsort(wl)
+            data = np.load(HERE / f"{control['run']}.npz")
+            reflection = data["diagnostic_o1__P_plus"] / data["incident_power"]
+            axes[0].plot(
+                wl[order],
+                np.asarray(control["powers"]["o2"])[order],
+                color="#777777",
+                ls=":",
+                label="Empty bus · same ring grid",
+            )
+            axes[1].plot(
+                wl[order],
+                reflection[order],
+                color="#777777",
+                ls=":",
+                label="Empty bus · same ring grid",
+            )
+        axes[2].axhline(1e-5, color="#444444", ls="--", label="Required decay")
+        axes[2].set(
+            xlabel="Actual simulated duration (ps)",
             ylabel="Terminal field-energy ratio",
             yscale="log",
             title="Time-convergence evidence",
