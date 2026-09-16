@@ -24,7 +24,14 @@ def main():
             or key in ("frequencies_hz", "incident_power", "valid_mask")
         }
         np.savez_compressed(HERE / f"{path.name}.npz", **compact)
-        row = {"run": path.name, "raw_artifact_path": str(path.resolve()), **summary}
+        metadata = json.loads((path / "run_metadata.json").read_text())
+        row = {
+            "run": path.name,
+            "raw_artifact_path": str(path.resolve()),
+            **summary,
+            "monitor_centers_m": metadata["monitor_centers_m"],
+            "time_step_s": float(np.diff(raw["source_time_s"][:2])[0]),
+        }
         if summary["device"].startswith(("straight_", "converter_grid_")):
             incident = raw["incident_power"]
             row["reflection_max"] = float(

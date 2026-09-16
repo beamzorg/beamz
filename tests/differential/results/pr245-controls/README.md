@@ -144,3 +144,18 @@ falls to **0.000291**, input reflection to **0.00427**, and selected outputs plu
 input reflection to **1.00181**. Conversion is **0.22110** at 1550 nm. This
 isolates the truncation effect from remeshing: it largely explains the spurious
 returning waves but does not explain the gap to converged reference conversion.
+
+A no-fit analytic sampling check provides a concrete lead for the 6-PPW control
+error. Linear normal-direction interpolation attenuates E and H differently
+according to a monitor's fractional position between Yee planes. Using recorded
+grid edges, monitor positions, and modal neff, the single-mode model predicts
+TE0 near-plane transmission about 1.033 versus measured 1.031, and TE1 middle
+transmission about 1.023 versus measured 1.023. Across all retained wavelengths
+and planes, prediction errors stay below 0.98 percentage points. See
+`diagnose_plane_sampling.py` and `plane_sampling_analysis.json`.
+
+This supports auditing the modal basis against the **same interpolation applied
+to measured fields**, with correct forward/backward phases and power
+normalization. It does not validate a scalar post-hoc correction: the model
+omits discrete dispersion, vector impedance errors, radiation, and attenuation.
+The measured data and acceptance thresholds are unchanged.

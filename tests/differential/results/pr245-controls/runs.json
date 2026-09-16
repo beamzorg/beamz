@@ -79,6 +79,34 @@
     "max_transmission_error": 0.007404412072300692,
     "max_monitor_power_spread": 0.00465414099205963,
     "monitor_data_sha256": "6829c27930c82e8ed0ef411bff860460a5bf71910924c62e7c253bfa5b34f88b",
+    "monitor_centers_m": {
+      "far": [
+        9.999999999999999e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "middle": [
+        9e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "near": [
+        8e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        2e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "straight_xy": [
+        6e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.3902656473097273e-16,
     "reflection_max": 0.002758508550015553,
     "max_modal_flux_relative_error": 0.0006247213162980204
   },
@@ -162,6 +190,34 @@
     "max_transmission_error": 0.0014212886577787964,
     "max_monitor_power_spread": 0.001247220813129446,
     "monitor_data_sha256": "abc3ae3e56a6831db56cfb34e7cfb730726815972221e1fe6749016cb0a5cdd7",
+    "monitor_centers_m": {
+      "far": [
+        9.999999999999999e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "middle": [
+        9e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "near": [
+        8e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        2e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "straight_xy": [
+        6e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.3845176214672367e-16,
     "reflection_max": 0.0031640672021676095,
     "max_modal_flux_relative_error": 0.00012023217098935409
   },
@@ -245,6 +301,34 @@
     "max_transmission_error": 0.0026039157134313262,
     "max_monitor_power_spread": 0.0018949852659319033,
     "monitor_data_sha256": "40e5fcb3922f7eb6dd998a54637f54d27707a3e9cd3372468bb29e137f21446d",
+    "monitor_centers_m": {
+      "far": [
+        9.999999999999999e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "middle": [
+        9e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "near": [
+        8e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        2e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "straight_xy": [
+        6e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.3845176214672367e-16,
     "reflection_max": 0.00309829041270426,
     "max_modal_flux_relative_error": 0.00018047351234820873
   },
@@ -328,6 +412,34 @@
     "max_transmission_error": 0.007881167229697561,
     "max_monitor_power_spread": 0.0007014706787562552,
     "monitor_data_sha256": "583defd6fa50aa9a47cb16088896b4bb476c54351cd652646a1325faa3890b3d",
+    "monitor_centers_m": {
+      "far": [
+        9.999999999999999e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "middle": [
+        9e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "near": [
+        8e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        2e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "straight_xy": [
+        6e-06,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.3622108960442543e-16,
     "reflection_max": 0.002093181343537066,
     "max_modal_flux_relative_error": 0.001260358852151704
   },
@@ -701,7 +813,25 @@
       "spectral_metrics_valid": false
     },
     "selected_output_max": 1.940988798391356,
-    "monitor_data_sha256": "62b91a9d69f19c148a94dc21c64433d06c042aa009c9ba509dc65cdb069f298f"
+    "monitor_data_sha256": "62b91a9d69f19c148a94dc21c64433d06c042aa009c9ba509dc65cdb069f298f",
+    "monitor_centers_m": {
+      "o1": [
+        1.5e-06,
+        1.5e-06,
+        2.1099999999999997e-06
+      ],
+      "o2": [
+        3.1e-05,
+        1.5e-06,
+        2.1099999999999997e-06
+      ],
+      "ring_resonator_xy": [
+        1.6e-05,
+        1.2025e-05,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.3233502301891554e-16
   },
   {
     "run": "ring-12p8",
@@ -1074,7 +1204,25 @@
       "spectral_metrics_valid": false
     },
     "selected_output_max": 2.1515924647957068,
-    "monitor_data_sha256": "87ff5983fd75f2555cb0c04a742d4bf6471f5fa3f0b53643457dc7e51fb463c9"
+    "monitor_data_sha256": "87ff5983fd75f2555cb0c04a742d4bf6471f5fa3f0b53643457dc7e51fb463c9",
+    "monitor_centers_m": {
+      "o1": [
+        1.5e-06,
+        1.5e-06,
+        2.1099999999999997e-06
+      ],
+      "o2": [
+        3.1e-05,
+        1.5e-06,
+        2.1099999999999997e-06
+      ],
+      "ring_resonator_xy": [
+        1.6e-05,
+        1.2025e-05,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.3233502301891554e-16
   },
   {
     "run": "ring-fixed-6p4",
@@ -1446,7 +1594,25 @@
       "spectral_metrics_valid": false
     },
     "selected_output_max": 1.2732917574587561,
-    "monitor_data_sha256": "987cc4b9be0fa92a8faa032c921368713cc49e116120e30d7b0fe121003e855b"
+    "monitor_data_sha256": "987cc4b9be0fa92a8faa032c921368713cc49e116120e30d7b0fe121003e855b",
+    "monitor_centers_m": {
+      "o1": [
+        1.5e-06,
+        1.5e-06,
+        2.1099999999999997e-06
+      ],
+      "o2": [
+        3.1e-05,
+        1.5e-06,
+        2.1099999999999997e-06
+      ],
+      "ring_resonator_xy": [
+        1.6e-05,
+        1.2025e-05,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.3233502301891554e-16
   },
   {
     "run": "ring-fixed-12p8",
@@ -1826,7 +1992,25 @@
     },
     "peak_host_rss_mib": 5264.1640625,
     "peak_device_bytes_in_use": 1938287872,
-    "monitor_data_sha256": "e4af9281fc89ed7885ce894ee881fe2fe9df9d89c2a6c4d9d487c579c570365f"
+    "monitor_data_sha256": "e4af9281fc89ed7885ce894ee881fe2fe9df9d89c2a6c4d9d487c579c570365f",
+    "monitor_centers_m": {
+      "o1": [
+        1.5e-06,
+        1.5e-06,
+        2.1099999999999997e-06
+      ],
+      "o2": [
+        3.1e-05,
+        1.5e-06,
+        2.1099999999999997e-06
+      ],
+      "ring_resonator_xy": [
+        1.6e-05,
+        1.2025e-05,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.3233502301891554e-16
   },
   {
     "run": "converter-6ppw-dense",
@@ -1984,7 +2168,35 @@
       "mesh_convergence_established": false
     },
     "selected_output_max": 1.019144740642564,
-    "monitor_data_sha256": "1ea9c2bfb89b133f2fac82d0fe4538eea4914fef02e596f26e51c83edb5c7db4"
+    "monitor_data_sha256": "1ea9c2bfb89b133f2fac82d0fe4538eea4914fef02e596f26e51c83edb5c7db4",
+    "monitor_centers_m": {
+      "mode_converter_xy": [
+        3.6e-05,
+        5.2289999999999986e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        1.2358e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ],
+      "o2": [
+        1.5e-06,
+        2.2e-06,
+        2.1099999999999997e-06
+      ],
+      "o3": [
+        7.049999999999999e-05,
+        2.2e-06,
+        2.1099999999999997e-06
+      ],
+      "o4": [
+        5.9642e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.1810685313286855e-16
   },
   {
     "run": "converter-fixed-6ppw",
@@ -2142,7 +2354,35 @@
       "mesh_convergence_established": false
     },
     "selected_output_max": 1.0191533305990694,
-    "monitor_data_sha256": "e35dffcaed0fe0f1e3545916cfadddfb1e639d6e8afbcec6ddc6c2ea5c096f72"
+    "monitor_data_sha256": "e35dffcaed0fe0f1e3545916cfadddfb1e639d6e8afbcec6ddc6c2ea5c096f72",
+    "monitor_centers_m": {
+      "mode_converter_xy": [
+        3.6e-05,
+        5.2289999999999986e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        1.2358e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ],
+      "o2": [
+        1.5e-06,
+        2.2e-06,
+        2.1099999999999997e-06
+      ],
+      "o3": [
+        7.049999999999999e-05,
+        2.2e-06,
+        2.1099999999999997e-06
+      ],
+      "o4": [
+        5.9642e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.1810685313286855e-16
   },
   {
     "run": "converter-ports-fixed-6ppw",
@@ -2311,7 +2551,35 @@
     "peak_host_rss_mib": 5220.53125,
     "peak_jax_device_bytes_in_use": 1792879104,
     "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
-    "monitor_data_sha256": "deefa700d5b1c34690606eb60809ef4ad2fbf16c1f90be888ccf18db273c9f52"
+    "monitor_data_sha256": "deefa700d5b1c34690606eb60809ef4ad2fbf16c1f90be888ccf18db273c9f52",
+    "monitor_centers_m": {
+      "mode_converter_xy": [
+        3.6e-05,
+        5.2289999999999986e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        1.2358e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ],
+      "o2": [
+        1.5e-06,
+        2.2e-06,
+        2.1099999999999997e-06
+      ],
+      "o3": [
+        7.049999999999999e-05,
+        2.2e-06,
+        2.1099999999999997e-06
+      ],
+      "o4": [
+        5.9642e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.1923258751469443e-16
   },
   {
     "run": "converter-grid-te0-fixed",
@@ -2404,6 +2672,34 @@
     "peak_jax_device_bytes_in_use": 2075325952,
     "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
     "monitor_data_sha256": "6d4dcc03ffaf64a391674b70de1baebcc76dcf9c13bbb29daa42934f8d7741dc",
+    "monitor_centers_m": {
+      "far": [
+        7.05e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ],
+      "middle": [
+        3.6e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ],
+      "near": [
+        1.3858e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        1.2358000000000001e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ],
+      "straight_xy": [
+        3.6e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.1810685313286855e-16,
     "reflection_max": 0.00042233007516071256,
     "max_modal_flux_relative_error": 0.001035686397845806
   },
@@ -2498,6 +2794,34 @@
     "peak_jax_device_bytes_in_use": 2119947520,
     "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
     "monitor_data_sha256": "133eed507982a148f4fc71a59b30a853076cc95d275dcf4cb7fdb9c60e4b9743",
+    "monitor_centers_m": {
+      "far": [
+        7.05e-05,
+        2.2e-06,
+        2.1099999999999997e-06
+      ],
+      "middle": [
+        3.6e-05,
+        2.2e-06,
+        2.1099999999999997e-06
+      ],
+      "near": [
+        3.5e-06,
+        2.2e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        2e-06,
+        2.2e-06,
+        2.1099999999999997e-06
+      ],
+      "straight_xy": [
+        3.6e-05,
+        2.2e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.1810685313286855e-16,
     "reflection_max": 0.0017586340923088878,
     "max_modal_flux_relative_error": 0.0004245649567567653
   },
@@ -2593,7 +2917,35 @@
     },
     "peak_host_rss_mib": 3054.5859375,
     "peak_device_bytes_in_use": 525612800,
-    "monitor_data_sha256": "a8119054e19c525f93c4069f95138b6e78684e3577f32d533fa2a4899b43c516"
+    "monitor_data_sha256": "a8119054e19c525f93c4069f95138b6e78684e3577f32d533fa2a4899b43c516",
+    "monitor_centers_m": {
+      "mmi2x2_xy": [
+        1.7e-05,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        1.5e-06,
+        1.5e-06,
+        2.1099999999999997e-06
+      ],
+      "o2": [
+        1.5e-06,
+        6e-06,
+        2.1099999999999997e-06
+      ],
+      "o3": [
+        3.25e-05,
+        6e-06,
+        2.1099999999999997e-06
+      ],
+      "o4": [
+        3.25e-05,
+        1.5e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.4050784280815955e-16
   },
   {
     "run": "mmi-fixed-10ppw",
@@ -2687,7 +3039,35 @@
     },
     "peak_host_rss_mib": 5938.81640625,
     "peak_device_bytes_in_use": 2127182848,
-    "monitor_data_sha256": "936b95352376d95a2b8264ca5d1f062822fa07dba815f0d187712cd02bbb81a9"
+    "monitor_data_sha256": "936b95352376d95a2b8264ca5d1f062822fa07dba815f0d187712cd02bbb81a9",
+    "monitor_centers_m": {
+      "mmi2x2_xy": [
+        1.7e-05,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        1.5e-06,
+        1.5e-06,
+        2.1099999999999997e-06
+      ],
+      "o2": [
+        1.5e-06,
+        6e-06,
+        2.1099999999999997e-06
+      ],
+      "o3": [
+        3.25e-05,
+        6e-06,
+        2.1099999999999997e-06
+      ],
+      "o4": [
+        3.25e-05,
+        1.5e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 8.439986325407972e-17
   },
   {
     "run": "mmi-fixed-15ppw",
@@ -2784,7 +3164,35 @@
     "peak_host_rss_mib": 13415.76171875,
     "peak_jax_device_bytes_in_use": 6781376256,
     "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
-    "monitor_data_sha256": "a88ac6af64519d0d551de25aca9433734d40e6617d0b9680d96749bab3be23de"
+    "monitor_data_sha256": "a88ac6af64519d0d551de25aca9433734d40e6617d0b9680d96749bab3be23de",
+    "monitor_centers_m": {
+      "mmi2x2_xy": [
+        1.7e-05,
+        3.7499999999999997e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        1.5e-06,
+        1.5e-06,
+        2.1099999999999997e-06
+      ],
+      "o2": [
+        1.5e-06,
+        6e-06,
+        2.1099999999999997e-06
+      ],
+      "o3": [
+        3.25e-05,
+        6e-06,
+        2.1099999999999997e-06
+      ],
+      "o4": [
+        3.25e-05,
+        1.5e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 5.506195163928393e-17
   },
   {
     "run": "converter-ports-fixed-frozen6",
@@ -2959,6 +3367,34 @@
     "peak_host_rss_mib": 5388.5,
     "peak_jax_device_bytes_in_use": 2139260672,
     "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
-    "monitor_data_sha256": "49f3da05635b861265b031254c3670daec53085f29419ac37d1acf2ed685f064"
+    "monitor_data_sha256": "49f3da05635b861265b031254c3670daec53085f29419ac37d1acf2ed685f064",
+    "monitor_centers_m": {
+      "mode_converter_xy": [
+        3.6e-05,
+        5.2289999999999986e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        1.2358e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ],
+      "o2": [
+        1.5e-06,
+        2.2e-06,
+        2.1099999999999997e-06
+      ],
+      "o3": [
+        7.049999999999999e-05,
+        2.2e-06,
+        2.1099999999999997e-06
+      ],
+      "o4": [
+        5.9642e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 1.1810685313286855e-16
   }
 ]
