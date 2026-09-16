@@ -165,13 +165,17 @@ def main():
             for r in (first, second)
         )
         actual_times = [r["termination"]["time"] for r in (first, second)]
-        second_dt = actual_times[1] / second["termination"]["steps"]
-        duration_doubled = actual_times[1] + second_dt >= 2 * actual_times[0]
+        # Same grid/dt: integer steps avoid float32 timestamp roundoff at the
+        # one-step allowance needed when a configured cap is rounded upward.
+        duration_doubled = (
+            second["termination"]["steps"] + 1 >= 2 * first["termination"]["steps"]
+        )
         duration_pairs.append(
             {
                 "runs": [first["run"], second["run"]],
                 "actual_durations_ps": [t * 1e12 for t in actual_times],
                 "actual_duration_doubled": duration_doubled,
+                "fixed_source_prefix_invariance_verified": False,
                 "relative_fwhm_change": width_change,
                 "relative_q_change": q_change,
                 "maximum_resonance_drift_nm": drift,
@@ -222,7 +226,7 @@ def main():
             ylabel="Reflected power / incident power",
             title="Resonant reflection remains unresolved",
         )
-        for control in (r for r in field_runs if r["device"] == "ring_bus"):
+        for control in (r for r in field_runs if r["run"] == "ring-bus-exact6p4"):
             wl = np.asarray(control["wavelengths_um"]) * 1000
             order = np.argsort(wl)
             data = np.load(HERE / f"{control['run']}.npz")

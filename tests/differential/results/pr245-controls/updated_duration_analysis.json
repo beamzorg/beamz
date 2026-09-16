@@ -8,7 +8,8 @@
       6.400119149929662,
       12.800105593513411
     ],
-    "actual_duration_doubled": false,
+    "actual_duration_doubled": true,
+    "fixed_source_prefix_invariance_verified": false,
     "relative_fwhm_change": 0.34042553191496394,
     "relative_q_change": 0.5161290322582262,
     "maximum_resonance_drift_nm": 0.0,
@@ -25,9 +26,27 @@
       25.600079348042648
     ],
     "actual_duration_doubled": true,
+    "fixed_source_prefix_invariance_verified": false,
     "relative_fwhm_change": 0.22580645161266089,
     "relative_q_change": 0.2916750531863648,
     "maximum_resonance_drift_nm": null,
+    "both_endpoints_physically_valid": false,
+    "proposed_time_convergence_passed": false
+  },
+  {
+    "runs": [
+      "reprojected-ring-fixed-25p6",
+      "reprojected-ring-fixed-51p2"
+    ],
+    "actual_durations_ps": [
+      25.600079348042648,
+      51.200158696085296
+    ],
+    "actual_duration_doubled": true,
+    "fixed_source_prefix_invariance_verified": false,
+    "relative_fwhm_change": 0.0,
+    "relative_q_change": 1.2985495201789377e-05,
+    "maximum_resonance_drift_nm": 0.0,
     "both_endpoints_physically_valid": false,
     "proposed_time_convergence_passed": false
   }

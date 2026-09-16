@@ -1,60 +1,34 @@
-diff --git c/tests/differential/passive_soi/four_port.py w/tests/differential/passive_soi/four_port.py
+diff --git a/tests/differential/passive_soi/four_port.py b/tests/differential/passive_soi/four_port.py
 index 7ac10465..42885d11 100644
---- c/tests/differential/passive_soi/four_port.py
-+++ w/tests/differential/passive_soi/four_port.py
-@@ -46,6 +46,7 @@ class FourPortBenchmarkResult:
-     steps: int
-     grid_shape: tuple[int, int, int]
-     termination_reason: str
+--- a/tests/differential/passive_soi/four_port.py
++++ b/tests/differential/passive_soi/four_port.py
+@@ -48,0 +49 @@ class FourPortBenchmarkResult:
 +    terminal_field_decay: float
- 
- 
- @dataclass(frozen=True)
-@@ -551,4 +552,9 @@ def run_four_port_benchmark(
-         steps=int(performance.steps if performance else simulation.num_steps),
-         grid_shape=tuple(int(value) for value in simulation.grid.shape),
-         termination_reason=termination.reason if termination else "time_limit",
+@@ -553,0 +555,5 @@ def run_four_port_benchmark(
 +        terminal_field_decay=(
 +            float(termination.field_decay)
 +            if termination is not None and termination.field_decay is not None
 +            else float("inf")
 +        ),
-     )
-diff --git c/tests/differential/passive_soi/mode_conversion.py w/tests/differential/passive_soi/mode_conversion.py
+diff --git a/tests/differential/passive_soi/mode_conversion.py b/tests/differential/passive_soi/mode_conversion.py
 index fc9f2933..bb7c7623 100644
---- c/tests/differential/passive_soi/mode_conversion.py
-+++ w/tests/differential/passive_soi/mode_conversion.py
-@@ -39,6 +39,7 @@ class ModeConversionResult:
-     steps: int
-     grid_shape: tuple[int, int, int]
-     termination_reason: str
+--- a/tests/differential/passive_soi/mode_conversion.py
++++ b/tests/differential/passive_soi/mode_conversion.py
+@@ -41,0 +42 @@ class ModeConversionResult:
 +    terminal_field_decay: float
- 
- 
- def build_mode_conversion_simulation(
-@@ -150,4 +151,9 @@ def run_mode_conversion_benchmark(
-         steps=int(performance.steps),
-         grid_shape=tuple(simulation.grid.shape),
-         termination_reason=termination.reason if termination else "time_limit",
+@@ -152,0 +154,5 @@ def run_mode_conversion_benchmark(
 +        terminal_field_decay=(
 +            float(termination.field_decay)
 +            if termination is not None and termination.field_decay is not None
 +            else float("inf")
 +        ),
-     )
-diff --git c/tests/differential/test_mmi2x2.py w/tests/differential/test_mmi2x2.py
+diff --git a/tests/differential/test_mmi2x2.py b/tests/differential/test_mmi2x2.py
 index 13e63a7c..a0f0d344 100644
---- c/tests/differential/test_mmi2x2.py
-+++ w/tests/differential/test_mmi2x2.py
-@@ -121,10 +121,18 @@ def test_mmi2x2_power_is_physical_and_characterizes_reference(
-         "steps": result.steps,
-         "grid_shape": result.grid_shape,
-         "termination_reason": result.termination_reason,
+--- a/tests/differential/test_mmi2x2.py
++++ b/tests/differential/test_mmi2x2.py
+@@ -123,0 +124 @@ def test_mmi2x2_power_is_physical_and_characterizes_reference(
 +        "terminal_field_decay": result.terminal_field_decay,
-         "wavelength_span_nm": result.wavelength_span_nm,
-     }
-     comparison = power_comparison(case, "cross", resolution_ppw, result.cross_power)
-     metadata["reference_comparison"] = comparison
+@@ -127,0 +129,7 @@ def test_mmi2x2_power_is_physical_and_characterizes_reference(
 +    validation_metrics.check_upper(
 +        "2x2 MMI terminal field-decay ratio",
 +        measured=result.terminal_field_decay,
@@ -62,17 +36,11 @@ index 13e63a7c..a0f0d344 100644
 +        unit="ratio",
 +        metadata=metadata,
 +    )
-     if comparison["reference_eligible"]:
-         lower, upper = comparison["converged_range"]
-         validation_metrics.check_lower(
-diff --git c/tests/differential/test_mode_conversion.py w/tests/differential/test_mode_conversion.py
+diff --git a/tests/differential/test_mode_conversion.py b/tests/differential/test_mode_conversion.py
 index 4434aa52..19030abf 100644
---- c/tests/differential/test_mode_conversion.py
-+++ w/tests/differential/test_mode_conversion.py
-@@ -134,6 +134,13 @@ def test_conversion_power_is_physical_and_characterizes_reference(
-         case, "conversion", resolution_ppw, result.conversion_power
-     )
-     metadata["reference_comparison"] = comparison
+--- a/tests/differential/test_mode_conversion.py
++++ b/tests/differential/test_mode_conversion.py
+@@ -136,0 +137,7 @@ def test_conversion_power_is_physical_and_characterizes_reference(
 +    validation_metrics.check_upper(
 +        f"{name} terminal field-decay ratio",
 +        measured=result.terminal_field_decay,
@@ -80,6 +48,3 @@ index 4434aa52..19030abf 100644
 +        unit="ratio",
 +        metadata=metadata,
 +    )
-     if comparison["reference_eligible"]:
-         lower, upper = comparison["converged_range"]
-         validation_metrics.check_lower(

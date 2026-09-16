@@ -31,6 +31,16 @@
         0.05559138703146451
       ],
       "terminal_largest_real_or_quadrature_drive_over_own_peak": 0.055554905203051445
+    },
+    {
+      "run": "ring-fixed-51p2",
+      "duration_ps": 51.2,
+      "terminal_subband_envelope_over_own_peak": [
+        0.05467340001321892,
+        0.039780632628243176,
+        0.053738551012661076
+      ],
+      "terminal_largest_real_or_quadrature_drive_over_own_peak": 0.05374187204595358
     }
   ],
   "adjacent_prefix_comparisons": [
@@ -49,6 +59,14 @@
       ],
       "maximum_common_prefix_difference_over_larger_run_peak": 0.05138490899667855,
       "maximum_first_2ps_difference_over_larger_run_peak": 0.05138490899667855
+    },
+    {
+      "runs": [
+        "ring-fixed-25p6",
+        "ring-fixed-51p2"
+      ],
+      "maximum_common_prefix_difference_over_larger_run_peak": 0.08510531543612133,
+      "maximum_first_2ps_difference_over_larger_run_peak": 0.08510531543612133
     }
   ]
 }

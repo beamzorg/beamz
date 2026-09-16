@@ -108,6 +108,7 @@ matrix or a complete all-mode energy balance.
 | 6.4 ps | 5.11e-2 | 1.27324 | 0.94094 nm | 1638.5 |
 | 12.8 ps | 9.25e-3 | 1.15025 | 0.62062 nm | 2484.1 |
 | 25.6 ps | 3.47e-4 | 1.00988 | 0.48048 nm | 3208.7 |
+| 51.2 ps | **6.44e-7** | **0.99650** | **0.48048 nm** | **3208.7** |
 
 At 25.6 ps, reflected input power reaches **72.54%** near resonance, while
 incoming power at the far output stays below 0.030%. That strong reflection
@@ -115,15 +116,30 @@ remains unexplained. The empty-bus control preserves the ring mesh, source,
 ports, and absorber: at the default 6.4046-ps cap it has maximum transmission
 error **0.233%**, reflection **0.0454%**, and field decay **2.55e-9**. It rules out
 a comparably large gross reflection in the empty measurement setup, but is not
-a full boundary/mesh convergence study. An exactly matched 6.4-ps follow-up is
-being completed separately.
+a full boundary/mesh convergence study. The exactly matched 6.4-ps follow-up
+also passes: **0.2327%** transmission error and **0.0454%** reflection, compared
+with **7.15%** reflection in the 6.4-ps ring. Every grid edge, evaluation frequency,
+source time and in-phase/quadrature sample is identical (`ring_bus_matching.json`).
+This isolates adding the resonator from the empty-bus baseline at that duration.
 
-The 51.2-ps-cap follow-up is still running. No completed duration pair passes
+![Actual empty-bus material grid](ring_bus_material_grid.png)
+
+The artifact exporter now draws pre-rasterized controls from actual material
+cells and physical grid edges. The generic geometry plot showed an empty
+metadata-only design for these controls; older local pre-rasterized geometry
+PNGs are not material evidence. This corrected image is rebuilt on the exact
+recorded grid; none of the retained FDTD arrays changed.
+
+At 51.2 ps the field-decay and selected-power gates pass. The first-dip width
+is unchanged at the retained extraction resolution, Q changes by 0.0013%,
+and detected resonance locations are unchanged relative to 25.6 ps. Reflection
+still reaches **71.09%**. No completed duration pair passes
 the predeclared criteria: both endpoints below `1e-5` decay and 1.02 selected
 power, less than 1% FWHM/Q change, and less than 0.02 nm resonance drift.
-`updated_duration_analysis.json` records the decisions. A single longer point
-meeting decay would not establish time convergence. Auto-terminated runs with
-different caps but the same actual stopping time are not independent duration
+`updated_duration_analysis.json` records the decisions. The shorter 25.6-ps
+endpoint still fails decay, and the source-duration confound below remains
+unresolved. A single passing endpoint does not establish
+time convergence. Auto-terminated runs with different caps but the same actual stopping time are not independent duration
 comparisons.
 
 The upstream linewidth script has a separate extraction limitation. Replaying
@@ -148,7 +164,7 @@ extraction window or a fitted Q to pass the published range.
 `audit_source_duration.py` replays the compiler's three-profile temporal
 partition using retained in-phase/quadrature samples. The individual subbands
 have periodic end-of-record tails around **4–6% of their own peaks** and change
-by about **5% of the larger run's subband peak** between adjacent duration
+by **5.1–8.5% of the larger run's subband peak** between adjacent duration
 records. The same requested Gaussian pulse therefore does not guarantee
 identical compiled profile drives. These are **not net injected-field or power
 fractions**: spatial profile coefficients can cancel individual subbands.
@@ -177,12 +193,13 @@ aperture, polarization/mode-completeness and radiation checks remain required.
 Validation completed during this campaign: 51 engine/runtime/clock checks,
 29 native CUDA parity checks (2 Hopper-only cases excluded), 41 modal/placement/
 result-contract checks, and 3 final device hardware cases. After adding explicit
-MMI/converter/PSR decay gates, 28 focused protocol tests passed. Earlier focused
-checks also covered automatic termination. These are targeted results, not a
+MMI/converter/PSR decay gates and the empty-bus control, 29 focused protocol
+tests passed. Earlier focused checks also covered automatic termination. These are targeted results, not a
 claim that the entire repository suite or all paper cases pass.
 `hardware_validation.json` preserves the final hardware metrics; its reported
 base revision plus `hardware_validation_source.patch` identify the tested
-uncommitted change, subsequently committed as `a049399a`.
+uncommitted change, subsequently committed as `a049399a`. The patch uses zero
+context (`git apply --unidiff-zero`) to retain clean whitespace in the evidence.
 
 The remaining order is:
 
@@ -191,8 +208,8 @@ The remaining order is:
    each duration. Audit 1/3/5-profile sensitivity and net spatial injection.
    Then finish ring duration convergence with actual later endpoints, a denser DFT
    spectrum, and spatial ring/bus/boundary energy histories. Preserve the pinned
-   short-duration case as characterization. Follow the initial empty-bus control with padded
-   domain/absorber sweeps on the same interior mesh. The new clearance guard
+   short-duration case as characterization. Follow the initial empty-bus control
+   with padded domain/absorber sweeps on the same interior mesh. The new clearance guard
    correctly rejects 2/3-µm absorbers that would engulf existing source/ports.
 2. Complete refined device-grid TE/TM controls, mode-overlap tracking, monitor
    offset/aperture and source-profile checks before accepting percent-level

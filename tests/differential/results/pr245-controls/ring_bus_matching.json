@@ -1,0 +1,15 @@
+{
+  "runs": [
+    "ring-fixed-6p4",
+    "ring-bus-exact6p4"
+  ],
+  "exact_array_equality": [
+    "grid_x_boundaries_m",
+    "grid_y_boundaries_m",
+    "grid_z_boundaries_m",
+    "frequencies_hz",
+    "source_time_s",
+    "source_signal",
+    "source_quadrature"
+  ]
+}

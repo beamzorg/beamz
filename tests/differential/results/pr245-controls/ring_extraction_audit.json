@@ -41,6 +41,19 @@
       "dominant_resonances_between_crossings": 2,
       "beamz_first_complete_dip_fwhm_nm": 0.4804804804805496,
       "beamz_first_complete_dip_q": 3208.708333332872
+    },
+    {
+      "run": "reprojected-ring-fixed-51p2",
+      "duration_ps": 51.2,
+      "literal_upstream_fwhm_nm": -1.4614614614614219,
+      "literal_upstream_q": -1054.2328767123574,
+      "literal_upstream_crossings_nm": [
+        1541.4614614614616,
+        1540.0000000000002
+      ],
+      "dominant_resonances_between_crossings": 0,
+      "beamz_first_complete_dip_fwhm_nm": 0.4804804804805496,
+      "beamz_first_complete_dip_q": 3208.6666666662054
     }
   ]
 }

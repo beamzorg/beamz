@@ -396,6 +396,25 @@
       }
     },
     {
+      "run": "reprojected-ring-fixed-51p2",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.13970541568923137,
+          "wavelength_at_maximum_nm": 1541.9768934531453,
+          "residual_at_1550nm": 0.024501702505835932,
+          "selected_output_power_at_maximum": 0.23206570408001498,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o2": {
+          "maximum_residual": 0.7425845749917598,
+          "wavelength_at_maximum_nm": 1541.7789757412402,
+          "residual_at_1550nm": 0.06343058493970627,
+          "selected_output_power_at_maximum": 0.008245093761173867,
+          "maximum_condition_number": 1.0000000000000004
+        }
+      }
+    },
+    {
       "run": "reprojected-ring-fixed-6p4",
       "ports": {
         "o1": {
@@ -594,6 +613,25 @@
           "wavelength_at_maximum_nm": 1560.0000000000002,
           "residual_at_1550nm": 0.0577454738280912,
           "selected_output_power_at_maximum": 0.997730193392339,
+          "maximum_condition_number": 1.0000000000000004
+        }
+      }
+    },
+    {
+      "run": "ring-bus-exact6p4",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.023679282856819743,
+          "wavelength_at_maximum_nm": 1554.3478260869565,
+          "residual_at_1550nm": 0.02294882708818449,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o2": {
+          "maximum_residual": 0.06003117734485638,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.057745565838854714,
+          "selected_output_power_at_maximum": 0.9977560799988132,
           "maximum_condition_number": 1.0000000000000004
         }
       }
