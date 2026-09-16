@@ -1,6 +1,87 @@
 {
-  "ring_duration_pairs": [],
+  "ring_duration_pairs": [
+    {
+      "runs": [
+        "ring-fixed-6p4",
+        "ring-fixed-12p8"
+      ],
+      "backends": [
+        "jax",
+        "cuda_streamed"
+      ],
+      "relative_fwhm_change": 0.3333333333334103,
+      "relative_q_change": 0.5000000000001732,
+      "maximum_resonance_drift_nm": 0.0,
+      "both_endpoints_physically_valid": false,
+      "proposed_time_convergence_passed": false
+    }
+  ],
   "mesh_sweeps": {
+    "mmi2x2": [
+      {
+        "run": "mmi-fixed-6ppw",
+        "ppw": 6,
+        "power_1550nm": 0.37445836658528314,
+        "selected_output_max": 0.8152138174831086,
+        "field_decay": 2.141104788118247e-09,
+        "reference": {
+          "same_ppw_range": [
+            0.358,
+            0.376
+          ],
+          "same_ppw_agreement": true,
+          "converged_range": [
+            0.478,
+            0.49
+          ],
+          "reference_eligible": false,
+          "reference_agreement": null,
+          "mesh_convergence_established": false
+        }
+      },
+      {
+        "run": "mmi-fixed-10ppw",
+        "ppw": 10,
+        "power_1550nm": 0.45986494943417877,
+        "selected_output_max": 0.961645010637102,
+        "field_decay": 9.74255935629411e-10,
+        "reference": {
+          "same_ppw_range": [
+            0.459,
+            0.46
+          ],
+          "same_ppw_agreement": true,
+          "converged_range": [
+            0.478,
+            0.49
+          ],
+          "reference_eligible": false,
+          "reference_agreement": null,
+          "mesh_convergence_established": false
+        }
+      },
+      {
+        "run": "mmi-fixed-15ppw",
+        "ppw": 15,
+        "power_1550nm": 0.4803765352943265,
+        "selected_output_max": 0.974826611232961,
+        "field_decay": 6.275956479914154e-10,
+        "reference": {
+          "same_ppw_range": [
+            0.479,
+            0.483
+          ],
+          "same_ppw_agreement": true,
+          "converged_range": [
+            0.478,
+            0.49
+          ],
+          "reference_eligible": true,
+          "reference_agreement": true,
+          "mesh_convergence_established": false
+        }
+      }
+    ],
     "mode_converter": [
       {
         "run": "converter-fixed-6ppw",

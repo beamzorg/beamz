@@ -57,7 +57,13 @@ def main():
     devices = ["mmi2x2", "mode_converter", "polarization_splitter_rotator"]
     for device in devices:
         rows = sorted(
-            (r for r in runs if r["device"] == device and "fixed" in r["run"]),
+            (
+                r
+                for r in runs
+                if r["device"] == device
+                and "fixed" in r["run"]
+                and "ports-fixed" not in r["run"]
+            ),
             key=lambda r: r["ppw"],
         )
         if not rows:

@@ -96,3 +96,44 @@ ineligible in the experiment report. `--grid-from PATH/monitor_data.npz` keeps a
 recorded mesh fixed when comparing this intervention with the original setup.
 The geometry guard fails on the original converter and passes for the corrected
 variant; it is not evidence by itself of the spectral size of this effect.
+
+## Mesh and full-grid checks
+
+![MMI refinement](mmi2x2_mesh.png)
+
+| MMI PPW | BeamZ cross power at exact 1550 nm | Published same-PPW range | Peak process host RSS |
+|---|---:|---:|---:|
+| 6 | 0.374458 | 0.358–0.376 | 2.98 GiB |
+| 10 | 0.459865 | 0.459–0.460 | 5.80 GiB |
+| 15 | 0.480377 | 0.479–0.483 | 13.10 GiB |
+
+The 15-PPW point also enters the independently declared converged-reference
+interval 0.478–0.490. The change from 10 to 15 PPW is still 0.02051, so this is
+reference agreement at one eligible resolution, not established BeamZ mesh
+convergence. All three runs satisfy decay and selected-output bounds.
+
+![Full converter-grid controls](converter_grid_controls.png)
+
+Straight guides on the original converter's exact 971×123×27 grid fail the
+proposed 1% transmission calibration: TE0 reaches 3.18% error and TE1 2.31%.
+Maximum reflected powers are only 0.042% and 0.176%, respectively. TE1 varies
+by 2.52 percentage points between output planes. The earlier independent-grid
+controls therefore do not validate this device's measurement geometry. This
+requires refinement and a closer audit of staggered-field sampling and modal
+projection before treating percent-level spectral differences as physical.
+
+![Port intervention](converter_port_intervention.png)
+
+With extended stubs and automatic remeshing, maximum selected converter output
+falls to 0.99486; narrow-output backward power falls from 0.08343 to 0.000377.
+Input reflection falls from 0.09250 to 0.00452. Conversion at 1550 nm changes
+from 0.21842 to 0.21368, remaining far from the converged paper range. The
+original and corrected automatic meshes differ (971 versus 969 x cells), so
+this comparison alone does not isolate the geometric intervention.
+
+The reference geometry's selected outputs plus input reflection reach 1.06995.
+Backward waves arriving from other ports make that a multiple-incidence problem,
+not evidence that missing output modes somehow explain excess power. Passing
+the selected-output-only 1.02 check is insufficient to establish an open-port
+scattering matrix. The extended-stub variant is a separate diagnostic, not a
+way to tune the published conversion target.

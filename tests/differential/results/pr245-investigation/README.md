@@ -1,5 +1,7 @@
 # PR #245 investigation and reproduction plan
 
+Implementation follow-up: [controlled experiments, fixes, and fresh plots](../pr245-controls/README.md). The audit below preserves the original observations.
+
 Audit date: 2026-09-16. Reviewed head: `a54005b539b957906d0b2173e826a4069dbcf992`.
 Worktree: `/home/quentinwach/Code-pr245`, branch `pr245-investigation`.
 This is an analysis of committed measurements, not a new simulation campaign.
