@@ -1,0 +1,334 @@
+[
+  {
+    "run": "te0-final",
+    "raw_artifact_path": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/te0-final",
+    "device": "straight_te0",
+    "ppw": 6,
+    "options": {
+      "run_time_ps": null,
+      "monitor_offset_um": null,
+      "boundary_thickness_um": 1.0,
+      "transverse_span_um": null,
+      "source_profiles": null,
+      "wavelength_step_nm": null,
+      "exact_center": true,
+      "smoothing": "farjadpour_diagonal"
+    },
+    "commit": "9641d493b05fb2bed3998591c0c2a0fc84c95b30",
+    "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "grid_shape": [
+      162,
+      49,
+      27
+    ],
+    "cells": 214326,
+    "run_time_ps": 6.4,
+    "backend": "jax",
+    "wavelengths_um": [
+      1.5600000000000003,
+      1.5549514563106797,
+      1.55,
+      1.5499354838709678,
+      1.5449517684887464,
+      1.5400000000000003
+    ],
+    "powers": {
+      "near": [
+        1.003870957928332,
+        1.0017678986424583,
+        0.9994288708450728,
+        0.9994036624675993,
+        0.997833244486043,
+        0.9972497289197589
+      ],
+      "middle": [
+        1.0063688498226577,
+        1.0030744745921456,
+        0.9995573308462715,
+        0.9995142914109044,
+        0.9967585833306197,
+        0.9950231401120665
+      ],
+      "far": [
+        1.005804936791794,
+        1.001909413539939,
+        0.9979372319342318,
+        0.9978863327927878,
+        0.994706327861418,
+        0.9925955879276993
+      ]
+    },
+    "termination": {
+      "reason": "converged",
+      "steps": 46035,
+      "time": 6.4031995851421275e-12,
+      "converged": true,
+      "field_decay": 1.8078396604362515e-09,
+      "monitor_change": null,
+      "source_decay": 0.0,
+      "energy": 1.9703177713381591e-22,
+      "peak_energy": 1.0898741821289062e-13,
+      "max_field": 2965.462158203125,
+      "consecutive_checks": 1
+    },
+    "performance": {
+      "runtime_s": 14.320041205966845,
+      "cells": 214326,
+      "steps": 46035
+    },
+    "max_transmission_error": 0.007404412072300692,
+    "max_monitor_power_spread": 0.00465414099205963,
+    "monitor_data_sha256": "6829c27930c82e8ed0ef411bff860460a5bf71910924c62e7c253bfa5b34f88b",
+    "reflection_max": 0.002758508550015553,
+    "max_modal_flux_relative_error": 0.0006247213162980204
+  },
+  {
+    "run": "wide-te0",
+    "raw_artifact_path": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/wide-te0",
+    "device": "straight_wide_te0",
+    "ppw": 6,
+    "options": {
+      "run_time_ps": null,
+      "monitor_offset_um": null,
+      "boundary_thickness_um": 1.0,
+      "transverse_span_um": null,
+      "source_profiles": null,
+      "wavelength_step_nm": null,
+      "exact_center": true,
+      "smoothing": "farjadpour_diagonal"
+    },
+    "commit": "9641d493b05fb2bed3998591c0c2a0fc84c95b30",
+    "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "grid_shape": [
+      162,
+      55,
+      27
+    ],
+    "cells": 240570,
+    "run_time_ps": 6.4,
+    "backend": "jax",
+    "wavelengths_um": [
+      1.5600000000000003,
+      1.5549514563106797,
+      1.55,
+      1.5499354838709678,
+      1.5449517684887464,
+      1.5400000000000003
+    ],
+    "powers": {
+      "near": [
+        0.9991193681740705,
+        0.9988896288279582,
+        0.999236577392363,
+        0.9992476042356807,
+        0.9997897772792987,
+        1.0000512397878953
+      ],
+      "middle": [
+        0.9987620988241146,
+        0.9985787113422212,
+        0.9988819352863099,
+        0.9988943407516454,
+        0.9993264753882553,
+        0.9994241153642939
+      ],
+      "far": [
+        0.9998856106127142,
+        0.9997555468406093,
+        1.0001014908997687,
+        1.0001143659267966,
+        1.0005736962013847,
+        1.0006694027203797
+      ]
+    },
+    "termination": {
+      "reason": "converged",
+      "steps": 46226,
+      "time": 6.396523068163962e-12,
+      "converged": true,
+      "field_decay": 1.118071259636045e-09,
+      "monitor_change": null,
+      "source_decay": 0.0,
+      "energy": 1.1893314876942895e-22,
+      "peak_energy": 1.0637349609374999e-13,
+      "max_field": 1951.6136474609375,
+      "consecutive_checks": 1
+    },
+    "performance": {
+      "runtime_s": 15.123711013700813,
+      "cells": 240570,
+      "steps": 46226
+    },
+    "max_transmission_error": 0.0014212886577787964,
+    "max_monitor_power_spread": 0.001247220813129446,
+    "monitor_data_sha256": "abc3ae3e56a6831db56cfb34e7cfb730726815972221e1fe6749016cb0a5cdd7",
+    "reflection_max": 0.0031640672021676095,
+    "max_modal_flux_relative_error": 0.00012023217098935409
+  },
+  {
+    "run": "te1",
+    "raw_artifact_path": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/te1",
+    "device": "straight_te1",
+    "ppw": 6,
+    "options": {
+      "run_time_ps": null,
+      "monitor_offset_um": null,
+      "boundary_thickness_um": 1.0,
+      "transverse_span_um": null,
+      "source_profiles": null,
+      "wavelength_step_nm": null,
+      "exact_center": true,
+      "smoothing": "farjadpour_diagonal"
+    },
+    "commit": "9641d493b05fb2bed3998591c0c2a0fc84c95b30",
+    "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "grid_shape": [
+      162,
+      55,
+      27
+    ],
+    "cells": 240570,
+    "run_time_ps": 6.4,
+    "backend": "jax",
+    "wavelengths_um": [
+      1.5600000000000003,
+      1.5549514563106797,
+      1.55,
+      1.5499354838709678,
+      1.5449517684887464,
+      1.5400000000000003
+    ],
+    "powers": {
+      "near": [
+        0.9997402657889505,
+        0.9989753959375718,
+        0.9992790612654584,
+        0.9992956746774911,
+        1.0000131751332588,
+        1.000140769721572
+      ],
+      "middle": [
+        0.9978452805230186,
+        0.9973960842865687,
+        0.9980748092212985,
+        0.9980974878569429,
+        0.9992083112600582,
+        0.9996687112933018
+      ],
+      "far": [
+        0.9981881401117064,
+        0.9980186935250729,
+        0.9988943205994216,
+        0.9989215671753765,
+        1.00019903470697,
+        1.0007966068290528
+      ]
+    },
+    "termination": {
+      "reason": "converged",
+      "steps": 46226,
+      "time": 6.396523068163962e-12,
+      "converged": true,
+      "field_decay": 2.288798458257439e-09,
+      "monitor_change": null,
+      "source_decay": 0.0,
+      "energy": 2.49428760525916e-22,
+      "peak_energy": 1.0897803588867187e-13,
+      "max_field": 2315.129638671875,
+      "consecutive_checks": 1
+    },
+    "performance": {
+      "runtime_s": 15.11031179712154,
+      "cells": 240570,
+      "steps": 46226
+    },
+    "max_transmission_error": 0.0026039157134313262,
+    "max_monitor_power_spread": 0.0018949852659319033,
+    "monitor_data_sha256": "40e5fcb3922f7eb6dd998a54637f54d27707a3e9cd3372468bb29e137f21446d",
+    "reflection_max": 0.00309829041270426,
+    "max_modal_flux_relative_error": 0.00018047351234820873
+  },
+  {
+    "run": "tm0",
+    "raw_artifact_path": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/tm0",
+    "device": "straight_tm0",
+    "ppw": 6,
+    "options": {
+      "run_time_ps": null,
+      "monitor_offset_um": null,
+      "boundary_thickness_um": 1.0,
+      "transverse_span_um": null,
+      "source_profiles": null,
+      "wavelength_step_nm": null,
+      "exact_center": true,
+      "smoothing": "farjadpour_diagonal"
+    },
+    "commit": "9641d493b05fb2bed3998591c0c2a0fc84c95b30",
+    "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "grid_shape": [
+      162,
+      62,
+      31
+    ],
+    "cells": 311364,
+    "run_time_ps": 6.4,
+    "backend": "jax",
+    "wavelengths_um": [
+      1.5600000000000003,
+      1.5549514563106797,
+      1.55,
+      1.5499354838709678,
+      1.5449517684887464,
+      1.5400000000000003
+    ],
+    "powers": {
+      "near": [
+        0.9921188327703024,
+        0.9930160024235207,
+        0.9942738434460643,
+        0.9942817989435329,
+        0.9952685955849327,
+        0.9956123216012362
+      ],
+      "middle": [
+        0.9928203034490587,
+        0.9935555875617239,
+        0.9945565529144073,
+        0.9945601554034474,
+        0.9952031053048249,
+        0.9951309407405017
+      ],
+      "far": [
+        0.9921762584990975,
+        0.9932765936444561,
+        0.9946097209712572,
+        0.9946198337962336,
+        0.9955799217336939,
+        0.9957861427863183
+      ]
+    },
+    "termination": {
+      "reason": "converged",
+      "steps": 46983,
+      "time": 6.398291185066851e-12,
+      "converged": true,
+      "field_decay": 1.0804433264557977e-08,
+      "monitor_change": null,
+      "source_decay": 0.0,
+      "energy": 1.0200820361205842e-21,
+      "peak_energy": 9.441328491210937e-14,
+      "max_field": 6343.583984375,
+      "consecutive_checks": 1
+    },
+    "performance": {
+      "runtime_s": 16.17487677326426,
+      "cells": 311364,
+      "steps": 46983
+    },
+    "max_transmission_error": 0.007881167229697561,
+    "max_monitor_power_spread": 0.0007014706787562552,
+    "monitor_data_sha256": "583defd6fa50aa9a47cb16088896b4bb476c54351cd652646a1325faa3890b3d",
+    "reflection_max": 0.002093181343537066,
+    "max_modal_flux_relative_error": 0.001260358852151704
+  }
+]
