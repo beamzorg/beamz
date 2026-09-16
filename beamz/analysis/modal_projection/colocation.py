@@ -193,3 +193,36 @@ def _discrete_mode_projection_grids_3d(
         grids[name] = grid
         samples[name] = grid.reshape(-1)
     return grids, samples
+
+
+def _normal_mode_sampling_factors_3d(
+    sim, monitor, components, *, axis, wave_number, direction_sign
+):
+    """Sample a propagating modal basis with the monitor's normal interpolation.
+
+    Profiles are power normalized before applying these factors. Renormalizing
+    afterward would reintroduce the position-dependent interpolation bias.
+    """
+    from beamz.lattice import linear_interpolation_plan
+
+    position = float(monitor.center["xyz".index(axis)])
+    grid = sim.coordinates.grid
+    factors = {}
+    for component in components:
+        if grid is not None:
+            coordinates = component_coordinates_rectilinear(component, grid)[axis]
+        else:
+            coordinates = (
+                component_coordinates_3d_um(
+                    component,
+                    sim.coordinates.fields.grid_shape,
+                    sim.resolution / µm,
+                )[axis]
+                * µm
+            )
+        i0, i1, w0, w1 = linear_interpolation_plan(coordinates, np.asarray([position]))
+        phase = float(direction_sign) * float(wave_number) * (coordinates - position)
+        factors[component] = complex(
+            (w0 * np.exp(1j * phase[i0]) + w1 * np.exp(1j * phase[i1]))[0]
+        )
+    return factors
