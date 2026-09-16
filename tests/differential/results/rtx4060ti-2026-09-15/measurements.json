@@ -1,0 +1,824 @@
+{
+  "date": "2026-09-15",
+  "tested_commit": "da35b52",
+  "base_commit": "06ab298947be5eba0119a55b2584c0571838a1d0",
+  "base_note": "PR 230 head containing upstream main through #244 and the refreshed material-ownership benchmark fixes.",
+  "gpu": "NVIDIA GeForce RTX 4060 Ti 8 GiB under WSL2",
+  "packages": {
+    "beamz": "0.5.1",
+    "jax": "0.9.0",
+    "jaxlib": "0.9.0",
+    "gdsfactory": "8.18.2",
+    "numpy": "2.4.1",
+    "scipy": "1.17.0"
+  },
+  "runs": [
+    {
+      "device": "mmi2x2",
+      "ppw": 6,
+      "beamz_power": 0.3745486122824743,
+      "lumerical": 0.376,
+      "tidy3d": 0.358,
+      "nominal": 0.48499999999999993,
+      "lower": 0.358,
+      "upper": 0.6119999999999999,
+      "primary_pass": true,
+      "secondary_quantity": "2x2 MMI total output TE0 power at 1550 nm",
+      "secondary_value": 0.799400814386768,
+      "secondary_pass": true,
+      "outcome": "passed",
+      "cells": 1063476,
+      "steps": 24216,
+      "runtime_s": 30.423092381000004,
+      "termination": "converged",
+      "backend": "jax"
+    },
+    {
+      "device": "mode_converter",
+      "ppw": 6,
+      "beamz_power": 0.20029669258586225,
+      "lumerical": 0.967,
+      "tidy3d": 0.357,
+      "nominal": 0.47300000000000003,
+      "lower": -0.020999999999999908,
+      "upper": 0.967,
+      "primary_pass": true,
+      "secondary_quantity": "mode_converter maximum selected output power across 20 nm",
+      "secondary_value": 1.1232589110890296,
+      "secondary_pass": false,
+      "outcome": "xfailed",
+      "cells": 3224691,
+      "steps": 61005,
+      "runtime_s": 209.98117961299943,
+      "termination": "converged",
+      "backend": "jax"
+    },
+    {
+      "device": "polarization_splitter_rotator",
+      "ppw": 6,
+      "beamz_power": 0.8278231463885203,
+      "lumerical": 0.147,
+      "tidy3d": 0.051,
+      "nominal": 0.9492499999999999,
+      "lower": 0.051000000000000045,
+      "upper": 1.8474999999999997,
+      "primary_pass": true,
+      "secondary_quantity": "polarization_splitter_rotator maximum selected output power across 20 nm",
+      "secondary_value": 0.8384062575755346,
+      "secondary_pass": true,
+      "outcome": "passed",
+      "cells": 3331694,
+      "steps": 53249,
+      "runtime_s": 179.86392113600016,
+      "termination": "converged",
+      "backend": "jax"
+    },
+    {
+      "device": "ring_resonator",
+      "ppw": 6,
+      "terminal_field_decay": 0.12116940571039515,
+      "field_decay_limit": 1e-05,
+      "primary_pass": false,
+      "outcome": "xfailed",
+      "cells": 3615840,
+      "steps": 24199,
+      "runtime_s": 64.8822383300012,
+      "termination": "time_limit",
+      "backend": "jax"
+    }
+  ],
+  "validation_reports": {
+    "mmi2x2": {
+      "beamz_commit": "da35b52e9beb8c9eae52c446a498fbd626120233",
+      "cases": [
+        {
+          "case_id": "tests/differential/test_mmi2x2.py::test_mmi2x2_cross_power_agrees_with_converged_reference[6ppw]",
+          "evidence_class": "validation",
+          "metrics": 2,
+          "outcome": "passed"
+        }
+      ],
+      "environment": {
+        "backend": "gpu",
+        "beamz": "0.5.1",
+        "jax": "0.9.0",
+        "numpy": "2.4.1",
+        "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+        "python": "3.11.15",
+        "random_seed": "3265485659"
+      },
+      "generated_at": "2026-09-16T01:31:47.135388+00:00",
+      "metricless_case_ids": [],
+      "metrics": [
+        {
+          "absolute_error": 0.1104513877175256,
+          "backend": "beamz-vs-resolution-aware-published-reference",
+          "case_id": "tests/differential/test_mmi2x2.py::test_mmi2x2_cross_power_agrees_with_converged_reference[6ppw]",
+          "comparison": "close",
+          "error_limit": 0.12699999999999995,
+          "margin": 0.01654861228247434,
+          "measured": 0.3745486122824743,
+          "metadata": {
+            "cells": 1063476,
+            "excess_loss": 0.20059918561323198,
+            "execution_backend": "jax",
+            "gcups": 0.8464995764889269,
+            "grid_shape": [
+              458,
+              86,
+              27
+            ],
+            "published_reference": {
+              "absolute_tolerance": 0.12699999999999995,
+              "converged_resolutions_ppw": [
+                15,
+                20,
+                25
+              ],
+              "converged_samples": [
+                0.483,
+                0.479,
+                0.486,
+                0.484,
+                0.489,
+                0.489
+              ],
+              "converged_standard_deviation": 0.0035118845842842493,
+              "digitization_uncertainty": 0.001,
+              "maximum": 0.376,
+              "minimum": 0.358,
+              "nominal": 0.48499999999999993,
+              "resolution_ppw": 6,
+              "samples": [
+                0.376,
+                0.358
+              ],
+              "standard_deviation": 0.009000000000000008
+            },
+            "runtime_s": 30.423092381000004,
+            "steps": 24216,
+            "termination_reason": "converged",
+            "through_te0_power": 0.4248522021042937,
+            "total_output_te0_power": 0.799400814386768,
+            "wavelength_span_nm": 20.0
+          },
+          "passed": true,
+          "quantity": "2x2 MMI TE0 cross power at 1550 nm",
+          "reference": 0.48499999999999993,
+          "relative_error": 0.2277348200361353,
+          "resolution": "6 cells per wavelength",
+          "tolerance": {
+            "absolute": 0.12699999999999995,
+            "name": "same_ppw_reference_deviation",
+            "rationale": "Maximum deviation from the converged nominal among the Lumerical and Tidy3D values at the same PPW, with digitization precision as a floor.",
+            "relative": 0.0,
+            "relative_floor": 0.0
+          },
+          "unit": "fraction"
+        },
+        {
+          "absolute_error": 0.220599185613232,
+          "backend": "beamz",
+          "case_id": "tests/differential/test_mmi2x2.py::test_mmi2x2_cross_power_agrees_with_converged_reference[6ppw]",
+          "comparison": "less_equal",
+          "error_limit": 0.0,
+          "margin": 0.220599185613232,
+          "measured": 0.799400814386768,
+          "metadata": {
+            "rationale": "A passive device cannot create power; 2% allows modal projection and discretization error."
+          },
+          "passed": true,
+          "quantity": "2x2 MMI total output TE0 power at 1550 nm",
+          "reference": 1.02,
+          "relative_error": 0.21627371138552157,
+          "resolution": "6 cells per wavelength",
+          "tolerance": {
+            "absolute": 0.0,
+            "name": "strict_bound",
+            "rationale": "Inclusive inequality bound applied without unit-dependent slack.",
+            "relative": 0.0,
+            "relative_floor": 0.0
+          },
+          "unit": "fraction"
+        }
+      ],
+      "schema_version": "beamz.validation/v3",
+      "summary": {
+        "cases": 1,
+        "exit_status": 0,
+        "failed": 0,
+        "failed_cases": 0,
+        "metricless_cases": 0,
+        "metrics": 2,
+        "passed": 2,
+        "passed_cases": 1,
+        "skipped_cases": 0,
+        "xfailed_cases": 0
+      }
+    },
+    "mode_converter": {
+      "beamz_commit": "da35b52e9beb8c9eae52c446a498fbd626120233",
+      "cases": [
+        {
+          "case_id": "tests/differential/test_mode_conversion.py::test_conversion_power_agrees_with_published_converged_consensus[6ppw-mode_converter]",
+          "evidence_class": "validation",
+          "metrics": 2,
+          "outcome": "xfailed"
+        }
+      ],
+      "environment": {
+        "backend": "gpu",
+        "beamz": "0.5.1",
+        "jax": "0.9.0",
+        "numpy": "2.4.1",
+        "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+        "python": "3.11.15",
+        "random_seed": "2168358331"
+      },
+      "generated_at": "2026-09-16T01:37:24.799771+00:00",
+      "metricless_case_ids": [],
+      "metrics": [
+        {
+          "absolute_error": 0.2727033074141378,
+          "backend": "beamz-vs-resolution-aware-published-reference",
+          "case_id": "tests/differential/test_mode_conversion.py::test_conversion_power_agrees_with_published_converged_consensus[6ppw-mode_converter]",
+          "comparison": "close",
+          "error_limit": 0.49399999999999994,
+          "margin": 0.22129669258586215,
+          "measured": 0.20029669258586225,
+          "metadata": {
+            "backend": "jax",
+            "cells": 3224691,
+            "conversion_power": 0.20029669258586225,
+            "conversion_spectrum": [
+              0.21140201915590898,
+              0.20706116512492517,
+              0.20029669258586225,
+              0.22707385158391938,
+              0.28238012728055256
+            ],
+            "crosstalk_power": 3.451972714058455e-05,
+            "crosstalk_spectrum": [
+              2.855231881996158e-05,
+              3.154212493520887e-05,
+              3.451972714058455e-05,
+              4.4372676113608034e-05,
+              6.432767106513182e-05
+            ],
+            "grid_shape": [
+              971,
+              123,
+              27
+            ],
+            "output_power_basis": "Selected output modes only; not all guided or radiated power.",
+            "published_reference": {
+              "absolute_tolerance": 0.49399999999999994,
+              "converged_resolutions_ppw": [
+                15,
+                20,
+                25
+              ],
+              "converged_samples": [
+                0.443,
+                0.492,
+                0.481,
+                0.479,
+                0.512,
+                0.431
+              ],
+              "converged_standard_deviation": 0.0278268455512538,
+              "digitization_uncertainty": 0.002,
+              "maximum": 0.967,
+              "minimum": 0.357,
+              "nominal": 0.47300000000000003,
+              "resolution_ppw": 6,
+              "samples": [
+                0.967,
+                0.357
+              ],
+              "standard_deviation": 0.305
+            },
+            "resolution_ppw": 6,
+            "runtime_s": 209.98117961299943,
+            "selected_output_power": 0.9389197910742297,
+            "selected_output_spectrum": [
+              1.049185530299961,
+              1.0109071993326588,
+              0.9389197910742297,
+              0.9728414496962712,
+              1.1232589110890296
+            ],
+            "steps": 61005,
+            "termination_reason": "converged",
+            "wavelengths_um": [
+              1.5600000000000003,
+              1.5549514563106797,
+              1.5499354838709678,
+              1.5449517684887464,
+              1.5400000000000003
+            ]
+          },
+          "passed": true,
+          "quantity": "mode_converter converted power at 1550 nm",
+          "reference": 0.47300000000000003,
+          "relative_error": 0.5765397619749213,
+          "resolution": "6 cells per wavelength",
+          "tolerance": {
+            "absolute": 0.49399999999999994,
+            "name": "same_ppw_reference_deviation",
+            "rationale": "Maximum deviation from the converged nominal among the Lumerical and Tidy3D values at the same PPW, with digitization precision as a floor.",
+            "relative": 0.0,
+            "relative_floor": 0.0
+          },
+          "unit": "fraction"
+        },
+        {
+          "absolute_error": 0.10325891108902963,
+          "backend": "gpu",
+          "case_id": "tests/differential/test_mode_conversion.py::test_conversion_power_agrees_with_published_converged_consensus[6ppw-mode_converter]",
+          "comparison": "less_equal",
+          "error_limit": 0.0,
+          "margin": -0.10325891108902963,
+          "measured": 1.1232589110890296,
+          "metadata": {
+            "backend": "jax",
+            "cells": 3224691,
+            "conversion_power": 0.20029669258586225,
+            "conversion_spectrum": [
+              0.21140201915590898,
+              0.20706116512492517,
+              0.20029669258586225,
+              0.22707385158391938,
+              0.28238012728055256
+            ],
+            "crosstalk_power": 3.451972714058455e-05,
+            "crosstalk_spectrum": [
+              2.855231881996158e-05,
+              3.154212493520887e-05,
+              3.451972714058455e-05,
+              4.4372676113608034e-05,
+              6.432767106513182e-05
+            ],
+            "grid_shape": [
+              971,
+              123,
+              27
+            ],
+            "output_power_basis": "Selected output modes only; not all guided or radiated power.",
+            "published_reference": {
+              "absolute_tolerance": 0.49399999999999994,
+              "converged_resolutions_ppw": [
+                15,
+                20,
+                25
+              ],
+              "converged_samples": [
+                0.443,
+                0.492,
+                0.481,
+                0.479,
+                0.512,
+                0.431
+              ],
+              "converged_standard_deviation": 0.0278268455512538,
+              "digitization_uncertainty": 0.002,
+              "maximum": 0.967,
+              "minimum": 0.357,
+              "nominal": 0.47300000000000003,
+              "resolution_ppw": 6,
+              "samples": [
+                0.967,
+                0.357
+              ],
+              "standard_deviation": 0.305
+            },
+            "resolution_ppw": 6,
+            "runtime_s": 209.98117961299943,
+            "selected_output_power": 0.9389197910742297,
+            "selected_output_spectrum": [
+              1.049185530299961,
+              1.0109071993326588,
+              0.9389197910742297,
+              0.9728414496962712,
+              1.1232589110890296
+            ],
+            "steps": 61005,
+            "termination_reason": "converged",
+            "wavelengths_um": [
+              1.5600000000000003,
+              1.5549514563106797,
+              1.5499354838709678,
+              1.5449517684887464,
+              1.5400000000000003
+            ]
+          },
+          "passed": false,
+          "quantity": "mode_converter maximum selected output power across 20 nm",
+          "reference": 1.02,
+          "relative_error": 0.10123422655787218,
+          "resolution": "6 cells per wavelength",
+          "tolerance": {
+            "absolute": 0.0,
+            "name": "strict_bound",
+            "rationale": "Inclusive inequality bound applied without unit-dependent slack.",
+            "relative": 0.0,
+            "relative_floor": 0.0
+          },
+          "unit": "fraction"
+        }
+      ],
+      "schema_version": "beamz.validation/v3",
+      "summary": {
+        "cases": 1,
+        "exit_status": 0,
+        "failed": 1,
+        "failed_cases": 0,
+        "metricless_cases": 0,
+        "metrics": 2,
+        "passed": 1,
+        "passed_cases": 0,
+        "skipped_cases": 0,
+        "xfailed_cases": 1
+      }
+    },
+    "polarization_splitter_rotator": {
+      "beamz_commit": "da35b52e9beb8c9eae52c446a498fbd626120233",
+      "cases": [
+        {
+          "case_id": "tests/differential/test_mode_conversion.py::test_conversion_power_agrees_with_published_converged_consensus[6ppw-polarization_splitter_rotator]",
+          "evidence_class": "validation",
+          "metrics": 2,
+          "outcome": "passed"
+        }
+      ],
+      "environment": {
+        "backend": "gpu",
+        "beamz": "0.5.1",
+        "jax": "0.9.0",
+        "numpy": "2.4.1",
+        "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+        "python": "3.11.15",
+        "random_seed": "2273656118"
+      },
+      "generated_at": "2026-09-16T01:42:04.171851+00:00",
+      "metricless_case_ids": [],
+      "metrics": [
+        {
+          "absolute_error": 0.12142685361147965,
+          "backend": "beamz-vs-resolution-aware-published-reference",
+          "case_id": "tests/differential/test_mode_conversion.py::test_conversion_power_agrees_with_published_converged_consensus[6ppw-polarization_splitter_rotator]",
+          "comparison": "close",
+          "error_limit": 0.8982499999999999,
+          "margin": 0.7768231463885202,
+          "measured": 0.8278231463885203,
+          "metadata": {
+            "backend": "jax",
+            "cells": 3331694,
+            "conversion_power": 0.8278231463885203,
+            "conversion_spectrum": [
+              0.8377929305110858,
+              0.8334652629086298,
+              0.8278231463885203,
+              0.8210141566102924,
+              0.8134947501058727
+            ],
+            "crosstalk_power": 1.8663500130551245e-05,
+            "crosstalk_spectrum": [
+              8.629051559791258e-05,
+              4.461248290598813e-05,
+              1.8663500130551245e-05,
+              6.734149480683711e-06,
+              5.038366781337868e-06
+            ],
+            "grid_shape": [
+              986,
+              109,
+              31
+            ],
+            "output_power_basis": "Selected output modes only; not all guided or radiated power.",
+            "published_reference": {
+              "absolute_tolerance": 0.8982499999999999,
+              "converged_resolutions_ppw": [
+                20,
+                25
+              ],
+              "converged_samples": [
+                0.948,
+                0.95,
+                0.949,
+                0.95
+              ],
+              "converged_standard_deviation": 0.0008291561975888507,
+              "digitization_uncertainty": 0.002,
+              "maximum": 0.147,
+              "minimum": 0.051,
+              "nominal": 0.9492499999999999,
+              "resolution_ppw": 6,
+              "samples": [
+                0.147,
+                0.051
+              ],
+              "standard_deviation": 0.047999999999999994
+            },
+            "resolution_ppw": 6,
+            "runtime_s": 179.86392113600016,
+            "selected_output_power": 0.8283599118376039,
+            "selected_output_spectrum": [
+              0.8384062575755346,
+              0.8340324892590383,
+              0.8283599118376039,
+              0.8215332330806174,
+              0.8140065343418492
+            ],
+            "steps": 53249,
+            "termination_reason": "converged",
+            "wavelengths_um": [
+              1.5600000000000003,
+              1.5549514563106797,
+              1.5499354838709678,
+              1.5449517684887464,
+              1.5400000000000003
+            ]
+          },
+          "passed": true,
+          "quantity": "polarization_splitter_rotator converted power at 1550 nm",
+          "reference": 0.9492499999999999,
+          "relative_error": 0.12791872911401597,
+          "resolution": "6 cells per wavelength",
+          "tolerance": {
+            "absolute": 0.8982499999999999,
+            "name": "same_ppw_reference_deviation",
+            "rationale": "Maximum deviation from the converged nominal among the Lumerical and Tidy3D values at the same PPW, with digitization precision as a floor.",
+            "relative": 0.0,
+            "relative_floor": 0.0
+          },
+          "unit": "fraction"
+        },
+        {
+          "absolute_error": 0.18159374242446547,
+          "backend": "gpu",
+          "case_id": "tests/differential/test_mode_conversion.py::test_conversion_power_agrees_with_published_converged_consensus[6ppw-polarization_splitter_rotator]",
+          "comparison": "less_equal",
+          "error_limit": 0.0,
+          "margin": 0.18159374242446547,
+          "measured": 0.8384062575755346,
+          "metadata": {
+            "backend": "jax",
+            "cells": 3331694,
+            "conversion_power": 0.8278231463885203,
+            "conversion_spectrum": [
+              0.8377929305110858,
+              0.8334652629086298,
+              0.8278231463885203,
+              0.8210141566102924,
+              0.8134947501058727
+            ],
+            "crosstalk_power": 1.8663500130551245e-05,
+            "crosstalk_spectrum": [
+              8.629051559791258e-05,
+              4.461248290598813e-05,
+              1.8663500130551245e-05,
+              6.734149480683711e-06,
+              5.038366781337868e-06
+            ],
+            "grid_shape": [
+              986,
+              109,
+              31
+            ],
+            "output_power_basis": "Selected output modes only; not all guided or radiated power.",
+            "published_reference": {
+              "absolute_tolerance": 0.8982499999999999,
+              "converged_resolutions_ppw": [
+                20,
+                25
+              ],
+              "converged_samples": [
+                0.948,
+                0.95,
+                0.949,
+                0.95
+              ],
+              "converged_standard_deviation": 0.0008291561975888507,
+              "digitization_uncertainty": 0.002,
+              "maximum": 0.147,
+              "minimum": 0.051,
+              "nominal": 0.9492499999999999,
+              "resolution_ppw": 6,
+              "samples": [
+                0.147,
+                0.051
+              ],
+              "standard_deviation": 0.047999999999999994
+            },
+            "resolution_ppw": 6,
+            "runtime_s": 179.86392113600016,
+            "selected_output_power": 0.8283599118376039,
+            "selected_output_spectrum": [
+              0.8384062575755346,
+              0.8340324892590383,
+              0.8283599118376039,
+              0.8215332330806174,
+              0.8140065343418492
+            ],
+            "steps": 53249,
+            "termination_reason": "converged",
+            "wavelengths_um": [
+              1.5600000000000003,
+              1.5549514563106797,
+              1.5499354838709678,
+              1.5449517684887464,
+              1.5400000000000003
+            ]
+          },
+          "passed": true,
+          "quantity": "polarization_splitter_rotator maximum selected output power across 20 nm",
+          "reference": 1.02,
+          "relative_error": 0.17803308080829947,
+          "resolution": "6 cells per wavelength",
+          "tolerance": {
+            "absolute": 0.0,
+            "name": "strict_bound",
+            "rationale": "Inclusive inequality bound applied without unit-dependent slack.",
+            "relative": 0.0,
+            "relative_floor": 0.0
+          },
+          "unit": "fraction"
+        }
+      ],
+      "schema_version": "beamz.validation/v3",
+      "summary": {
+        "cases": 1,
+        "exit_status": 0,
+        "failed": 0,
+        "failed_cases": 0,
+        "metricless_cases": 0,
+        "metrics": 2,
+        "passed": 2,
+        "passed_cases": 1,
+        "skipped_cases": 0,
+        "xfailed_cases": 0
+      }
+    },
+    "ring_resonator": {
+      "beamz_commit": "da35b52e9beb8c9eae52c446a498fbd626120233",
+      "cases": [
+        {
+          "case_id": "tests/differential/test_ring_resonator.py::test_ring_repository_runtime_converges_before_resonance_validation",
+          "evidence_class": "validation",
+          "metrics": 1,
+          "outcome": "xfailed"
+        }
+      ],
+      "environment": {
+        "backend": "gpu",
+        "beamz": "0.5.1",
+        "jax": "0.9.0",
+        "numpy": "2.4.1",
+        "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+        "python": "3.11.15",
+        "random_seed": "3403627718"
+      },
+      "generated_at": "2026-09-16T01:45:51.220327+00:00",
+      "metricless_case_ids": [],
+      "metrics": [
+        {
+          "absolute_error": 0.12115940571039516,
+          "backend": "gpu",
+          "case_id": "tests/differential/test_ring_resonator.py::test_ring_repository_runtime_converges_before_resonance_validation",
+          "comparison": "less_equal",
+          "error_limit": 0.0,
+          "margin": -0.12115940571039516,
+          "measured": 0.12116940571039515,
+          "metadata": {
+            "cells": 3615840,
+            "execution_backend": "jax",
+            "extinction_db": 8.00075413129799,
+            "free_spectral_range_nm": 7.493093777902526,
+            "gcups": 1.348592687492728,
+            "grid_shape": [
+              432,
+              310,
+              27
+            ],
+            "loaded_q": 847.0274025544559,
+            "reference_result_limitation": "The supplementary repository contains the ring setup and analysis script but no committed Lumerical or Tidy3D output values.",
+            "resonance_wavelengths_um": [
+              1.5417789757412401,
+              1.5491359298426621,
+              1.5567651632970452
+            ],
+            "runtime_s": 64.8822383300012,
+            "steps": 24199,
+            "terminal_field_decay": 0.12116940571039515,
+            "termination_reason": "time_limit"
+          },
+          "passed": false,
+          "quantity": "ring terminal field-decay ratio",
+          "reference": 1e-05,
+          "relative_error": 12115.940571039515,
+          "resolution": "6 cells per wavelength",
+          "tolerance": {
+            "absolute": 0.0,
+            "name": "strict_bound",
+            "rationale": "Inclusive inequality bound applied without unit-dependent slack.",
+            "relative": 0.0,
+            "relative_floor": 0.0
+          },
+          "unit": "ratio"
+        }
+      ],
+      "schema_version": "beamz.validation/v3",
+      "summary": {
+        "cases": 1,
+        "exit_status": 0,
+        "failed": 1,
+        "failed_cases": 0,
+        "metricless_cases": 0,
+        "metrics": 1,
+        "passed": 0,
+        "passed_cases": 0,
+        "skipped_cases": 0,
+        "xfailed_cases": 1
+      }
+    }
+  },
+  "run_metadata": {
+    "mmi2x2": {
+      "boundary_formulation": "cpml",
+      "cells": 1063476,
+      "execution_backend": "jax",
+      "gcups": 0.8464995764889269,
+      "grid_is_uniform": false,
+      "grid_shape": [
+        458,
+        86,
+        27
+      ],
+      "raster_quality": "balanced",
+      "raster_smoothing": "farjadpour_diagonal",
+      "resolution_m": 7.33333333333332e-08,
+      "runtime_s": 30.423092381000004,
+      "steps": 24216,
+      "termination_field_decay": 2.1410995329974215e-09,
+      "termination_reason": "converged"
+    },
+    "mode_converter": {
+      "boundary_formulation": "sponge",
+      "cells": 3224691,
+      "execution_backend": "jax",
+      "gcups": 0.9368566974314749,
+      "grid_is_uniform": false,
+      "grid_shape": [
+        971,
+        123,
+        27
+      ],
+      "raster_quality": "balanced",
+      "raster_smoothing": "farjadpour_diagonal",
+      "resolution_m": 4.999999999999952e-08,
+      "runtime_s": 209.98117961299943,
+      "steps": 61005,
+      "termination_field_decay": 2.4953239055489973e-07,
+      "termination_reason": "converged"
+    },
+    "polarization_splitter_rotator": {
+      "boundary_formulation": "cpml",
+      "cells": 3331694,
+      "execution_backend": "jax",
+      "gcups": 0.9863533091322734,
+      "grid_is_uniform": false,
+      "grid_shape": [
+        986,
+        109,
+        31
+      ],
+      "raster_quality": "balanced",
+      "raster_smoothing": "farjadpour_diagonal",
+      "resolution_m": 6.923076923076886e-08,
+      "runtime_s": 179.86392113600016,
+      "steps": 53249,
+      "termination_field_decay": 1.1232698665420856e-08,
+      "termination_reason": "converged"
+    },
+    "ring_resonator": {
+      "boundary_formulation": "sponge",
+      "cells": 3615840,
+      "execution_backend": "jax",
+      "gcups": 1.348592687492728,
+      "grid_is_uniform": false,
+      "grid_shape": [
+        432,
+        310,
+        27
+      ],
+      "raster_quality": "balanced",
+      "raster_smoothing": "farjadpour_diagonal",
+      "resolution_m": 6.302030063299579e-08,
+      "runtime_s": 64.8822383300012,
+      "steps": 24199,
+      "termination_field_decay": 0.12116940571039515,
+      "termination_reason": "time_limit"
+    }
+  }
+}
