@@ -97,7 +97,11 @@
       "wavelength_step_nm": 5.0,
       "frequency_sampling": "Uniform frequency samples between c / wavelength_stop and c / wavelength_start, matching the reference Tidy3D pipeline.",
       "resolutions_cells_per_wavelength": [
-        6
+        6,
+        10,
+        15,
+        20,
+        25
       ],
       "resolution_m_basis": "The top-level resolution_m is the 6 cells-per-wavelength spacing in silicon at 1550 nm, used as the automatic mesh criterion.",
       "grid": "BeamZ GridSpec.auto with the requested minimum cells per wavelength, a 1.4 maximum adjacent-cell scale, and no mesh overrides, matching the reference automatic non-uniform policy.",
@@ -141,7 +145,7 @@
         },
         "10": {
           "lumerical": 0.512,
-          "tidy3d": 0.260
+          "tidy3d": 0.26
         },
         "15": {
           "lumerical": 0.443,

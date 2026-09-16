@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +16,10 @@ from tests.differential.passive_soi.common import (
     generate_layout,
     port_center_and_direction,
     reference_absorber_warning_scope,
-    reference_frequencies,
+)
+from tests.differential.passive_soi.experiments import (
+    DEFAULT_OPTIONS,
+    ExperimentOptions,
 )
 
 
@@ -194,6 +197,7 @@ def build_four_port_simulation(
     resolution_ppw: int,
     wavelength_span_nm: float = 20.0,
     diagnostics: bool = False,
+    options: ExperimentOptions = DEFAULT_OPTIONS,
 ):
     """Build a paper-matched BeamZ four-port simulation without executing it."""
     from beamz import (
@@ -223,7 +227,7 @@ def build_four_port_simulation(
         float(core["zmin_um"]) + 0.5 * float(core["thickness_m"]) / µm - bounds["z"][0]
     ) * µm
     wavelength_center = float(protocol["wavelength_center_um"]) * µm
-    frequencies = reference_frequencies(case, wavelength_span_nm)
+    frequencies = options.frequencies(case, wavelength_span_nm)
     grid_spec = GridSpec.auto(
         min_steps_per_wvl=float(resolution_ppw),
         wavelength=wavelength_center,
@@ -238,14 +242,21 @@ def build_four_port_simulation(
         polarization=protocol.get("source_polarization", "te"),
         num_modes=mode_candidates,
     )
-    transverse_span = float(protocol["beamz_port_transverse_span_um"]) * µm
+    transverse_span = (
+        float(options.transverse_span_um or protocol["beamz_port_transverse_span_um"])
+        * µm
+    )
     z_span = 2.0 * µm
     ports = tuple(
         Port(
             center=port_center_and_direction(
                 case,
                 name,
-                inward_offset_um=0.5,
+                inward_offset_um=(
+                    0.5
+                    if options.monitor_offset_um is None
+                    else options.monitor_offset_um
+                ),
                 z_center=z_center,
             )[0],
             size=(0.0, transverse_span, z_span),
@@ -253,7 +264,11 @@ def build_four_port_simulation(
             direction=port_center_and_direction(
                 case,
                 name,
-                inward_offset_um=0.5,
+                inward_offset_um=(
+                    0.5
+                    if options.monitor_offset_um is None
+                    else options.monitor_offset_um
+                ),
                 z_center=z_center,
             )[1],
             mode_spec=(
@@ -283,7 +298,8 @@ def build_four_port_simulation(
     source = source_port.to_source(
         freq0=source_time.freq0,
         fwidth=frequency_width,
-        num_freqs=round(float(wavelength_span_nm) / 10.0) + 1,
+        num_freqs=options.source_profiles
+        or round(float(wavelength_span_nm) / 10.0) + 1,
         source_time=source_time,
     )
     monitors = [port.to_monitor(frequencies) for port in ports]
@@ -298,21 +314,27 @@ def build_four_port_simulation(
             )
         )
     boundary = (
-        Absorber(edges="all", thickness=1.0 * µm)
+        Absorber(edges="all", thickness=options.boundary_thickness_um * µm)
         if protocol.get("absorber_from_ppw") is not None
         and int(resolution_ppw) >= int(protocol["absorber_from_ppw"])
-        else PML(edges="all", thickness=1.0 * µm, formulation="cpml")
+        else PML(
+            edges="all",
+            thickness=options.boundary_thickness_um * µm,
+            formulation="cpml",
+        )
     )
     simulation = Simulation(
         design=design,
         sources=[source],
         monitors=monitors,
         boundaries=[boundary],
-        run_time=15.0 * domain_size_um(case)[0] * µm * 2.0 / LIGHT_SPEED,
-        grid_spec=grid_spec,
-        raster_options=RasterOptions(
-            quality="balanced", smoothing="farjadpour_diagonal"
+        run_time=(
+            options.run_time_ps * 1e-12
+            if options.run_time_ps is not None
+            else 15.0 * domain_size_um(case)[0] * µm * 2.0 / LIGHT_SPEED
         ),
+        grid_spec=grid_spec,
+        raster_options=RasterOptions(quality="balanced", smoothing=options.smoothing),
     )
     return simulation, ports, frequencies
 
@@ -324,6 +346,7 @@ def _save_four_port_artifacts(
     scattering,
     *,
     execution_backend: str,
+    options: ExperimentOptions = DEFAULT_OPTIONS,
 ) -> None:
     """Persist raw and visual evidence for one four-port run."""
     import matplotlib.pyplot as plt
@@ -370,6 +393,8 @@ def _save_four_port_artifacts(
         arrays[f"S_{output}_{source}"] = np.asarray(values)
     for port_name, wave in scattering.diagnostics["waves"].items():
         for diagnostic_name in (
+            "a_plus",
+            "a_minus",
             "P_plus",
             "P_minus",
             "mode_neff",
@@ -401,11 +426,19 @@ def _save_four_port_artifacts(
             arrays[f"{monitor_name}__{component}"] = np.asarray(
                 monitor_results.get_dft_component(component)
             )
+    for axis in ("x", "y", "z"):
+        arrays[f"grid_{axis}_boundaries_m"] = np.asarray(
+            simulation.grid.axis_edges(axis)
+        )
     np.savez_compressed(directory / "monitor_data.npz", **arrays)
 
     performance = results.performance
     termination = results.termination
     metadata = {
+        "experiment_options": asdict(options),
+        "run_time_s": float(simulation.run_time),
+        "boundary_thickness_m": float(simulation.boundaries[0].thickness),
+        "monitor_centers_m": {m.name: list(m.center) for m in simulation.monitors},
         "execution_backend": execution_backend,
         "resolution_m": float(simulation.resolution),
         "grid_shape": list(simulation.grid.shape),

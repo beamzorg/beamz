@@ -16,12 +16,12 @@ from tests.differential.passive_soi.common import (
     load_passive_soi_case,
     write_layout_gds,
 )
+from tests.differential.passive_soi.experiments import power_comparison
 from tests.differential.passive_soi.four_port import converged_power_reference
 from tests.differential.passive_soi.mmi2x2 import (
     build_mmi2x2_simulation,
     run_mmi2x2_benchmark,
 )
-from tests.validation.tolerances import Tolerance
 
 
 def _port_values(port):
@@ -97,7 +97,7 @@ def test_mmi2x2_simulation_uses_paper_stack_and_domain():
     [6],
     ids=lambda value: f"{value}ppw",
 )
-def test_mmi2x2_cross_power_agrees_with_converged_reference(
+def test_mmi2x2_power_is_physical_and_characterizes_reference(
     resolution_ppw, validation_metrics
 ):
     case = load_passive_soi_case("mmi2x2")
@@ -131,36 +131,34 @@ def test_mmi2x2_cross_power_agrees_with_converged_reference(
         "termination_reason": result.termination_reason,
         "wavelength_span_nm": result.wavelength_span_nm,
     }
-    validation_metrics.check(
-        "2x2 MMI TE0 cross power at 1550 nm",
-        measured=result.cross_power,
-        reference=reference.nominal,
-        tolerance=Tolerance(
-            name="same_ppw_reference_deviation",
-            absolute=reference.absolute_tolerance,
-            relative=0.0,
-            rationale=(
-                "Maximum deviation from the converged nominal among the "
-                "Lumerical and Tidy3D values at the same PPW, with "
-                "digitization precision as a floor."
-            ),
-        ),
-        unit="fraction",
-        resolution=f"{resolution_ppw} cells per wavelength",
-        backend="beamz-vs-resolution-aware-published-reference",
-        metadata=metadata,
-    )
+    comparison = power_comparison(case, "cross", resolution_ppw, result.cross_power)
+    metadata["reference_comparison"] = comparison
+    if comparison["reference_eligible"]:
+        lower, upper = comparison["converged_range"]
+        validation_metrics.check_lower(
+            "converted power converged-reference lower bound",
+            measured=result.cross_power,
+            lower_bound=lower,
+            metadata=metadata,
+        )
+        validation_metrics.check_upper(
+            "converted power converged-reference upper bound",
+            measured=result.cross_power,
+            upper_bound=upper,
+            metadata=metadata,
+        )
     validation_metrics.check_upper(
-        "2x2 MMI total output TE0 power at 1550 nm",
-        measured=result.total_output_power,
+        "2x2 MMI maximum selected output power across the band",
+        measured=max(result.total_output_power_spectrum),
         upper_bound=1.02,
         unit="fraction",
         resolution=f"{resolution_ppw} cells per wavelength",
         backend="beamz",
         metadata={
+            **metadata,
             "rationale": (
                 "A passive device cannot create power; 2% allows modal projection "
                 "and discretization error."
-            )
+            ),
         },
     )

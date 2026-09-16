@@ -7,7 +7,7 @@
   "resolution_m": 7.430973447933325e-08,
   "oracle": {
     "kind": "solver_consensus",
-    "reference": "Zhu et al., arXiv:2506.16665v3, Section 3.6, Figure 26, and JPPhotonics/fdtd-pipeline at revision 622e0a9b7429eaf2335b1000b39e283544a198c4"
+    "reference": "Liu and Poon, arXiv:2506.16665v3, Section 3.6, Figure 26, and JPPhotonics/fdtd-pipeline at revision 622e0a9b7429eaf2335b1000b39e283544a198c4"
   },
   "materials": {
     "silicon_n_at_1p55_um": 3.47644,
@@ -85,7 +85,11 @@
       "wavelength_step_nm": 0.2,
       "frequency_sampling": "101 uniform frequency samples between c / wavelength_stop and c / wavelength_start, matching projects/FDTD_solvers/ring/ring.py.",
       "resolutions_cells_per_wavelength": [
-        6
+        6,
+        10,
+        15,
+        20,
+        25
       ],
       "resolution_m_basis": "The top-level resolution_m is the supplementary ring project default of 6 cells per wavelength in silicon at 1550 nm.",
       "grid": "BeamZ GridSpec.auto with the requested minimum cells per wavelength and a 1.4 maximum adjacent-cell scale.",
@@ -111,7 +115,7 @@
       "auto_shutoff": "BeamZ field-energy decay threshold 1e-5 with the configured run time as a hard upper bound.",
       "material_model_limitation": "BeamZ uses nondispersive silicon and silica evaluated at 1550 nm; the supplementary solvers use fitted dispersive models.",
       "published_ring_results": {
-        "source": "Zhu et al., arXiv:2506.16665v3, Section 3.6 and Figure 26",
+        "source": "Liu and Poon, arXiv:2506.16665v3, Section 3.6 and Figure 26",
         "metric": "The lowest resonance in the 20 nm band after cubic interpolation from 0.2 nm monitor samples to approximately 0.02 nm; FWHM is measured at half depth and Q = resonance wavelength / FWHM.",
         "resolutions_cells_per_wavelength": [
           6,

@@ -151,3 +151,24 @@ before any passivity or resonance metric can be accepted. The hardware test is
 a strict expected failure at the pinned runtime, so an unexpectedly converged
 run also requires review and removal of that marker before it can count as a
 passing validation.
+
+## Investigation controls and interpretation (PR #245)
+
+The four new device builders accept `ExperimentOptions` for explicit duration,
+monitor offset/aperture, absorber thickness, source-profile count, frequency
+sampling, and smoothing experiments. Defaults preserve the pinned setup;
+6/10/15/20/25 PPW are now supported for controlled refinement runs. Enabling a
+resolution is not evidence that it has been validated.
+
+The MMI and conversion hardware tests now check physical output bounds and
+record same-PPW agreement separately. Below the manifest's convergence region,
+`reference_agreement` is null: a passing coarse-grid validity check is not a
+passing paper-reproduction claim. Eligible resolutions compare against the
+range of the published converged samples plus digitization uncertainty. A
+single eligible point still does not establish BeamZ mesh convergence.
+The older crossing/coupler comparisons retain their historical rule.
+
+Expected failures are restricted to the known output-power or field-decay
+assertion; unrelated exceptions are ordinary failures. Artifact files additionally
+retain complex incoming/outgoing modal amplitudes and all realized grid edges.
+AI-assisted implementation and investigation: OpenAI Codex.

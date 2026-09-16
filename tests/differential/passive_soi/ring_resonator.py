@@ -13,7 +13,10 @@ from tests.differential.passive_soi.common import (
     load_passive_soi_case,
     port_center_and_direction,
     reference_absorber_warning_scope,
-    reference_frequencies,
+)
+from tests.differential.passive_soi.experiments import (
+    DEFAULT_OPTIONS,
+    ExperimentOptions,
 )
 from tests.differential.passive_soi.four_port import (
     _ported_design,
@@ -126,7 +129,12 @@ def extract_ring_resonances(wavelengths_um, through_power):
     )
 
 
-def build_ring_resonator_simulation(*, resolution_ppw: int = 6, diagnostics=False):
+def build_ring_resonator_simulation(
+    *,
+    resolution_ppw: int = 6,
+    diagnostics=False,
+    options: ExperimentOptions = DEFAULT_OPTIONS,
+):
     """Build the pinned supplementary ring setup at its lowest resolution."""
     from beamz import (
         LIGHT_SPEED,
@@ -151,20 +159,27 @@ def build_ring_resonator_simulation(*, resolution_ppw: int = 6, diagnostics=Fals
     z_center = (
         float(core["zmin_um"]) + 0.5 * float(core["thickness_m"]) / µm - bounds["z"][0]
     ) * µm
-    frequencies = reference_frequencies(case, 20.0)
+    frequencies = options.frequencies(case, 20.0)
     mode_spec = ModeSpec(polarization="te", num_modes=int(protocol["mode_candidates"]))
-    transverse_span = float(protocol["beamz_port_transverse_span_um"]) * µm
+    transverse_span = (
+        float(options.transverse_span_um or protocol["beamz_port_transverse_span_um"])
+        * µm
+    )
     ports = tuple(
         Port(
             center=port_center_and_direction(
                 case,
                 name,
-                inward_offset_um=float(
-                    protocol[
-                        "input_monitor_inward_offset_um"
-                        if name == "o1"
-                        else "beamz_output_monitor_inward_offset_um"
-                    ]
+                inward_offset_um=(
+                    options.monitor_offset_um
+                    if options.monitor_offset_um is not None
+                    else float(
+                        protocol[
+                            "input_monitor_inward_offset_um"
+                            if name == "o1"
+                            else "beamz_output_monitor_inward_offset_um"
+                        ]
+                    )
                 ),
                 z_center=z_center,
             )[0],
@@ -173,12 +188,16 @@ def build_ring_resonator_simulation(*, resolution_ppw: int = 6, diagnostics=Fals
             direction=port_center_and_direction(
                 case,
                 name,
-                inward_offset_um=float(
-                    protocol[
-                        "input_monitor_inward_offset_um"
-                        if name == "o1"
-                        else "beamz_output_monitor_inward_offset_um"
-                    ]
+                inward_offset_um=(
+                    options.monitor_offset_um
+                    if options.monitor_offset_um is not None
+                    else float(
+                        protocol[
+                            "input_monitor_inward_offset_um"
+                            if name == "o1"
+                            else "beamz_output_monitor_inward_offset_um"
+                        ]
+                    )
                 ),
                 z_center=z_center,
             )[1],
@@ -203,7 +222,7 @@ def build_ring_resonator_simulation(*, resolution_ppw: int = 6, diagnostics=Fals
     ).to_source(
         freq0=source_time.freq0,
         fwidth=source_time.fwidth,
-        num_freqs=int(protocol["source_mode_profiles"]),
+        num_freqs=options.source_profiles or int(protocol["source_mode_profiles"]),
         source_time=source_time,
     )
     monitors = [port.to_monitor(frequencies) for port in ports]
@@ -221,9 +240,13 @@ def build_ring_resonator_simulation(*, resolution_ppw: int = 6, diagnostics=Fals
         design=design,
         sources=[source],
         monitors=monitors,
-        boundaries=[Absorber(edges="all", thickness=1.0 * µm)],
+        boundaries=[
+            Absorber(edges="all", thickness=options.boundary_thickness_um * µm)
+        ],
         run_time=(
-            float(protocol["run_time_domain_transits"])
+            options.run_time_ps * 1e-12
+            if options.run_time_ps is not None
+            else float(protocol["run_time_domain_transits"])
             * domain_size_um(case)[0]
             * µm
             * 2.0
@@ -236,9 +259,7 @@ def build_ring_resonator_simulation(*, resolution_ppw: int = 6, diagnostics=Fals
             max_scale=1.4,
             max_total_cells=None,
         ),
-        raster_options=RasterOptions(
-            quality="balanced", smoothing="farjadpour_diagonal"
-        ),
+        raster_options=RasterOptions(quality="balanced", smoothing=options.smoothing),
     )
     return simulation, ports, frequencies
 

@@ -15,6 +15,10 @@ from tests.differential.passive_soi.common import (
     load_passive_soi_case,
     write_layout_gds,
 )
+from tests.differential.passive_soi.experiments import (
+    FieldDecayFailure,
+    check_known_failure,
+)
 from tests.differential.passive_soi.ring_resonator import (
     RING_FIELD_DECAY_THRESHOLD,
     build_ring_resonator_simulation,
@@ -64,7 +68,7 @@ def test_ring_setup_uses_supplementary_lowest_resolution_protocol():
     assert simulation.boundaries[0].thickness == pytest.approx(1e-6)
     assert not simulation.grid.is_uniform
     with pytest.raises(ValueError, match="unsupported supplementary resolution"):
-        build_ring_resonator_simulation(resolution_ppw=10)
+        build_ring_resonator_simulation(resolution_ppw=7)
 
 
 def test_ring_resonance_extraction_reports_fsr_q_and_extinction():
@@ -94,6 +98,7 @@ def test_ring_resonance_extraction_reports_fsr_q_and_extinction():
 @pytest.mark.slow
 @pytest.mark.xfail(
     strict=True,
+    raises=FieldDecayFailure,
     reason=(
         "the pinned supplementary Lumerical-silicon 6.40 ps runtime reaches its time limit before "
         "the 1e-5 field-decay convergence criterion"
@@ -130,7 +135,9 @@ def test_ring_repository_runtime_converges_before_resonance_validation(
     }
     assert np.all(np.isfinite(result.through_power_spectrum))
     assert np.all(np.isfinite(result.reflection_power_spectrum))
-    validation_metrics.check_upper(
+    check_known_failure(
+        validation_metrics.check_upper,
+        FieldDecayFailure,
         "ring terminal field-decay ratio",
         measured=result.terminal_field_decay,
         upper_bound=RING_FIELD_DECAY_THRESHOLD,

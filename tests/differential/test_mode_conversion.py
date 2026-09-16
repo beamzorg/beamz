@@ -14,13 +14,17 @@ from tests.differential.passive_soi.common import (
     load_passive_soi_case,
     write_layout_gds,
 )
+from tests.differential.passive_soi.experiments import (
+    OutputPowerFailure,
+    check_known_failure,
+    power_comparison,
+)
 from tests.differential.passive_soi.four_port import converged_power_reference
 from tests.differential.passive_soi.mode_conversion import (
     DEVICES,
     build_mode_conversion_simulation,
     run_mode_conversion_benchmark,
 )
-from tests.validation.tolerances import Tolerance
 
 
 @pytest.mark.parametrize(
@@ -99,7 +103,7 @@ def test_conversion_setup_uses_distinct_source_and_output_modes(name):
         assert nitride
         assert all(s.z == pytest.approx(2e-6) for s in nitride)
     with pytest.raises(ValueError, match="unsupported paper resolution"):
-        build_mode_conversion_simulation(name, resolution_ppw=10)
+        build_mode_conversion_simulation(name, resolution_ppw=7)
 
 
 @pytest.mark.hardware
@@ -111,6 +115,7 @@ def test_conversion_setup_uses_distinct_source_and_output_modes(name):
             "mode_converter",
             marks=pytest.mark.xfail(
                 strict=True,
+                raises=OutputPowerFailure,
                 reason=(
                     "The selected output-power ratio reaches 1.123 across the "
                     "20 nm band, above the 1.02 passivity bound."
@@ -121,7 +126,7 @@ def test_conversion_setup_uses_distinct_source_and_output_modes(name):
     ],
 )
 @pytest.mark.parametrize("resolution_ppw", [6], ids=["6ppw"])
-def test_conversion_power_agrees_with_published_converged_consensus(
+def test_conversion_power_is_physical_and_characterizes_reference(
     name, resolution_ppw, validation_metrics
 ):
     case = load_passive_soi_case(name)
@@ -144,26 +149,27 @@ def test_conversion_power_agrees_with_published_converged_consensus(
     )
     assert np.all(np.isfinite(result.conversion_spectrum))
     assert np.all(np.isfinite(result.crosstalk_spectrum))
-    validation_metrics.check(
-        f"{name} converted power at 1550 nm",
-        measured=result.conversion_power,
-        reference=reference.nominal,
-        tolerance=Tolerance(
-            name="same_ppw_reference_deviation",
-            absolute=reference.absolute_tolerance,
-            relative=0.0,
-            rationale=(
-                "Maximum deviation from the converged nominal among the "
-                "Lumerical and Tidy3D values at the same PPW, with "
-                "digitization precision as a floor."
-            ),
-        ),
-        unit="fraction",
-        resolution="6 cells per wavelength",
-        backend="beamz-vs-resolution-aware-published-reference",
-        metadata=metadata,
+    comparison = power_comparison(
+        case, "conversion", resolution_ppw, result.conversion_power
     )
-    validation_metrics.check_upper(
+    metadata["reference_comparison"] = comparison
+    if comparison["reference_eligible"]:
+        lower, upper = comparison["converged_range"]
+        validation_metrics.check_lower(
+            "converted power converged-reference lower bound",
+            measured=result.conversion_power,
+            lower_bound=lower,
+            metadata=metadata,
+        )
+        validation_metrics.check_upper(
+            "converted power converged-reference upper bound",
+            measured=result.conversion_power,
+            upper_bound=upper,
+            metadata=metadata,
+        )
+    check_known_failure(
+        validation_metrics.check_upper,
+        OutputPowerFailure,
         f"{name} maximum selected output power across 20 nm",
         measured=max(result.selected_output_spectrum),
         upper_bound=1.02,

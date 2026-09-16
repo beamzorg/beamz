@@ -11,6 +11,10 @@ from tests.differential.passive_soi.common import (
     load_passive_soi_case,
     reference_absorber_warning_scope,
 )
+from tests.differential.passive_soi.experiments import (
+    DEFAULT_OPTIONS,
+    ExperimentOptions,
+)
 from tests.differential.passive_soi.four_port import (
     _save_four_port_artifacts,
     build_four_port_simulation,
@@ -38,7 +42,11 @@ class ModeConversionResult:
 
 
 def build_mode_conversion_simulation(
-    name: str, *, resolution_ppw: int = 6, diagnostics: bool = False
+    name: str,
+    *,
+    resolution_ppw: int = 6,
+    diagnostics: bool = False,
+    options: ExperimentOptions = DEFAULT_OPTIONS,
 ):
     """Build physical monitors and separate conversion/crosstalk projections."""
     from beamz import ModeSpec
@@ -48,7 +56,7 @@ def build_mode_conversion_simulation(
     case = load_passive_soi_case(name)
     protocol = case.geometry["simulation"]
     simulation, physical_ports, frequencies = build_four_port_simulation(
-        case, resolution_ppw=resolution_ppw, diagnostics=diagnostics
+        case, resolution_ppw=resolution_ppw, diagnostics=diagnostics, options=options
     )
     ports = {port.name: port for port in physical_ports}
     target = ports[protocol["conversion_port"]]
