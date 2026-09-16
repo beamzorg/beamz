@@ -1,5 +1,6 @@
 //! Geometry integration and tensor constitutive lowering for Cartesian FDTD.
 
+mod contour;
 mod error;
 mod geometry;
 mod grid;

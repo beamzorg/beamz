@@ -126,6 +126,25 @@ impl ResolvedExtrusions {
         Some(result)
     }
 
+    /// Only physical caps break local z invariance. Artificial height cuts in
+    /// the resolved partition must not change the contour-path closure.
+    pub(crate) fn has_exposed_cap(&self, volume: &Aabb, candidates: &[usize]) -> bool {
+        candidates.iter().any(|&index| {
+            let Geometry::ExtrudedPolygon(extrusion) = &self.scene.objects[index].geometry else {
+                unreachable!("resolved ownership only contains extrusions");
+            };
+            [extrusion.z_min, extrusion.z_max]
+                .into_iter()
+                .zip(&self.caps[index])
+                .any(|(height, polygons)| {
+                    strictly_inside(height, volume.min[2], volume.max[2])
+                        && polygons
+                            .iter()
+                            .any(|polygon| polygon.intersection_area(volume) > 0.0)
+                })
+        })
+    }
+
     pub(crate) fn interface(
         &self,
         volume: &Aabb,

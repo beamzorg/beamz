@@ -121,7 +121,12 @@ class MaterialGrid:
             }
             object.__setattr__(self, name, MappingProxyType(values))
         smoothing = str(self.smoothing).strip().lower()
-        if smoothing not in {"volume", "farjadpour_diagonal", "farjadpour_full"}:
+        if smoothing not in {
+            "volume",
+            "farjadpour_diagonal",
+            "farjadpour_full",
+            "contour_path",
+        }:
             raise ValueError("Unknown material-grid smoothing mode.")
         object.__setattr__(self, "smoothing", smoothing)
         origin = tuple(float(value) for value in self.origin)
@@ -493,7 +498,10 @@ class MaterialGrid:
             return False
         if self.metric_kind != "isotropic_uniform":
             return True
-        if self.smoothing == "farjadpour_diagonal" or self.uses_full_permittivity:
+        if (
+            self.smoothing in {"farjadpour_diagonal", "contour_path"}
+            or self.uses_full_permittivity
+        ):
             return True
         for name in ("epsilon", "conductivity"):
             if name not in self.tensors:
