@@ -47,12 +47,17 @@ from tests.differential.passive_soi.ring_resonator import (
 )
 from tests.differential.passive_soi.straight_control import (
     build_converter_grid_control,
+    build_ring_bus_control,
     build_straight_control,
 )
 
 
 def build_experiment(device, ppw, options):
-    if device.startswith("converter_grid_"):
+    if device == "ring_bus":
+        simulation, ports, outputs, frequencies = build_ring_bus_control(
+            resolution_ppw=ppw, options=options
+        )
+    elif device.startswith("converter_grid_"):
         simulation, ports, outputs, frequencies = build_converter_grid_control(
             device.removeprefix("converter_grid_"),
             resolution_ppw=ppw,
@@ -93,6 +98,7 @@ def main():
             "mode_converter",
             "polarization_splitter_rotator",
             "ring_resonator",
+            "ring_bus",
             "straight_te0",
             "straight_wide_te0",
             "straight_te1",
@@ -223,7 +229,7 @@ def main():
         "termination": asdict(result.termination),
         "performance": asdict(result.performance),
     }
-    if args.device.startswith(("straight_", "converter_grid_")):
+    if args.device.startswith(("straight_", "converter_grid_", "ring_bus")):
         stack = np.stack(list(powers.values()))
         summary["max_transmission_error"] = float(np.max(np.abs(stack - 1)))
         summary["max_monitor_power_spread"] = float(np.max(np.ptp(stack, axis=0)))

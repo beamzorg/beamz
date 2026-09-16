@@ -207,3 +207,40 @@ def build_converter_grid_control(name, *, resolution_ppw=6, options=DEFAULT_OPTI
         run_time=original.run_time,
     )
     return simulation, ports, ("near", "middle", "far"), frequencies
+
+
+def build_ring_bus_control(*, resolution_ppw=6, options=DEFAULT_OPTIONS):
+    """Remove the ring while preserving its bus, source, ports, grid, and absorber."""
+    from beamz.design.discretization import build_material_grid
+    from tests.differential.passive_soi.ring_resonator import (
+        build_ring_resonator_simulation,
+    )
+
+    original, ports, frequencies = build_ring_resonator_simulation(
+        resolution_ppw=resolution_ppw, options=options
+    )
+    case = load_passive_soi_case("ring_resonator")
+    design = Design(
+        width=original.design.width,
+        height=original.design.height,
+        depth=original.design.depth,
+        background=Material(case.materials["silica_n_at_1p55_um"] ** 2),
+    )
+    design += Rectangle(
+        position=(0, original.sources[0].center[1] - 0.25 * µm, 2 * µm),
+        width=design.width,
+        height=0.5 * µm,
+        depth=0.22 * µm,
+        material=Material(case.materials["silicon_n_at_1p55_um"] ** 2),
+    )
+    material = build_material_grid(
+        design, original.grid, quality="balanced", smoothing=options.smoothing
+    )
+    simulation = Simulation(
+        material_grid=material,
+        sources=original.sources,
+        monitors=original.monitors,
+        boundaries=original.boundaries,
+        run_time=original.run_time,
+    )
+    return simulation, ports, ("o2",), frequencies

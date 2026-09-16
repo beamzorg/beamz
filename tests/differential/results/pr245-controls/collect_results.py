@@ -32,7 +32,7 @@ def main():
             "monitor_centers_m": metadata["monitor_centers_m"],
             "time_step_s": float(np.diff(raw["source_time_s"][:2])[0]),
         }
-        if summary["device"].startswith(("straight_", "converter_grid_")):
+        if summary["device"].startswith(("straight_", "converter_grid_", "ring_bus")):
             incident = raw["incident_power"]
             row["reflection_max"] = float(
                 np.max(raw["diagnostic_o1__P_plus"] / incident)
@@ -46,7 +46,7 @@ def main():
                         )
                         / incident
                     )
-                    for port in ("o1", "near", "middle", "far")
+                    for port in ("o1", *summary["powers"])
                 )
             )
         rows.append(row)

@@ -141,7 +141,7 @@ def main():
         "previous_powers": source["powers"],
         "powers": {key: value.tolist() for key, value in powers.items()},
     }
-    if source["device"].startswith(("straight_", "converter_grid_")):
+    if source["device"].startswith(("straight_", "converter_grid_", "ring_bus")):
         stack = np.stack(list(powers.values()))
         summary["max_transmission_error"] = float(np.max(np.abs(stack - 1)))
         summary["max_monitor_power_spread"] = float(np.max(np.ptp(stack, axis=0)))

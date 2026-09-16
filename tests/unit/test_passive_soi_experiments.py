@@ -87,3 +87,21 @@ def test_thicker_absorber_requires_domain_padding():
         build_ring_resonator_simulation(
             options=ExperimentOptions(boundary_thickness_um=2)
         )
+
+
+def test_empty_bus_preserves_ring_grid_and_measurement_planes():
+    from tests.differential.passive_soi.straight_control import build_ring_bus_control
+
+    options = ExperimentOptions(exact_center=True)
+    original, original_ports, original_frequencies = build_ring_resonator_simulation(
+        options=options
+    )
+    control, ports, outputs, frequencies = build_ring_bus_control(options=options)
+    for first, second in zip(original.grid.edges, control.grid.edges, strict=True):
+        np.testing.assert_array_equal(first, second)
+    assert ports == original_ports
+    np.testing.assert_array_equal(frequencies, original_frequencies)
+    assert outputs == ("o2",)
+    assert control.sources[0].center == original.sources[0].center
+    assert control.sources[0].size == original.sources[0].size
+    assert control.boundaries == original.boundaries
