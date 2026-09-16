@@ -1,0 +1,983 @@
+[
+  {
+    "field_run": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/converter-grid-te0-fixed",
+    "field_data_sha256": "6d4dcc03ffaf64a391674b70de1baebcc76dcf9c13bbb29daa42934f8d7741dc",
+    "field_simulation_commit": "df0abcd37e70d3834db67c225a43d9dcd022ec0a",
+    "analysis_commit": "1a0653d2ba6a5c17597517d06f7a6f0b5fb27b90",
+    "device": "converter_grid_te0",
+    "ppw": 6,
+    "options": {
+      "run_time_ps": null,
+      "monitor_offset_um": null,
+      "boundary_thickness_um": 1.0,
+      "transverse_span_um": null,
+      "source_profiles": null,
+      "wavelength_step_nm": null,
+      "exact_center": true,
+      "smoothing": "farjadpour_diagonal"
+    },
+    "wavelengths_um": [
+      1.5600000000000003,
+      1.5549514563106797,
+      1.55,
+      1.5499354838709678,
+      1.5449517684887464,
+      1.5400000000000003
+    ],
+    "previous_analysis_max_reconstruction_error": 0.0,
+    "previous_powers": {
+      "near": [
+        1.0298489121830783,
+        1.03029444191069,
+        1.0307409138385621,
+        1.0307953578627271,
+        1.0312663468425813,
+        1.0317696178466038
+      ],
+      "middle": [
+        1.0293202159265236,
+        1.030628778997109,
+        1.0297448264893216,
+        1.029761050220937,
+        1.0313361695631051,
+        1.031655397552726
+      ],
+      "far": [
+        1.026083796367339,
+        1.0267888729349908,
+        1.0274430544074873,
+        1.0274527033379037,
+        1.02809837931748,
+        1.0288068237537396
+      ]
+    },
+    "powers": {
+      "near": [
+        0.9994510224186939,
+        0.9993447742583367,
+        0.9993124415745164,
+        0.9992817143143344,
+        0.9991904406204121,
+        0.9991355564988608
+      ],
+      "middle": [
+        0.9977012599557478,
+        0.9975361276754128,
+        0.9980325111015241,
+        0.9980086911736633,
+        0.9976648116910014,
+        0.9977837753160873
+      ],
+      "far": [
+        0.9899981565571185,
+        0.9900968627646212,
+        0.9901829391780086,
+        0.9901605295653266,
+        0.9902200450949935,
+        0.9903602431173992
+      ]
+    },
+    "max_transmission_error": 0.010001843442881464,
+    "max_monitor_power_spread": 0.009452865861575344,
+    "analysis_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run": "reprojected-grid-te0",
+    "field_run_name": "converter-grid-te0-fixed",
+    "termination": {
+      "reason": "converged",
+      "steps": 61005,
+      "time": 7.205108905339319e-12,
+      "converged": true,
+      "field_decay": 3.295418209600968e-09,
+      "monitor_change": null,
+      "source_decay": 0.0,
+      "energy": 4.0063378188642663e-22,
+      "peak_energy": 1.2157297083544918e-13,
+      "max_field": 2866.552001953125,
+      "consecutive_checks": 1
+    },
+    "run_time_ps": 7.204984456280084,
+    "field_backend": "cuda_streamed",
+    "grid_shape": [
+      971,
+      123,
+      27
+    ],
+    "input_reflection_max": 0.0004217414685135131
+  },
+  {
+    "field_run": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/converter-grid-te1-fixed",
+    "field_data_sha256": "133eed507982a148f4fc71a59b30a853076cc95d275dcf4cb7fdb9c60e4b9743",
+    "field_simulation_commit": "df0abcd37e70d3834db67c225a43d9dcd022ec0a",
+    "analysis_commit": "1a0653d2ba6a5c17597517d06f7a6f0b5fb27b90",
+    "device": "converter_grid_te1",
+    "ppw": 6,
+    "options": {
+      "run_time_ps": null,
+      "monitor_offset_um": null,
+      "boundary_thickness_um": 1.0,
+      "transverse_span_um": null,
+      "source_profiles": null,
+      "wavelength_step_nm": null,
+      "exact_center": true,
+      "smoothing": "farjadpour_diagonal"
+    },
+    "wavelengths_um": [
+      1.5600000000000003,
+      1.5549514563106797,
+      1.55,
+      1.5499354838709678,
+      1.5449517684887464,
+      1.5400000000000003
+    ],
+    "previous_analysis_max_reconstruction_error": 0.0,
+    "previous_powers": {
+      "near": [
+        0.9979778716930701,
+        0.9976134539324766,
+        0.9979044341705167,
+        0.9979368607167073,
+        0.9982252702612239,
+        0.9980989066314655
+      ],
+      "middle": [
+        1.0206140646137942,
+        1.0201925284248041,
+        1.0231004955356817,
+        1.0231385686623642,
+        1.0219942657178527,
+        1.0214296449148679
+      ],
+      "far": [
+        1.0192428623249998,
+        1.0199089446951914,
+        1.0210140429076988,
+        1.021061492455704,
+        1.0211689732107627,
+        1.0203105549573663
+      ]
+    },
+    "powers": {
+      "near": [
+        0.9999779073923121,
+        0.9999758592442619,
+        0.9999927393279183,
+        0.9999937492887169,
+        0.9999855287646913,
+        0.9999879052989337
+      ],
+      "middle": [
+        0.9992671084726108,
+        0.9995740723687723,
+        0.9994041257942808,
+        0.9994044204591394,
+        0.9995518107257136,
+        0.9993971065721012
+      ],
+      "far": [
+        0.9933304481062561,
+        0.9933768040879072,
+        0.9933734626524336,
+        0.9933682040099763,
+        0.9931803525151353,
+        0.9929689349330201
+      ]
+    },
+    "max_transmission_error": 0.007031065066979925,
+    "max_monitor_power_spread": 0.0070189703659135905,
+    "analysis_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run": "reprojected-converter-grid-te1-fixed",
+    "field_run_name": "converter-grid-te1-fixed",
+    "termination": {
+      "reason": "converged",
+      "steps": 61005,
+      "time": 7.205108905339319e-12,
+      "converged": true,
+      "field_decay": 2.6766143896010097e-09,
+      "monitor_change": null,
+      "source_decay": 0.0,
+      "energy": 3.215993599042121e-22,
+      "peak_energy": 1.2015154710131832e-13,
+      "max_field": 2143.41552734375,
+      "consecutive_checks": 1
+    },
+    "run_time_ps": 7.204984456280084,
+    "field_backend": "cuda_streamed",
+    "grid_shape": [
+      971,
+      123,
+      27
+    ],
+    "input_reflection_max": 0.00027358380136333944
+  },
+  {
+    "field_run": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/te0-final",
+    "field_data_sha256": "6829c27930c82e8ed0ef411bff860460a5bf71910924c62e7c253bfa5b34f88b",
+    "field_simulation_commit": "9641d493b05fb2bed3998591c0c2a0fc84c95b30",
+    "analysis_commit": "1a0653d2ba6a5c17597517d06f7a6f0b5fb27b90",
+    "device": "straight_te0",
+    "ppw": 6,
+    "options": {
+      "run_time_ps": null,
+      "monitor_offset_um": null,
+      "boundary_thickness_um": 1.0,
+      "transverse_span_um": null,
+      "source_profiles": null,
+      "wavelength_step_nm": null,
+      "exact_center": true,
+      "smoothing": "farjadpour_diagonal"
+    },
+    "wavelengths_um": [
+      1.5600000000000003,
+      1.5549514563106797,
+      1.55,
+      1.5499354838709678,
+      1.5449517684887464,
+      1.5400000000000003
+    ],
+    "previous_analysis_max_reconstruction_error": 1.3322676295501878e-15,
+    "previous_powers": {
+      "near": [
+        1.003870957928332,
+        1.0017678986424583,
+        0.9994288708450728,
+        0.9994036624675993,
+        0.997833244486043,
+        0.9972497289197589
+      ],
+      "middle": [
+        1.0063688498226577,
+        1.0030744745921456,
+        0.9995573308462715,
+        0.9995142914109044,
+        0.9967585833306197,
+        0.9950231401120665
+      ],
+      "far": [
+        1.005804936791794,
+        1.001909413539939,
+        0.9979372319342318,
+        0.9978863327927878,
+        0.994706327861418,
+        0.9925955879276993
+      ]
+    },
+    "powers": {
+      "near": [
+        1.003243701838195,
+        1.0015970521372448,
+        0.9999135207813145,
+        0.9998931973394168,
+        0.9981740383678244,
+        0.99651271453271
+      ],
+      "middle": [
+        1.004401059082966,
+        1.0021399985327324,
+        0.9999047158400228,
+        0.9998747804121604,
+        0.9975856673358033,
+        0.9953033722742044
+      ],
+      "far": [
+        1.0055787303151282,
+        1.0026650565453894,
+        0.9998282854349526,
+        0.9997880089908643,
+        0.9968463732415099,
+        0.9939033934657607
+      ]
+    },
+    "max_transmission_error": 0.006096606534239268,
+    "max_monitor_power_spread": 0.0026093210669492217,
+    "analysis_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run": "reprojected-te0-final",
+    "field_run_name": "te0-final",
+    "termination": {
+      "reason": "converged",
+      "steps": 46035,
+      "time": 6.4031995851421275e-12,
+      "converged": true,
+      "field_decay": 1.8078396604362515e-09,
+      "monitor_change": null,
+      "source_decay": 0.0,
+      "energy": 1.9703177713381591e-22,
+      "peak_energy": 1.0898741821289062e-13,
+      "max_field": 2965.462158203125,
+      "consecutive_checks": 1
+    },
+    "run_time_ps": 6.4,
+    "field_backend": "jax",
+    "grid_shape": [
+      162,
+      49,
+      27
+    ],
+    "input_reflection_max": 0.00028097453406534845
+  },
+  {
+    "field_run": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/wide-te0",
+    "field_data_sha256": "abc3ae3e56a6831db56cfb34e7cfb730726815972221e1fe6749016cb0a5cdd7",
+    "field_simulation_commit": "9641d493b05fb2bed3998591c0c2a0fc84c95b30",
+    "analysis_commit": "1a0653d2ba6a5c17597517d06f7a6f0b5fb27b90",
+    "device": "straight_wide_te0",
+    "ppw": 6,
+    "options": {
+      "run_time_ps": null,
+      "monitor_offset_um": null,
+      "boundary_thickness_um": 1.0,
+      "transverse_span_um": null,
+      "source_profiles": null,
+      "wavelength_step_nm": null,
+      "exact_center": true,
+      "smoothing": "farjadpour_diagonal"
+    },
+    "wavelengths_um": [
+      1.5600000000000003,
+      1.5549514563106797,
+      1.55,
+      1.5499354838709678,
+      1.5449517684887464,
+      1.5400000000000003
+    ],
+    "previous_analysis_max_reconstruction_error": 1.5543122344752192e-15,
+    "previous_powers": {
+      "near": [
+        0.9991193681740705,
+        0.9988896288279582,
+        0.999236577392363,
+        0.9992476042356807,
+        0.9997897772792987,
+        1.0000512397878953
+      ],
+      "middle": [
+        0.9987620988241146,
+        0.9985787113422212,
+        0.9988819352863099,
+        0.9988943407516454,
+        0.9993264753882553,
+        0.9994241153642939
+      ],
+      "far": [
+        0.9998856106127142,
+        0.9997555468406093,
+        1.0001014908997687,
+        1.0001143659267966,
+        1.0005736962013847,
+        1.0006694027203797
+      ]
+    },
+    "powers": {
+      "near": [
+        0.9999341963354623,
+        0.9999462921614602,
+        0.9999628360107387,
+        0.9999671564324397,
+        0.9999851119921203,
+        1.0000215115969222
+      ],
+      "middle": [
+        1.0000130158430065,
+        1.0000658710924069,
+        1.000086444836022,
+        1.000093126189007,
+        1.0001063375400236,
+        1.0001354463018748
+      ],
+      "far": [
+        0.9999793826130455,
+        1.0000014049601722,
+        0.9999968814969985,
+        1.0000032725807286,
+        0.9999984892104574,
+        1.000009882671576
+      ]
+    },
+    "max_transmission_error": 0.00013544630187478646,
+    "max_monitor_power_spread": 0.00012596975656720133,
+    "analysis_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run": "reprojected-wide-te0",
+    "field_run_name": "wide-te0",
+    "termination": {
+      "reason": "converged",
+      "steps": 46226,
+      "time": 6.396523068163962e-12,
+      "converged": true,
+      "field_decay": 1.118071259636045e-09,
+      "monitor_change": null,
+      "source_decay": 0.0,
+      "energy": 1.1893314876942895e-22,
+      "peak_energy": 1.0637349609374999e-13,
+      "max_field": 1951.6136474609375,
+      "consecutive_checks": 1
+    },
+    "run_time_ps": 6.4,
+    "field_backend": "jax",
+    "grid_shape": [
+      162,
+      55,
+      27
+    ],
+    "input_reflection_max": 9.984639781081083e-05
+  },
+  {
+    "field_run": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/te1",
+    "field_data_sha256": "40e5fcb3922f7eb6dd998a54637f54d27707a3e9cd3372468bb29e137f21446d",
+    "field_simulation_commit": "9641d493b05fb2bed3998591c0c2a0fc84c95b30",
+    "analysis_commit": "1a0653d2ba6a5c17597517d06f7a6f0b5fb27b90",
+    "device": "straight_te1",
+    "ppw": 6,
+    "options": {
+      "run_time_ps": null,
+      "monitor_offset_um": null,
+      "boundary_thickness_um": 1.0,
+      "transverse_span_um": null,
+      "source_profiles": null,
+      "wavelength_step_nm": null,
+      "exact_center": true,
+      "smoothing": "farjadpour_diagonal"
+    },
+    "wavelengths_um": [
+      1.5600000000000003,
+      1.5549514563106797,
+      1.55,
+      1.5499354838709678,
+      1.5449517684887464,
+      1.5400000000000003
+    ],
+    "previous_analysis_max_reconstruction_error": 1.7763568394002505e-15,
+    "previous_powers": {
+      "near": [
+        0.9997402657889505,
+        0.9989753959375718,
+        0.9992790612654584,
+        0.9992956746774911,
+        1.0000131751332588,
+        1.000140769721572
+      ],
+      "middle": [
+        0.9978452805230186,
+        0.9973960842865687,
+        0.9980748092212985,
+        0.9980974878569429,
+        0.9992083112600582,
+        0.9996687112933018
+      ],
+      "far": [
+        0.9981881401117064,
+        0.9980186935250729,
+        0.9988943205994216,
+        0.9989215671753765,
+        1.00019903470697,
+        1.0007966068290528
+      ]
+    },
+    "powers": {
+      "near": [
+        0.999936583588406,
+        0.9999476239613061,
+        0.99994311228054,
+        0.9999508045218205,
+        0.9999555742723806,
+        0.9999876212244018
+      ],
+      "middle": [
+        1.0000064124231995,
+        1.000071727578906,
+        1.0001019597464254,
+        1.00011098111754,
+        1.0001343809478747,
+        1.000149985929336
+      ],
+      "far": [
+        0.9998992875117039,
+        0.9999438259187392,
+        0.9999356697476851,
+        0.9999465912268211,
+        0.9999697677733979,
+        1.0000305513001726
+      ]
+    },
+    "max_transmission_error": 0.00014998592933590515,
+    "max_monitor_power_spread": 0.0001788066754940809,
+    "analysis_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run": "reprojected-te1",
+    "field_run_name": "te1",
+    "termination": {
+      "reason": "converged",
+      "steps": 46226,
+      "time": 6.396523068163962e-12,
+      "converged": true,
+      "field_decay": 2.288798458257439e-09,
+      "monitor_change": null,
+      "source_decay": 0.0,
+      "energy": 2.49428760525916e-22,
+      "peak_energy": 1.0897803588867187e-13,
+      "max_field": 2315.129638671875,
+      "consecutive_checks": 1
+    },
+    "run_time_ps": 6.4,
+    "field_backend": "jax",
+    "grid_shape": [
+      162,
+      55,
+      27
+    ],
+    "input_reflection_max": 0.0002901315954621627
+  },
+  {
+    "field_run": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/tm0",
+    "field_data_sha256": "583defd6fa50aa9a47cb16088896b4bb476c54351cd652646a1325faa3890b3d",
+    "field_simulation_commit": "9641d493b05fb2bed3998591c0c2a0fc84c95b30",
+    "analysis_commit": "1a0653d2ba6a5c17597517d06f7a6f0b5fb27b90",
+    "device": "straight_tm0",
+    "ppw": 6,
+    "options": {
+      "run_time_ps": null,
+      "monitor_offset_um": null,
+      "boundary_thickness_um": 1.0,
+      "transverse_span_um": null,
+      "source_profiles": null,
+      "wavelength_step_nm": null,
+      "exact_center": true,
+      "smoothing": "farjadpour_diagonal"
+    },
+    "wavelengths_um": [
+      1.5600000000000003,
+      1.5549514563106797,
+      1.55,
+      1.5499354838709678,
+      1.5449517684887464,
+      1.5400000000000003
+    ],
+    "previous_analysis_max_reconstruction_error": 1.3322676295501878e-15,
+    "previous_powers": {
+      "near": [
+        0.9921188327703024,
+        0.9930160024235207,
+        0.9942738434460643,
+        0.9942817989435329,
+        0.9952685955849327,
+        0.9956123216012362
+      ],
+      "middle": [
+        0.9928203034490587,
+        0.9935555875617239,
+        0.9945565529144073,
+        0.9945601554034474,
+        0.9952031053048249,
+        0.9951309407405017
+      ],
+      "far": [
+        0.9921762584990975,
+        0.9932765936444561,
+        0.9946097209712572,
+        0.9946198337962336,
+        0.9955799217336939,
+        0.9957861427863183
+      ]
+    },
+    "powers": {
+      "near": [
+        0.994386366489359,
+        0.9947031525553539,
+        0.9949416038884601,
+        0.9949361850400762,
+        0.995107291940806,
+        0.9953115250790714
+      ],
+      "middle": [
+        0.9933100193077445,
+        0.993676964233029,
+        0.9939752964852138,
+        0.9939703300985007,
+        0.9942099731381286,
+        0.9944716512281249
+      ],
+      "far": [
+        0.9922630767526535,
+        0.9927157354831494,
+        0.9930847991099441,
+        0.9930830592324371,
+        0.9934004392280629,
+        0.9937384360532443
+      ]
+    },
+    "max_transmission_error": 0.007736923247346539,
+    "max_monitor_power_spread": 0.0021232897367055026,
+    "analysis_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run": "reprojected-tm0",
+    "field_run_name": "tm0",
+    "termination": {
+      "reason": "converged",
+      "steps": 46983,
+      "time": 6.398291185066851e-12,
+      "converged": true,
+      "field_decay": 1.0804433264557977e-08,
+      "monitor_change": null,
+      "source_decay": 0.0,
+      "energy": 1.0200820361205842e-21,
+      "peak_energy": 9.441328491210937e-14,
+      "max_field": 6343.583984375,
+      "consecutive_checks": 1
+    },
+    "run_time_ps": 6.4,
+    "field_backend": "jax",
+    "grid_shape": [
+      162,
+      62,
+      31
+    ],
+    "input_reflection_max": 0.0005271291174561573
+  },
+  {
+    "field_run": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/converter-fixed-6ppw",
+    "field_data_sha256": "e35dffcaed0fe0f1e3545916cfadddfb1e639d6e8afbcec6ddc6c2ea5c096f72",
+    "field_simulation_commit": "1e3f217b169b81bf584e36c234bc43d033ec81b3",
+    "analysis_commit": "1a0653d2ba6a5c17597517d06f7a6f0b5fb27b90",
+    "device": "mode_converter",
+    "ppw": 6,
+    "options": {
+      "run_time_ps": null,
+      "monitor_offset_um": null,
+      "boundary_thickness_um": 1.0,
+      "transverse_span_um": null,
+      "source_profiles": null,
+      "wavelength_step_nm": 1.0,
+      "exact_center": true,
+      "smoothing": "farjadpour_diagonal"
+    },
+    "wavelengths_um": [
+      1.5600000000000003,
+      1.5589876703439325,
+      1.557976653696498,
+      1.5569669475048609,
+      1.555958549222798,
+      1.5549514563106797,
+      1.5539456662354465,
+      1.5529411764705885,
+      1.5519379844961243,
+      1.5509360877985798,
+      1.55,
+      1.5499354838709678,
+      1.5489361702127662,
+      1.5479381443298972,
+      1.5469414037347071,
+      1.5459459459459461,
+      1.5449517684887464,
+      1.5439588688946018,
+      1.542967244701349,
+      1.5419768934531453,
+      1.5409878127004493,
+      1.5400000000000003
+    ],
+    "previous_analysis_max_reconstruction_error": 1.1102230246251565e-15,
+    "previous_powers": {
+      "o4": [
+        0.7771492439500441,
+        0.7892586991371666,
+        0.8077183584284576,
+        0.8093825071095858,
+        0.7970122490433944,
+        0.7917915797566495,
+        0.7989632180274994,
+        0.8043194236388117,
+        0.7978964476125944,
+        0.7870109799530592,
+        0.781708231543225,
+        0.7815806786194415,
+        0.7812198043911183,
+        0.7797757930229716,
+        0.7749038732494472,
+        0.7697873982671738,
+        0.7679257348172676,
+        0.7681679033352787,
+        0.7649740889033778,
+        0.7560416977356844,
+        0.7484145266045408,
+        0.7489590798327472
+      ],
+      "conversion": [
+        0.1919546374477046,
+        0.19637352075026898,
+        0.20100275071131182,
+        0.20449903021639446,
+        0.20554050647691643,
+        0.2056529067984817,
+        0.208649277314244,
+        0.21479947481976772,
+        0.21864223413937475,
+        0.21804303207627931,
+        0.21841639132767507,
+        0.21863979139317155,
+        0.22390964815402142,
+        0.22878745755402094,
+        0.2290786756223736,
+        0.22925036595604492,
+        0.2338698158465578,
+        0.23890484647756338,
+        0.2393256124756114,
+        0.238634749498759,
+        0.24219228284186056,
+        0.2477714224830683
+      ],
+      "crosstalk": [
+        2.6516268908522604e-05,
+        2.750663126610145e-05,
+        2.9111107634769034e-05,
+        3.0142193818310973e-05,
+        3.060617265104822e-05,
+        3.142712913204414e-05,
+        3.29033525489518e-05,
+        3.443214048985507e-05,
+        3.551093815507251e-05,
+        3.6404965924208056e-05,
+        3.767328264957557e-05,
+        3.778037131712024e-05,
+        3.975189192303512e-05,
+        4.1693676131616605e-05,
+        4.309787379376642e-05,
+        4.4493658161059055e-05,
+        4.6709641784915694e-05,
+        4.929422038599612e-05,
+        5.122566370219988e-05,
+        5.265815615323386e-05,
+        5.4780723571572654e-05,
+        5.7665193481142685e-05
+      ]
+    },
+    "powers": {
+      "o4": [
+        0.7852813039718349,
+        0.791907284964319,
+        0.809245428851219,
+        0.8159202820168883,
+        0.8059579036824117,
+        0.7959533534238912,
+        0.7973641469505108,
+        0.8032820169248208,
+        0.8010000743822364,
+        0.7890873607199467,
+        0.777772292305273,
+        0.7772154492485178,
+        0.7731749147729101,
+        0.7749223755306734,
+        0.7738647428647584,
+        0.7662510748974249,
+        0.7590464055547661,
+        0.7592917491367563,
+        0.7618569007153733,
+        0.7561579634427417,
+        0.7453988925772833,
+        0.7428578156251188
+      ],
+      "conversion": [
+        0.1870442466874644,
+        0.18992967830553809,
+        0.19412158733616608,
+        0.1987917777377169,
+        0.20057329441832697,
+        0.1997047377242902,
+        0.20141050047560285,
+        0.20780106838849002,
+        0.21295065189683698,
+        0.212438494964082,
+        0.21147131466083202,
+        0.21159053321416477,
+        0.2159528932660403,
+        0.22181110602695467,
+        0.22336412600982597,
+        0.2229022781180248,
+        0.2258140773569777,
+        0.23059908312111946,
+        0.2325858377813813,
+        0.2326500293806249,
+        0.2348085005304576,
+        0.23884131163153344
+      ],
+      "crosstalk": [
+        2.6199813346433814e-05,
+        2.6975429122052933e-05,
+        2.850654547830777e-05,
+        2.970870101767327e-05,
+        3.02818304432486e-05,
+        3.0942501480114565e-05,
+        3.2203947508627266e-05,
+        3.377531652491444e-05,
+        3.507090237465114e-05,
+        3.596835494286562e-05,
+        3.6992267283307304e-05,
+        3.708025418526614e-05,
+        3.888604780571948e-05,
+        4.100295169082203e-05,
+        4.2630626627371435e-05,
+        4.389161510236821e-05,
+        4.576276918541743e-05,
+        4.82845540114675e-05,
+        5.052584176525254e-05,
+        5.21096404949548e-05,
+        5.391537968205092e-05,
+        5.643549575672373e-05
+      ]
+    },
+    "selected_output_max": 1.0147417684556228,
+    "analysis_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run": "reprojected-converter-fixed-6ppw",
+    "field_run_name": "converter-fixed-6ppw",
+    "termination": {
+      "reason": "converged",
+      "steps": 61005,
+      "time": 7.205108905339319e-12,
+      "converged": true,
+      "field_decay": 2.4953239055489973e-07,
+      "monitor_change": null,
+      "source_decay": 0.0,
+      "energy": 3.0322953529888754e-20,
+      "peak_energy": 1.2151910805029293e-13,
+      "max_field": 31773.01953125,
+      "consecutive_checks": 1
+    },
+    "run_time_ps": 7.204984456280084,
+    "field_backend": "jax",
+    "grid_shape": [
+      971,
+      123,
+      27
+    ],
+    "input_reflection_max": 0.08910311468873079,
+    "power_1550nm": 0.21147131466083202,
+    "reference": {
+      "same_ppw_range": [
+        0.357,
+        0.967
+      ],
+      "same_ppw_agreement": false,
+      "converged_range": [
+        0.429,
+        0.514
+      ],
+      "reference_eligible": false,
+      "reference_agreement": null,
+      "mesh_convergence_established": false
+    }
+  },
+  {
+    "field_run": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/converter-reference-fixed-10ppw",
+    "field_data_sha256": "089fb3f7fd34c4733b5ef432f51a4692e4fe9cf258775d89862c54e0da97cc8d",
+    "field_simulation_commit": "5d202882174349d9d8557dd529f2363b0eab93a8",
+    "analysis_commit": "1a0653d2ba6a5c17597517d06f7a6f0b5fb27b90",
+    "device": "mode_converter",
+    "ppw": 10,
+    "options": {
+      "run_time_ps": null,
+      "monitor_offset_um": null,
+      "boundary_thickness_um": 1.0,
+      "transverse_span_um": null,
+      "source_profiles": null,
+      "wavelength_step_nm": null,
+      "exact_center": true,
+      "smoothing": "farjadpour_diagonal",
+      "port_extension_policy": "reference"
+    },
+    "wavelengths_um": [
+      1.5600000000000003,
+      1.5549514563106797,
+      1.55,
+      1.5499354838709678,
+      1.5449517684887464,
+      1.5400000000000003
+    ],
+    "previous_analysis_max_reconstruction_error": 0.0,
+    "previous_powers": {
+      "o4": [
+        0.7257163677795444,
+        0.7210005352766463,
+        0.7079507958002069,
+        0.7078530924333182,
+        0.7070968285604179,
+        0.697084047823332
+      ],
+      "conversion": [
+        0.2743659130096371,
+        0.2832622689792383,
+        0.2897009592970766,
+        0.28962174990655143,
+        0.29653700036800484,
+        0.3043991326480665
+      ],
+      "crosstalk": [
+        0.00015102257926750105,
+        0.0001542698039051213,
+        0.00015735608798916783,
+        0.00015733765117100925,
+        0.00015589750283577893,
+        0.00015520359601367697
+      ]
+    },
+    "powers": {
+      "o4": [
+        0.7256003842951093,
+        0.72323394934032,
+        0.7081292905289375,
+        0.7078147647016916,
+        0.7021894345260974,
+        0.689711245333467
+      ],
+      "conversion": [
+        0.2747234130904601,
+        0.28331957221106613,
+        0.2896262462550153,
+        0.2894792247906329,
+        0.2963002052102867,
+        0.30403282289242317
+      ],
+      "crosstalk": [
+        0.00015225780602159852,
+        0.00015536729886697997,
+        0.00015840741544364965,
+        0.00015835166895869753,
+        0.00015685556660378572,
+        0.00015609192594219436
+      ]
+    },
+    "selected_output_max": 1.0067088888502531,
+    "analysis_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run": "reprojected-converter-reference-fixed-10ppw",
+    "field_run_name": "converter-reference-fixed-10ppw",
+    "termination": {
+      "reason": "converged",
+      "steps": 85448,
+      "time": 7.205055128911564e-12,
+      "converged": true,
+      "field_decay": 4.067905293257842e-08,
+      "monitor_change": null,
+      "source_decay": 0.0,
+      "energy": 4.753800868515099e-21,
+      "peak_energy": 1.1686114906347653e-13,
+      "max_field": 12907.8134765625,
+      "consecutive_checks": 1
+    },
+    "run_time_ps": 7.204984456280084,
+    "field_backend": "cuda_streamed",
+    "grid_shape": [
+      1616,
+      200,
+      43
+    ],
+    "input_reflection_max": 0.06461306948389461,
+    "power_1550nm": 0.2896262462550153,
+    "reference": {
+      "same_ppw_range": [
+        0.26,
+        0.512
+      ],
+      "same_ppw_agreement": true,
+      "converged_range": [
+        0.429,
+        0.514
+      ],
+      "reference_eligible": false,
+      "reference_agreement": null,
+      "mesh_convergence_established": false
+    }
+  }
+]

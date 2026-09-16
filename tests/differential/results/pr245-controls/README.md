@@ -159,3 +159,35 @@ to measured fields**, with correct forward/backward phases and power
 normalization. It does not validate a scalar post-hoc correction: the model
 omits discrete dispersion, vector impedance errors, radiation, and attenuation.
 The measured data and acceptance thresholds are unchanged.
+
+## Normal-direction modal sampling: fixed
+
+Commit `d0fef56e` applies the monitor's normal-direction interpolation to each
+power-normalized forward/backward modal basis, using the mode's discrete
+propagation constant. The basis is **not renormalized after sampling**. Nine
+independent analytic-wave cases use the actual 3D monitor compiler on all three
+axes and multiple fractional plane positions, and recover both traveling-wave
+amplitudes to 1e-12. Together with modal, placement, and result-contract checks,
+41 targeted checks pass.
+
+![Same fields, corrected modal basis](normal_sampling_controls.png)
+
+Reprojecting the retained full-grid control fields gives TE1 maximum transmission
+error **0.7031%**, down from 2.3139%. TE0's near/middle errors fall below 0.25%;
+its far-plane maximum error is **1.000184%**, narrowly outside the unchanged 1%
+criterion. Its maximum output-plane spread is 0.9453 percentage points. This is
+an improvement in extraction, not proof that every coarse-grid control passes.
+The flux diagnostics used the same interpolated fields, so their agreement
+with modal power never independently ruled out this interpolation bias.
+
+`reprojections.json` and the corresponding compact NPZs distinguish the original
+FDTD commit/hash from the analysis commit. Before applying the corrected basis,
+the reanalysis recovers the previous stored powers to within 1e-8 (in practice
+zero or floating-point roundoff). The raw FDTD arrays are not changed. To repeat:
+
+```sh
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 JAX_PLATFORMS=cpu uv run --no-sync python \
+  -m scripts.reproject_passive_soi validation-artifacts/pr245/converter-grid-te1-fixed \
+  --verify-previous-unsampled-basis \
+  --output validation-artifacts/pr245/reprojection-new
+```
