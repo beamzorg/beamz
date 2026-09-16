@@ -236,3 +236,21 @@ and selected output maximum **1.00988**. Its field decay still misses `1e-5`.
 `updated_duration_analysis.json` applies the unchanged duration-pair criteria
 to the latest modal analysis; no completed pair passes. Spectral extraction
 remains provisional. A longer run is being measured separately.
+
+## Literal upstream linewidth audit
+
+`audit_ring_extraction.py` executes only `find_FWHM` from the reviewed, SHA-256
+pinned upstream script, avoiding its commercial-solver loaders. On the retained
+BeamZ spectra, its fixed wavelength guards pair crossings around **two separate
+resonances**. At 25.6 ps this returns 7.7077 nm and Q 200.5, versus 0.48048 nm
+and Q 3208.7 for BeamZ's first complete dip. That literal result is not a
+single-resonance linewidth and must not be used to tune a passing comparison.
+
+![Literal upstream window mismatch](ring_extraction_25.6ps.png)
+
+The audit preserves both definitions in `ring_extraction_audit.json`. BeamZ
+retains the first complete dip and the upstream cubic/global-half-depth rule;
+it has not silently changed extraction to improve agreement. Cubic overshoot
+and the coarse retained 0.2-nm spectrum remain limitations. Interpolating to
+0.02 nm does not create independent spectral resolution; a denser DFT grid is
+needed before a 1% linewidth/Q stability claim.

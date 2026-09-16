@@ -89,9 +89,10 @@ def extract_ring_resonances(wavelengths_um, through_power):
         if resonances.size >= 2
         else float("nan")
     )
-    # Reproduce projects/FDTD_solvers/ring/find_FWHM.py: cubic interpolation
-    # at approximately 0.02 nm, a half-depth level between normalized unity
-    # and the global minimum, and the first complete dip in wavelength order.
+    # Adapt projects/FDTD_solvers/ring/find_FWHM.py: retain cubic interpolation
+    # at approximately 0.02 nm and its global half-depth level, but pair the
+    # crossings of the first complete dip. The upstream fixed wavelength guards
+    # can select different dips when resonances shift (see the extraction audit).
     # Keep the peak-width extraction above only for identifying the resonance
     # family and its FSR; it is not the paper's Q definition.
     dense_wavelengths = np.linspace(wavelengths[0], wavelengths[-1], 1000)
