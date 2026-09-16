@@ -217,7 +217,7 @@ def build_ring_bus_control(*, resolution_ppw=6, options=DEFAULT_OPTIONS):
     )
 
     original, ports, frequencies = build_ring_resonator_simulation(
-        resolution_ppw=resolution_ppw, options=options
+        resolution_ppw=resolution_ppw, options=options, diagnostics=True
     )
     case = load_passive_soi_case("ring_resonator")
     design = Design(
