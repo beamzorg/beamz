@@ -191,3 +191,21 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 JAX_PLATFORMS=cpu uv run --no-sync pyth
   --verify-previous-unsampled-basis \
   --output validation-artifacts/pr245/reprojection-new
 ```
+
+## Larger-mesh capacity
+
+`resource_estimates.json` records actual grid construction without allocating
+FDTD fields. A linear planning fit to measured MMI process RSS versus realized
+cell count estimates about **28 GiB for MMI 20 PPW**, **36 GiB for converter
+15 PPW**, **83 GiB for PSR 20 PPW**, and **92 GiB for ring 20 PPW**. These are
+extrapolations across devices, not measured requirements or confidence bounds;
+the OS and other processes need additional RAM. The current host has 30 GiB.
+JAX allocator peaks omit native CUDA buffers and cannot establish total GPU
+capacity. Completing the finest reference/convergence runs therefore needs
+memory reduction or a larger host, followed by independent GPU sizing.
+
+Clock-corrected, pre-sampling-fix measurements also now include converter 10 PPW
+(0.289701 conversion), PSR 6/10 PPW (0.828077/0.881679 conversion), and ring
+25.6 ps (decay 3.46999e-4, selected output maximum 1.01018). These raw runs remain
+in `runs.json`; use `reprojections.json` for the latest modal analysis once each
+run has been reprocessed. Coarse PSR disagreement is not cured by the clock fix.

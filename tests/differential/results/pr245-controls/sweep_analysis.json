@@ -14,6 +14,21 @@
       "maximum_resonance_drift_nm": 0.0,
       "both_endpoints_physically_valid": false,
       "proposed_time_convergence_passed": false
+    },
+    {
+      "runs": [
+        "ring-fixed-12p8",
+        "ring-fixed-25p6"
+      ],
+      "backends": [
+        "cuda_streamed",
+        "jax"
+      ],
+      "relative_fwhm_change": 0.2499999999997401,
+      "relative_q_change": 0.3333333333328712,
+      "maximum_resonance_drift_nm": null,
+      "both_endpoints_physically_valid": false,
+      "proposed_time_convergence_passed": false
     }
   ],
   "mesh_sweeps": {
@@ -98,6 +113,71 @@
           "converged_range": [
             0.429,
             0.514
+          ],
+          "reference_eligible": false,
+          "reference_agreement": null,
+          "mesh_convergence_established": false
+        }
+      },
+      {
+        "run": "converter-reference-fixed-10ppw",
+        "ppw": 10,
+        "power_1550nm": 0.2897009592970766,
+        "selected_output_max": 1.0044170740597897,
+        "field_decay": 4.067905293257842e-08,
+        "reference": {
+          "same_ppw_range": [
+            0.26,
+            0.512
+          ],
+          "same_ppw_agreement": true,
+          "converged_range": [
+            0.429,
+            0.514
+          ],
+          "reference_eligible": false,
+          "reference_agreement": null,
+          "mesh_convergence_established": false
+        }
+      }
+    ],
+    "polarization_splitter_rotator": [
+      {
+        "run": "psr-fixed-6ppw",
+        "ppw": 6,
+        "power_1550nm": 0.8280773596759526,
+        "selected_output_max": 0.8286156493731954,
+        "field_decay": 1.1232659359907943e-08,
+        "reference": {
+          "same_ppw_range": [
+            0.051,
+            0.147
+          ],
+          "same_ppw_agreement": false,
+          "converged_range": [
+            0.946,
+            0.952
+          ],
+          "reference_eligible": false,
+          "reference_agreement": null,
+          "mesh_convergence_established": false
+        }
+      },
+      {
+        "run": "psr-fixed-10ppw",
+        "ppw": 10,
+        "power_1550nm": 0.8816792567502575,
+        "selected_output_max": 0.9002303701983365,
+        "field_decay": 9.462083270110274e-09,
+        "reference": {
+          "same_ppw_range": [
+            0.0,
+            0.62
+          ],
+          "same_ppw_agreement": false,
+          "converged_range": [
+            0.946,
+            0.952
           ],
           "reference_eligible": false,
           "reference_agreement": null,
