@@ -43,6 +43,7 @@ def test_exact_center_is_added_without_removing_reference_frequencies():
         {"boundary_thickness_um": float("nan")},
         {"monitor_offset_um": -1},
         {"source_profiles": 1.5},
+        {"port_extension_policy": "invalid"},
     ],
 )
 def test_invalid_experiment_controls_are_rejected(kwargs):

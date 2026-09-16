@@ -69,6 +69,11 @@ def main():
         ],
     )
     parser.add_argument("--ppw", type=int, default=6)
+    parser.add_argument(
+        "--port-extension-policy",
+        choices=("reference", "through_boundary"),
+        default="reference",
+    )
     parser.add_argument("--backend", choices=("jax", "cuda_streamed"), default="jax")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
@@ -130,7 +135,9 @@ def main():
         if simulation.design is None:
             parser.error("--grid-from requires a design-backed device")
         with np.load(args.grid_from) as raw:
-            grid = RectilinearGrid(*(raw[f"grid_{axis}_boundaries_m"] for axis in "xyz"))
+            grid = RectilinearGrid(
+                *(raw[f"grid_{axis}_boundaries_m"] for axis in "xyz")
+            )
         for old, new in zip(simulation.grid.edges, grid.edges, strict=True):
             if not np.allclose(old[[0, -1]], new[[0, -1]], rtol=0, atol=1e-12):
                 parser.error("frozen grid domain does not match the requested device")
@@ -242,6 +249,12 @@ def main():
             float(powers[channel][center]),
         )
         summary["selected_output_max"] = float(np.max(sum(powers.values())))
+        if options.port_extension_policy != "reference":
+            summary["reference"].update(
+                reference_eligible=False,
+                reference_agreement=None,
+                protocol_limitation="Port extensions differ from the pinned paper setup",
+            )
     device = jax.devices()[0]
     memory = device.memory_stats() or {}
     summary["environment"] = {

@@ -121,8 +121,8 @@ def paper_cross_power_range(
     return min(values), max(values)
 
 
-def _ported_design(case: DifferentialCase):
-    """Extrude a referenced layer stack and its guides through the x boundaries."""
+def _ported_design(case: DifferentialCase, *, port_extension_policy="reference"):
+    """Extrude the pinned stack, optionally correcting truncated port extensions."""
     from beamz import Design, Material, Polygon, Rectangle, µm
 
     component = generate_layout(case)
@@ -177,10 +177,18 @@ def _ported_design(case: DifferentialCase):
         width = float(port["width_um"]) * µm
         orientation = int(round(float(port["orientation_deg"]))) % 360
         if orientation == 180:
-            extension_width = max(extension, x + µm)
+            extension_width = (
+                max(extension, x + µm)
+                if port_extension_policy == "through_boundary"
+                else extension
+            )
             position = (x - extension_width, y - width / 2)
         elif orientation == 0:
-            extension_width = max(extension, design.width - x + µm)
+            extension_width = (
+                max(extension, design.width - x + µm)
+                if port_extension_policy == "through_boundary"
+                else extension
+            )
             position = (x, y - width / 2)
         else:
             raise ValueError(f"unsupported port orientation {orientation}")
@@ -223,7 +231,7 @@ def build_four_port_simulation(
     if float(wavelength_span_nm) not in protocol["wavelength_spans_nm"]:
         raise ValueError(f"unsupported paper wavelength span {wavelength_span_nm}")
 
-    design = _ported_design(case)
+    design = _ported_design(case, port_extension_policy=options.port_extension_policy)
     bounds = domain_bounds_um(case)
     core = case.geometry["layers"]["core"]
     z_center = (

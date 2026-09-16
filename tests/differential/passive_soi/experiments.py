@@ -17,8 +17,13 @@ class ExperimentOptions:
     wavelength_step_nm: float | None = None
     exact_center: bool = False
     smoothing: str = "farjadpour_diagonal"
+    port_extension_policy: str = "reference"
 
     def __post_init__(self):
+        if self.port_extension_policy not in ("reference", "through_boundary"):
+            raise ValueError(
+                "port_extension_policy must be reference or through_boundary"
+            )
         for name in (
             "run_time_ps",
             "boundary_thickness_um",

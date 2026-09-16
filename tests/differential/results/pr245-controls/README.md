@@ -76,3 +76,23 @@ The selected output bound is a necessary check on retained modes, not a complete
 all-mode energy balance. Straight controls above predate the clock correction;
 they should be repeated if used as final release evidence. Some device runs
 shared the GPU, so their timings are not suitable for performance comparisons.
+
+## Port-termination intervention is distinct from paper reproduction
+
+The narrow converter ports sit 11.858 µm from the corresponding x-domain edges.
+Their pinned 10-µm extensions therefore end 1.858 µm from the edge, **0.858 µm
+before the 1-µm absorber**. The source repository has the same behavior:
+[`extend_from_ports`](https://github.com/JPPhotonics/fdtd-pipeline/blob/622e0a9b7429eaf2335b1000b39e283544a198c4/helper_functions/generic/gds_handling.py#L32)
+uses fixed-length stubs, and
+[`initiate_fdtd`](https://github.com/JPPhotonics/fdtd-pipeline/blob/622e0a9b7429eaf2335b1000b39e283544a198c4/helper_functions/tidy3d/initiate_fdtd.py#L98)
+derives domain limits from the original ports. This is a physical limitation of
+the pinned setup, not uniquely a BeamZ adaptation error.
+
+The default `--port-extension-policy reference` deliberately preserves that
+setup. `--port-extension-policy through_boundary` extends all port guides beyond
+the domain edge. The latter is a controlled physical correction and must not be
+called a reproduction of the exact paper geometry. Its reference acceptance is
+ineligible in the experiment report. `--grid-from PATH/monitor_data.npz` keeps a
+recorded mesh fixed when comparing this intervention with the original setup.
+The geometry guard fails on the original converter and passes for the corrected
+variant; it is not evidence by itself of the spectral size of this effect.

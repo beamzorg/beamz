@@ -169,7 +169,7 @@ def test_all_port_guides_continue_through_domain_boundaries(name):
     from tests.differential.passive_soi.four_port import _ported_design
 
     case = load_passive_soi_case(name)
-    design = _ported_design(case)
+    design = _ported_design(case, port_extension_policy="through_boundary")
     bounds = domain_bounds_um(case)
     silicon = case.materials["silicon_n_at_1p55_um"] ** 2
     core = unary_union(

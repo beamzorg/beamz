@@ -154,7 +154,7 @@ def build_ring_resonator_simulation(
     protocol = case.geometry["simulation"]
     if int(resolution_ppw) not in protocol["resolutions_cells_per_wavelength"]:
         raise ValueError(f"unsupported supplementary resolution {resolution_ppw}")
-    design = _ported_design(case)
+    design = _ported_design(case, port_extension_policy=options.port_extension_policy)
     bounds = domain_bounds_um(case)
     core = case.geometry["layers"]["core"]
     z_center = (
