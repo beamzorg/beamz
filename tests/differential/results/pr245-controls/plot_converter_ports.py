@@ -1,5 +1,6 @@
 """Separate the port-termination intervention from reproduction of the paper setup."""
 
+import argparse
 import json
 from pathlib import Path
 
@@ -13,12 +14,21 @@ HERE = Path(__file__).resolve().parent
 
 
 def main():
-    runs = {r["run"]: r for r in json.loads((HERE / "runs.json").read_text())}
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--latest", action="store_true")
+    args = parser.parse_args()
+    source = "reprojections.json" if args.latest else "runs.json"
+    runs = {r["run"]: r for r in json.loads((HERE / source).read_text())}
     variants = {
         "converter-fixed-6ppw": "Reference stubs · corrected clock",
         "converter-ports-fixed-6ppw": "Extended stubs · automatic remesh",
         "converter-ports-fixed-frozen6": "Extended stubs · original frozen mesh",
     }
+    if args.latest:
+        variants = {
+            "reprojected-converter-fixed-6ppw": "Reference stubs · both numerical fixes",
+            "reprojected-converter-ports-fixed-frozen6": "Extended stubs · same mesh and fixes",
+        }
     fig, axes = plt.subplots(2, 2, figsize=(12, 7.5), constrained_layout=True)
     metrics = {}
     for name, label in variants.items():
@@ -43,7 +53,7 @@ def main():
                 (selected + reflection).max()
             ),
             "physical_variant_matches_pinned_port_extensions": name
-            == "converter-fixed-6ppw",
+            in ("converter-fixed-6ppw", "reprojected-converter-fixed-6ppw"),
         }
     for ax, title in zip(
         axes.flat,
@@ -64,8 +74,9 @@ def main():
     fig.suptitle(
         "Converter · 6 PPW · corrected clock in every run\nExtended-port variants change the pinned paper geometry"
     )
-    fig.savefig(HERE / "converter_port_intervention.png", dpi=170)
-    (HERE / "converter_port_analysis.json").write_text(
+    prefix = "updated_" if args.latest else ""
+    fig.savefig(HERE / f"{prefix}converter_port_intervention.png", dpi=170)
+    (HERE / f"{prefix}converter_port_analysis.json").write_text(
         json.dumps(metrics, indent=2) + "\n"
     )
     plt.close(fig)

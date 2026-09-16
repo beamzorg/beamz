@@ -32,7 +32,9 @@ def test_long_run_clock_preserves_optical_phase(origin, chunked):
         ],
     )
     program = simulation.compile(backend="jax")
-    state = initial_program_state(program, t=origin, current_step=0, monitor_steps=steps)
+    state = initial_program_state(
+        program, t=origin, current_step=0, monitor_steps=steps
+    )
     state = state._replace(hx=jnp.ones_like(state.hx))
     sizes = [10000] * 6 if chunked else [steps]
     for size in sizes:
