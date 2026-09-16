@@ -1,6 +1,6 @@
 # Additional passive-SOI devices after the material-ownership fix
 
-Four fresh-process JAX/GPU simulations on commit `da35b52`, rebased onto PR 230 head `06ab298`. The base includes upstream `main` through #244 and the material-ownership rasterization fix. Every device uses the lowest repository setting of 6 cells per wavelength and a 20 nm source bandwidth.
+Four fresh-process JAX/GPU simulations on commit `aa3fbe3`, rebased onto merged PR 230 at `8274dd5`. The base includes upstream `main` through #244 and the material-ownership rasterization fix. Every device uses the lowest repository setting of 6 cells per wavelength and a 20 nm source bandwidth.
 
 ## Results
 

@@ -1,8 +1,8 @@
 {
   "date": "2026-09-15",
-  "tested_commit": "da35b52",
-  "base_commit": "06ab298947be5eba0119a55b2584c0571838a1d0",
-  "base_note": "PR 230 head containing upstream main through #244 and the refreshed material-ownership benchmark fixes.",
+  "tested_commit": "aa3fbe3222f4192e0e38a78fc6f9b6886cf6858b",
+  "base_commit": "8274dd589aebac07bb5c62e8b0869938c83f6b1c",
+  "base_note": "Upstream main after merging PR 230, including #244 and the material-ownership rasterization fix.",
   "gpu": "NVIDIA GeForce RTX 4060 Ti 8 GiB under WSL2",
   "packages": {
     "beamz": "0.5.1",
