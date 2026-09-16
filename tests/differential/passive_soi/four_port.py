@@ -308,7 +308,7 @@ def build_four_port_simulation(
             FieldMonitor(
                 center=(0.5 * design.width, 0.5 * design.height, z_center),
                 size=(design.width, design.height, 0.0),
-                freqs=frequencies,
+                freqs=(float(np.median(frequencies)),),
                 fields=("Ex", "Ey", "Ez"),
                 name=f"{case.name.removeprefix('passive_soi_')}_xy",
             )
