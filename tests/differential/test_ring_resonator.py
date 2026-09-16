@@ -73,12 +73,18 @@ def test_ring_resonance_extraction_reports_fsr_q_and_extinction():
     for center in (1.544, 1.554):
         power -= 0.8 / (1.0 + ((wavelengths - center) / 0.0005) ** 2)
 
-    resonances, fsr_nm, loaded_q, extinction_db, normalized = extract_ring_resonances(
-        wavelengths, power
-    )
+    (
+        resonances,
+        fsr_nm,
+        fwhm_nm,
+        loaded_q,
+        extinction_db,
+        normalized,
+    ) = extract_ring_resonances(wavelengths, power)
 
     np.testing.assert_allclose(resonances, (1.544, 1.554), atol=2e-4)
     assert fsr_nm == pytest.approx(10.0, abs=0.3)
+    assert fwhm_nm == pytest.approx(1.0, abs=0.08)
     assert loaded_q > 1_000.0
     assert extinction_db > 6.0
     assert max(normalized) == pytest.approx(1.0)
@@ -110,6 +116,7 @@ def test_ring_repository_runtime_converges_before_resonance_validation(
         "execution_backend": result.backend,
         "resonance_wavelengths_um": result.resonance_wavelengths_um,
         "free_spectral_range_nm": result.free_spectral_range_nm,
+        "lowest_resonance_fwhm_nm": result.lowest_resonance_fwhm_nm,
         "loaded_q": result.loaded_q,
         "extinction_db": result.extinction_db,
         "runtime_s": result.runtime_s,
@@ -164,6 +171,23 @@ def test_ring_repository_runtime_converges_before_resonance_validation(
         resolution="6 cells per wavelength",
         metadata=metadata,
     )
+    published = protocol["published_ring_results"]["six_ppw_acceptance"]
+    validation_metrics.check_lower(
+        "ring lowest-resonance FWHM",
+        measured=result.lowest_resonance_fwhm_nm,
+        lower_bound=published["fwhm_nm"][0],
+        unit="nm",
+        resolution="6 cells per wavelength",
+        metadata=metadata,
+    )
+    validation_metrics.check_upper(
+        "ring lowest-resonance FWHM",
+        measured=result.lowest_resonance_fwhm_nm,
+        upper_bound=published["fwhm_nm"][1],
+        unit="nm",
+        resolution="6 cells per wavelength",
+        metadata=metadata,
+    )
     validation_metrics.check_lower(
         "ring through-port extinction",
         measured=result.extinction_db,
@@ -175,7 +199,15 @@ def test_ring_repository_runtime_converges_before_resonance_validation(
     validation_metrics.check_lower(
         "ring loaded Q",
         measured=result.loaded_q,
-        lower_bound=10.0,
+        lower_bound=published["q"][0],
+        unit="dimensionless",
+        resolution="6 cells per wavelength",
+        metadata=metadata,
+    )
+    validation_metrics.check_upper(
+        "ring loaded Q",
+        measured=result.loaded_q,
+        upper_bound=published["q"][1],
         unit="dimensionless",
         resolution="6 cells per wavelength",
         metadata=metadata,

@@ -122,10 +122,10 @@ passivity problems across the wavelength band.
 
 ## Single-bus ring resonator
 
-Issue #104's maintainer audit adds a sixth device beyond the five cases reported
-in the paper: the supplementary repository's default `ring_single`. The case
-pins its GDS at the same source revision and runs the repository's lowest
-setting of 6 cells per wavelength over 1540--1560 nm with 0.2 nm sampling.
+The paper's sixth device is the supplementary repository's default
+`ring_single`. The case pins its GDS at the same source revision and runs the
+lowest published setting of 6 cells per wavelength over 1540--1560 nm with
+0.2 nm monitor sampling.
 
 ```console
 uv run pytest tests/differential/test_ring_resonator.py \
@@ -134,11 +134,18 @@ uv run pytest tests/differential/test_ring_resonator.py \
 
 The benchmark uses the upstream ring script's default Lumerical silicon runtime
 of `30 * domain_x * 2 / c` (6.40 ps for this domain). The upstream Tidy3D helper
-uses half that duration. The supplementary repository does not commit Lumerical
-or Tidy3D ring results,
-so this case does not invent a cross-solver target. It records the complex TE0
-through and reflection spectra, resonance wavelengths, median free spectral
-range, loaded Q, runtime, grid size, and terminal field-decay ratio. The
+uses half that duration. Section 3.6 and Figure 26 publish Lumerical and Tidy3D
+ring results at 6, 10, 15, 20, and 25 cells per wavelength. Following the
+paper's analysis script, the benchmark cubically interpolates the 0.2 nm
+samples to approximately 0.02 nm, measures the first complete resonance in
+wavelength order at half depth, and computes `Q = wavelength / FWHM`. At 6 PPW
+the paper reports a 0.84 nm Lumerical FWHM and Q of 1839.4; Tidy3D's FWHM lies
+in its reported 0.88--0.90 nm range and its series starts at Q 1756.5. The
+paper concludes that the ring requires 20 PPW for mesh convergence.
+
+The case records the complex TE0 through and reflection spectra, resonance
+wavelengths, median free spectral range, lowest-resonance FWHM and Q, runtime,
+grid size, and terminal field-decay ratio. The
 field-decay ratio must reach the repository's `1e-5` auto-shutoff threshold
 before any passivity or resonance metric can be accepted. The hardware test is
 a strict expected failure at the pinned runtime, so an unexpectedly converged

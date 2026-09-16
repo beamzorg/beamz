@@ -34,6 +34,7 @@ class RingResonatorResult:
     normalized_through_spectrum: tuple[float, ...]
     resonance_wavelengths_um: tuple[float, ...]
     free_spectral_range_nm: float
+    lowest_resonance_fwhm_nm: float
     loaded_q: float
     extinction_db: float
     center_total_output_power: float
@@ -47,8 +48,9 @@ class RingResonatorResult:
 
 
 def extract_ring_resonances(wavelengths_um, through_power):
-    """Extract resonance locations, median FSR, loaded Q, and band extinction."""
-    from scipy.signal import find_peaks, peak_widths
+    """Extract ring metrics, including the paper's lowest-resonance FWHM and Q."""
+    from scipy.interpolate import CubicSpline
+    from scipy.signal import find_peaks
 
     wavelengths = np.asarray(wavelengths_um, dtype=float)
     power = np.asarray(through_power, dtype=float)
@@ -83,17 +85,33 @@ def extract_ring_resonances(wavelengths_um, through_power):
         if resonances.size >= 2
         else float("nan")
     )
+    # Reproduce projects/FDTD_solvers/ring/find_FWHM.py: cubic interpolation
+    # at approximately 0.02 nm, a half-depth level between normalized unity
+    # and the global minimum, and the first complete dip in wavelength order.
+    # Keep the peak-width extraction above only for identifying the resonance
+    # family and its FSR; it is not the paper's Q definition.
+    dense_wavelengths = np.linspace(wavelengths[0], wavelengths[-1], 1000)
+    dense_power = CubicSpline(wavelengths, normalized)(dense_wavelengths)
+    half_level = 0.5 * (1.0 + float(np.min(dense_power)))
+    below = dense_power < half_level
+    transitions = np.diff(below.astype(np.int8))
+    left_crossings = np.flatnonzero(transitions == 1) + 1
+    right_crossings = np.flatnonzero(transitions == -1) + 1
+    lowest_fwhm_nm = float("nan")
     loaded_q = float("nan")
-    if minima.size:
-        deepest = int(minima[np.argmin(normalized[minima])])
-        widths, _, left, right = peak_widths(-normalized, [deepest], rel_height=0.5)
-        del widths
-        sample_axis = np.arange(wavelengths.size, dtype=float)
-        left_wavelength = float(np.interp(left[0], sample_axis, wavelengths))
-        right_wavelength = float(np.interp(right[0], sample_axis, wavelengths))
-        fwhm = right_wavelength - left_wavelength
-        if fwhm > 0.0:
-            loaded_q = float(wavelengths[deepest] / fwhm)
+    for left in left_crossings:
+        following = right_crossings[right_crossings > left]
+        if following.size == 0:
+            continue
+        right = int(following[0])
+        fwhm_um = float(dense_wavelengths[right] - dense_wavelengths[left])
+        if fwhm_um > 0.0:
+            resonance_um = float(
+                0.5 * (dense_wavelengths[left] + dense_wavelengths[right])
+            )
+            lowest_fwhm_nm = fwhm_um * 1e3
+            loaded_q = resonance_um / fwhm_um
+        break
     floor = max(float(np.min(normalized)), np.finfo(float).tiny)
     extinction_db = float(-10.0 * np.log10(floor))
     normalized_original_order = np.empty_like(normalized)
@@ -101,6 +119,7 @@ def extract_ring_resonances(wavelengths_um, through_power):
     return (
         tuple(float(value) for value in resonances),
         fsr_nm,
+        lowest_fwhm_nm,
         loaded_q,
         extinction_db,
         tuple(float(value) for value in normalized_original_order),
@@ -273,9 +292,14 @@ def run_ring_resonator_benchmark(
     through = np.abs(np.asarray(scattering.s_matrix[("o2", "o1")])) ** 2
     reflection = np.abs(np.asarray(scattering.s_matrix[("o1", "o1")])) ** 2
     total = through + reflection
-    resonances, fsr_nm, loaded_q, extinction_db, normalized = extract_ring_resonances(
-        wavelengths, through
-    )
+    (
+        resonances,
+        fsr_nm,
+        lowest_fwhm_nm,
+        loaded_q,
+        extinction_db,
+        normalized,
+    ) = extract_ring_resonances(wavelengths, through)
     center = int(np.argmin(np.abs(wavelengths - 1.55)))
     performance = results.performance
     termination = results.termination
@@ -289,6 +313,7 @@ def run_ring_resonator_benchmark(
         normalized_through_spectrum=normalized,
         resonance_wavelengths_um=resonances,
         free_spectral_range_nm=fsr_nm,
+        lowest_resonance_fwhm_nm=lowest_fwhm_nm,
         loaded_q=loaded_q,
         extinction_db=extinction_db,
         center_total_output_power=float(total[center]),

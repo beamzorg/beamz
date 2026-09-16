@@ -701,8 +701,8 @@
               310,
               27
             ],
-            "loaded_q": 1791.0322479829392,
-            "reference_result_limitation": "The supplementary repository contains the ring setup and analysis script but no committed Lumerical or Tidy3D output values.",
+            "loaded_q": 403.46335078534975,
+            "reference_result_limitation": "The paper publishes ring comparisons in Figure 26 and text, but the supplementary repository does not commit the raw solver arrays. Six PPW is a published comparison point; the paper concludes that the ring requires 20 PPW for mesh convergence.",
             "resonance_wavelengths_um": [
               1.5413832926985758,
               1.5487364620938633,
@@ -711,7 +711,8 @@
             "runtime_s": 127.65754459699428,
             "steps": 48397,
             "terminal_field_decay": 0.05071902926309659,
-            "termination_reason": "time_limit"
+            "termination_reason": "time_limit",
+            "lowest_resonance_fwhm_nm": 3.8238238238237354
           },
           "passed": false,
           "quantity": "ring terminal field-decay ratio",

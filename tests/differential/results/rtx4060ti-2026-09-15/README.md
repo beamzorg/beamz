@@ -9,13 +9,13 @@ Four fresh-process JAX/GPU simulations through commit `5434c5f`, rebased onto me
 | 2×2 MMI cross TE0 | 0.374549 | 0.376 / 0.358 | 0.358–0.612 | pass |
 | Mode converter TE1 | 0.200297 | 0.967 / 0.357 | -0.021–0.967 | power comparison passes |
 | Polarization splitter-rotator TE0 | 0.827823 | 0.147 / 0.051 | 0.051–1.8475 | pass |
-| Ring terminal field decay | 0.050719 | no committed solver result | ≤1e-5 | strict xfail |
+| Ring terminal field decay | 0.050719 | Figure 26 publishes 6 PPW spectral metrics | ≤1e-5 before accepting spectral metrics | strict xfail |
 
 ![Reference comparison](reference_comparison.png)
 
 The shaded intervals use the benchmark's resolution-conditioned rule: the converged nominal plus or minus the larger deviation of the two published solvers at 6 PPW. They are numerical acceptance bands, not confidence intervals, and may extend outside the physical 0–1 power range.
 
-The mode converter's center conversion passes, but its selected output-power ratio reaches 1.123259 across the wavelength band and violates the separate 1.02 bound. Its test therefore remains a strict expected failure. The ring completes 48,397 steps on JAX without an allocation failure, but reaches its 6.40 ps time limit before satisfying field-decay convergence; resonance metrics remain characterization only. The corrected duration reduces residual energy from 0.121169 to 0.050719. An independent `cuda_streamed` run reproduced the terminal ratio as 0.0507189.
+The mode converter's center conversion passes, but its selected output-power ratio reaches 1.123259 across the wavelength band and violates the separate 1.02 bound. Its test therefore remains a strict expected failure. The ring completes 48,397 steps on JAX without an allocation failure, but reaches its 6.40 ps time limit before satisfying field-decay convergence; resonance metrics remain characterization only. Figure 26 contains Lumerical and Tidy3D ring results at 6 PPW, while the paper concludes that mesh convergence requires 20 PPW. The corrected duration reduces residual energy from 0.121169 to 0.050719. An independent `cuda_streamed` run reproduced the terminal ratio as 0.0507189.
 
 ## Field evidence
 
