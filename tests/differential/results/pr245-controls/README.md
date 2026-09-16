@@ -137,3 +137,10 @@ not evidence that missing output modes somehow explain excess power. Passing
 the selected-output-only 1.02 check is insufficient to establish an open-port
 scattering matrix. The extended-stub variant is a separate diagnostic, not a
 way to tune the published conversion target.
+
+The follow-up `converter-ports-fixed-frozen6` preserves **every grid edge** from
+the reference-stub run (verified by array equality). Output backward-wave power
+falls to **0.000291**, input reflection to **0.00427**, and selected outputs plus
+input reflection to **1.00181**. Conversion is **0.22110** at 1550 nm. This
+isolates the truncation effect from remeshing: it largely explains the spurious
+returning waves but does not explain the gap to converged reference conversion.

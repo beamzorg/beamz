@@ -12,5 +12,12 @@
     "o4_backward_power_max": 0.00037653557151694987,
     "selected_outputs_plus_input_reflection_max": 0.9950507765783547,
     "physical_variant_matches_pinned_port_extensions": false
+  },
+  "converter-ports-fixed-frozen6": {
+    "selected_output_max": 1.0015570920364356,
+    "input_reflection_max": 0.004266369968116291,
+    "o4_backward_power_max": 0.00029059918283025495,
+    "selected_outputs_plus_input_reflection_max": 1.001806505983299,
+    "physical_variant_matches_pinned_port_extensions": false
   }
 }
