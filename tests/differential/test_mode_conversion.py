@@ -158,3 +158,28 @@ def test_conversion_power_is_physical_and_characterizes_reference(
         resolution="6 cells per wavelength",
         metadata=metadata,
     )
+
+
+@pytest.mark.parametrize("name", DEVICES)
+def test_all_port_guides_continue_through_domain_boundaries(name):
+    from shapely.geometry import LineString, Polygon
+    from shapely.ops import unary_union
+
+    from tests.differential.passive_soi.common import domain_bounds_um
+    from tests.differential.passive_soi.four_port import _ported_design
+
+    case = load_passive_soi_case(name)
+    design = _ported_design(case)
+    bounds = domain_bounds_um(case)
+    silicon = case.materials["silicon_n_at_1p55_um"] ** 2
+    core = unary_union(
+        [
+            Polygon(np.asarray(s.vertices)[:, :2])
+            for s in design.structures
+            if s.material.permittivity == silicon
+        ]
+    )
+    for port in case.geometry["ports"].values():
+        x, y = (np.asarray(port["center_um"]) - [bounds["x"][0], bounds["y"][0]]) * 1e-6
+        outside = -0.5e-6 if port["orientation_deg"] == 180 else design.width + 0.5e-6
+        assert core.covers(LineString([(x, y), (outside, y)])), port

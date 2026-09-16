@@ -177,9 +177,11 @@ def _ported_design(case: DifferentialCase):
         width = float(port["width_um"]) * µm
         orientation = int(round(float(port["orientation_deg"]))) % 360
         if orientation == 180:
-            position, extension_width = (x - extension, y - width / 2), extension
+            extension_width = max(extension, x + µm)
+            position = (x - extension_width, y - width / 2)
         elif orientation == 0:
-            position, extension_width = (x, y - width / 2), extension
+            extension_width = max(extension, design.width - x + µm)
+            position = (x, y - width / 2)
         else:
             raise ValueError(f"unsupported port orientation {orientation}")
         design += Rectangle(
