@@ -132,7 +132,10 @@ uv run pytest tests/differential/test_ring_resonator.py \
   --validation-report=validation-results-ring-6ppw.json
 ```
 
-The supplementary repository does not commit Lumerical or Tidy3D ring results,
+The benchmark uses the upstream ring script's default Lumerical silicon runtime
+of `30 * domain_x * 2 / c` (6.40 ps for this domain). The upstream Tidy3D helper
+uses half that duration. The supplementary repository does not commit Lumerical
+or Tidy3D ring results,
 so this case does not invent a cross-solver target. It records the complex TE0
 through and reflection spectra, resonance wavelengths, median free spectral
 range, loaded Q, runtime, grid size, and terminal field-decay ratio. The

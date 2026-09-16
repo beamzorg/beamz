@@ -203,7 +203,13 @@ def build_ring_resonator_simulation(*, resolution_ppw: int = 6, diagnostics=Fals
         sources=[source],
         monitors=monitors,
         boundaries=[Absorber(edges="all", thickness=1.0 * µm)],
-        run_time=15.0 * domain_size_um(case)[0] * µm * 2.0 / LIGHT_SPEED,
+        run_time=(
+            float(protocol["run_time_domain_transits"])
+            * domain_size_um(case)[0]
+            * µm
+            * 2.0
+            / LIGHT_SPEED
+        ),
         grid_spec=GridSpec.auto(
             min_steps_per_wvl=float(resolution_ppw),
             wavelength=float(protocol["wavelength_center_um"]) * µm,
