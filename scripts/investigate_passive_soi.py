@@ -175,7 +175,9 @@ def main():
             "fwhm_nm": fwhm,
             "q": q,
             "extinction_db": extinction,
-            "spectral_metrics_valid": result.termination.field_decay <= 1e-5,
+            "field_decay_passed": result.termination.field_decay <= 1e-5,
+            "output_power_passed": float(np.max(sum(powers.values()))) <= 1.02,
+            "time_convergence_established": False,
         }
         summary["selected_output_max"] = float(np.max(sum(powers.values())))
     else:
