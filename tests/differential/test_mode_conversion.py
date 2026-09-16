@@ -110,20 +110,7 @@ def test_conversion_setup_uses_distinct_source_and_output_modes(name):
 @pytest.mark.slow
 @pytest.mark.parametrize(
     "name",
-    [
-        pytest.param(
-            "mode_converter",
-            marks=pytest.mark.xfail(
-                strict=True,
-                raises=OutputPowerFailure,
-                reason=(
-                    "The selected output-power ratio reaches 1.123 across the "
-                    "20 nm band, above the 1.02 passivity bound."
-                ),
-            ),
-        ),
-        "polarization_splitter_rotator",
-    ],
+    ["mode_converter", "polarization_splitter_rotator"],
 )
 @pytest.mark.parametrize("resolution_ppw", [6], ids=["6ppw"])
 def test_conversion_power_is_physical_and_characterizes_reference(

@@ -44,3 +44,35 @@ an explicitly installed CUDA-enabled JAX environment.
 Regenerate the figure using `python tests/differential/results/pr245-controls/plot_results.py`.
 
 AI-assisted implementation, experiments, and analysis: OpenAI Codex.
+
+## Long-run clock defect: confirmed and fixed
+
+The original JAX loop repeatedly added `dt` to a float32 clock. The source is
+indexed by integer steps, while monitor DFT phases used this drifting clock.
+The new 60,000-step regression fails on the original implementation with
+0.530862 radians of optical phase error. Commit `1e3f217b` derives timestamps
+from the request origin and absolute integer step, including continuation chunks.
+51 engine/runtime checks and 29 CUDA hardware parity checks passed.
+
+At fixed converter geometry and source, the dense 22-frequency JAX run now has
+maximum selected output power **1.019153**, below the existing **1.02** bound.
+The old native backend, which already avoided per-step clock accumulation,
+gives 1.019145; the maximum selected-channel spectral difference is 0.0000155.
+The original five-frequency hardware test also passes after removing its xfail
+(1 passed, 10 deselected). Conversion at exact 1550 nm is 0.218416; this does
+**not** establish agreement with the converged paper reference.
+
+![Clock and duration experiments](ring_duration.png)
+
+At 6.4 ps the corrected ring linewidth changes from 3.823824 to 0.960961 nm,
+and Q from 403.46 to 1604.35. This isolates a major spectral error, but the
+corrected run still has field decay 0.051106 and selected output maximum
+1.273292. Its spectral metrics remain provisional. The old-clock 12.8-ps run
+is retained to show that simply running longer does not cure the clock defect.
+An obsolete-clock 25.6-ps experiment was stopped after identifying the defect;
+it has no completed result and is excluded here.
+
+The selected output bound is a necessary check on retained modes, not a complete
+all-mode energy balance. Straight controls above predate the clock correction;
+they should be repeated if used as final release evidence. Some device runs
+shared the GPU, so their timings are not suitable for performance comparisons.

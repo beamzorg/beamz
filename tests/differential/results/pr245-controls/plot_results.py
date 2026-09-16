@@ -61,10 +61,11 @@ def main():
             wl = np.asarray(row["wavelengths_um"]) * 1000
             order = np.argsort(wl)
             power = np.asarray(row["powers"]["o2"])
-            label = f"{row['run_time_ps']:g} ps / {row['options']['source_profiles'] or 3} profiles"
+            clock = "fixed clock" if "fixed" in row["run"] else "old clock"
+            label = f"{clock} · {row['run_time_ps']:g} ps · {row['backend']}"
             axes[0].plot(
                 wl[order],
-                power[order] / power.max(),
+                power[order],
                 label=label,
                 color=COLORS[idx % len(COLORS)],
                 lw=1.2,
@@ -78,9 +79,10 @@ def main():
             )
         axes[0].set(
             xlabel="Wavelength (nm)",
-            ylabel="Through power / band maximum",
-            title="Ring spectra by duration",
+            ylabel="Through power / incident power",
+            title="Ring spectra: clock correction and duration",
         )
+        axes[0].axhline(1.02, color="#444444", ls="--", lw=1)
         axes[1].axhline(1e-5, color="#444444", ls="--", label="Required decay")
         axes[1].set(
             xlabel="Configured duration (ps)",
