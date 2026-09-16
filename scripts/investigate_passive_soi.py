@@ -69,6 +69,7 @@ def main():
         ],
     )
     parser.add_argument("--ppw", type=int, default=6)
+    parser.add_argument("--progress", action="store_true")
     parser.add_argument(
         "--port-extension-policy",
         choices=("reference", "through_boundary"),
@@ -177,7 +178,7 @@ def main():
     with reference_absorber_warning_scope():
         result = simulation.run(
             backend=args.backend,
-            progress=False,
+            progress=args.progress,
             termination=AutoTermination(
                 field_decay=1e-5, monitor_change=None, consecutive_checks=1
             ),
