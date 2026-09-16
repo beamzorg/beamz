@@ -15,6 +15,29 @@ COLORS = ["#236192", "#d97722", "#7a629e", "#6b7740"]
 
 def main():
     rows = json.loads((HERE / "reprojections.json").read_text())
+    field_runs = json.loads((HERE / "runs.json").read_text())
+    refined_controls = [
+        r for r in field_runs if r["run"] == "converter-grid-te0-10ppw-sampling-fixed"
+    ]
+    if refined_controls:
+        row = refined_controls[0]
+        fig, ax = plt.subplots(figsize=(7, 4.5), constrained_layout=True)
+        wl = np.asarray(row["wavelengths_um"]) * 1000
+        order = np.argsort(wl)
+        for port, power in row["powers"].items():
+            ax.plot(wl[order], np.asarray(power)[order], "o-", label=port)
+        ax.axhspan(0.99, 1.01, color=COLORS[0], alpha=0.08)
+        ax.axhline(1, color="#444444", ls="--", lw=1)
+        ax.set(
+            title="Fresh TE0 control · exact converter grid · 10 PPW\nCorrected clock and modal sampling",
+            xlabel="Wavelength (nm)",
+            ylabel="Transmission / incident power",
+            ylim=(0.988, 1.012),
+        )
+        ax.legend()
+        ax.grid(alpha=0.2)
+        fig.savefig(HERE / "refined_control.png", dpi=170)
+        plt.close(fig)
     controls = [
         r for r in rows if r["device"].startswith("converter_grid_") and r["ppw"] == 6
     ]
@@ -117,6 +140,38 @@ def main():
     rings = sorted(
         (r for r in rows if r["device"] == "ring_resonator"),
         key=lambda r: r["run_time_ps"],
+    )
+    duration_pairs = []
+    for first, second in zip(rings, rings[1:], strict=False):
+        a, b = first["ring"], second["ring"]
+        same_count = len(a["resonances_um"]) == len(b["resonances_um"])
+        drift = (
+            float(np.max(np.abs(np.asarray(a["resonances_um"]) - b["resonances_um"])))
+            * 1000
+            if same_count
+            else None
+        )
+        width_change = abs(b["fwhm_nm"] / a["fwhm_nm"] - 1)
+        q_change = abs(b["q"] / a["q"] - 1)
+        endpoints_valid = all(
+            r["termination"]["field_decay"] <= 1e-5 and r["selected_output_max"] <= 1.02
+            for r in (first, second)
+        )
+        duration_pairs.append(
+            {
+                "runs": [first["run"], second["run"]],
+                "relative_fwhm_change": width_change,
+                "relative_q_change": q_change,
+                "maximum_resonance_drift_nm": drift,
+                "both_endpoints_physically_valid": endpoints_valid,
+                "proposed_time_convergence_passed": endpoints_valid
+                and same_count
+                and drift < 0.02
+                and max(width_change, q_change) < 0.01,
+            }
+        )
+    (HERE / "updated_duration_analysis.json").write_text(
+        json.dumps(duration_pairs, indent=2, allow_nan=False) + "\n"
     )
     if rings:
         fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), constrained_layout=True)

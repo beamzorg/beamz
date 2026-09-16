@@ -4188,5 +4188,129 @@
       ]
     },
     "time_step_s": 1.3233502301891554e-16
+  },
+  {
+    "run": "converter-grid-te0-10ppw-sampling-fixed",
+    "raw_artifact_path": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/converter-grid-te0-10ppw-sampling-fixed",
+    "device": "converter_grid_te0",
+    "ppw": 10,
+    "options": {
+      "run_time_ps": null,
+      "monitor_offset_um": null,
+      "boundary_thickness_um": 1.0,
+      "transverse_span_um": null,
+      "source_profiles": null,
+      "wavelength_step_nm": null,
+      "exact_center": true,
+      "smoothing": "farjadpour_diagonal",
+      "port_extension_policy": "reference"
+    },
+    "frozen_grid": null,
+    "commit": "1a0653d2ba6a5c17597517d06f7a6f0b5fb27b90",
+    "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "grid_shape": [
+      1616,
+      200,
+      43
+    ],
+    "cells": 13897600,
+    "run_time_ps": 7.204984456280084,
+    "backend": "cuda_streamed",
+    "wavelengths_um": [
+      1.5600000000000003,
+      1.5549514563106797,
+      1.55,
+      1.5499354838709678,
+      1.5449517684887464,
+      1.5400000000000003
+    ],
+    "powers": {
+      "near": [
+        1.0002253142718278,
+        1.000260883301465,
+        1.0001843911946062,
+        1.0001901365677948,
+        1.000194523172279,
+        1.0001779319851367
+      ],
+      "middle": [
+        0.9989612684288587,
+        0.9992114238664748,
+        0.9992201039964039,
+        0.9992159322481854,
+        0.999075821654235,
+        0.9993391547086903
+      ],
+      "far": [
+        0.9973610325143667,
+        0.9975354735996934,
+        0.9976316547000158,
+        0.9976219366301458,
+        0.9977286238083399,
+        0.997827960874521
+      ]
+    },
+    "termination": {
+      "reason": "converged",
+      "steps": 85448,
+      "time": 7.205055128911564e-12,
+      "converged": true,
+      "field_decay": 1.425459067137612e-09,
+      "monitor_change": null,
+      "source_decay": 0.0,
+      "energy": 1.6651848332139702e-22,
+      "peak_energy": 1.1681744299804684e-13,
+      "max_field": 2208.85791015625,
+      "consecutive_checks": 1
+    },
+    "performance": {
+      "runtime_s": 317.15277825435624,
+      "cells": 13897600,
+      "steps": 85448
+    },
+    "max_transmission_error": 0.0026389674856333034,
+    "max_monitor_power_spread": 0.002864281757461118,
+    "environment": {
+      "python": "3.11.15",
+      "jax": "0.9.0",
+      "numpy": "2.4.1",
+      "device": "NVIDIA GeForce RTX 3090",
+      "openblas_num_threads": "1",
+      "omp_num_threads": "1"
+    },
+    "peak_host_rss_mib": 15752.48046875,
+    "peak_jax_device_bytes_in_use": 8911266816,
+    "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
+    "monitor_data_sha256": "610feecb81e8c6fc64625f325546c45c1b43dd547b1bdc0555aac9e0d87f158b",
+    "monitor_centers_m": {
+      "far": [
+        7.05e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ],
+      "middle": [
+        3.6e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ],
+      "near": [
+        1.3858e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ],
+      "o1": [
+        1.2358000000000001e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ],
+      "straight_xy": [
+        3.6e-05,
+        8.958e-06,
+        2.1099999999999997e-06
+      ]
+    },
+    "time_step_s": 8.432093180679043e-17,
+    "reflection_max": 0.0001431518726804235,
+    "max_modal_flux_relative_error": 0.0011628365791750285
   }
 ]

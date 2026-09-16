@@ -209,3 +209,30 @@ Clock-corrected, pre-sampling-fix measurements also now include converter 10 PPW
 25.6 ps (decay 3.46999e-4, selected output maximum 1.01018). These raw runs remain
 in `runs.json`; use `reprojections.json` for the latest modal analysis once each
 run has been reprocessed. Coarse PSR disagreement is not cured by the clock fix.
+
+## Latest reanalysis and refined calibration
+
+![Corrected mesh sweeps](updated_mesh_sweeps.png)
+
+All completed corrected-clock field runs through ring 25.6 ps have now been
+reprojected with the sampled modal basis. Exact 1550-nm cross/conversion powers
+are MMI **0.374274 / 0.459778 / 0.480323** at 6/10/15 PPW, converter
+**0.211471 / 0.289626** at 6/10 PPW, and PSR **0.855344 / 0.892234** at 6/10 PPW.
+The MMI 15-PPW point remains inside the independently declared reference range;
+none of these sweeps establishes BeamZ mesh convergence.
+
+![Fresh 10-PPW calibration](refined_control.png)
+
+A fresh exact-converter-grid TE0 run at 10 PPW with both numerical fixes passes
+the unchanged controls: maximum transmission error **0.2639%**, reflection
+**0.0143%**, and output-plane spread **0.2864 percentage points**. Field decay
+is **1.43e-9**. This is stronger evidence than the marginal 6-PPW TE0 result,
+but does not replace TE1/TM0 controls on other refined device grids.
+
+![Updated ring duration sweep](updated_ring_duration.png)
+
+With both fixes the 25.6-ps ring point has width **0.48048 nm**, Q **3208.7**,
+and selected output maximum **1.00988**. Its field decay still misses `1e-5`.
+`updated_duration_analysis.json` applies the unchanged duration-pair criteria
+to the latest modal analysis; no completed pair passes. Spectral extraction
+remains provisional. A longer run is being measured separately.

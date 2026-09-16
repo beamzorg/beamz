@@ -1,0 +1,24 @@
+[
+  {
+    "runs": [
+      "reprojected-ring-fixed-6p4",
+      "reprojected-ring-fixed-12p8"
+    ],
+    "relative_fwhm_change": 0.34042553191496394,
+    "relative_q_change": 0.5161290322582262,
+    "maximum_resonance_drift_nm": 0.0,
+    "both_endpoints_physically_valid": false,
+    "proposed_time_convergence_passed": false
+  },
+  {
+    "runs": [
+      "reprojected-ring-fixed-12p8",
+      "reprojected-ring-fixed-25p6"
+    ],
+    "relative_fwhm_change": 0.22580645161266089,
+    "relative_q_change": 0.2916750531863648,
+    "maximum_resonance_drift_nm": null,
+    "both_endpoints_physically_valid": false,
+    "proposed_time_convergence_passed": false
+  }
+]

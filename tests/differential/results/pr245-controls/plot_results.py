@@ -54,7 +54,9 @@ def main():
     )
     fig.savefig(HERE / "straight_controls.png", dpi=170)
     plt.close(fig)
-    exact_controls = [r for r in runs if r["device"].startswith("converter_grid_")]
+    exact_controls = [
+        r for r in runs if r["device"].startswith("converter_grid_") and r["ppw"] == 6
+    ]
     if exact_controls:
         fig, axes = plt.subplots(
             1,
