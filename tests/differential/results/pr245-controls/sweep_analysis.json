@@ -1,0 +1,28 @@
+{
+  "ring_duration_pairs": [],
+  "mesh_sweeps": {
+    "mode_converter": [
+      {
+        "run": "converter-fixed-6ppw",
+        "ppw": 6,
+        "power_1550nm": 0.21841639132767507,
+        "selected_output_max": 1.0191533305990694,
+        "field_decay": 2.4953239055489973e-07,
+        "reference": {
+          "same_ppw_range": [
+            0.357,
+            0.967
+          ],
+          "same_ppw_agreement": false,
+          "converged_range": [
+            0.429,
+            0.514
+          ],
+          "reference_eligible": false,
+          "reference_agreement": null,
+          "mesh_convergence_established": false
+        }
+      }
+    ]
+  }
+}
