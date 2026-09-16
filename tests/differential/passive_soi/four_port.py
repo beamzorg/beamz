@@ -352,6 +352,56 @@ def build_four_port_simulation(
     return simulation, ports, frequencies
 
 
+def _plot_artifact_geometry(simulation, field_monitor, *, markers):
+    """Use actual material cells when a frozen grid has no polygon design."""
+    import matplotlib.pyplot as plt
+
+    if simulation.material_grid is None:
+        return simulation.plot(
+            z=field_monitor.center[2],
+            y=field_monitor.center[1],
+            source_markers=markers,
+            monitor_markers=markers,
+        )
+    grid = simulation.grid
+    eps = np.asarray(simulation.material_grid.permittivity)
+    z = int(np.argmin(abs(grid.centers("z") - field_monitor.center[2])))
+    y = int(np.argmin(abs(grid.centers("y") - simulation.sources[0].center[1])))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), constrained_layout=True)
+    for ax, vertical, data, title in (
+        (
+            axes[0],
+            "y",
+            eps[z],
+            f"Material cells at z={grid.centers('z')[z] / 1e-6:.3f} µm",
+        ),
+        (
+            axes[1],
+            "z",
+            eps[:, y],
+            f"Material cells at y={grid.centers('y')[y] / 1e-6:.3f} µm",
+        ),
+    ):
+        im = ax.pcolormesh(
+            grid.axis_edges("x") / 1e-6,
+            grid.axis_edges(vertical) / 1e-6,
+            data,
+            shading="flat",
+            vmin=float(eps.min()),
+            vmax=float(eps.max()),
+        )
+        ax.set(title=title, xlabel="x (µm)", ylabel=f"{vertical} (µm)")
+        if markers:
+            for device in (*simulation.sources, *simulation.monitors):
+                ax.plot(
+                    device.center[0] / 1e-6,
+                    device.center["xyz".index(vertical)] / 1e-6,
+                    "r+",
+                )
+    fig.colorbar(im, ax=axes, label="Relative permittivity")
+    return fig, axes
+
+
 def _save_four_port_artifacts(
     directory: Path,
     simulation,
@@ -368,16 +418,10 @@ def _save_four_port_artifacts(
     field_monitor = next(
         monitor for monitor in simulation.monitors if monitor.name.endswith("_xy")
     )
-    cross_section = {
-        "z": field_monitor.center[2],
-        "y": field_monitor.center[1],
-    }
-    fig, _ = simulation.plot(
-        **cross_section, source_markers=False, monitor_markers=False
-    )
+    fig, _ = _plot_artifact_geometry(simulation, field_monitor, markers=False)
     fig.savefig(directory / "geometry_cross_sections.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
-    fig, _ = simulation.plot(**cross_section)
+    fig, _ = _plot_artifact_geometry(simulation, field_monitor, markers=True)
     fig.savefig(directory / "simulation_overview.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
     fig, _ = results.plot_field(
