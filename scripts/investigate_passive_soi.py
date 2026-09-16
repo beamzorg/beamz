@@ -4,14 +4,22 @@ Example: python -m scripts.investigate_passive_soi ring_resonator --run-time-ps 
 Raw artifacts are retained under validation-artifacts by default.
 """
 
+# ruff: noqa: E402
+
 import argparse
 import hashlib
 import json
+import os
 import platform
 import resource
 import subprocess
 from dataclasses import asdict
 from pathlib import Path
+
+# Keep small repeated port-mode solves from oversubscribing CPU cores.
+# Explicit caller settings take precedence; configure before NumPy is imported.
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 import jax
 import numpy as np
@@ -202,6 +210,8 @@ def main():
         "jax": jax.__version__,
         "numpy": np.__version__,
         "device": device.device_kind,
+        "openblas_num_threads": os.environ.get("OPENBLAS_NUM_THREADS"),
+        "omp_num_threads": os.environ.get("OMP_NUM_THREADS"),
     }
     summary["peak_host_rss_mib"] = (
         resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
