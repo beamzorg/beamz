@@ -84,7 +84,23 @@
       "steps": 48397,
       "runtime_s": 127.65754459699428,
       "termination": "time_limit",
-      "backend": "jax"
+      "backend": "jax",
+      "lowest_resonance_fwhm_nm": 3.8238238238238864,
+      "loaded_q": 403.4633507853337,
+      "median_fsr_nm": 7.489229525291186,
+      "published_6ppw_fwhm_nm": [
+        0.84,
+        0.9
+      ],
+      "published_6ppw_q": [
+        1756.5,
+        1839.4
+      ],
+      "published_fsr_nm": {
+        "lumerical": 7.4,
+        "tidy3d": 7.6
+      },
+      "spectral_comparison_pass": false
     }
   ],
   "validation_reports": {
@@ -821,5 +837,12 @@
       "termination_field_decay": 0.05071902926309659,
       "termination_reason": "time_limit"
     }
+  },
+  "artifact_checks": {
+    "mmi2x2_monitor_data_sha256": "8a6207b3c801476ec504a5f99af1bfe82be23fdbef8ba1b623b4a8a54d9cec0e",
+    "mode_converter_monitor_data_sha256": "7c840fab77d439945273326acb17b826c3c2afa2fea63b3e59a4758aa1b5a54e",
+    "polarization_splitter_rotator_monitor_data_sha256": "27ef285c98ca972110754e6b963bee5e98d78df95c7244c0da73034d8ff878b5",
+    "ring_resonator_6p40ps_monitor_data_sha256": "3f8fa749a258def0271e3e74cb96d35cd4899bb0656023dc777d48f637f9f4f5",
+    "spectra_json_note": "spectra.json contains the plotted 101-point selected-mode spectra extracted from these retained artifacts."
   }
 }

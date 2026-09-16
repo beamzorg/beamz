@@ -2,3 +2,4 @@ device,ppw,beamz_power,lumerical,tidy3d,nominal,lower,upper,primary_pass,seconda
 mmi2x2,6,0.3745486122824743,0.376,0.358,0.48499999999999993,0.358,0.6119999999999999,True,2x2 MMI total output TE0 power at 1550 nm,0.799400814386768,True,passed,1063476,24216,30.423092381000004,converged,jax
 mode_converter,6,0.20029669258586225,0.967,0.357,0.47300000000000003,-0.020999999999999908,0.967,True,mode_converter maximum selected output power across 20 nm,1.1232589110890296,False,xfailed,3224691,61005,209.98117961299943,converged,jax
 polarization_splitter_rotator,6,0.8278231463885203,0.147,0.051,0.9492499999999999,0.051000000000000045,1.8474999999999997,True,polarization_splitter_rotator maximum selected output power across 20 nm,0.8384062575755346,True,passed,3331694,53249,179.86392113600016,converged,jax
+ring_resonator,6,,,,,,,False,ring terminal field-decay ratio,0.05071902926309659,False,xfailed,3615840,48397,127.65754459699428,time_limit,jax
