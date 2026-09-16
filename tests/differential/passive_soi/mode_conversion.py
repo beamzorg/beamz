@@ -39,6 +39,7 @@ class ModeConversionResult:
     steps: int
     grid_shape: tuple[int, int, int]
     termination_reason: str
+    terminal_field_decay: float
 
 
 def build_mode_conversion_simulation(
@@ -150,4 +151,9 @@ def run_mode_conversion_benchmark(
         steps=int(performance.steps),
         grid_shape=tuple(simulation.grid.shape),
         termination_reason=termination.reason if termination else "time_limit",
+        terminal_field_decay=(
+            float(termination.field_decay)
+            if termination is not None and termination.field_decay is not None
+            else float("inf")
+        ),
     )

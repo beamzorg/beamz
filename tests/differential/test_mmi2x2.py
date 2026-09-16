@@ -121,10 +121,18 @@ def test_mmi2x2_power_is_physical_and_characterizes_reference(
         "steps": result.steps,
         "grid_shape": result.grid_shape,
         "termination_reason": result.termination_reason,
+        "terminal_field_decay": result.terminal_field_decay,
         "wavelength_span_nm": result.wavelength_span_nm,
     }
     comparison = power_comparison(case, "cross", resolution_ppw, result.cross_power)
     metadata["reference_comparison"] = comparison
+    validation_metrics.check_upper(
+        "2x2 MMI terminal field-decay ratio",
+        measured=result.terminal_field_decay,
+        upper_bound=1e-5,
+        unit="ratio",
+        metadata=metadata,
+    )
     if comparison["reference_eligible"]:
         lower, upper = comparison["converged_range"]
         validation_metrics.check_lower(

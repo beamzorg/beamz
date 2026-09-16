@@ -46,6 +46,7 @@ class FourPortBenchmarkResult:
     steps: int
     grid_shape: tuple[int, int, int]
     termination_reason: str
+    terminal_field_decay: float
 
 
 @dataclass(frozen=True)
@@ -551,4 +552,9 @@ def run_four_port_benchmark(
         steps=int(performance.steps if performance else simulation.num_steps),
         grid_shape=tuple(int(value) for value in simulation.grid.shape),
         termination_reason=termination.reason if termination else "time_limit",
+        terminal_field_decay=(
+            float(termination.field_decay)
+            if termination is not None and termination.field_decay is not None
+            else float("inf")
+        ),
     )

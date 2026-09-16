@@ -160,7 +160,8 @@ sampling, and smoothing experiments. Defaults preserve the pinned setup;
 6/10/15/20/25 PPW are now supported for controlled refinement runs. Enabling a
 resolution is not evidence that it has been validated.
 
-The MMI and conversion hardware tests now check physical output bounds and
+The MMI and conversion hardware tests require terminal field decay at or below
+`1e-5`, check physical output bounds, and
 record same-PPW agreement separately. Below the manifest's convergence region,
 `reference_agreement` is null: a passing coarse-grid validity check is not a
 passing paper-reproduction claim. Eligible resolutions compare against the

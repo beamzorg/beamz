@@ -134,6 +134,13 @@ def test_conversion_power_is_physical_and_characterizes_reference(
         case, "conversion", resolution_ppw, result.conversion_power
     )
     metadata["reference_comparison"] = comparison
+    validation_metrics.check_upper(
+        f"{name} terminal field-decay ratio",
+        measured=result.terminal_field_decay,
+        upper_bound=1e-5,
+        unit="ratio",
+        metadata=metadata,
+    )
     if comparison["reference_eligible"]:
         lower, upper = comparison["converged_range"]
         validation_metrics.check_lower(
