@@ -7,10 +7,13 @@ Raw artifacts are retained under validation-artifacts by default.
 import argparse
 import hashlib
 import json
+import platform
+import resource
 import subprocess
 from dataclasses import asdict
 from pathlib import Path
 
+import jax
 import numpy as np
 
 from beamz import LIGHT_SPEED, AutoTermination, µm
@@ -58,7 +61,7 @@ def main():
         ],
     )
     parser.add_argument("--ppw", type=int, default=6)
-    parser.add_argument("--backend", default="jax")
+    parser.add_argument("--backend", choices=("jax", "cuda_streamed"), default="jax")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--run-time-ps", type=float)
     parser.add_argument("--monitor-offset-um", type=float)
@@ -190,6 +193,18 @@ def main():
             float(powers[channel][center]),
         )
         summary["selected_output_max"] = float(np.max(sum(powers.values())))
+    device = jax.devices()[0]
+    memory = device.memory_stats() or {}
+    summary["environment"] = {
+        "python": platform.python_version(),
+        "jax": jax.__version__,
+        "numpy": np.__version__,
+        "device": device.device_kind,
+    }
+    summary["peak_host_rss_mib"] = (
+        resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    )
+    summary["peak_device_bytes_in_use"] = memory.get("peak_bytes_in_use")
     summary["monitor_data_sha256"] = hashlib.sha256(
         (args.output / "monitor_data.npz").read_bytes()
     ).hexdigest()
