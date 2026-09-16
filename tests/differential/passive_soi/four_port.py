@@ -410,6 +410,7 @@ def _save_four_port_artifacts(
             "P_plus",
             "P_minus",
             "mode_neff",
+            "mode_wave_number",
             "projection_residual",
             "condition_number",
             "projected_signed_power",

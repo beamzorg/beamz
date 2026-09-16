@@ -119,6 +119,7 @@ def main():
             "P_plus",
             "P_minus",
             "mode_neff",
+            "mode_wave_number",
             "projection_residual",
             "condition_number",
         ):

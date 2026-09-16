@@ -22,8 +22,10 @@ def main():
     for first, second in zip(rings, rings[1:], strict=False):
         assert first["grid_shape"] == second["grid_shape"]
         assert first["wavelengths_um"] == second["wavelengths_um"]
-        assert {k: v for k, v in first["options"].items() if k != "run_time_ps"} == {
-            k: v for k, v in second["options"].items() if k != "run_time_ps"
+        first_options = {"port_extension_policy": "reference", **first["options"]}
+        second_options = {"port_extension_policy": "reference", **second["options"]}
+        assert {k: v for k, v in first_options.items() if k != "run_time_ps"} == {
+            k: v for k, v in second_options.items() if k != "run_time_ps"
         }
         a, b = first["ring"], second["ring"]
         same_count = len(a["resonances_um"]) == len(b["resonances_um"])
