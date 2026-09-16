@@ -54,6 +54,38 @@ def main():
     )
     fig.savefig(HERE / "straight_controls.png", dpi=170)
     plt.close(fig)
+    exact_controls = [r for r in runs if r["device"].startswith("converter_grid_")]
+    if exact_controls:
+        fig, axes = plt.subplots(
+            1,
+            len(exact_controls),
+            figsize=(6 * len(exact_controls), 4.5),
+            constrained_layout=True,
+            squeeze=False,
+        )
+        for ax, row in zip(axes.flat, exact_controls, strict=True):
+            wl = np.asarray(row["wavelengths_um"]) * 1000
+            order = np.argsort(wl)
+            for port, power in row["powers"].items():
+                ax.plot(wl[order], np.asarray(power)[order], "o-", label=port)
+            ax.axhspan(0.99, 1.01, color="#236192", alpha=0.08)
+            ax.axhline(1, color="#444444", ls="--", lw=1)
+            ax.set(
+                title=row["device"],
+                xlabel="Wavelength (nm)",
+                ylabel="Selected transmission / incident power",
+            )
+            ax.text(
+                0.03,
+                0.04,
+                f"Max |T−1|: {100 * row['max_transmission_error']:.2f}%\nMax reflection: {100 * row['reflection_max']:.2f}%",
+                transform=ax.transAxes,
+            )
+            ax.legend()
+            ax.grid(alpha=0.2)
+        fig.suptitle("Straight controls on the converter's exact realized grid · 6 PPW")
+        fig.savefig(HERE / "converter_grid_controls.png", dpi=170)
+        plt.close(fig)
     rings = [r for r in runs if r["device"] == "ring_resonator"]
     if rings:
         fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), constrained_layout=True)

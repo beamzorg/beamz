@@ -25,7 +25,7 @@ def main():
         }
         np.savez_compressed(HERE / f"{path.name}.npz", **compact)
         row = {"run": path.name, "raw_artifact_path": str(path.resolve()), **summary}
-        if summary["device"].startswith("straight_"):
+        if summary["device"].startswith(("straight_", "converter_grid_")):
             incident = raw["incident_power"]
             row["reflection_max"] = float(
                 np.max(raw["diagnostic_o1__P_plus"] / incident)

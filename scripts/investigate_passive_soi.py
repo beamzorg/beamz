@@ -71,6 +71,11 @@ def main():
     parser.add_argument("--ppw", type=int, default=6)
     parser.add_argument("--backend", choices=("jax", "cuda_streamed"), default="jax")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--grid-from",
+        type=Path,
+        help="Freeze the grid from an earlier monitor_data.npz",
+    )
     parser.add_argument("--run-time-ps", type=float)
     parser.add_argument("--monitor-offset-um", type=float)
     parser.add_argument("--boundary-thickness-um", type=float, default=1.0)
@@ -116,6 +121,33 @@ def main():
         simulation, ports, outputs, frequencies = build_mode_conversion_simulation(
             args.device, resolution_ppw=args.ppw, diagnostics=True, options=options
         )
+    frozen_grid = None
+    if args.grid_from is not None:
+        from beamz import Simulation
+        from beamz.design.discretization import build_material_grid
+        from beamz.design.grid import RectilinearGrid
+
+        if simulation.design is None:
+            parser.error("--grid-from requires a design-backed device")
+        with np.load(args.grid_from) as raw:
+            grid = RectilinearGrid(*(raw[f"grid_{axis}_boundaries_m"] for axis in "xyz"))
+        for old, new in zip(simulation.grid.edges, grid.edges, strict=True):
+            if not np.allclose(old[[0, -1]], new[[0, -1]], rtol=0, atol=1e-12):
+                parser.error("frozen grid domain does not match the requested device")
+        material = build_material_grid(
+            simulation.design, grid, quality="balanced", smoothing=options.smoothing
+        )
+        simulation = Simulation(
+            material_grid=material,
+            sources=simulation.sources,
+            monitors=simulation.monitors,
+            boundaries=simulation.boundaries,
+            run_time=simulation.run_time,
+        )
+        frozen_grid = {
+            "path": str(args.grid_from.resolve()),
+            "sha256": hashlib.sha256(args.grid_from.read_bytes()).hexdigest(),
+        }
     args.output.mkdir(parents=True)
     diff = subprocess.check_output(["git", "diff", "HEAD"])
     (args.output / "working-tree.patch").write_bytes(diff)
@@ -123,6 +155,7 @@ def main():
         "device": args.device,
         "ppw": args.ppw,
         "options": asdict(options),
+        "frozen_grid": frozen_grid,
         "commit": subprocess.check_output(
             ["git", "rev-parse", "HEAD"], text=True
         ).strip(),
@@ -142,6 +175,12 @@ def main():
                 field_decay=1e-5, monitor_change=None, consecutive_checks=1
             ),
         )
+    print(
+        json.dumps(
+            {"stage": "simulation_complete", "termination": asdict(result.termination)}
+        ),
+        flush=True,
+    )
     scattering = s_parameters(
         result,
         source_port="o1",
