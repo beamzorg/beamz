@@ -1,0 +1,198 @@
+"""Run one auditable passive-SOI experiment per process.
+
+Example: python -m scripts.investigate_passive_soi ring_resonator --run-time-ps 12.8
+Raw artifacts are retained under validation-artifacts by default.
+"""
+
+import argparse
+import hashlib
+import json
+import subprocess
+from dataclasses import asdict
+from pathlib import Path
+
+import numpy as np
+
+from beamz import LIGHT_SPEED, AutoTermination, µm
+from beamz.analysis import s_parameters
+from tests.differential.passive_soi.common import (
+    load_passive_soi_case,
+    reference_absorber_warning_scope,
+)
+from tests.differential.passive_soi.experiments import (
+    ExperimentOptions,
+    power_comparison,
+)
+from tests.differential.passive_soi.four_port import (
+    _save_four_port_artifacts,
+    build_four_port_simulation,
+)
+from tests.differential.passive_soi.mode_conversion import (
+    build_mode_conversion_simulation,
+)
+from tests.differential.passive_soi.ring_resonator import (
+    build_ring_resonator_simulation,
+    extract_ring_resonances,
+)
+from tests.differential.passive_soi.straight_control import build_straight_control
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "device",
+        choices=[
+            "mmi2x2",
+            "mode_converter",
+            "polarization_splitter_rotator",
+            "ring_resonator",
+            "straight_te0",
+            "straight_wide_te0",
+            "straight_te1",
+            "straight_tm0",
+        ],
+    )
+    parser.add_argument("--ppw", type=int, default=6)
+    parser.add_argument("--backend", default="jax")
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--run-time-ps", type=float)
+    parser.add_argument("--monitor-offset-um", type=float)
+    parser.add_argument("--boundary-thickness-um", type=float, default=1.0)
+    parser.add_argument("--transverse-span-um", type=float)
+    parser.add_argument("--source-profiles", type=int)
+    parser.add_argument("--wavelength-step-nm", type=float)
+    parser.add_argument("--exact-center", action="store_true")
+    parser.add_argument("--smoothing", default="farjadpour_diagonal")
+    args = parser.parse_args()
+    if args.output.exists():
+        parser.error(
+            "output directory already exists; choose a new path to preserve evidence"
+        )
+    options = ExperimentOptions(
+        **{k: getattr(args, k) for k in ExperimentOptions.__dataclass_fields__}
+    )
+    if args.device.startswith("straight_"):
+        simulation, ports, outputs, frequencies = build_straight_control(
+            args.device.removeprefix("straight_"),
+            resolution_ppw=args.ppw,
+            options=options,
+        )
+    elif args.device == "ring_resonator":
+        simulation, ports, frequencies = build_ring_resonator_simulation(
+            resolution_ppw=args.ppw, diagnostics=True, options=options
+        )
+        outputs = ("o1", "o2")
+    elif args.device == "mmi2x2":
+        simulation, ports, frequencies = build_four_port_simulation(
+            load_passive_soi_case(args.device),
+            resolution_ppw=args.ppw,
+            diagnostics=True,
+            options=options,
+        )
+        outputs = ("o3", "o4")
+    else:
+        simulation, ports, outputs, frequencies = build_mode_conversion_simulation(
+            args.device, resolution_ppw=args.ppw, diagnostics=True, options=options
+        )
+    args.output.mkdir(parents=True)
+    diff = subprocess.check_output(["git", "diff", "HEAD"])
+    (args.output / "working-tree.patch").write_bytes(diff)
+    config = {
+        "device": args.device,
+        "ppw": args.ppw,
+        "options": asdict(options),
+        "commit": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True
+        ).strip(),
+        "working_tree_patch_sha256": hashlib.sha256(diff).hexdigest(),
+        "grid_shape": list(simulation.grid.shape),
+        "cells": int(np.prod(simulation.grid.shape)),
+        "run_time_ps": simulation.run_time * 1e12,
+        "backend": args.backend,
+    }
+    (args.output / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+    print(json.dumps(config), flush=True)
+    with reference_absorber_warning_scope():
+        result = simulation.run(
+            backend=args.backend,
+            progress=False,
+            termination=AutoTermination(
+                field_decay=1e-5, monitor_change=None, consecutive_checks=1
+            ),
+        )
+    scattering = s_parameters(
+        result,
+        source_port="o1",
+        ports=ports,
+        output_ports=outputs,
+        frequencies=frequencies,
+        min_incident_db=-45,
+    )
+    if not np.all(scattering.diagnostics["valid_mask"]):
+        raise ValueError("invalid incident signal in retained spectrum")
+    _save_four_port_artifacts(
+        args.output,
+        simulation,
+        result,
+        scattering,
+        execution_backend=args.backend,
+        options=options,
+    )
+    wavelengths = LIGHT_SPEED / np.asarray(frequencies) / µm
+    powers = {key[0]: np.abs(value) ** 2 for key, value in scattering.s_matrix.items()}
+    summary = {
+        **config,
+        "wavelengths_um": wavelengths.tolist(),
+        "powers": {k: v.tolist() for k, v in powers.items()},
+        "termination": asdict(result.termination),
+        "performance": asdict(result.performance),
+    }
+    if args.device.startswith("straight_"):
+        stack = np.stack(list(powers.values()))
+        summary["max_transmission_error"] = float(np.max(np.abs(stack - 1)))
+        summary["max_monitor_power_spread"] = float(np.max(np.ptp(stack, axis=0)))
+    elif args.device == "ring_resonator":
+        resonances, fsr, fwhm, q, extinction, normalized = extract_ring_resonances(
+            wavelengths, powers["o2"]
+        )
+        summary["ring"] = {
+            "resonances_um": resonances,
+            "fsr_nm": fsr,
+            "fwhm_nm": fwhm,
+            "q": q,
+            "extinction_db": extinction,
+            "spectral_metrics_valid": result.termination.field_decay <= 1e-5,
+        }
+        summary["selected_output_max"] = float(np.max(sum(powers.values())))
+    else:
+        channel = "o3" if args.device == "mmi2x2" else "conversion"
+        # Four-port protocol identifies the cross port explicitly.
+        if args.device == "mmi2x2":
+            channel = load_passive_soi_case(args.device).geometry["simulation"][
+                "cross_port"
+            ]
+        center = int(np.argmin(np.abs(wavelengths - 1.55)))
+        summary["reference"] = power_comparison(
+            load_passive_soi_case(args.device),
+            "cross" if args.device == "mmi2x2" else "conversion",
+            args.ppw,
+            float(powers[channel][center]),
+        )
+        summary["selected_output_max"] = float(np.max(sum(powers.values())))
+    summary["monitor_data_sha256"] = hashlib.sha256(
+        (args.output / "monitor_data.npz").read_bytes()
+    ).hexdigest()
+    (args.output / "summary.json").write_text(
+        json.dumps(summary, indent=2, allow_nan=False) + "\n"
+    )
+    print(
+        json.dumps(
+            {k: v for k, v in summary.items() if k not in ("powers", "wavelengths_um")},
+            indent=2,
+        ),
+        flush=True,
+    )
+
+
+if __name__ == "__main__":
+    main()
