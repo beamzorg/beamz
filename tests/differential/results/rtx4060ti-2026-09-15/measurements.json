@@ -1,6 +1,6 @@
 {
   "date": "2026-09-15",
-  "tested_commit": "aa3fbe3222f4192e0e38a78fc6f9b6886cf6858b",
+  "tested_commit": "5434c5fdf5307071569b7e2c8f78bea179f875b5",
   "base_commit": "8274dd589aebac07bb5c62e8b0869938c83f6b1c",
   "base_note": "Upstream main after merging PR 230, including #244 and the material-ownership rasterization fix.",
   "gpu": "NVIDIA GeForce RTX 4060 Ti 8 GiB under WSL2",
@@ -76,13 +76,13 @@
     {
       "device": "ring_resonator",
       "ppw": 6,
-      "terminal_field_decay": 0.12116940571039515,
+      "terminal_field_decay": 0.05071902926309659,
       "field_decay_limit": 1e-05,
       "primary_pass": false,
       "outcome": "xfailed",
       "cells": 3615840,
-      "steps": 24199,
-      "runtime_s": 64.8822383300012,
+      "steps": 48397,
+      "runtime_s": 127.65754459699428,
       "termination": "time_limit",
       "backend": "jax"
     }
@@ -661,7 +661,7 @@
       }
     },
     "ring_resonator": {
-      "beamz_commit": "da35b52e9beb8c9eae52c446a498fbd626120233",
+      "beamz_commit": "5434c5fdf5307071569b7e2c8f78bea179f875b5",
       "cases": [
         {
           "case_id": "tests/differential/test_ring_resonator.py::test_ring_repository_runtime_converges_before_resonance_validation",
@@ -677,46 +677,46 @@
         "numpy": "2.4.1",
         "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
         "python": "3.11.15",
-        "random_seed": "3403627718"
+        "random_seed": "1569291153"
       },
-      "generated_at": "2026-09-16T01:45:51.220327+00:00",
+      "generated_at": "2026-09-16T02:19:29.233698+00:00",
       "metricless_case_ids": [],
       "metrics": [
         {
-          "absolute_error": 0.12115940571039516,
+          "absolute_error": 0.05070902926309659,
           "backend": "gpu",
           "case_id": "tests/differential/test_ring_resonator.py::test_ring_repository_runtime_converges_before_resonance_validation",
           "comparison": "less_equal",
           "error_limit": 0.0,
-          "margin": -0.12115940571039516,
-          "measured": 0.12116940571039515,
+          "margin": -0.05070902926309659,
+          "measured": 0.05071902926309659,
           "metadata": {
             "cells": 3615840,
             "execution_backend": "jax",
-            "extinction_db": 8.00075413129799,
-            "free_spectral_range_nm": 7.493093777902526,
-            "gcups": 1.348592687492728,
+            "extinction_db": 20.837381019858505,
+            "free_spectral_range_nm": 7.489229525291186,
+            "gcups": 1.3708222967349812,
             "grid_shape": [
               432,
               310,
               27
             ],
-            "loaded_q": 847.0274025544559,
+            "loaded_q": 1791.0322479829392,
             "reference_result_limitation": "The supplementary repository contains the ring setup and analysis script but no committed Lumerical or Tidy3D output values.",
             "resonance_wavelengths_um": [
-              1.5417789757412401,
-              1.5491359298426621,
-              1.5567651632970452
+              1.5413832926985758,
+              1.5487364620938633,
+              1.5563617517491581
             ],
-            "runtime_s": 64.8822383300012,
-            "steps": 24199,
-            "terminal_field_decay": 0.12116940571039515,
+            "runtime_s": 127.65754459699428,
+            "steps": 48397,
+            "terminal_field_decay": 0.05071902926309659,
             "termination_reason": "time_limit"
           },
           "passed": false,
           "quantity": "ring terminal field-decay ratio",
           "reference": 1e-05,
-          "relative_error": 12115.940571039515,
+          "relative_error": 5070.902926309658,
           "resolution": "6 cells per wavelength",
           "tolerance": {
             "absolute": 0.0,
@@ -805,7 +805,7 @@
       "boundary_formulation": "sponge",
       "cells": 3615840,
       "execution_backend": "jax",
-      "gcups": 1.348592687492728,
+      "gcups": 1.3708222967349812,
       "grid_is_uniform": false,
       "grid_shape": [
         432,
@@ -815,9 +815,9 @@
       "raster_quality": "balanced",
       "raster_smoothing": "farjadpour_diagonal",
       "resolution_m": 6.302030063299579e-08,
-      "runtime_s": 64.8822383300012,
-      "steps": 24199,
-      "termination_field_decay": 0.12116940571039515,
+      "runtime_s": 127.65754459699428,
+      "steps": 48397,
+      "termination_field_decay": 0.05071902926309659,
       "termination_reason": "time_limit"
     }
   }
