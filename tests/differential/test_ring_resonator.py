@@ -146,8 +146,8 @@ def test_ring_repository_runtime_converges_before_resonance_validation(
         metadata=metadata,
     )
     validation_metrics.check_upper(
-        "ring center-frequency selected modal output power",
-        measured=result.center_total_output_power,
+        "ring maximum selected modal output power across the band",
+        measured=max(result.total_output_power_spectrum),
         upper_bound=1.02,
         unit="fraction",
         resolution="6 cells per wavelength",

@@ -75,21 +75,21 @@ fingerprint of its reference GDS at the same source revision as the crossing
 and directional coupler. The MMI and directional coupler share the four-port
 adapter in `passive_soi/four_port.py`.
 
-Only 6 cells per wavelength and a 20 nm source bandwidth are enabled for the
-MMI so far. Run its geometry checks and lowest-resolution comparison with:
+The default MMI hardware case uses 6 cells per wavelength and a 20 nm source
+bandwidth; the experiment builder additionally supports 10/15/20/25 PPW. Run its geometry checks and lowest-resolution comparison with:
 
 ```console
 uv run pytest tests/differential/test_mmi2x2.py \
   --validation-report=validation-results-mmi2x2-6ppw.json
 ```
 
-The comparison uses the resolution-conditioned reference rule described above
-and also checks the passive-device output-power bound.
+The comparison records same-resolution reference agreement and checks the
+passive-device output-power bound across the sampled band.
 
 ## Mode converter and polarization splitter rotator
 
-Both conversion cases currently enable only **6 cells per wavelength** with a
-**20 nm source bandwidth**. Run their geometry checks and simulations with:
+Both conversion hardware cases default to **6 cells per wavelength** with a
+**20 nm source bandwidth**; the experiment builders support 10/15/20/25 PPW. Run their geometry checks and simulations with:
 
 ```console
 uv run pytest tests/differential/test_mode_conversion.py \
@@ -116,9 +116,9 @@ record the source revision, GDS checksum, fixture checksum, physical-union
 fingerprint, and original YAML ports. Layer-1 silicon alone determines the
 physical bounds; annotation layers do not enlarge the simulation domain.
 
-Both conversion comparisons use the resolution-conditioned reference rule
-described above. A separate selected-output bound checks for normalization or
-passivity problems across the wavelength band.
+Conversion comparisons record same-resolution agreement and only evaluate
+converged-reference agreement at eligible resolutions. A selected-output bound
+checks for normalization or passivity problems across the wavelength band.
 
 ## Single-bus ring resonator
 

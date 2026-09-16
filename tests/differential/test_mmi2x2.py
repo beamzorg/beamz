@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -17,7 +16,6 @@ from tests.differential.passive_soi.common import (
     write_layout_gds,
 )
 from tests.differential.passive_soi.experiments import power_comparison
-from tests.differential.passive_soi.four_port import converged_power_reference
 from tests.differential.passive_soi.mmi2x2 import (
     build_mmi2x2_simulation,
     run_mmi2x2_benchmark,
@@ -112,14 +110,8 @@ def test_mmi2x2_power_is_physical_and_characterizes_reference(
         progress=True,
         artifact_dir=artifact_dir,
     )
-    reference = converged_power_reference(
-        case,
-        "published_converged_cross_power_1550nm_span20nm",
-        resolution_ppw=resolution_ppw,
-    )
     metadata = {
         "execution_backend": result.backend,
-        "published_reference": asdict(reference),
         "through_te0_power": result.through_power,
         "total_output_te0_power": result.total_output_power,
         "excess_loss": result.excess_loss,

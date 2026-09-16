@@ -137,13 +137,7 @@ def test_conversion_power_is_physical_and_characterizes_reference(
         progress=True,
         artifact_dir=Path(artifact_root) / name / "6ppw" if artifact_root else None,
     )
-    reference = converged_power_reference(
-        case,
-        "published_converged_conversion_power_1550nm_span20nm",
-        resolution_ppw=resolution_ppw,
-    )
     metadata = asdict(result)
-    metadata["published_reference"] = asdict(reference)
     metadata["output_power_basis"] = (
         "Selected output modes only; not all guided or radiated power."
     )
