@@ -26,7 +26,10 @@ The supported `beamz.simulation` surface is intentionally small:
 - `Simulation`, `SimulationState`, `SimulationRun`, `SimulationResults`, `MonitorResults`
 - `AutoTermination`, `RunTermination`
 - `GridSpec`, `GaussianPulse`, `ModeSpec`
-- `Absorber`, `PML`, `PEC`, `Port`
+- `Absorber`, `PML`, `PEC`, `Periodic`, `Port`
+
+`Periodic` currently means zero-phase periodicity and executes through the JAX
+backend; nonzero Bloch phase and CUDA periodic kernels are not yet supported.
 
 Numerical Yee helpers, mutable mesh builders, source/monitor lowering, update
 kernels, and compiled plan types remain private implementation details rather
@@ -58,8 +61,8 @@ and final diagnostics. It remains `None` for an ordinary full-grid run.
   compiled coefficients, sources, and monitors are stored directly without wrapper plans.
 - `compile.py`: lowers a resolved request into an executable plan.
   Deterministic memory reporting lives here because it inspects that plan.
-- `kernels.py`: all canonical 2D/3D Yee, material-loss, PEC, and packed CPML
-  mathematics. PML, sponge, and PEC profile lowering lives with the boundary
+- `kernels.py`: all canonical 2D/3D Yee, material-loss, periodic, PEC, and packed CPML
+  mathematics. Periodic, PML, sponge, and PEC profile lowering lives with the boundary
   specifications in `beamz.devices._boundary_compile`.
 - `sharding.py`: optional multi-device lowering, padding, placement, and cropping.
 - `observe.py`: monitor accumulation plus the numerical interpretation and

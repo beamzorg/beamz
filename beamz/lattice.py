@@ -521,7 +521,12 @@ def metric_adjacent_difference(array, axis, inverse_distance):
 
 
 def _pad_with_boundary_ghosts(
-    array, axis, metallic_edges, *, logical_size: int | None = None
+    array,
+    axis,
+    metallic_edges,
+    *,
+    logical_size: int | None = None,
+    periodic: bool = False,
 ):
     logical_size = int(array.shape[axis]) if logical_size is None else int(logical_size)
     if logical_size <= 0 or logical_size > int(array.shape[axis]):
@@ -540,19 +545,31 @@ def _pad_with_boundary_ghosts(
     low_edge, high_edge = (("front", "back"), ("bottom", "top"), ("left", "right"))[
         axis
     ]
-    low = (
-        zero if low_edge in metallic_edges else jnp.take(physical, jnp.array([0]), axis)
-    )
-    high = (
-        zero
-        if high_edge in metallic_edges
-        else jnp.take(physical, jnp.array([logical_size - 1]), axis)
-    )
+    if periodic:
+        low = jnp.take(physical, jnp.array([logical_size - 1]), axis)
+        high = jnp.take(physical, jnp.array([0]), axis)
+    else:
+        low = (
+            zero
+            if low_edge in metallic_edges
+            else jnp.take(physical, jnp.array([0]), axis)
+        )
+        high = (
+            zero
+            if high_edge in metallic_edges
+            else jnp.take(physical, jnp.array([logical_size - 1]), axis)
+        )
     return jnp.concatenate((low, physical, high, storage_padding), axis=axis)
 
 
 def build_h_boundary_views_for_e_3d(
-    hx, hy, hz, metallic_edges=frozenset(), *, logical_shapes=None
+    hx,
+    hy,
+    hz,
+    metallic_edges=frozenset(),
+    *,
+    logical_shapes=None,
+    periodic_axes=frozenset(),
 ):
     """Create the six ghost-padded H views consumed by the 3D E curl."""
     return {
@@ -563,6 +580,7 @@ def build_h_boundary_views_for_e_3d(
             logical_size=(
                 None if logical_shapes is None else logical_shapes[component][axis]
             ),
+            periodic=axis in periodic_axes,
         )
         for name, component, field, axis in (
             ("hz_y", "Hz", hz, 1),

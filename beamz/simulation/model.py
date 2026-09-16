@@ -485,8 +485,10 @@ class CpmlPlan:
 @dataclass(frozen=True, slots=True, eq=False)
 class BoundaryPlan:
     metallic_edges_2d: frozenset[str]
+    periodic_axes: frozenset[int]
     cpml: CpmlPlan
     metallic: MetallicPlan
+    material_shape: tuple[int, ...]
     logical_component_shapes: Mapping[str, tuple[int, ...]]
 
     def __post_init__(self) -> None:

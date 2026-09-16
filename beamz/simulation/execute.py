@@ -485,6 +485,16 @@ def forward_step(
         "pre_e",
         dense_single_slab=cfg.source_single_slab_dense,
     )
+    if ctx.boundary.periodic_axes:
+        ex, ey, ez = update_runtime.apply_post_source_boundaries(
+            (state.ex, state.ey, state.ez),
+            (metallic.ex_mask, metallic.ey_mask, metallic.ez_mask),
+            components=("Ex", "Ey", "Ez"),
+            periodic_axes=ctx.boundary.periodic_axes,
+            material_shape=ctx.boundary.material_shape,
+            logical_shapes=ctx.boundary.logical_component_shapes,
+        )
+        state = state._replace(ex=ex, ey=ey, ez=ez)
     state = update_kernel.update_h(state, ctx, coeffs)
 
     # 2. H-phase sources may overwrite constrained cells, so reapply the compiled masks
@@ -501,6 +511,10 @@ def forward_step(
         hx, hy, hz = update_runtime.apply_post_source_boundaries(
             (state.hx, state.hy, state.hz),
             (metallic.hx_mask, metallic.hy_mask, metallic.hz_mask),
+            components=("Hx", "Hy", "Hz"),
+            periodic_axes=ctx.boundary.periodic_axes,
+            material_shape=ctx.boundary.material_shape,
+            logical_shapes=ctx.boundary.logical_component_shapes,
         )
         state = state._replace(hx=hx, hy=hy, hz=hz)
 
@@ -517,6 +531,10 @@ def forward_step(
         ex, ey, ez = update_runtime.apply_post_source_boundaries(
             (state.ex, state.ey, state.ez),
             (metallic.ex_mask, metallic.ey_mask, metallic.ez_mask),
+            components=("Ex", "Ey", "Ez"),
+            periodic_axes=ctx.boundary.periodic_axes,
+            material_shape=ctx.boundary.material_shape,
+            logical_shapes=ctx.boundary.logical_component_shapes,
         )
         state = state._replace(ex=ex, ey=ey, ez=ez)
 
