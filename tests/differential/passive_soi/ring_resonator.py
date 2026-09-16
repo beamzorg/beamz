@@ -17,6 +17,7 @@ from tests.differential.passive_soi.common import (
 from tests.differential.passive_soi.experiments import (
     DEFAULT_OPTIONS,
     ExperimentOptions,
+    validate_boundary_clearance,
 )
 from tests.differential.passive_soi.four_port import (
     _ported_design,
@@ -225,6 +226,7 @@ def build_ring_resonator_simulation(
         num_freqs=options.source_profiles or int(protocol["source_mode_profiles"]),
         source_time=source_time,
     )
+    validate_boundary_clearance(design, source, ports, options.boundary_thickness_um)
     monitors = [port.to_monitor(frequencies) for port in ports]
     if diagnostics:
         monitors.append(

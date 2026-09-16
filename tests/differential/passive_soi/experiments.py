@@ -99,3 +99,18 @@ def power_comparison(case, observable, resolution_ppw, measured):
         "reference_agreement": lower <= measured <= upper if eligible else None,
         "mesh_convergence_established": False,
     }
+
+
+def validate_boundary_clearance(design, source, ports, thickness_um):
+    """Changing a fixed-domain absorber must not swallow a source or port center."""
+    extent = np.array([design.width, design.height, design.depth])
+    thickness = thickness_um * 1e-6
+    for plane in (source, *ports):
+        center = np.asarray(plane.center)
+        clearance = float(np.min(np.minimum(center, extent - center)))
+        if clearance + 1e-12 < thickness:
+            raise ValueError(
+                f"boundary thickness {thickness_um:g} um overlaps {getattr(plane, 'name', 'source')!r} "
+                f"at clearance {clearance / 1e-6:g} um; extend the domain and "
+                "preserve the interior grid before increasing the absorber"
+            )

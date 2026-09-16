@@ -20,6 +20,7 @@ from tests.differential.passive_soi.common import (
 from tests.differential.passive_soi.experiments import (
     DEFAULT_OPTIONS,
     ExperimentOptions,
+    validate_boundary_clearance,
 )
 
 
@@ -302,6 +303,7 @@ def build_four_port_simulation(
         or round(float(wavelength_span_nm) / 10.0) + 1,
         source_time=source_time,
     )
+    validate_boundary_clearance(design, source, ports, options.boundary_thickness_um)
     monitors = [port.to_monitor(frequencies) for port in ports]
     if diagnostics:
         monitors.append(

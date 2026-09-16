@@ -55,7 +55,7 @@ def test_ring_duration_and_boundary_sweeps_preserve_grid():
     changed, ports, changed_frequencies = build_ring_resonator_simulation(
         options=ExperimentOptions(
             run_time_ps=12.8,
-            boundary_thickness_um=1.2,
+            boundary_thickness_um=0.75,
             monitor_offset_um=0.5,
             exact_center=True,
         )
@@ -63,7 +63,7 @@ def test_ring_duration_and_boundary_sweeps_preserve_grid():
     for first, second in zip(baseline.grid.edges, changed.grid.edges, strict=True):
         np.testing.assert_array_equal(first, second)
     assert changed.run_time == pytest.approx(12.8e-12)
-    assert changed.boundaries[0].thickness == pytest.approx(1.2e-6)
+    assert changed.boundaries[0].thickness == pytest.approx(0.75e-6)
     assert ports[1].center[0] == pytest.approx(30.5e-6)
     assert len(changed_frequencies) == len(frequencies) + 1
 
@@ -79,3 +79,10 @@ def test_known_failure_wrapper_does_not_mask_runtime_errors():
         check_known_failure(numerical_failure, FieldDecayFailure)
     with pytest.raises(RuntimeError):
         check_known_failure(infrastructure_failure, FieldDecayFailure)
+
+
+def test_thicker_absorber_requires_domain_padding():
+    with pytest.raises(ValueError, match="extend the domain"):
+        build_ring_resonator_simulation(
+            options=ExperimentOptions(boundary_thickness_um=2)
+        )
