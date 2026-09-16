@@ -226,18 +226,18 @@ def generate_layout(case: DifferentialCase) -> Any:
             raise ValueError(f"reference polygon checksum mismatch for {case.name}")
         payload = json.loads(raw)
         gf = _gdsfactory()
-        _layout_pdk().activate()
-        component = gf.Component()
-        for points in payload["polygons_um"]:
-            component.add_polygon(points, layer=tuple(payload["layer"]))
-        for name, port in geometry["ports"].items():
-            component.add_port(
-                name=name,
-                center=tuple(port["center_um"]),
-                width=port["width_um"],
-                orientation=port["orientation_deg"],
-                layer=tuple(payload["layer"]),
-            )
+        with _layout_pdk_scope():
+            component = gf.Component()
+            for points in payload["polygons_um"]:
+                component.add_polygon(points, layer=tuple(payload["layer"]))
+            for name, port in geometry["ports"].items():
+                component.add_port(
+                    name=name,
+                    center=tuple(port["center_um"]),
+                    width=port["width_um"],
+                    orientation=port["orientation_deg"],
+                    layer=tuple(payload["layer"]),
+                )
         return component
     if geometry.get("kind") != "gdsfactory_component":
         raise ValueError(f"case {case.name!r} is not a GDSFactory component")
