@@ -443,8 +443,12 @@ def _save_four_port_artifacts(
         "resolution_m": float(simulation.resolution),
         "grid_shape": list(simulation.grid.shape),
         "grid_is_uniform": bool(simulation.grid.is_uniform),
-        "raster_quality": simulation.raster_options.quality,
-        "raster_smoothing": simulation.raster_options.smoothing,
+        "raster_quality": simulation.raster_options.quality
+        if simulation.raster_options
+        else "pre_rasterized",
+        "raster_smoothing": simulation.raster_options.smoothing
+        if simulation.raster_options
+        else simulation.material_grid.smoothing,
         "boundary_formulation": simulation.boundaries[0].formulation,
         "steps": int(performance.steps if performance else simulation.num_steps),
         "runtime_s": float(performance.runtime_s if performance else float("nan")),

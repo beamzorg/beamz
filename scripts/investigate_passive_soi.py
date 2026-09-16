@@ -34,7 +34,10 @@ from tests.differential.passive_soi.ring_resonator import (
     build_ring_resonator_simulation,
     extract_ring_resonances,
 )
-from tests.differential.passive_soi.straight_control import build_straight_control
+from tests.differential.passive_soi.straight_control import (
+    build_converter_grid_control,
+    build_straight_control,
+)
 
 
 def main():
@@ -50,6 +53,8 @@ def main():
             "straight_wide_te0",
             "straight_te1",
             "straight_tm0",
+            "converter_grid_te0",
+            "converter_grid_te1",
         ],
     )
     parser.add_argument("--ppw", type=int, default=6)
@@ -71,7 +76,13 @@ def main():
     options = ExperimentOptions(
         **{k: getattr(args, k) for k in ExperimentOptions.__dataclass_fields__}
     )
-    if args.device.startswith("straight_"):
+    if args.device.startswith("converter_grid_"):
+        simulation, ports, outputs, frequencies = build_converter_grid_control(
+            args.device.removeprefix("converter_grid_"),
+            resolution_ppw=args.ppw,
+            options=options,
+        )
+    elif args.device.startswith("straight_"):
         simulation, ports, outputs, frequencies = build_straight_control(
             args.device.removeprefix("straight_"),
             resolution_ppw=args.ppw,
@@ -147,7 +158,7 @@ def main():
         "termination": asdict(result.termination),
         "performance": asdict(result.performance),
     }
-    if args.device.startswith("straight_"):
+    if args.device.startswith(("straight_", "converter_grid_")):
         stack = np.stack(list(powers.values()))
         summary["max_transmission_error"] = float(np.max(np.abs(stack - 1)))
         summary["max_monitor_power_spread"] = float(np.max(np.ptp(stack, axis=0)))

@@ -121,3 +121,89 @@ def build_straight_control(
         raster_options=RasterOptions(quality="balanced", smoothing=options.smoothing),
     )
     return simulation, ports, ("near", "middle", "far"), frequencies
+
+
+def build_converter_grid_control(name, *, resolution_ppw=6, options=DEFAULT_OPTIONS):
+    """Extrude one straight port on the converter's exact realized grid."""
+    from beamz.design.discretization import build_material_grid
+    from tests.differential.passive_soi.mode_conversion import (
+        build_mode_conversion_simulation,
+    )
+
+    original, original_ports, _, frequencies = build_mode_conversion_simulation(
+        "mode_converter", resolution_ppw=resolution_ppw, options=options
+    )
+    if name not in ("te0", "te1"):
+        raise ValueError("converter grid control must be te0 or te1")
+    template = next(
+        p for p in original_ports if p.name == ("o1" if name == "te0" else "conversion")
+    )
+    width = (0.5 if name == "te0" else 1.2) * µm
+    center_y, center_z = template.center[1:]
+    case = load_passive_soi_case("mode_converter")
+    design = Design(
+        width=original.design.width,
+        height=original.design.height,
+        depth=original.design.depth,
+        background=Material(case.materials["silica_n_at_1p55_um"] ** 2),
+    )
+    design += Rectangle(
+        position=(0, center_y - width / 2, 2 * µm),
+        width=design.width,
+        height=width,
+        depth=0.22 * µm,
+        material=Material(case.materials["silicon_n_at_1p55_um"] ** 2),
+    )
+    material = build_material_grid(
+        design, original.grid, quality="balanced", smoothing=options.smoothing
+    )
+    mode = ModeSpec(
+        polarization="te", mode_index=0 if name == "te0" else 1, num_modes=5
+    )
+    source_x = original.sources[0].center[0] if name == "te0" else 1.5 * µm
+    source_time = original.sources[0].source_time
+    source = Port(
+        center=(source_x, center_y, center_z),
+        size=template.size,
+        name="source",
+        direction="+",
+        mode_spec=mode,
+    ).to_source(
+        freq0=source_time.freq0,
+        fwidth=source_time.fwidth,
+        num_freqs=options.source_profiles or 3,
+        source_time=source_time,
+    )
+    ports = tuple(
+        Port(
+            center=(x, center_y, center_z),
+            size=template.size,
+            name=label,
+            direction="+" if label == "o1" else "-",
+            mode_spec=mode,
+        )
+        for label, x in [
+            ("o1", source_x + 0.5 * µm),
+            ("near", source_x + 2 * µm),
+            ("middle", 0.5 * design.width),
+            ("far", design.width - 1.5 * µm),
+        ]
+    )
+    monitors = [p.to_monitor(frequencies) for p in ports]
+    monitors.append(
+        FieldMonitor(
+            center=(0.5 * design.width, center_y, center_z),
+            size=(design.width, design.height, 0),
+            freqs=(source_time.freq0,),
+            fields=("Ex", "Ey", "Ez"),
+            name="straight_xy",
+        )
+    )
+    simulation = Simulation(
+        material_grid=material,
+        sources=[source],
+        monitors=monitors,
+        boundaries=original.boundaries,
+        run_time=original.run_time,
+    )
+    return simulation, ports, ("near", "middle", "far"), frequencies
