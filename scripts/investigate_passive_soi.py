@@ -206,7 +206,10 @@ def main():
     summary["peak_host_rss_mib"] = (
         resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
     )
-    summary["peak_device_bytes_in_use"] = memory.get("peak_bytes_in_use")
+    summary["peak_jax_device_bytes_in_use"] = memory.get("peak_bytes_in_use")
+    summary["device_memory_scope"] = (
+        "JAX allocator only; excludes native CUDA allocations"
+    )
     summary["monitor_data_sha256"] = hashlib.sha256(
         (args.output / "monitor_data.npz").read_bytes()
     ).hexdigest()
