@@ -10,7 +10,7 @@ jobs:
     name: Verify release version metadata
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Require the tag, Python package, and Rust workspace to agree
         run: python release_version.py --verify "${GITHUB_REF_NAME#v}"
 
@@ -22,10 +22,10 @@ jobs:
     needs: validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.10'
       - name: Install dependencies
@@ -35,7 +35,7 @@ jobs:
       - name: Build source distribution
         run: maturin sdist --out dist
       - name: Store source distribution
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-package-sdist
           path: dist/
@@ -63,10 +63,10 @@ jobs:
             manylinux: "off"
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - if: matrix.target == 'aarch64-unknown-linux-gnu'
         uses: docker/setup-qemu-action@v3
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.10"
       - name: Build ABI3 wheel
@@ -80,7 +80,7 @@ jobs:
       - name: Smoke test the installed native wheel
         if: matrix.target != 'aarch64-unknown-linux-gnu'
         run: python scripts/smoke_installed_wheel.py dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: python-wheel-${{ matrix.target }}
           path: dist/*.whl
@@ -89,8 +89,8 @@ jobs:
     needs: [build-sdist, build-wheels]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - uses: actions/download-artifact@v4
@@ -101,7 +101,7 @@ jobs:
       - name: Inspect distribution contents
         run: python scripts/check_distributions.py
       - name: Store distributions
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-package-distributions
           path: dist/
@@ -111,9 +111,9 @@ jobs:
     needs: [build-sdist, build-wheels]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Download Linux wheel

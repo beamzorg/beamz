@@ -49,7 +49,7 @@ jobs:
           apt-get update &&
           DEBIAN_FRONTEND=noninteractive apt-get install -y
           build-essential ca-certificates curl git
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
@@ -81,7 +81,7 @@ jobs:
           assert set(cuda.registrations()) == set(schema["targets"].values())
           print(cuda.__version__)
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: beamz-private-cuda-component
           path: cuda/dist/*.whl
@@ -95,7 +95,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, h100]
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
@@ -157,7 +157,7 @@ jobs:
           PY
       - name: Upload H100 evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: h100-cuda-evidence
           path: ${{ runner.temp }}/benchmark-results/*.json
