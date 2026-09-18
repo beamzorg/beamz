@@ -39,6 +39,9 @@ from typing import Any, Optional
 import beamz as bz
 from PySide6.QtCore import QObject, Signal
 
+from . import geometry_adapters as ga
+from .undo import UndoManager
+
 # Explicit whitelists rather than duck-typing on shared methods like
 # `updated_copy` (Material/Design/Simulation have that too, and are not
 # placeable scene objects).
@@ -125,6 +128,10 @@ class SceneObject:
     rotation: float = 0.0  # DEGREES; meaningful for category == "structure"
     rotation_axis: str = "z"
     obj: Any = None  # cached beamz instance, regenerated on every edit
+    enabled: bool = True  # if False, excluded from build_design/sources/
+    # monitors (simulation_runner.py) but still visible/editable in the
+    # GUI — "suppress from a run without deleting it" (e.g. A/B testing
+    # a structure's presence).
 
 
 class BeamzConnector(QObject):
@@ -164,6 +171,11 @@ class BeamzConnector(QObject):
         # are two views onto one truth rather than two things to keep in
         # sync. `sync_from_script()` is what reconciles it back.
         self.namespace: dict[str, Any] = {"bz": bz}
+
+        # Whole-scene-snapshot undo/redo — see undo.py. Coarse-grained on
+        # purpose (checkpoints are taken by GUI code right before a
+        # discrete action like Apply/Delete/Add, not per keystroke).
+        self.undo_manager = UndoManager(self)
 
     # ------------------------------------------------------------------ #
     # Placeable-object CRUD (GUI-driven front door)
@@ -317,8 +329,11 @@ class BeamzConnector(QObject):
         """
         return [self._structures[sid] for sid in self._order]
 
-    def by_category(self, category: str) -> list[SceneObject]:
-        return [so for so in self.all_structures() if so.category == category]
+    def by_category(self, category: str, enabled_only: bool = False) -> list[SceneObject]:
+        items = [so for so in self.all_structures() if so.category == category]
+        if enabled_only:
+            items = [so for so in items if so.enabled]
+        return items
 
     def add_region(self, name: Optional[str] = None, **recipe: Any) -> str:
         """The FDTD simulation region — a GUI-only concept, not a real
@@ -335,6 +350,84 @@ class BeamzConnector(QObject):
         )
         defaults.update(recipe)
         return self.add_object("region", REGION_KIND, name, **defaults)
+
+    def _unique_name(self, base: str) -> str:
+        if base not in self._name_to_sid:
+            return base
+        i = 2
+        while f"{base}{i}" in self._name_to_sid:
+            i += 1
+        return f"{base}{i}"
+
+    def duplicate(self, sid: str) -> str:
+        """A copy of the structure/source/monitor at `sid`, nudged by a
+        small, visible offset in x/y so it doesn't land exactly on top of
+        the original. Regions aren't duplicable — there's only ever one
+        meaningful simulation region.
+        """
+        so = self._structures[sid]
+        if so.category == "region":
+            raise ValueError("The simulation region can't be duplicated.")
+
+        new_recipe = dict(so.recipe)
+        adapter = ga.get_adapter(so.class_name)
+        if adapter is not None:
+            # Reuses the exact same corner/center-aware math the
+            # Property Editor's own x/y edits go through (geometry_
+            # adapters.xyz_changes), so the nudge behaves consistently
+            # whether this class's position field is a stored corner
+            # (Rectangle) or already a center (Circle/Ring/...) — no
+            # separate "duplicate offset" logic to keep in sync with that.
+            x, y, _z = ga.get_xyz(new_recipe, adapter)
+            offset = 0.5e-6
+            new_recipe.update(ga.xyz_changes(new_recipe, adapter, x=x + offset, y=y + offset))
+
+        new_name = self._unique_name(f"{so.name}_copy")
+        new_sid = self.add_object(so.category, so.class_name, name=new_name, **new_recipe)
+        if so.rotation:
+            self.update_rotation(new_sid, so.rotation, axis=so.rotation_axis)
+        return new_sid
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        """A lightweight, in-memory snapshot of every placeable's state —
+        used by UndoManager (undo.py) for undo/redo. NOT JSON-safe
+        (recipe values may be numpy arrays or nested beamz objects like
+        Material/GaussianPulse, kept as live Python objects as-is) — for
+        a JSON-safe version suitable for writing to a file, see
+        workspace.py's own export, which serializes each entry's recipe
+        through a to-jsonable pass first.
+        """
+        return [
+            dict(
+                category=so.category,
+                class_name=so.class_name,
+                name=so.name,
+                recipe=dict(so.recipe),
+                rotation=so.rotation,
+                rotation_axis=so.rotation_axis,
+                enabled=so.enabled,
+            )
+            for so in self.all_structures()
+        ]
+
+    def restore(self, snapshot: list[dict[str, Any]]) -> None:
+        """Replace the ENTIRE current scene with `snapshot` (from an
+        earlier `snapshot()` call, or a JSON-decoded equivalent from
+        workspace.py). Goes through the normal add_object/add_region/
+        update_rotation methods — not a bypass — so every view stays in
+        sync via the usual structure_added/removed signals; nothing
+        extra needs to know undo/workspace-load happened.
+        """
+        for so in list(self.all_structures()):
+            self.remove_structure(so.id)
+        for entry in snapshot:
+            if entry["category"] == "region":
+                sid = self.add_region(name=entry["name"], **entry["recipe"])
+            else:
+                sid = self.add_object(entry["category"], entry["class_name"], name=entry["name"], **entry["recipe"])
+            if entry.get("rotation"):
+                self.update_rotation(sid, entry["rotation"], axis=entry.get("rotation_axis", "z"))
+            self._structures[sid].enabled = entry.get("enabled", True)
 
     def _regenerate(self, so: SceneObject) -> None:
         """The one place a beamz instance actually gets constructed from
@@ -446,18 +539,19 @@ class BeamzConnector(QObject):
         """Assemble a live beamz.Design from current structures (sources
         and monitors are excluded — they belong to the Simulation, not the
         Design). Never cached, since it must always reflect current param
-        values.
+        values. Disabled structures (SceneObject.enabled == False) are
+        excluded too — that's the entire point of the enabled toggle.
         """
         return bz.Design(
             width=self.design_width,
             height=self.design_height,
             depth=self.design_depth,
             background=self.background_material,
-            structures=tuple(so.obj for so in self.by_category("structure")),
+            structures=tuple(so.obj for so in self.by_category("structure", enabled_only=True)),
         )
 
     def build_sources(self) -> tuple[Any, ...]:
-        return tuple(so.obj for so in self.by_category("source"))
+        return tuple(so.obj for so in self.by_category("source", enabled_only=True))
 
     def build_monitors(self) -> tuple[Any, ...]:
-        return tuple(so.obj for so in self.by_category("monitor"))
+        return tuple(so.obj for so in self.by_category("monitor", enabled_only=True))

@@ -156,7 +156,9 @@ def build_simulation(
     Validates that every structure has a material assigned FIRST — see
     the inline comment below for why that check exists at all.
     """
-    missing_material = [so.name for so in connector.by_category("structure") if so.obj.material is None]
+    missing_material = [
+        so.name for so in connector.by_category("structure", enabled_only=True) if so.obj.material is None
+    ]
     if missing_material:
         raise ValueError(
             "These structures have no material assigned yet: "
@@ -181,13 +183,13 @@ def build_simulation(
         boundaries = [bz.PML()]
         settings = {}
 
-    structures = tuple(_shifted_object(so, offset) for so in connector.by_category("structure"))
+    structures = tuple(_shifted_object(so, offset) for so in connector.by_category("structure", enabled_only=True))
     design = bz.Design(
         width=design_w, height=design_h, depth=design_d,
         background=connector.background_material, structures=structures,
     )
-    sources = [_shifted_object(so, offset) for so in connector.by_category("source")]
-    monitors = [_shifted_object(so, offset) for so in connector.by_category("monitor")]
+    sources = [_shifted_object(so, offset) for so in connector.by_category("source", enabled_only=True)]
+    monitors = [_shifted_object(so, offset) for so in connector.by_category("monitor", enabled_only=True)]
 
     kwargs: dict[str, Any] = {k: v for k, v in settings.items() if v is not None}
     kwargs["design"] = design
