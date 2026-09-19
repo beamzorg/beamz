@@ -388,7 +388,13 @@ def local_3d_phasor_context(
         component: _shape3(getattr(fields, component).shape)
         for component in _FIELD_COMPONENTS_3D
     }
-    grid_shape = _shape3(fields.permittivity.shape)
+    # These bounds describe node supports: component_slices_from_cell_bounds
+    # removes one endpoint for center-aligned components. Clamping to the
+    # material-cell count would lose the outer Yee node (and truncate profiles
+    # spanning that plane), so use the complete node lattice here.
+    grid_shape = tuple(
+        max(shape[d] for shape in field_shapes.values()) for d in range(3)
+    )
     lows = [int(v) for v in grid_shape]
     highs = [0, 0, 0]
     found = False

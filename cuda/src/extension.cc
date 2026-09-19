@@ -14,6 +14,8 @@ NB_MODULE(_cuda, module) {
     nb::dict registrations;
     registrations[kStreamedTarget] =
         nb::capsule(reinterpret_cast<void*>(beamz_cuda_streamed));
+    registrations[kShardedTarget] =
+        nb::capsule(reinterpret_cast<void*>(beamz_cuda_sharded));
     registrations[kProgramTarget] =
         nb::capsule(reinterpret_cast<void*>(beamz_cuda_program));
     registrations[kHopperTarget] =

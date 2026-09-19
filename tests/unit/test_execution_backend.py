@@ -129,15 +129,6 @@ def test_auto_preserves_jax_for_multi_device_sharding(monkeypatch):
     assert program.config.backend == "jax"
 
 
-def test_explicit_cuda_rejects_multi_device_sharding():
-    with pytest.raises(
-        backend_runtime.CudaBackendUnavailable, match="multi-device sharding"
-    ):
-        _rectilinear_3d_simulation().compile(
-            backend="cuda_streamed", sharding={"num_devices": 2}
-        )
-
-
 def test_hopper_cuda_rejects_rectilinear_3d_simulations():
     with pytest.raises(
         backend_runtime.CudaBackendUnavailable, match="Hopper-specific kernel"
@@ -183,6 +174,15 @@ def test_explicit_cuda_rejects_full_tensor_permittivity():
         backend_runtime.CudaBackendUnavailable, match="full-tensor permittivity"
     ):
         _full_tensor_3d_simulation().compile(backend="cuda_streamed")
+
+
+def test_tensor_cuda_requires_an_effective_multi_device_plan(monkeypatch):
+    monkeypatch.setattr(backend_runtime, "resolve_backend", lambda _: "cuda_streamed")
+    monkeypatch.setattr(sharding_runtime, "_jax_devices_for_config", lambda _: ())
+    with pytest.raises(
+        backend_runtime.CudaBackendUnavailable, match="active multi-device"
+    ):
+        _full_tensor_3d_simulation().compile(backend="cuda_streamed", sharding=True)
 
 
 def test_cuda_status_exposes_complete_diagnostics():
@@ -301,6 +301,7 @@ def test_typed_ffi_registrations_use_cuda_api_v1(monkeypatch):
     assert targets == (
         "beamz_cuda_hopper",
         "beamz_cuda_program",
+        "beamz_cuda_sharded",
         "beamz_cuda_streamed",
     )
     assert {name for name, _, _ in registrations} == set(targets)

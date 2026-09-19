@@ -328,6 +328,7 @@ def _prepare_compilation(
         logical_fields,
         sharding_cfg,
         is_3d=bool(request.domain.is_3d),
+        aligned_components=request.run.backend != "jax",
     )
     sharding_layout = sharding.layout
     effective_sharding = (
@@ -559,6 +560,17 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         setup.monitor_specs,
         setup.config,
     )
+    if (
+        request.materials.uses_full_permittivity
+        and config.backend != "jax"
+        and not sharding_layout.enabled
+    ):
+        from .backend import CudaBackendUnavailable
+
+        raise CudaBackendUnavailable(
+            "Full-tensor CUDA execution requires an active multi-device sharding "
+            "plan for its coupled constitutive update; use backend='jax'."
+        )
 
     # 4. Precompute ordinary Yee update coefficients. Native 3D material kernels keep
     # material arrays instead because they form coefficients at their exact stagger.
@@ -645,9 +657,13 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
                     e_source_z,
                 )
             )
-            packed_e = _pack_cuda_lossless_e_coefficients(
-                (e_decay_x, e_decay_y, e_decay_z),
-                (e_source_x, e_source_y, e_source_z),
+            packed_e = (
+                None
+                if sharding_layout.enabled
+                else _pack_cuda_lossless_e_coefficients(
+                    (e_decay_x, e_decay_y, e_decay_z),
+                    (e_source_x, e_source_y, e_source_z),
+                )
             )
             if packed_e is not None:
                 (
@@ -781,6 +797,10 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     metrics = lower_derivative_metrics(
         _compile_derivative_metrics(request.materials), sharding_layout
     )
+    if config.backend != "jax" and sharding_layout.enabled:
+        from .cuda.sharding import validate_sharded_config
+
+        validate_sharded_config(config, boundary, sharding)
     return CompiledProgram(
         grid=logical_grid,
         config=config,
@@ -839,8 +859,15 @@ def compile_program(
     cuda_grid_supported = simulation.is_3d and (
         requested_backend != "cuda_hopper" or metric_kind == "isotropic_uniform"
     )
-    cuda_material_supported = not material_grid.uses_full_permittivity
-    cuda_sharding_supported = not sharding_token[0] or sharding_token[2] == 1
+    multi_device = sharding_token[0] and sharding_token[2] != 1
+    cuda_material_supported = not material_grid.uses_full_permittivity or (
+        multi_device and requested_backend in {"cuda", "cuda_streamed"}
+    )
+    # Explicit streamed requests opt into the phase-by-phase sharded path.
+    # Auto remains on the established JAX path pending CUDA hardware validation.
+    cuda_sharding_supported = not multi_device or (
+        requested_backend in {"cuda", "cuda_streamed"}
+    )
     if requested_backend not in {"auto", "jax"} and not cuda_grid_supported:
         requirement = (
             "a 3D simulation"
@@ -858,8 +885,8 @@ def compile_program(
         )
     if requested_backend not in {"auto", "jax"} and not cuda_sharding_supported:
         raise CudaBackendUnavailable(
-            "CUDA execution currently supports one GPU; use backend='jax' for "
-            "multi-device sharding."
+            "CUDA multi-device sharding requires backend='cuda_streamed'; "
+            "use backend='jax' for other sharded configurations."
         )
     cuda_problem_supported = (
         cuda_grid_supported and cuda_material_supported and cuda_sharding_supported

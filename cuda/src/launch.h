@@ -32,6 +32,9 @@ struct BeamzLaunch {
   BeamzBuffer inputs[37];
   BeamzBuffer metrics[3];
   BeamzBuffer outputs[9];
+  // Sharded phases only: [axis, origin, return_curl], three logical target
+  // shapes, then three logical source shapes. Resident on the execution device.
+  BeamzBuffer shard_geometry;
 };
 
 struct BeamzSourceGroupLaunch {
@@ -78,6 +81,7 @@ struct BeamzProgramLaunch {
 
 // Returns zero after enqueueing all work, otherwise a CUDA runtime error code.
 int BeamzLaunchStreamed(void* stream, const BeamzLaunch& launch);
+int BeamzLaunchSharded(void* stream, const BeamzLaunch& launch);
 int BeamzLaunchProgram(void* stream, const BeamzProgramLaunch& program);
 int BeamzLaunchHopper(void* stream, const BeamzLaunch& launch);
 
