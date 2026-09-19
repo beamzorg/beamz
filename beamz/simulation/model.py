@@ -455,6 +455,7 @@ class RunConfig:
     num_steps: int
     plane_2d: str
     is_3d: bool
+    t0: float = 0.0
     metric_kind: str = "isotropic_uniform"
     polarization_2d: str = "tm"
     loop_kind: str = "scan"

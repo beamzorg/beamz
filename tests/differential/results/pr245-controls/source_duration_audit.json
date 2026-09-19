@@ -1,0 +1,72 @@
+{
+  "method": "Replay the source compiler's analytic subband partition on retained in-phase/quadrature samples and the original three Chebyshev profile frequencies.",
+  "limitation": "Subband amplitudes are not the net injected field or power; spatial profile coefficients and cancellations are not included.",
+  "runs": [
+    {
+      "run": "ring-fixed-6p4",
+      "duration_ps": 6.4,
+      "terminal_subband_envelope_over_own_peak": [
+        0.056287352560388006,
+        0.043154989924587425,
+        0.0551396813681254
+      ],
+      "terminal_largest_real_or_quadrature_drive_over_own_peak": 0.055159731173996404
+    },
+    {
+      "run": "ring-fixed-12p8",
+      "duration_ps": 12.8,
+      "terminal_subband_envelope_over_own_peak": [
+        0.053478933021825756,
+        0.04137361542715449,
+        0.05584061466971421
+      ],
+      "terminal_largest_real_or_quadrature_drive_over_own_peak": 0.05574359125702441
+    },
+    {
+      "run": "ring-fixed-25p6",
+      "duration_ps": 25.6,
+      "terminal_subband_envelope_over_own_peak": [
+        0.054541497334597636,
+        0.045343019998346855,
+        0.05559138703146451
+      ],
+      "terminal_largest_real_or_quadrature_drive_over_own_peak": 0.055554905203051445
+    },
+    {
+      "run": "ring-fixed-51p2",
+      "duration_ps": 51.2,
+      "terminal_subband_envelope_over_own_peak": [
+        0.05467340001321892,
+        0.039780632628243176,
+        0.053738551012661076
+      ],
+      "terminal_largest_real_or_quadrature_drive_over_own_peak": 0.05374187204595358
+    }
+  ],
+  "adjacent_prefix_comparisons": [
+    {
+      "runs": [
+        "ring-fixed-6p4",
+        "ring-fixed-12p8"
+      ],
+      "maximum_common_prefix_difference_over_larger_run_peak": 0.05065123044859206,
+      "maximum_first_2ps_difference_over_larger_run_peak": 0.05065123044859206
+    },
+    {
+      "runs": [
+        "ring-fixed-12p8",
+        "ring-fixed-25p6"
+      ],
+      "maximum_common_prefix_difference_over_larger_run_peak": 0.05138490899667855,
+      "maximum_first_2ps_difference_over_larger_run_peak": 0.05138490899667855
+    },
+    {
+      "runs": [
+        "ring-fixed-25p6",
+        "ring-fixed-51p2"
+      ],
+      "maximum_common_prefix_difference_over_larger_run_peak": 0.08510531543612133,
+      "maximum_first_2ps_difference_over_larger_run_peak": 0.08510531543612133
+    }
+  ]
+}

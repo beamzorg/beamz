@@ -1,0 +1,191 @@
+{
+  "schema_version": "beamz.differential/v1",
+  "name": "passive_soi_polarization_splitter_rotator",
+  "description": "Paper-layout passive SOI polarization splitter rotator at the lowest published resolution.",
+  "dimension": 3,
+  "wavelength_m": 1.55e-06,
+  "resolution_m": 7.430973447933325e-08,
+  "oracle": {
+    "kind": "solver_consensus",
+    "reference": "Liu and Poon, arXiv:2506.16665v3, Sec. 3.5"
+  },
+  "materials": {
+    "silicon_n_at_1p55_um": 3.47644,
+    "silica_n_at_1p55_um": 1.44402,
+    "silicon_nitride_n_at_1p55_um": 2.0
+  },
+  "geometry": {
+    "kind": "reference_polygons",
+    "component": "polarization_splitter_rotator",
+    "settings": {},
+    "source_generator_requirement": "gdsfactory==7.8.*",
+    "paper_revision": "arXiv:2506.16665v3",
+    "source_repository": "https://github.com/JPPhotonics/fdtd-pipeline",
+    "source_revision": "622e0a9b7429eaf2335b1000b39e283544a198c4",
+    "source_gds_path": "gds_library/cells_from_gds/gdsfactory_generic_pdk/polarization_splitter_rotator.gds",
+    "source_gds_sha256": "a6e91e4b96d5f9d09d9145a77044a7e900d21302c58e381e0a0488af7e420ae0",
+    "layer_stack_reference": {
+      "source_path": "stack_universal.json and gds_library/pdk_universal.py",
+      "z_reference": "Layer zmin values are measured from the shared silicon substrate plane at z=0 um"
+    },
+    "layers": {
+      "core": {
+        "gds": [
+          1,
+          0
+        ],
+        "zmin_um": 0.0,
+        "thickness_m": 2.2e-07,
+        "union_sha256": "a4871e2bc08d70497512699cc51f0a78b65955535d42bc6c83c3cd5974f328be"
+      }
+    },
+    "ports": {
+      "o1": {
+        "center_um": [
+          -49.867,
+          0.0
+        ],
+        "width_um": 0.54,
+        "orientation_deg": 180.0
+      },
+      "o2": {
+        "center_um": [
+          21.33,
+          5.802
+        ],
+        "width_um": 0.54,
+        "orientation_deg": 0.0
+      },
+      "o3": {
+        "center_um": [
+          21.33,
+          0.0
+        ],
+        "width_um": 0.54,
+        "orientation_deg": 0.0
+      }
+    },
+    "simulation": {
+      "domain_bounds_um": {
+        "x": [
+          -50.867,
+          22.33
+        ],
+        "y": [
+          -1.54,
+          7.342
+        ],
+        "z": [
+          -2,
+          2
+        ]
+      },
+      "wavelength_center_um": 1.55,
+      "wavelength_spans_nm": [
+        20.0
+      ],
+      "wavelength_step_nm": 5.0,
+      "frequency_sampling": "Uniform frequency samples between c / wavelength_stop and c / wavelength_start, matching the reference Tidy3D pipeline.",
+      "resolutions_cells_per_wavelength": [
+        6,
+        10,
+        15,
+        20,
+        25
+      ],
+      "resolution_m_basis": "The top-level resolution_m is the 6 cells-per-wavelength spacing in silicon at 1550 nm, used as the automatic mesh criterion.",
+      "grid": "BeamZ GridSpec.auto with the requested minimum cells per wavelength, a 1.4 maximum adjacent-cell scale, and no mesh overrides, matching the reference automatic non-uniform policy.",
+      "subpixel": "BeamZ diagonal Farjadpour interface averaging; Tidy3D uses ContourPathAveraging, for which BeamZ has no identical implementation.",
+      "source_port": "o1",
+      "source_mode": "TM0",
+      "reference_source_mode_index": 2,
+      "reference_source_mode_index_basis": "The reference pipeline requests raw solver mode index 2 for the fundamental TM mode; BeamZ selects TM0 through polarization-aware ordering.",
+      "source_plane_offset_um": 0.0,
+      "input_monitor_inward_offset_um": 0.5,
+      "reference_output_monitor_inward_offset_um": 0.0,
+      "beamz_output_monitor_inward_offset_um": 0.5,
+      "beamz_output_monitor_offset_rationale": "The reference output planes coincide with the inner absorbing-boundary interface. BeamZ moves the power-only monitors along the same straight lossless ports to avoid coarse-grid absorbing-region fields.",
+      "source_time": "Gaussian pulse with fwidth equal to the simulated frequency span",
+      "source_offset": "Tidy3D default: 5 temporal widths; BeamZ equivalent: 5 / (2 pi)",
+      "source_mode_profiles": "Three profiles for the 20 nm span. BeamZ uses its native Chebyshev reconstruction nodes.",
+      "output_ports": [
+        "o2",
+        "o3"
+      ],
+      "reference_boundaries": {
+        "lumerical": "PML on all sides",
+        "tidy3d": "PML on all sides"
+      },
+      "beamz_boundary": "A 1 um CPML physical absorbing layer on every side.",
+      "beamz_port_transverse_span_um": 3.0,
+      "beamz_port_span_rationale": "Symmetric 3 um in-domain apertures; the reference uses waveguide width plus 4 um and clips to its domain.",
+      "port_extension_um": 10.0,
+      "run_time_rule": "15 * domain_x * 2 / c",
+      "auto_shutoff": "BeamZ field-energy decay threshold 1e-5 with the configured run time as a hard upper bound, matching Tidy3D's published shutoff threshold as closely as available.",
+      "material_model_limitation": "BeamZ currently uses nondispersive silicon and silica evaluated at 1550 nm; the paper uses fitted dispersive material models.",
+      "source_polarization": "tm",
+      "conversion_port": "o2",
+      "conversion_polarization": "te",
+      "conversion_mode_index": 0,
+      "crosstalk_polarization": "tm",
+      "crosstalk_mode_index": 0,
+      "published_conversion_power_1550nm_span20nm": {
+        "value_basis": "Values at 6 and 15 cells per wavelength are stated in Section 3.5; remaining values are digitized to approximately 0.001 from Fig. 21(a).",
+        "6": {
+          "lumerical": 0.147,
+          "tidy3d": 0.051
+        },
+        "10": {
+          "lumerical": 0.0,
+          "tidy3d": 0.62
+        },
+        "15": {
+          "lumerical": 0.94,
+          "tidy3d": 0.901
+        },
+        "20": {
+          "lumerical": 0.948,
+          "tidy3d": 0.95
+        },
+        "25": {
+          "lumerical": 0.949,
+          "tidy3d": 0.95
+        }
+      },
+      "published_converged_conversion_power_1550nm_span20nm": {
+        "series_key": "published_conversion_power_1550nm_span20nm",
+        "convergence_start_ppw": 20,
+        "digitization_absolute_uncertainty": 0.002,
+        "value_basis": "Section 3.5 states that both solvers are converged from 20 cells per wavelength. The consensus and tolerance use both solvers at 20 and 25 cells per wavelength."
+      },
+      "mode_candidates": 5
+    },
+    "polygon_fixture": "polarization_splitter_rotator.json",
+    "polygon_fixture_sha256": "8f0ed982f0c87c9b9005b2ee1a4eccd880fae91be97a8096c0a4d91b3af20337",
+    "layout_limitation": "Pinned silicon polygons extracted from the reference GDS, rather than regenerated with incompatible modern GDSFactory defaults. Ports are copied from its YAML sidecar.",
+    "top_cladding": {
+      "material": "silicon_nitride_n_at_1p55_um",
+      "zmin_um": 0.0
+    }
+  },
+  "observables": [
+    {
+      "name": "conversion_power",
+      "unit": "fraction",
+      "tolerance": "cross_solver"
+    },
+    {
+      "name": "crosstalk_power",
+      "unit": "fraction",
+      "tolerance": "cross_solver"
+    },
+    {
+      "name": "selected_output_power",
+      "unit": "fraction",
+      "tolerance": "cross_solver"
+    }
+  ],
+  "adapters": [
+    "beamz"
+  ]
+}

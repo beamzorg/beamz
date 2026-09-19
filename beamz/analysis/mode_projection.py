@@ -3,6 +3,7 @@ import numpy as np
 from beamz.analysis.data import AnalysisData
 from beamz.analysis.modal_projection.colocation import (
     _discrete_mode_projection_grids_3d,
+    _normal_mode_sampling_factors_3d,
 )
 from beamz.analysis.modal_projection.diagnostics import (
     _modal_projection_reconstruction_diagnostics_from_matrix,
@@ -356,6 +357,28 @@ def _build_discrete_port_projection_3d(
         direction_sign=float(direction_sign),
         max_scale=1e6,
     )
+    # The recorded fields were interpolated along the propagation direction.
+    # Apply that same sampling to each physically normalized traveling-wave
+    # basis, including its direction, rather than treating samples as exact
+    # values at the requested plane.
+    for profiles in (plus_components, minus_components):
+        signed_flux = float(
+            np.real(
+                _modal_overlap(
+                    profiles, profiles, axis, integration_weights, direction_sign=1.0
+                )
+            )
+        )
+        factors = _normal_mode_sampling_factors_3d(
+            sim,
+            monitor,
+            proj_components,
+            axis=axis,
+            wave_number=discrete_mode.k_num_axis,
+            direction_sign=1.0 if signed_flux >= 0 else -1.0,
+        )
+        for name in proj_components:
+            profiles[name] = profiles[name] * factors[name]
     overlap_matrix = np.asarray(
         [
             [
@@ -404,6 +427,8 @@ def _build_discrete_port_projection_3d(
         "components": tuple(proj_components),
         "condition_number": float(np.linalg.cond(overlap_matrix)),
         "mode_neff": mode_neff,
+        "mode_wave_number": float(discrete_mode.k_num_axis),
+        "normal_sampling_model": "yee_linear_interpolation",
         "mode_components": {
             name: np.asarray(plus_components[name], dtype=np.complex128)
             for name in proj_components

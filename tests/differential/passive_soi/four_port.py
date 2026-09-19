@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +16,11 @@ from tests.differential.passive_soi.common import (
     generate_layout,
     port_center_and_direction,
     reference_absorber_warning_scope,
-    reference_frequencies,
+)
+from tests.differential.passive_soi.experiments import (
+    DEFAULT_OPTIONS,
+    ExperimentOptions,
+    validate_boundary_clearance,
 )
 
 
@@ -42,6 +46,7 @@ class FourPortBenchmarkResult:
     steps: int
     grid_shape: tuple[int, int, int]
     termination_reason: str
+    terminal_field_decay: float
 
 
 @dataclass(frozen=True)
@@ -117,8 +122,8 @@ def paper_cross_power_range(
     return min(values), max(values)
 
 
-def _four_port_design(case: DifferentialCase):
-    """Extrude the referenced layer stack and guides through the x boundaries."""
+def _ported_design(case: DifferentialCase, *, port_extension_policy="reference"):
+    """Extrude the pinned stack, optionally correcting truncated port extensions."""
     from beamz import Design, Material, Polygon, Rectangle, µm
 
     component = generate_layout(case)
@@ -133,6 +138,17 @@ def _four_port_design(case: DifferentialCase):
         depth=depth_um * µm,
         background=silica,
     )
+
+    if "top_cladding" in case.geometry:
+        cladding = case.geometry["top_cladding"]
+        cladding_z = float(cladding["zmin_um"])
+        design += Rectangle(
+            position=(0.0, 0.0, (cladding_z - bounds["z"][0]) * µm),
+            width=width_um * µm,
+            height=height_um * µm,
+            depth=(bounds["z"][1] - cladding_z) * µm,
+            material=Material(case.materials[cladding["material"]] ** 2),
+        )
 
     for layer in case.geometry["layers"].values():
         thickness = float(layer["thickness_m"])
@@ -162,13 +178,21 @@ def _four_port_design(case: DifferentialCase):
         width = float(port["width_um"]) * µm
         orientation = int(round(float(port["orientation_deg"]))) % 360
         if orientation == 180:
-            position, extension_width = (x - extension, y - width / 2), extension
-        elif orientation == 0:
-            position, extension_width = (x, y - width / 2), extension
-        else:
-            raise ValueError(
-                f"unsupported four-port orientation for port orientation {orientation}"
+            extension_width = (
+                max(extension, x + µm)
+                if port_extension_policy == "through_boundary"
+                else extension
             )
+            position = (x - extension_width, y - width / 2)
+        elif orientation == 0:
+            extension_width = (
+                max(extension, design.width - x + µm)
+                if port_extension_policy == "through_boundary"
+                else extension
+            )
+            position = (x, y - width / 2)
+        else:
+            raise ValueError(f"unsupported port orientation {orientation}")
         design += Rectangle(
             position=(*position, core_z),
             width=extension_width,
@@ -185,6 +209,7 @@ def build_four_port_simulation(
     resolution_ppw: int,
     wavelength_span_nm: float = 20.0,
     diagnostics: bool = False,
+    options: ExperimentOptions = DEFAULT_OPTIONS,
 ):
     """Build a paper-matched BeamZ four-port simulation without executing it."""
     from beamz import (
@@ -207,14 +232,14 @@ def build_four_port_simulation(
     if float(wavelength_span_nm) not in protocol["wavelength_spans_nm"]:
         raise ValueError(f"unsupported paper wavelength span {wavelength_span_nm}")
 
-    design = _four_port_design(case)
+    design = _ported_design(case, port_extension_policy=options.port_extension_policy)
     bounds = domain_bounds_um(case)
     core = case.geometry["layers"]["core"]
     z_center = (
         float(core["zmin_um"]) + 0.5 * float(core["thickness_m"]) / µm - bounds["z"][0]
     ) * µm
     wavelength_center = float(protocol["wavelength_center_um"]) * µm
-    frequencies = reference_frequencies(case, wavelength_span_nm)
+    frequencies = options.frequencies(case, wavelength_span_nm)
     grid_spec = GridSpec.auto(
         min_steps_per_wvl=float(resolution_ppw),
         wavelength=wavelength_center,
@@ -223,15 +248,27 @@ def build_four_port_simulation(
         max_total_cells=None,
     )
 
-    mode_spec = ModeSpec(polarization="te")
-    transverse_span = float(protocol["beamz_port_transverse_span_um"]) * µm
+    source_name = protocol.get("source_port", "o1")
+    mode_candidates = int(protocol.get("mode_candidates", 1))
+    mode_spec = ModeSpec(
+        polarization=protocol.get("source_polarization", "te"),
+        num_modes=mode_candidates,
+    )
+    transverse_span = (
+        float(options.transverse_span_um or protocol["beamz_port_transverse_span_um"])
+        * µm
+    )
     z_span = 2.0 * µm
     ports = tuple(
         Port(
             center=port_center_and_direction(
                 case,
                 name,
-                inward_offset_um=0.5,
+                inward_offset_um=(
+                    0.5
+                    if options.monitor_offset_um is None
+                    else options.monitor_offset_um
+                ),
                 z_center=z_center,
             )[0],
             size=(0.0, transverse_span, z_span),
@@ -239,15 +276,23 @@ def build_four_port_simulation(
             direction=port_center_and_direction(
                 case,
                 name,
-                inward_offset_um=0.5,
+                inward_offset_um=(
+                    0.5
+                    if options.monitor_offset_um is None
+                    else options.monitor_offset_um
+                ),
                 z_center=z_center,
             )[1],
-            mode_spec=mode_spec,
+            mode_spec=(
+                mode_spec
+                if name == source_name
+                else ModeSpec(polarization="te", num_modes=mode_candidates)
+            ),
         )
         for name in case.geometry["ports"]
     )
     source_center, source_direction = port_center_and_direction(
-        case, "o1", inward_offset_um=0.0, z_center=z_center
+        case, source_name, inward_offset_um=0.0, z_center=z_center
     )
     source_port = Port(
         center=source_center,
@@ -265,38 +310,96 @@ def build_four_port_simulation(
     source = source_port.to_source(
         freq0=source_time.freq0,
         fwidth=frequency_width,
-        num_freqs=round(float(wavelength_span_nm) / 10.0) + 1,
+        num_freqs=options.source_profiles
+        or round(float(wavelength_span_nm) / 10.0) + 1,
         source_time=source_time,
     )
+    validate_boundary_clearance(design, source, ports, options.boundary_thickness_um)
     monitors = [port.to_monitor(frequencies) for port in ports]
     if diagnostics:
         monitors.append(
             FieldMonitor(
                 center=(0.5 * design.width, 0.5 * design.height, z_center),
                 size=(design.width, design.height, 0.0),
-                freqs=frequencies,
+                freqs=(float(np.median(frequencies)),),
                 fields=("Ex", "Ey", "Ez"),
                 name=f"{case.name.removeprefix('passive_soi_')}_xy",
             )
         )
     boundary = (
-        Absorber(edges="all", thickness=1.0 * µm)
+        Absorber(edges="all", thickness=options.boundary_thickness_um * µm)
         if protocol.get("absorber_from_ppw") is not None
         and int(resolution_ppw) >= int(protocol["absorber_from_ppw"])
-        else PML(edges="all", thickness=1.0 * µm, formulation="cpml")
+        else PML(
+            edges="all",
+            thickness=options.boundary_thickness_um * µm,
+            formulation="cpml",
+        )
     )
     simulation = Simulation(
         design=design,
         sources=[source],
         monitors=monitors,
         boundaries=[boundary],
-        run_time=15.0 * domain_size_um(case)[0] * µm * 2.0 / LIGHT_SPEED,
-        grid_spec=grid_spec,
-        raster_options=RasterOptions(
-            quality="balanced", smoothing="farjadpour_diagonal"
+        run_time=(
+            options.run_time_ps * 1e-12
+            if options.run_time_ps is not None
+            else 15.0 * domain_size_um(case)[0] * µm * 2.0 / LIGHT_SPEED
         ),
+        grid_spec=grid_spec,
+        raster_options=RasterOptions(quality="balanced", smoothing=options.smoothing),
     )
     return simulation, ports, frequencies
+
+
+def _plot_artifact_geometry(simulation, field_monitor, *, markers):
+    """Use actual material cells when a frozen grid has no polygon design."""
+    import matplotlib.pyplot as plt
+
+    if simulation.material_grid is None:
+        return simulation.plot(
+            z=field_monitor.center[2],
+            y=field_monitor.center[1],
+            source_markers=markers,
+            monitor_markers=markers,
+        )
+    grid = simulation.grid
+    eps = np.asarray(simulation.material_grid.permittivity)
+    z = int(np.argmin(abs(grid.centers("z") - field_monitor.center[2])))
+    y = int(np.argmin(abs(grid.centers("y") - simulation.sources[0].center[1])))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), constrained_layout=True)
+    for ax, vertical, data, title in (
+        (
+            axes[0],
+            "y",
+            eps[z],
+            f"Material cells at z={grid.centers('z')[z] / 1e-6:.3f} µm",
+        ),
+        (
+            axes[1],
+            "z",
+            eps[:, y],
+            f"Material cells at y={grid.centers('y')[y] / 1e-6:.3f} µm",
+        ),
+    ):
+        im = ax.pcolormesh(
+            grid.axis_edges("x") / 1e-6,
+            grid.axis_edges(vertical) / 1e-6,
+            data,
+            shading="flat",
+            vmin=float(eps.min()),
+            vmax=float(eps.max()),
+        )
+        ax.set(title=title, xlabel="x (µm)", ylabel=f"{vertical} (µm)")
+        if markers:
+            for device in (*simulation.sources, *simulation.monitors):
+                ax.plot(
+                    device.center[0] / 1e-6,
+                    device.center["xyz".index(vertical)] / 1e-6,
+                    "r+",
+                )
+    fig.colorbar(im, ax=axes, label="Relative permittivity")
+    return fig, axes
 
 
 def _save_four_port_artifacts(
@@ -306,6 +409,7 @@ def _save_four_port_artifacts(
     scattering,
     *,
     execution_backend: str,
+    options: ExperimentOptions = DEFAULT_OPTIONS,
 ) -> None:
     """Persist raw and visual evidence for one four-port run."""
     import matplotlib.pyplot as plt
@@ -314,16 +418,10 @@ def _save_four_port_artifacts(
     field_monitor = next(
         monitor for monitor in simulation.monitors if monitor.name.endswith("_xy")
     )
-    cross_section = {
-        "z": field_monitor.center[2],
-        "y": field_monitor.center[1],
-    }
-    fig, _ = simulation.plot(
-        **cross_section, source_markers=False, monitor_markers=False
-    )
+    fig, _ = _plot_artifact_geometry(simulation, field_monitor, markers=False)
     fig.savefig(directory / "geometry_cross_sections.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
-    fig, _ = simulation.plot(**cross_section)
+    fig, _ = _plot_artifact_geometry(simulation, field_monitor, markers=True)
     fig.savefig(directory / "simulation_overview.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
     fig, _ = results.plot_field(
@@ -350,6 +448,34 @@ def _save_four_port_artifacts(
     }
     for (output, source), values in scattering.s_matrix.items():
         arrays[f"S_{output}_{source}"] = np.asarray(values)
+    for port_name, wave in scattering.diagnostics["waves"].items():
+        for diagnostic_name in (
+            "a_plus",
+            "a_minus",
+            "P_plus",
+            "P_minus",
+            "mode_neff",
+            "mode_wave_number",
+            "projection_residual",
+            "condition_number",
+            "projected_signed_power",
+        ):
+            if diagnostic_name in wave:
+                arrays[f"diagnostic_{port_name}__{diagnostic_name}"] = np.asarray(
+                    wave[diagnostic_name]
+                )
+    for port_name, flux in scattering.diagnostics["monitor_flux_checks"].items():
+        for diagnostic_name in (
+            "monitor_flux",
+            "P_modal_sum",
+            "P_modal_net",
+            "P_selected",
+            "P_rejected",
+            "P_selected_modal_net",
+        ):
+            arrays[f"flux_{port_name}__{diagnostic_name}"] = np.asarray(
+                flux[diagnostic_name]
+            )
     for monitor_name, monitor_results in results.monitors.items():
         arrays[f"{monitor_name}__frequencies_hz"] = np.asarray(
             monitor_results.get_dft_frequencies()
@@ -358,17 +484,29 @@ def _save_four_port_artifacts(
             arrays[f"{monitor_name}__{component}"] = np.asarray(
                 monitor_results.get_dft_component(component)
             )
+    for axis in ("x", "y", "z"):
+        arrays[f"grid_{axis}_boundaries_m"] = np.asarray(
+            simulation.grid.axis_edges(axis)
+        )
     np.savez_compressed(directory / "monitor_data.npz", **arrays)
 
     performance = results.performance
     termination = results.termination
     metadata = {
+        "experiment_options": asdict(options),
+        "run_time_s": float(simulation.run_time),
+        "boundary_thickness_m": float(simulation.boundaries[0].thickness),
+        "monitor_centers_m": {m.name: list(m.center) for m in simulation.monitors},
         "execution_backend": execution_backend,
         "resolution_m": float(simulation.resolution),
         "grid_shape": list(simulation.grid.shape),
         "grid_is_uniform": bool(simulation.grid.is_uniform),
-        "raster_quality": simulation.raster_options.quality,
-        "raster_smoothing": simulation.raster_options.smoothing,
+        "raster_quality": simulation.raster_options.quality
+        if simulation.raster_options
+        else "pre_rasterized",
+        "raster_smoothing": simulation.raster_options.smoothing
+        if simulation.raster_options
+        else simulation.material_grid.smoothing,
         "boundary_formulation": simulation.boundaries[0].formulation,
         "steps": int(performance.steps if performance else simulation.num_steps),
         "runtime_s": float(performance.runtime_s if performance else float("nan")),
@@ -458,4 +596,9 @@ def run_four_port_benchmark(
         steps=int(performance.steps if performance else simulation.num_steps),
         grid_shape=tuple(int(value) for value in simulation.grid.shape),
         termination_reason=termination.reason if termination else "time_limit",
+        terminal_field_decay=(
+            float(termination.field_decay)
+            if termination is not None and termination.field_decay is not None
+            else float("inf")
+        ),
     )

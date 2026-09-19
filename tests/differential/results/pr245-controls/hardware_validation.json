@@ -1,0 +1,486 @@
+{
+  "beamz_commit": "b8cb270a9a29727dfb753cd9c733d01839102175",
+  "cases": [
+    {
+      "case_id": "tests/differential/test_mmi2x2.py::test_mmi2x2_power_is_physical_and_characterizes_reference[6ppw]",
+      "evidence_class": "validation",
+      "metrics": 2,
+      "outcome": "passed"
+    },
+    {
+      "case_id": "tests/differential/test_mode_conversion.py::test_conversion_power_is_physical_and_characterizes_reference[6ppw-mode_converter]",
+      "evidence_class": "validation",
+      "metrics": 2,
+      "outcome": "passed"
+    },
+    {
+      "case_id": "tests/differential/test_mode_conversion.py::test_conversion_power_is_physical_and_characterizes_reference[6ppw-polarization_splitter_rotator]",
+      "evidence_class": "validation",
+      "metrics": 2,
+      "outcome": "passed"
+    }
+  ],
+  "environment": {
+    "backend": "gpu",
+    "beamz": "0.5.1",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "platform": "Linux-7.1.4-arch1-1-x86_64-with-glibc2.43",
+    "python": "3.11.15",
+    "random_seed": "2798110094"
+  },
+  "generated_at": "2026-09-16T12:39:45.976781+00:00",
+  "metricless_case_ids": [],
+  "metrics": [
+    {
+      "absolute_error": 9.997858895211883e-06,
+      "backend": "gpu",
+      "case_id": "tests/differential/test_mmi2x2.py::test_mmi2x2_power_is_physical_and_characterizes_reference[6ppw]",
+      "comparison": "less_equal",
+      "error_limit": 0.0,
+      "margin": 9.997858895211883e-06,
+      "measured": 2.141104788118247e-09,
+      "metadata": {
+        "cells": 1063476,
+        "excess_loss": 0.20108563382998224,
+        "execution_backend": "cuda_streamed",
+        "gcups": 3.0752164571677327,
+        "grid_shape": [
+          458,
+          86,
+          27
+        ],
+        "reference_comparison": {
+          "converged_range": [
+            0.478,
+            0.49
+          ],
+          "mesh_convergence_established": false,
+          "reference_agreement": null,
+          "reference_eligible": false,
+          "same_ppw_agreement": true,
+          "same_ppw_range": [
+            0.358,
+            0.376
+          ]
+        },
+        "runtime_s": 8.374413695652038,
+        "steps": 24216,
+        "terminal_field_decay": 2.141104788118247e-09,
+        "termination_reason": "converged",
+        "through_te0_power": 0.4245907037046757,
+        "total_output_te0_power": 0.7989143661700178,
+        "wavelength_span_nm": 20.0
+      },
+      "passed": true,
+      "quantity": "2x2 MMI terminal field-decay ratio",
+      "reference": 1e-05,
+      "relative_error": 0.9997858895211882,
+      "resolution": "",
+      "tolerance": {
+        "absolute": 0.0,
+        "name": "strict_bound",
+        "rationale": "Inclusive inequality bound applied without unit-dependent slack.",
+        "relative": 0.0,
+        "relative_floor": 0.0
+      },
+      "unit": "ratio"
+    },
+    {
+      "absolute_error": 0.20555217217384913,
+      "backend": "beamz",
+      "case_id": "tests/differential/test_mmi2x2.py::test_mmi2x2_power_is_physical_and_characterizes_reference[6ppw]",
+      "comparison": "less_equal",
+      "error_limit": 0.0,
+      "margin": 0.20555217217384913,
+      "measured": 0.8144478278261509,
+      "metadata": {
+        "cells": 1063476,
+        "excess_loss": 0.20108563382998224,
+        "execution_backend": "cuda_streamed",
+        "gcups": 3.0752164571677327,
+        "grid_shape": [
+          458,
+          86,
+          27
+        ],
+        "rationale": "A passive device cannot create power; 2% allows modal projection and discretization error.",
+        "reference_comparison": {
+          "converged_range": [
+            0.478,
+            0.49
+          ],
+          "mesh_convergence_established": false,
+          "reference_agreement": null,
+          "reference_eligible": false,
+          "same_ppw_agreement": true,
+          "same_ppw_range": [
+            0.358,
+            0.376
+          ]
+        },
+        "runtime_s": 8.374413695652038,
+        "steps": 24216,
+        "terminal_field_decay": 2.141104788118247e-09,
+        "termination_reason": "converged",
+        "through_te0_power": 0.4245907037046757,
+        "total_output_te0_power": 0.7989143661700178,
+        "wavelength_span_nm": 20.0
+      },
+      "passed": true,
+      "quantity": "2x2 MMI maximum selected output power across the band",
+      "reference": 1.02,
+      "relative_error": 0.2015217374253423,
+      "resolution": "6 cells per wavelength",
+      "tolerance": {
+        "absolute": 0.0,
+        "name": "strict_bound",
+        "rationale": "Inclusive inequality bound applied without unit-dependent slack.",
+        "relative": 0.0,
+        "relative_floor": 0.0
+      },
+      "unit": "fraction"
+    },
+    {
+      "absolute_error": 9.750468556218432e-06,
+      "backend": "gpu",
+      "case_id": "tests/differential/test_mode_conversion.py::test_conversion_power_is_physical_and_characterizes_reference[6ppw-mode_converter]",
+      "comparison": "less_equal",
+      "error_limit": 0.0,
+      "margin": 9.750468556218432e-06,
+      "measured": 2.4953144378156903e-07,
+      "metadata": {
+        "backend": "cuda_streamed",
+        "cells": 3224691,
+        "conversion_power": 0.21159198252759748,
+        "conversion_spectrum": [
+          0.1870402096749109,
+          0.19970103194659716,
+          0.21159198252759748,
+          0.2258156173913964,
+          0.23884336148345792
+        ],
+        "crosstalk_power": 3.7081116885999035e-05,
+        "crosstalk_spectrum": [
+          2.6200164155389677e-05,
+          3.094189517310897e-05,
+          3.7081116885999035e-05,
+          4.576208522591085e-05,
+          5.6435550695819984e-05
+        ],
+        "grid_shape": [
+          971,
+          123,
+          27
+        ],
+        "output_power_basis": "Selected output modes only; not all guided or radiated power.",
+        "reference_comparison": {
+          "converged_range": [
+            0.429,
+            0.514
+          ],
+          "mesh_convergence_established": false,
+          "reference_agreement": null,
+          "reference_eligible": false,
+          "same_ppw_agreement": false,
+          "same_ppw_range": [
+            0.357,
+            0.967
+          ]
+        },
+        "resolution_ppw": 6,
+        "runtime_s": 59.29102527000941,
+        "selected_output_power": 0.9888520957991559,
+        "selected_output_spectrum": [
+          0.9723579997956469,
+          0.9956811518599435,
+          0.9888520957991559,
+          0.9849026215409915,
+          0.9817375842216065
+        ],
+        "steps": 61005,
+        "terminal_field_decay": 2.4953144378156903e-07,
+        "termination_reason": "converged",
+        "wavelengths_um": [
+          1.5600000000000003,
+          1.5549514563106797,
+          1.5499354838709678,
+          1.5449517684887464,
+          1.5400000000000003
+        ]
+      },
+      "passed": true,
+      "quantity": "mode_converter terminal field-decay ratio",
+      "reference": 1e-05,
+      "relative_error": 0.9750468556218431,
+      "resolution": "",
+      "tolerance": {
+        "absolute": 0.0,
+        "name": "strict_bound",
+        "rationale": "Inclusive inequality bound applied without unit-dependent slack.",
+        "relative": 0.0,
+        "relative_floor": 0.0
+      },
+      "unit": "ratio"
+    },
+    {
+      "absolute_error": 0.02431884814005647,
+      "backend": "gpu",
+      "case_id": "tests/differential/test_mode_conversion.py::test_conversion_power_is_physical_and_characterizes_reference[6ppw-mode_converter]",
+      "comparison": "less_equal",
+      "error_limit": 0.0,
+      "margin": 0.02431884814005647,
+      "measured": 0.9956811518599435,
+      "metadata": {
+        "backend": "cuda_streamed",
+        "cells": 3224691,
+        "conversion_power": 0.21159198252759748,
+        "conversion_spectrum": [
+          0.1870402096749109,
+          0.19970103194659716,
+          0.21159198252759748,
+          0.2258156173913964,
+          0.23884336148345792
+        ],
+        "crosstalk_power": 3.7081116885999035e-05,
+        "crosstalk_spectrum": [
+          2.6200164155389677e-05,
+          3.094189517310897e-05,
+          3.7081116885999035e-05,
+          4.576208522591085e-05,
+          5.6435550695819984e-05
+        ],
+        "grid_shape": [
+          971,
+          123,
+          27
+        ],
+        "output_power_basis": "Selected output modes only; not all guided or radiated power.",
+        "reference_comparison": {
+          "converged_range": [
+            0.429,
+            0.514
+          ],
+          "mesh_convergence_established": false,
+          "reference_agreement": null,
+          "reference_eligible": false,
+          "same_ppw_agreement": false,
+          "same_ppw_range": [
+            0.357,
+            0.967
+          ]
+        },
+        "resolution_ppw": 6,
+        "runtime_s": 59.29102527000941,
+        "selected_output_power": 0.9888520957991559,
+        "selected_output_spectrum": [
+          0.9723579997956469,
+          0.9956811518599435,
+          0.9888520957991559,
+          0.9849026215409915,
+          0.9817375842216065
+        ],
+        "steps": 61005,
+        "terminal_field_decay": 2.4953144378156903e-07,
+        "termination_reason": "converged",
+        "wavelengths_um": [
+          1.5600000000000003,
+          1.5549514563106797,
+          1.5499354838709678,
+          1.5449517684887464,
+          1.5400000000000003
+        ]
+      },
+      "passed": true,
+      "quantity": "mode_converter maximum selected output power across 20 nm",
+      "reference": 1.02,
+      "relative_error": 0.02384200798044752,
+      "resolution": "6 cells per wavelength",
+      "tolerance": {
+        "absolute": 0.0,
+        "name": "strict_bound",
+        "rationale": "Inclusive inequality bound applied without unit-dependent slack.",
+        "relative": 0.0,
+        "relative_floor": 0.0
+      },
+      "unit": "fraction"
+    },
+    {
+      "absolute_error": 9.988767326581328e-06,
+      "backend": "gpu",
+      "case_id": "tests/differential/test_mode_conversion.py::test_conversion_power_is_physical_and_characterizes_reference[6ppw-polarization_splitter_rotator]",
+      "comparison": "less_equal",
+      "error_limit": 0.0,
+      "margin": 9.988767326581328e-06,
+      "measured": 1.1232673418673045e-08,
+      "metadata": {
+        "backend": "cuda_streamed",
+        "cells": 3331694,
+        "conversion_power": 0.8553486195728452,
+        "conversion_spectrum": [
+          0.8520775474862284,
+          0.8544323222276149,
+          0.8553486195728452,
+          0.8550523444320394,
+          0.8540611847420927
+        ],
+        "crosstalk_power": 1.9696215738222004e-05,
+        "crosstalk_spectrum": [
+          8.767806169932433e-05,
+          4.613672823884527e-05,
+          1.9696215738222004e-05,
+          7.1264045913372744e-06,
+          4.972843090553923e-06
+        ],
+        "grid_shape": [
+          986,
+          109,
+          31
+        ],
+        "output_power_basis": "Selected output modes only; not all guided or radiated power.",
+        "reference_comparison": {
+          "converged_range": [
+            0.946,
+            0.952
+          ],
+          "mesh_convergence_established": false,
+          "reference_agreement": null,
+          "reference_eligible": false,
+          "same_ppw_agreement": false,
+          "same_ppw_range": [
+            0.051,
+            0.147
+          ]
+        },
+        "resolution_ppw": 6,
+        "runtime_s": 50.576563329668716,
+        "selected_output_power": 0.8559045714886769,
+        "selected_output_spectrum": [
+          0.8527022436277447,
+          0.8550151351563804,
+          0.8559045714886769,
+          0.8555939777950204,
+          0.8545990621001615
+        ],
+        "steps": 53249,
+        "terminal_field_decay": 1.1232673418673045e-08,
+        "termination_reason": "converged",
+        "wavelengths_um": [
+          1.5600000000000003,
+          1.5549514563106797,
+          1.5499354838709678,
+          1.5449517684887464,
+          1.5400000000000003
+        ]
+      },
+      "passed": true,
+      "quantity": "polarization_splitter_rotator terminal field-decay ratio",
+      "reference": 1e-05,
+      "relative_error": 0.9988767326581327,
+      "resolution": "",
+      "tolerance": {
+        "absolute": 0.0,
+        "name": "strict_bound",
+        "rationale": "Inclusive inequality bound applied without unit-dependent slack.",
+        "relative": 0.0,
+        "relative_floor": 0.0
+      },
+      "unit": "ratio"
+    },
+    {
+      "absolute_error": 0.16409542851132308,
+      "backend": "gpu",
+      "case_id": "tests/differential/test_mode_conversion.py::test_conversion_power_is_physical_and_characterizes_reference[6ppw-polarization_splitter_rotator]",
+      "comparison": "less_equal",
+      "error_limit": 0.0,
+      "margin": 0.16409542851132308,
+      "measured": 0.8559045714886769,
+      "metadata": {
+        "backend": "cuda_streamed",
+        "cells": 3331694,
+        "conversion_power": 0.8553486195728452,
+        "conversion_spectrum": [
+          0.8520775474862284,
+          0.8544323222276149,
+          0.8553486195728452,
+          0.8550523444320394,
+          0.8540611847420927
+        ],
+        "crosstalk_power": 1.9696215738222004e-05,
+        "crosstalk_spectrum": [
+          8.767806169932433e-05,
+          4.613672823884527e-05,
+          1.9696215738222004e-05,
+          7.1264045913372744e-06,
+          4.972843090553923e-06
+        ],
+        "grid_shape": [
+          986,
+          109,
+          31
+        ],
+        "output_power_basis": "Selected output modes only; not all guided or radiated power.",
+        "reference_comparison": {
+          "converged_range": [
+            0.946,
+            0.952
+          ],
+          "mesh_convergence_established": false,
+          "reference_agreement": null,
+          "reference_eligible": false,
+          "same_ppw_agreement": false,
+          "same_ppw_range": [
+            0.051,
+            0.147
+          ]
+        },
+        "resolution_ppw": 6,
+        "runtime_s": 50.576563329668716,
+        "selected_output_power": 0.8559045714886769,
+        "selected_output_spectrum": [
+          0.8527022436277447,
+          0.8550151351563804,
+          0.8559045714886769,
+          0.8555939777950204,
+          0.8545990621001615
+        ],
+        "steps": 53249,
+        "terminal_field_decay": 1.1232673418673045e-08,
+        "termination_reason": "converged",
+        "wavelengths_um": [
+          1.5600000000000003,
+          1.5549514563106797,
+          1.5499354838709678,
+          1.5449517684887464,
+          1.5400000000000003
+        ]
+      },
+      "passed": true,
+      "quantity": "polarization_splitter_rotator maximum selected output power across 20 nm",
+      "reference": 1.02,
+      "relative_error": 0.16087787108953244,
+      "resolution": "6 cells per wavelength",
+      "tolerance": {
+        "absolute": 0.0,
+        "name": "strict_bound",
+        "rationale": "Inclusive inequality bound applied without unit-dependent slack.",
+        "relative": 0.0,
+        "relative_floor": 0.0
+      },
+      "unit": "fraction"
+    }
+  ],
+  "schema_version": "beamz.validation/v3",
+  "summary": {
+    "cases": 3,
+    "exit_status": 0,
+    "failed": 0,
+    "failed_cases": 0,
+    "metricless_cases": 0,
+    "metrics": 6,
+    "passed": 6,
+    "passed_cases": 3,
+    "skipped_cases": 0,
+    "xfailed_cases": 0
+  }
+}

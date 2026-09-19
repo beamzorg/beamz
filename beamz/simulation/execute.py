@@ -521,7 +521,12 @@ def forward_step(
         state = state._replace(ex=ex, ey=ey, ez=ez)
 
     # 4. Observe only fully constrained end-of-step fields, then advance both clocks.
-    t_phys = state.t + ctx.dt_scalar
+    # The source uses integer sample indices. Repeated float32 additions can
+    # shift the monitor phase by radians over tens of thousands of optical steps.
+    t_phys = (
+        jnp.asarray(cfg.t0, dtype=jnp.float32)
+        + (state.current_step + 1).astype(jnp.float32) * ctx.dt_scalar
+    )
     state = monitor_runtime.update_monitors(
         program,
         state,
@@ -622,10 +627,11 @@ def build_scan(program, *, donate_state: bool = False):
             def advance_native_chunk(chunk_state, chunk_steps: int, elapsed_steps):
                 elapsed_steps = jnp.asarray(elapsed_steps, dtype=jnp.int32)
                 chunk_state = chunk_state._replace(
-                    # Derive clocks from the immutable run origin. Incrementally
-                    # accumulating float32 chunk times would perturb long-run DFT
-                    # phases relative to one unbounded native launch.
-                    t=state.t + dt_scalar * elapsed_steps,
+                    # Derive clocks from the simulation origin, including across
+                    # separate advance() calls and automatic-termination chunks.
+                    t=jnp.asarray(cfg.t0, dtype=jnp.float32)
+                    + dt_scalar
+                    * (state.current_step + elapsed_steps).astype(jnp.float32),
                     current_step=state.current_step + elapsed_steps,
                 )
                 chunk_out = (
@@ -652,7 +658,9 @@ def build_scan(program, *, donate_state: bool = False):
                     chunk_steps, dtype=jnp.int32
                 )
                 return chunk_out._replace(
-                    t=state.t + dt_scalar * completed_steps,
+                    t=jnp.asarray(cfg.t0, dtype=jnp.float32)
+                    + dt_scalar
+                    * (state.current_step + completed_steps).astype(jnp.float32),
                     current_step=state.current_step + completed_steps,
                 )
 
