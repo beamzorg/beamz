@@ -26,7 +26,12 @@ class RasterOptions:
     def __post_init__(self) -> None:
         choices = {
             "quality": {"fast", "balanced", "reference"},
-            "smoothing": {"volume", "farjadpour_diagonal", "farjadpour_full"},
+            "smoothing": {
+                "volume",
+                "farjadpour_diagonal",
+                "farjadpour_full",
+                "contour_path",
+            },
             "components": {"all", "two_dimensional_tm", "two_dimensional_te"},
         }
         for name, allowed in choices.items():

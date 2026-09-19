@@ -51,6 +51,15 @@ impl SupportSpec {
         std::array::from_fn(|axis| cells[axis] + usize::from(self.axes[axis] == AxisLocation::Edge))
     }
 
+    /// Physical Yee location, distinct from the dual-support midpoint on graded grids.
+    pub(crate) fn location(self, grid: &Grid, index: [usize; 3]) -> [f64; 3] {
+        let edges = [&grid.x_edges, &grid.y_edges, &grid.z_edges];
+        std::array::from_fn(|axis| match self.axes[axis] {
+            AxisLocation::Center => 0.5 * (edges[axis][index[axis]] + edges[axis][index[axis] + 1]),
+            AxisLocation::Edge => edges[axis][index[axis]],
+        })
+    }
+
     pub(crate) fn volume(self, grid: &Grid, index: [usize; 3]) -> Aabb {
         let edges = [&grid.x_edges, &grid.y_edges, &grid.z_edges];
         let bounds: [[f64; 2]; 3] = std::array::from_fn(|axis| match self.axes[axis] {

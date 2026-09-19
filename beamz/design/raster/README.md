@@ -41,7 +41,7 @@ The public package exports:
 
 `RasterOptions` has three choices: `quality` (`fast`, `balanced`, or
 `reference`), `smoothing` (`volume`, `farjadpour_diagonal`, or
-`farjadpour_full`), and `components` (`all`, `two_dimensional_tm`, or
+`farjadpour_full`, or `contour_path`), and `components` (`all`, `two_dimensional_tm`, or
 `two_dimensional_te`). Standalone rasterization defaults to `farjadpour_full`.
 Adaptive
 tolerances and threading remain internal. Farjadpour modes use the generalized
@@ -224,3 +224,7 @@ smoothing status, fallback reason, and epsilon. The crossing-specific
 against GEOS, and plots the physical nonuniform support widths. See
 [issue #242 evidence](../../../tests/differential/results/issue-242/README.md)
 for the selection, denominators, measured S parameters, and reproduction commands.
+
+The experimental [`contour_path` option](contour_path.md) uses distinct Yee
+line/surface integrals for positive isotropic dielectrics. See the derivation,
+supported configurations, and counted volume fallbacks before using it.

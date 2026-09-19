@@ -123,11 +123,12 @@ fn integration_options(
     let mut options = IntegrationOptions::for_quality(quality);
     options.smoothing = match smoothing {
         "volume" => SmoothingMode::Volume,
+        "contour_path" => SmoothingMode::ContourPath,
         "farjadpour_diagonal" => SmoothingMode::FarjadpourDiagonal,
         "farjadpour_full" => SmoothingMode::FarjadpourFull,
         _ => {
             return Err(PyValueError::new_err(
-                "smoothing must be 'volume', 'farjadpour_diagonal', or 'farjadpour_full'",
+                "smoothing must be 'volume', 'farjadpour_diagonal', 'farjadpour_full', or 'contour_path'",
             ));
         }
     };

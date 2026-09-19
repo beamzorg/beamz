@@ -95,7 +95,7 @@ def test_stepped_core_slab_union_matches_disjoint_decomposition(smoothing):
 
 
 @pytest.mark.parametrize(
-    "smoothing", ["volume", "farjadpour_diagonal", "farjadpour_full"]
+    "smoothing", ["volume", "farjadpour_diagonal", "farjadpour_full", "contour_path"]
 )
 def test_hole_and_thin_layer_match_tiled_union(smoothing):
     outer = ((-1, -1), (1, -1), (1, 1), (-1, 1))

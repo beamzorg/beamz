@@ -24,6 +24,7 @@ pub enum SmoothingMode {
     Volume,
     FarjadpourDiagonal,
     FarjadpourFull,
+    ContourPath,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -392,6 +393,9 @@ fn rasterize_impl(
             "two-dimensional output requires exactly one z cell".into(),
         ));
     }
+    if options.smoothing == SmoothingMode::ContourPath {
+        crate::contour::validate(scene)?;
+    }
     let index_start = Instant::now();
     let original_scene = scene;
     let resolved = ResolvedExtrusions::build(scene);
@@ -658,9 +662,15 @@ fn raster_scalar_support(
     options: &IntegrationOptions,
     component: Component,
 ) -> ([usize; 3], Vec<Sample>) {
-    raster_support(scene, index, grid, component, |volume, candidates| {
-        integrate_scalar(scene, volume, candidates, options, index.resolved.as_ref())
-    })
+    raster_support(
+        scene,
+        index,
+        grid,
+        component,
+        |volume, candidates, _location| {
+            integrate_scalar(scene, volume, candidates, options, index.resolved.as_ref())
+        },
+    )
 }
 
 fn raster_material_support(
@@ -670,11 +680,68 @@ fn raster_material_support(
     options: &IntegrationOptions,
     component: Component,
 ) -> ([usize; 3], Vec<CellSample>) {
-    raster_support(scene, index, grid, component, |volume, candidates| {
-        let (material, meta) =
-            integrate_material(scene, volume, candidates, options, index.resolved.as_ref());
-        CellSample { material, meta }
-    })
+    raster_support(
+        scene,
+        index,
+        grid,
+        component,
+        |volume, candidates, location| {
+            let mut volume_options = options.clone();
+            if options.smoothing == SmoothingMode::ContourPath {
+                // Cell maps remain volume averages; only electric Yee coefficients
+                // represent the line/surface constitutive ratio.
+                volume_options.smoothing = SmoothingMode::Volume;
+            }
+            let (mut material, mut meta) = integrate_material(
+                scene,
+                volume,
+                candidates,
+                &volume_options,
+                index.resolved.as_ref(),
+            );
+            if options.smoothing == SmoothingMode::ContourPath
+                && !matches!(meta.path, SamplePath::Background | SamplePath::Uniform)
+            {
+                let axis = match component {
+                    Component::Ex => Some(0),
+                    Component::Ey => Some(1),
+                    Component::Ez => Some(2),
+                    _ => None,
+                };
+                if let Some(axis) = axis {
+                    // Unlike Farjadpour's locally planar approximation, this first
+                    // surface extension requires genuinely parallel exposed faces.
+                    let resolved = index.resolved.as_ref().unwrap();
+                    let contour = if resolved.has_exposed_cap(volume, candidates) {
+                        None
+                    } else {
+                        crate::contour::extrusion_coefficient(
+                            scene, candidates, volume, location, axis,
+                        )
+                    };
+                    if let Some(epsilon) = contour {
+                        material.epsilon_r = SymmetricTensor::isotropic(epsilon);
+                        meta.smoothed = true;
+                    } else {
+                        match resolved.interface(volume, candidates, 1.0 - 1e-12) {
+                            InterfaceAssessment::Laminar(normal) => {
+                                let epsilon = crate::contour::coefficient(
+                                    scene, candidates, volume, location, axis, normal,
+                                );
+                                material.epsilon_r = SymmetricTensor::isotropic(epsilon);
+                                meta.smoothed = true;
+                            }
+                            InterfaceAssessment::MultipleOrientations => {
+                                meta.fallback = Some(FallbackReason::MultipleOrientations);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            CellSample { material, meta }
+        },
+    )
 }
 
 fn raster_support<T: Send>(
@@ -682,7 +749,7 @@ fn raster_support<T: Send>(
     index: &ObjectIndex,
     grid: &Grid,
     component: Component,
-    integrate: impl Fn(&Aabb, &[usize]) -> T + Sync,
+    integrate: impl Fn(&Aabb, &[usize], [f64; 3]) -> T + Sync,
 ) -> ([usize; 3], Vec<T>) {
     let logical_shape = component.support().logical_shape(grid);
     let shape_zyx = [logical_shape[2], logical_shape[1], logical_shape[0]];
@@ -702,7 +769,11 @@ fn raster_support<T: Send>(
                     .bounds()
                     .intersects(&volume)
             });
-            integrate(&volume, &candidates)
+            integrate(
+                &volume,
+                &candidates,
+                component.support().location(grid, [x, y, z]),
+            )
         })
         .collect();
     (shape_zyx, samples)
