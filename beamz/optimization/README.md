@@ -94,9 +94,9 @@ opt = TopologySpec(
     design=design,
     region_mask=mask,
     resolution=DX,
-    filter_type='conic',  # Options: 'morphological', 'conic'
-    projection_type='ssp',
-    filter_radius=0.15*µm,  # Physical units (e.g. microns)
+    filter_type="conic",  # Options: 'morphological', 'conic'
+    projection_type="ssp",
+    filter_radius=0.15 * µm,  # Physical units (e.g. microns)
     ssp_smoothing_radius=0.55,  # Density-grid cell units
 )
 state = opt.initial_state()
@@ -105,12 +105,12 @@ state = opt.initial_state()
 for step in range(STEPS):
     # Get current physical density
     beta, phys_density = opt.density_for_step(state, step, STEPS)
-    
+
     # Update grid permittivity
     grid.permittivity[mask] = EPS_MIN + phys_density[mask] * (EPS_MAX - EPS_MIN)
-    
+
     # ... Run FDTD & Compute Gradient (grad_eps) ...
-    
+
     # Update Parameters
     state, max_update = opt.apply_gradient(state, grad_eps, beta)
 ```

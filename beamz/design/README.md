@@ -63,9 +63,9 @@ setup = prepare(
     component_settings={"length": 10.0},
 )
 
-setup.preview()                  # geometry, PML, source, and monitor planes
+setup.preview()  # geometry, PML, source, and monitor planes
 simulation = setup.simulation_for("o1")
-result = setup.run_sparameters() # one native BeamZ run per input port
+result = setup.run_sparameters()  # one native BeamZ run per input port
 ```
 
 `setup.design`, `setup.ports`, and `simulation` are canonical BeamZ values,
