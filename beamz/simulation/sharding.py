@@ -318,11 +318,21 @@ def _lower_cpml_term(term, layout: ShardingLayout):
         target_shape,
         term.slab.logical_stop,
     )
+
+    def lower_profile(value, neutral):
+        # Singleton axes carry a broadcast profile, not one populated cell.
+        # Expanding them with neutral padding disables CPML on the other cells.
+        profile_shape = tuple(
+            1 if size == 1 else padded
+            for size, padded in zip(value.shape, target_shape, strict=True)
+        )
+        return _pad_high_to_shape(value, profile_shape, pad_value=neutral)
+
     return replace(
         term,
-        a=_pad_high_to_shape(term.a, target_shape, pad_value=0.0),
-        b=_pad_high_to_shape(term.b, target_shape, pad_value=1.0),
-        inv_kappa=_pad_high_to_shape(term.inv_kappa, target_shape, pad_value=1.0),
+        a=lower_profile(term.a, 0.0),
+        b=lower_profile(term.b, 1.0),
+        inv_kappa=lower_profile(term.inv_kappa, 1.0),
         slab=slab,
     )
 
