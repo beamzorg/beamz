@@ -1537,13 +1537,14 @@ class Simulation:
         ).results
 
     def plot(self, **kwargs):
-        """Create a Matplotlib view of the simulation layout.
+        """Create a view of the simulation layout with Matplotlib or XY.
 
         Parameters
         ----------
         **kwargs : object
             Plot options forwarded to the analysis plotting backend, including
-            ``ax``, ``figsize``, ``z``, ``y``, axis limits, and marker controls.
+            ``backend`` ("matplotlib" or "xy"), ``ax``, ``figsize``, ``z``,
+            ``y``, axis limits, and marker controls.
             ``show`` defaults to ``False`` for this method.
 
             For a native three-dimensional :class:`~beamz.Design`, passing ``z``
@@ -1555,7 +1556,7 @@ class Simulation:
         Returns
         -------
         tuple
-            Matplotlib ``(figure, axes)`` objects. A 3D cross-section layout may
+            Native backend ``(figure, axes)`` objects. A 3D cross-section layout may
             return an array of axes.
 
         Examples

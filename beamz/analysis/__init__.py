@@ -5,6 +5,12 @@ from beamz.analysis.adapters import (
     monitor_to_xarray,
     to_xarray,
 )
+from beamz.analysis.backends import (
+    get_plotting_backend,
+    get_pyplot,
+    plotting_backend,
+    set_plotting_backend,
+)
 from beamz.analysis.sparameters import SParameterResult, s_parameters
 from beamz.analysis.video import save_field_video
 from beamz.simulation.observe import (
@@ -15,6 +21,10 @@ from beamz.simulation.observe import (
 )
 
 __all__ = [
+    "get_plotting_backend",
+    "get_pyplot",
+    "plotting_backend",
+    "set_plotting_backend",
     "ModeMonitorData",
     "SParameterResult",
     "SourceNormalization",

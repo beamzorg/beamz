@@ -40,3 +40,38 @@ The codebase uses immutable specifications with explicit runtime state:
 - **Runtime and results**: `SimulationState` contains the evolving Yee fields; `SimulationRun` keeps that continuation value separate from detached, immutable `SimulationResults`.
 - **Device abstraction**: Sources, monitors, and boundaries are immutable device specifications compiled into grid-aware runtime data.
 - **Separation of concerns**: Design geometry, devices, solver execution, analysis, and optimization remain separate packages; caches live outside immutable specifications and plans.
+
+## Interactive plots with XY
+
+Matplotlib remains the default. Install `pip install 'beamz[xy]'` on Python 3.11
+or newer to enable the optional [XY](https://github.com/reflex-dev/xy) backend.
+Select it for an individual plot:
+
+```python
+fig, axes = sim.plot(z=0.0, y=0.0, backend="xy", show=False)
+fig  # interactive notebook output
+```
+
+Or select it for a notebook, including its standalone power curves:
+
+```python
+import xy.pyplot as plt
+from beamz.analysis import set_plotting_backend
+
+set_plotting_backend("xy")
+fig, ax = results.plot_field("field", "Ey", val="real")
+plt.show()
+```
+
+`plotting_backend("xy")` is a context manager for temporary selection;
+`get_plotting_backend()` and `get_pyplot()` expose the active choice. Passing
+native axes selects their backend automatically, and an explicit conflicting
+backend raises an error. The plotting functions return native figure/axes
+objects with the same tuple shapes as before, including modal effective indices.
+
+Both backends use the same field normalization, physical nonuniform cell edges,
+axis limits, geometry, colors, and labels. XY renders interactive HTML with pan,
+zoom, and hover. Its browser fonts, colorbar thickness, and hatch spacing can
+differ slightly from Matplotlib. Use `fig.savefig("plot.html")` to export an
+interactive figure. The executed `examples/notebooks/modal_sources_monitors_xy.ipynb`
+is a copy of the Matplotlib walkthrough with the same simulation parameters.
