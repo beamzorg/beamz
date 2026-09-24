@@ -73,6 +73,10 @@ EXPECTED_EXPORTS = {
         "SParameterResult",
     ),
     "beamz.analysis": (
+        "get_plotting_backend",
+        "get_pyplot",
+        "plotting_backend",
+        "set_plotting_backend",
         "ModeMonitorData",
         "SParameterResult",
         "SourceNormalization",

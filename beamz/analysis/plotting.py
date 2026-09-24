@@ -1,4 +1,4 @@
-"""Small matplotlib plotting helpers used by examples and notebooks."""
+"""Scientific plotting helpers with Matplotlib and interactive XY backends."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import numpy as np
 
 from beamz._helpers import get_si_scale_and_label
 from beamz.analysis._coordinates import monitor_plane_coordinates_3d
+from beamz.analysis.backends import axes_backend, get_pyplot, with_plotting_backend
 from beamz.analysis.data import AnalysisData, analysis_inputs, static_fields
 from beamz.devices.visualization import visual_spec_from_device
 from beamz.simulation.observe import source_field_amplitude_normalization
@@ -53,9 +54,7 @@ class FieldView:
 
 
 def _pyplot():
-    import matplotlib.pyplot as plt
-
-    return plt
+    return get_pyplot()
 
 
 def _figure_axes(ax, *, figsize):
@@ -97,6 +96,14 @@ def _material_color(structure, index):
     return "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))
 
 
+def _add_patch(ax, patch):
+    if axes_backend(ax) == "xy":
+        from beamz.analysis._xy import add_patch
+
+        return add_patch(ax, patch)
+    return ax.add_patch(patch)
+
+
 def _vertices_2d(vertices):
     return [(float(v[0]), float(v[1])) for v in vertices or ()]
 
@@ -134,7 +141,7 @@ def _draw_polygon(ax, structure, *, index=0, fill=True, alpha=None, edgecolor="b
         if alpha is None and index == 0
         else (0.65 if alpha is None else alpha),
     )
-    ax.add_patch(patch)
+    _add_patch(ax, patch)
     return patch
 
 
@@ -172,7 +179,7 @@ def _draw_source(ax, source):
             ec=color,
             lw=1.5,
         )
-        ax.add_patch(circle)
+        _add_patch(ax, circle)
         return circle
     (line,) = ax.plot(x, y, color=color, linewidth=2.0, solid_capstyle="round")
     return line
@@ -223,7 +230,7 @@ def _draw_monitor(ax, monitor):
         linestyle="--",
         linewidth=1.5,
     )
-    ax.add_patch(patch)
+    _add_patch(ax, patch)
     return patch
 
 
@@ -248,7 +255,8 @@ def _draw_boundaries(ax, sim):
         for edge in edges:
             if edge not in rectangles:
                 continue
-            ax.add_patch(
+            _add_patch(
+                ax,
                 Rectangle(
                     rectangles[edge][:2],
                     *rectangles[edge][2:],
@@ -257,10 +265,11 @@ def _draw_boundaries(ax, sim):
                     linestyle=":",
                     linewidth=1.0,
                     alpha=0.6,
-                )
+                ),
             )
 
 
+@with_plotting_backend
 def plot_design(
     design,
     *,
@@ -422,6 +431,10 @@ def plot_field_view(
         vmax = scale if np.isfinite(scale) and scale > 0.0 else 1.0
     if vmax is not None and vmin is None:
         vmin = 0.0 if view.magnitude else -float(vmax)
+    if axes_backend(ax) == "xy":
+        from beamz.analysis._xy import field_colormap
+
+        cmap, norm, vmin, vmax = field_colormap(array, cmap, norm, vmin, vmax)
     if (x_edges is None) != (y_edges is None):
         raise ValueError("x_edges and y_edges must be provided together.")
     if x_edges is not None and y_edges is not None:
@@ -665,6 +678,19 @@ def _draw_field_eps_overlay(
     rgba[core, :3] = eps_color[core, None]
     rgba[core, 3] = np.clip(float(alpha), 0.0, 1.0)
     if x_edges is not None and y_edges is not None:
+        if axes_backend(ax) == "xy":
+            # XY accepts scalar meshes, but not RGBA meshes. Masking preserves
+            # transparent cells and the exact nonuniform physical cell edges.
+            return ax.pcolormesh(
+                x_edges,
+                y_edges,
+                np.where(core, eps_color, np.nan),
+                shading="flat",
+                cmap="gray",
+                vmin=0.0,
+                vmax=1.0,
+                alpha=float(np.clip(alpha, 0.0, 1.0)),
+            )
         overlay = ax.pcolormesh(
             x_edges,
             y_edges,
@@ -741,7 +767,7 @@ def _draw_device_slice_overlay(ax, device, *, normal, origin, color, source):
             alpha=0.25,
             linewidth=2.0,
         )
-        ax.add_patch(rectangle)
+        _add_patch(ax, rectangle)
         return rectangle
     if axis == horizontal:
         segments = [(False, vertical, horizontal, True)]
@@ -813,7 +839,7 @@ def overlay_boundaries(ax, extent, thickness, *, edges=None, **style):
             specs.append((x0, y1 - py, width, py))
     rectangles = tuple(Rectangle(spec[:2], *spec[2:], **style) for spec in specs)
     for rect in rectangles:
-        ax.add_patch(rect)
+        _add_patch(ax, rect)
     return rectangles
 
 
@@ -949,7 +975,7 @@ def _path_patch(ax, geometry, *, normal, origin, facecolor):
             antialiased=True,
             joinstyle="round",
         )
-        ax.add_patch(patch)
+        _add_patch(ax, patch)
         patches.append(patch)
     return tuple(patches)
 
@@ -992,7 +1018,7 @@ def _draw_sphere_slice(ax, structure, *, normal, position, origin, facecolor):
         linewidth=0.0,
         antialiased=True,
     )
-    ax.add_patch(patch)
+    _add_patch(ax, patch)
     return patch
 
 
@@ -1444,6 +1470,7 @@ def _plot_3d_cross_sections(
     )
 
 
+@with_plotting_backend
 def plot_simulation(
     sim,
     *,
@@ -1506,6 +1533,7 @@ def plot_simulation(
     return fig, ax
 
 
+@with_plotting_backend
 def view_simulation_3d(sim, *, mode="auto", open_browser=True, show=False, **kwargs):
     """Return a static view for notebooks without restoring the old viewer stack."""
     del mode, open_browser
@@ -1769,6 +1797,16 @@ def _add_field_colorbar(fig, ax, image, **kwargs):
     y0, y1 = ax.get_ylim()
     x_span = abs(x1 - x0)
     y_span = abs(y1 - y0)
+    if axes_backend(ax) == "xy":
+        # XY lays out a compact colorbar as chart chrome. Matplotlib's
+        # axes-stealing sizing options (fraction/aspect) are not supported.
+        return fig.colorbar(
+            image,
+            ax=ax,
+            location="right" if y_span >= x_span else "bottom",
+            pad=0.04 if y_span >= x_span else 0.2,
+            **kwargs,
+        )
     if y_span >= x_span:
         return fig.colorbar(
             image,
@@ -1906,6 +1944,7 @@ def _overlay_material_slice(
     )
 
 
+@with_plotting_backend
 def plot_dft_field(
     simulation,
     monitor=None,
@@ -2114,6 +2153,7 @@ def _monitor_extent_um(monitor, values, *, sim=None):
     return (0.0, float(arr.shape[-1]), 0.0, float(arr.shape[-2])), "sample", "sample"
 
 
+@with_plotting_backend
 def plot_result_field(
     results,
     *args,
@@ -2225,6 +2265,7 @@ def plot_result_field(
     )
 
 
+@with_plotting_backend
 def plot_mode_field_components(
     modes,
     *,
@@ -2238,7 +2279,7 @@ def plot_mode_field_components(
     show=True,
 ):
     """Plot selected electric or magnetic components on their physical grid."""
-    import matplotlib.pyplot as plt
+    plt = _pyplot()
 
     value_kind = str(val).lower()
     fields = tuple(map(str, field_names))
