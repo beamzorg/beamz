@@ -37,6 +37,30 @@ def requires_local_injection(value, group, plan):
     )
 
 
+def sources_are_interior(state, batches, plan):
+    """Prove that every possible source write avoids physical boundary cells.
+
+    Use the padded batch extent and the actual clamped start, not just the
+    original source bounds. Irregular or boundary-touching sources keep masks.
+    """
+    for (_, component), (group, rest) in batches.items():
+        if rest:
+            return False
+        if group is None:
+            continue
+        shape = plan.layout.logical_shapes[component]
+        value = getattr(state, component.lower())
+        for start in _clamped_starts(value, group):
+            if any(
+                first < 1 or first + width > size - 1
+                for first, width, size in zip(
+                    start, group.max_sizes, shape, strict=True
+                )
+            ):
+                return False
+    return True
+
+
 def apply_batched_slabs(value, abs_step, group, plan):
     axis, count = plan.layout.axis, plan.layout.num_devices
     spec = P(*("fdtd" if d == axis else None for d in range(value.ndim)))

@@ -460,6 +460,7 @@ def apply_source_phase(
     *,
     dense_single_slab: bool,
     sharding_plan=None,
+    local_single_owner: bool = False,
 ) -> SimulationState:
     # Apply sources in their scheduled leapfrog phase so amplitude normalization
     # matches field time.
@@ -476,7 +477,9 @@ def apply_source_phase(
                     requires_local_injection,
                 )
 
-                use_local = requires_local_injection(value, batch, sharding_plan)
+                use_local = local_single_owner or requires_local_injection(
+                    value, batch, sharding_plan
+                )
             if use_local:
                 value = apply_batched_slabs(value, abs_step, batch, sharding_plan)
             else:
@@ -517,6 +520,7 @@ def forward_step(
         "pre_e",
         dense_single_slab=cfg.source_single_slab_dense,
         sharding_plan=program.sharding,
+        local_single_owner=cfg.backend == "cuda_streamed",
     )
     state = update_kernel.update_h(state, ctx, coeffs)
 
@@ -529,13 +533,26 @@ def forward_step(
         "h",
         dense_single_slab=cfg.source_single_slab_dense,
         sharding_plan=program.sharding,
+        local_single_owner=cfg.backend == "cuda_streamed",
     )
-    cuda_owns_pec = (
+    kernel_owns_pec = (
         cfg.backend == "cuda_streamed"
         and not cfg.sharding.enabled
         and not program.sources
     )
-    if not cuda_owns_pec:
+    if (
+        update_kernel.kind in {"cuda_streamed_sharded", "jax_local_cpml"}
+        and ctx.boundary.cpml.enabled
+        and not coeffs.e_inverse_offdiagonal.size
+    ):
+        from beamz.simulation.distributed_sources import sources_are_interior
+
+        # These kernels already constrain their output. Interior source patches
+        # cannot undo that, so avoid six redundant full-volume mask passes.
+        kernel_owns_pec = sources_are_interior(
+            state, ctx.source_batches, program.sharding
+        )
+    if not kernel_owns_pec:
         hx, hy, hz = update_runtime.apply_post_source_boundaries(
             (state.hx, state.hy, state.hz),
             (metallic.hx_mask, metallic.hy_mask, metallic.hz_mask),
@@ -551,8 +568,9 @@ def forward_step(
         "e",
         dense_single_slab=cfg.source_single_slab_dense,
         sharding_plan=program.sharding,
+        local_single_owner=cfg.backend == "cuda_streamed",
     )
-    if not cuda_owns_pec:
+    if not kernel_owns_pec:
         ex, ey, ez = update_runtime.apply_post_source_boundaries(
             (state.ex, state.ey, state.ez),
             (metallic.ex_mask, metallic.ey_mask, metallic.ez_mask),
