@@ -24,6 +24,7 @@ class ModalWorkload:
     name: str = "modal_cpml12"
     shape_zyx: tuple[int, int, int] = (128, 256, 384)
     timesteps: int = 256
+    frequencies: int = 3
 
     def resized(self, *, shape_zyx=None, timesteps=None):
         return dataclasses.replace(
@@ -37,7 +38,7 @@ class ModalWorkload:
         return {
             "boundaries": ("CPML(all,12 cells)",),
             "sources": ("ModeSource(TE)",),
-            "monitors": ("ModeMonitor(2 planes,3 frequencies)",),
+            "monitors": (f"ModeMonitor(2 planes,{self.frequencies} frequencies)",),
         }
 
     def build(self):
@@ -49,7 +50,7 @@ class ModalWorkload:
                 steps=self.timesteps,
                 pml=12,
                 monitors=2,
-                frequencies=3,
+                frequencies=self.frequencies,
                 material="binary",
                 source="mode",
                 monitor_type="mode",
@@ -62,7 +63,7 @@ def worker(args):
     import jax
     import numpy as np
 
-    harness.H100_WORKLOADS["modal_cpml12"] = ModalWorkload()
+    harness.H100_WORKLOADS["modal_cpml12"] = ModalWorkload(frequencies=args.frequencies)
     final_states = []
 
     def synchronize(state):
@@ -109,6 +110,7 @@ def main():
     parser.add_argument("--counts", type=int, nargs="+", default=[1, 2, 4])
     parser.add_argument("--timesteps", type=int, default=256)
     parser.add_argument("--samples", type=int, default=5)
+    parser.add_argument("--frequencies", type=int, default=3)
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--workload", default="realistic_3d")
@@ -197,6 +199,8 @@ def main():
                     str(args.timesteps),
                     "--samples",
                     str(args.samples),
+                    "--frequencies",
+                    str(args.frequencies),
                 ]
                 print(name, flush=True)
                 if args.dry_run:
