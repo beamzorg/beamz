@@ -79,7 +79,9 @@ def _time_call(callable_):
     return value, time.perf_counter() - started
 
 
-def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
+def run_benchmark(
+    args: argparse.Namespace, *, final_state_callback=None
+) -> BenchmarkRecord:
     visible_devices = jax.devices()
     if not visible_devices:
         raise RuntimeError("JAX reported no execution devices")
@@ -148,9 +150,19 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
     _block(warm_state)
     del warm_state
     kernel_samples = tuple(
-        _time_call(lambda: executable(state, coefficients))[1]
+        _time_call(
+            lambda state=state, coefficients=coefficients, executable=executable: executable(
+                state, coefficients
+            )
+        )[1]
         for _ in range(args.samples)
     )
+    cpml_psi_precision = (
+        str(state.cpml_psi_h_terms[0].dtype) if state.cpml_psi_h_terms else "float32"
+    )
+    # Public runs own their input placement. Do not keep a second simulation's
+    # standalone benchmark inputs alive while measuring their allocator peak.
+    del state, coefficients, executable, lowered, scan
 
     # Public-path latency includes input placement, state allocation and result decode.
     warm_run = sim.advance(
@@ -160,8 +172,9 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
     )
     _block(warm_run.state)
     del warm_run
-    end_to_end_samples = tuple(
-        _time_call(
+    end_to_end_samples = []
+    for sample in range(args.samples):
+        result, elapsed = _time_call(
             lambda: (
                 sim.advance(
                     num_steps=workload.timesteps,
@@ -169,9 +182,11 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
                     backend=args.backend,
                 ).state
             )
-        )[1]
-        for _ in range(args.samples)
-    )
+        )
+        end_to_end_samples.append(elapsed)
+        if sample == args.samples - 1 and final_state_callback is not None:
+            final_state_callback(result)
+        del result
     memory_fallback = sim.memory_estimate(
         num_steps=workload.timesteps,
         sharding=sharding,
@@ -185,9 +200,6 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
             raise RuntimeError(status.reason or "CUDA component unavailable")
         cuda_component_version = status.extension_version
         cuda_abi_version = status.abi_version
-    cpml_psi_precision = (
-        str(state.cpml_psi_h_terms[0].dtype) if state.cpml_psi_h_terms else "float32"
-    )
     return BenchmarkRecord(
         beamz_commit=_git_commit(),
         beamz_version=beamz.__version__,
@@ -207,7 +219,7 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
         trace_lower_s=trace_lower_s,
         compile_s=compile_s,
         warm_runtime_samples_s=kernel_samples,
-        warm_end_to_end_samples_s=end_to_end_samples,
+        warm_end_to_end_samples_s=tuple(end_to_end_samples),
         peak_memory_bytes=_peak_memory_bytes(execution_devices, memory_fallback),
         cpml_psi_precision=cpml_psi_precision,
         cuda_component_version=cuda_component_version,

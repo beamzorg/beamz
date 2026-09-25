@@ -66,11 +66,6 @@ def worker(args):
     harness.H100_WORKLOADS["modal_cpml12"] = ModalWorkload(frequencies=args.frequencies)
     final_states = []
 
-    def synchronize(state):
-        jax.block_until_ready(state)
-        final_states[:] = [state]
-
-    harness._block = synchronize
     devices = jax.devices()
     if len(devices) != args.devices or any(
         "H100" not in d.device_kind for d in devices
@@ -78,7 +73,7 @@ def worker(args):
         raise RuntimeError(f"Expected {args.devices} full H100 devices, got {devices}")
     args.allow_cpu = False
     started = time.perf_counter()
-    record = harness.run_benchmark(args)
+    record = harness.run_benchmark(args, final_state_callback=final_states.append)
     if (
         record.backend != args.backend
         or record.device_count != args.devices
