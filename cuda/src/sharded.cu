@@ -13,9 +13,9 @@ __global__ void UpdateSharded(BeamzLaunch launch) {
   local::UpdateThread(launch, first, stride);
 }
 
-// Classify whole tiles, so the bulk kernel has neither packed CPML state nor
-// per-neighbor logical-bound checks in its register footprint. Conservative
-// bounds send staggered edges and storage padding to the general kernel.
+// Classify whole tiles, so bulk warps avoid packed CPML indexing and per-neighbor
+// logical-bound checks. Conservative bounds send staggered edges and storage
+// padding to the shell branch, in the same launch.
 __device__ __forceinline__ bool BulkTile(const BeamzLaunch& l) {
   const auto* g = static_cast<const int32_t*>(l.shard_geometry.data);
   if (g[2]) return false;  // Tensor curls retain the general constitutive path.
@@ -66,13 +66,12 @@ __device__ __forceinline__ void BulkComponent(const BeamzLaunch& l,
       beamz::cuda::yee::AdvanceYeeField(Phase, old, decay, scale, curl);
 }
 
-template<int Phase, bool Bulk>
+template<int Phase>
 __global__ void UpdateShardedTile(BeamzLaunch launch) {
-  if (BulkTile(launch) != Bulk) return;
   const int p[3] = {int(blockIdx.z * blockDim.z + threadIdx.z),
                     int(blockIdx.y * blockDim.y + threadIdx.y),
                     int(blockIdx.x * blockDim.x + threadIdx.x)};
-  if constexpr (Bulk) {
+  if (BulkTile(launch)) {
     const int axis = static_cast<const int32_t*>(launch.shard_geometry.data)[0];
     BulkComponent<Phase, 0>(launch, p, axis);
     BulkComponent<Phase, 1>(launch, p, axis);
@@ -98,11 +97,9 @@ int BeamzLaunchSharded(void* raw_stream, const BeamzLaunch& launch) {
     const dim3 blocks((extent[2]+31)/32, (extent[1]+3)/4, (extent[0]+1)/2);
     if (blocks.y <= 65535 && blocks.z <= 65535) {
       if (launch.phase == 0) {
-        UpdateShardedTile<0, true><<<blocks, threads, 0, stream>>>(launch);
-        UpdateShardedTile<0, false><<<blocks, threads, 0, stream>>>(launch);
+        UpdateShardedTile<0><<<blocks, threads, 0, stream>>>(launch);
       } else {
-        UpdateShardedTile<1, true><<<blocks, threads, 0, stream>>>(launch);
-        UpdateShardedTile<1, false><<<blocks, threads, 0, stream>>>(launch);
+        UpdateShardedTile<1><<<blocks, threads, 0, stream>>>(launch);
       }
       return static_cast<int>(cudaPeekAtLastError());
     }
