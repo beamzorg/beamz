@@ -36,7 +36,7 @@ def validate_sharded_config(config, boundary, plan):
     _validate_devices(plan.mesh)
 
 
-def exchange_halos(value, *, axis, num_devices):
+def exchange_halos(value, *, axis, num_devices, lower=True, upper=True):
     """Attach adjacent one-cell faces inside a manual ``fdtd`` mesh.
 
     The outer faces are zero, never periodic. Only source buffers have halos;
@@ -46,11 +46,15 @@ def exchange_halos(value, *, axis, num_devices):
     high = jax.lax.slice_in_dim(
         value, value.shape[axis] - 1, value.shape[axis], axis=axis
     )
-    from_low = jax.lax.ppermute(
-        high, _MESH_AXIS, [(i, i + 1) for i in range(num_devices - 1)]
+    from_low = (
+        jax.lax.ppermute(high, _MESH_AXIS, [(i, i + 1) for i in range(num_devices - 1)])
+        if lower
+        else jnp.zeros_like(high)
     )
-    from_high = jax.lax.ppermute(
-        low, _MESH_AXIS, [(i + 1, i) for i in range(num_devices - 1)]
+    from_high = (
+        jax.lax.ppermute(low, _MESH_AXIS, [(i + 1, i) for i in range(num_devices - 1)])
+        if upper
+        else jnp.zeros_like(low)
     )
     return jnp.concatenate((from_low, value, from_high), axis=axis)
 
@@ -169,8 +173,17 @@ def _phase(state, ctx, coeffs, *, phase):
             phase,
             local_targets,
             tuple(
-                exchange_halos(value, axis=axis, num_devices=count)
-                for value in local_sources
+                exchange_halos(
+                    value,
+                    axis=axis,
+                    num_devices=count,
+                    # H uses forward differences, E backward differences.
+                    # A curl never differentiates the normal field component
+                    # along the partition axis (array axes are z, y, x).
+                    lower=phase == 1 and component != 2 - axis,
+                    upper=phase == 0 and component != 2 - axis,
+                )
+                for component, value in enumerate(local_sources)
             ),
             local_materials,
             local_terms,
