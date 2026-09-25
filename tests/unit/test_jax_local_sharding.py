@@ -52,6 +52,17 @@ def check(case):
                         state=state, num_steps=steps, backend="jax", sharding=cfg
                     ).state
                     assert_state_close(reference, actual)
+                    for name in ("ex", "ey", "ez", "hx", "hy", "hz"):
+                        field = getattr(actual, name)
+                        if any(size % count == 0 for size in field.shape):
+                            assert not field.is_fully_replicated
+                            assert (
+                                sum(
+                                    shard.data.size
+                                    for shard in field.addressable_shards
+                                )
+                                == field.size
+                            )
                     first = sim.advance(
                         state=state, num_steps=steps // 2, backend="jax", sharding=cfg
                     ).state
@@ -89,7 +100,9 @@ def check(case):
                 coeffs = sharding.place_tree(program, coeffs)
                 scan = build_scan(program)
 
-                def loss(factor, scan=scan, coeffs=coeffs, prepared=prepared):
+                def loss(
+                    factor, scan=scan, coeffs=coeffs, prepared=prepared, program=program
+                ):
                     varied = coeffs._replace(
                         **{
                             f"e_permittivity_{c}": getattr(
@@ -99,7 +112,7 @@ def check(case):
                             for c in "xyz"
                         }
                     )
-                    result = scan(prepared, varied)
+                    result = sharding.crop_state(program, scan(prepared, varied))
                     return sum(
                         jnp.sum(getattr(result, c) ** 2) for c in ("ex", "ey", "ez")
                     )

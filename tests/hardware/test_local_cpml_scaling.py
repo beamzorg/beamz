@@ -34,6 +34,10 @@ def test_distributed_bulk_and_cpml_continuation(backend, axis):
         state=state, num_steps=32, backend=backend, sharding=cfg, progress=False
     ).state
     assert_state_close(reference, actual)
+    for name in ("ex", "ey", "ez", "hx", "hy", "hz"):
+        field = getattr(actual, name)
+        assert not field.is_fully_replicated
+        assert sum(shard.data.size for shard in field.addressable_shards) == field.size
     first = sim.advance(
         state=state, num_steps=16, backend=backend, sharding=cfg, progress=False
     ).state

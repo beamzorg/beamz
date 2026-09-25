@@ -151,8 +151,8 @@ def run_benchmark(
     del warm_state
     kernel_samples = tuple(
         _time_call(
-            lambda state=state, coefficients=coefficients, executable=executable: executable(
-                state, coefficients
+            lambda state=state, coefficients=coefficients, executable=executable: (
+                executable(state, coefficients)
             )
         )[1]
         for _ in range(args.samples)

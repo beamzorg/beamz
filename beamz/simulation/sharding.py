@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
+from functools import lru_cache
 
 import jax
 import jax.numpy as jnp
@@ -469,7 +470,32 @@ def pad_component(program, component: str, value):
 
 def crop_component(program, component: str, value):
     """Crop one backend component back to its logical Yee support."""
-    return _crop_high_to_shape(value, program.sharding.layout.logical_shapes[component])
+    layout = program.sharding.layout
+    shape = layout.logical_shapes[component]
+    if layout.enabled:
+        # A staggered logical extent need not divide the device count. Letting
+        # SPMD infer the crop layout can replicate the entire field on every GPU.
+        # Prefer the simulation axis, then another divisible physical axis. The
+        # canonical public shape is unchanged, including during continuation.
+        axes = (
+            layout.axis,
+            *(axis for axis in range(len(shape)) if axis != layout.axis),
+        )
+        for axis in axes:
+            if shape[axis] > 0 and shape[axis] % layout.num_devices == 0:
+                spec = [None] * len(shape)
+                spec[axis] = _MESH_AXIS
+                sharding = jax.sharding.NamedSharding(
+                    program.sharding.mesh, jax.sharding.PartitionSpec(*spec)
+                )
+                return _component_crop(sharding)(value, shape)
+    return _crop_high_to_shape(value, shape)
+
+
+@lru_cache(maxsize=64)
+def _component_crop(sharding):
+    # Repeated public calls reuse compilation; the cache owns no field buffers.
+    return jax.jit(_crop_high_to_shape, static_argnums=(1,), out_shardings=sharding)
 
 
 def prepare_state(program, state, *, replicated_fields):
