@@ -62,10 +62,12 @@ mkdir -p "$repo_dir/.cache/runpod"
     --constraint "$repo_dir/.cache/runpod/constraints.txt" \
     'jax[cuda12]==0.9.0' jupyterlab ipykernel \
     'scikit-build-core>=0.10' 'nanobind>=2.4' 'cmake>=3.24' ninja
+# Use fresh objects: transferred source snapshots can predate cached binaries.
 wheel_dir="$(mktemp -d "$repo_dir/.cache/runpod/wheels.XXXXXX")"
 export PATH="${venv_dir}/bin:${PATH}"
 CMAKE_BUILD_PARALLEL_LEVEL="$build_jobs" "$py" -m pip wheel "$repo_dir/cuda" \
     --no-deps --no-build-isolation --wheel-dir "$wheel_dir" \
+    --config-settings=build-dir="$wheel_dir/build" \
     --config-settings=cmake.define.BEAMZ_CUDA_ARCHITECTURES=90 \
     --config-settings=cmake.define.BEAMZ_CUDA_FAST_MATH=OFF \
     --config-settings=cmake.build-type=Release
