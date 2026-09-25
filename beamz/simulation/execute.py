@@ -559,6 +559,23 @@ def forward_step(
         state.hy,
         state.hz,
     )
+    if cfg.backend == "jax" and cfg.is_3d and not cfg.sharding.enabled:
+        # Keep a common field layout across scan iterations. Recent JAX can
+        # otherwise choose conflicting stencil/monitor layouts and insert copies.
+        # Older supported JAX releases retain their automatic layout selection.
+        try:
+            from jax.experimental.layout import Layout, with_layout_constraint
+        except ImportError:
+            pass
+        else:
+            state = state._replace(
+                **{
+                    name: with_layout_constraint(
+                        getattr(state, name), Layout((0, 1, 2))
+                    )
+                    for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+                }
+            )
     return state._replace(
         t=t_phys,
         current_step=state.current_step + jnp.array(1, dtype=jnp.int32),
