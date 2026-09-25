@@ -1,0 +1,140 @@
+{
+  "method": "Linear host-RSS fit to three measured MMI runs versus actual cell count; extrapolated across devices, with no uncertainty model",
+  "available_machine_host_ram_gib": 30,
+  "available_machine_gpu_vram_gib": 24,
+  "limitations": [
+    "Host RSS estimates exclude the OS and other processes",
+    "Different devices and solver/postprocessing paths can use different memory per cell",
+    "GPU peak is not inferred from JAX-only allocator statistics",
+    "No high-resolution FDTD fields were allocated for these estimates"
+  ],
+  "measured_mmi_runs": [
+    {
+      "run": "mmi-fixed-6ppw",
+      "cells": 1063476,
+      "peak_process_rss_gib": 2.9829940795898438
+    },
+    {
+      "run": "mmi-fixed-10ppw",
+      "cells": 4560451,
+      "peak_process_rss_gib": 5.799625396728516
+    },
+    {
+      "run": "mmi-fixed-15ppw",
+      "cells": 14918904,
+      "peak_process_rss_gib": 13.101329803466797
+    }
+  ],
+  "estimated_runs": [
+    {
+      "device": "mmi2x2",
+      "ppw": 20,
+      "realized_grid_shape": [
+        1526,
+        275,
+        84
+      ],
+      "cells": 35250600,
+      "estimated_process_host_rss_gib": 27.872315222784124
+    },
+    {
+      "device": "mmi2x2",
+      "ppw": 25,
+      "realized_grid_shape": [
+        1907,
+        343,
+        104
+      ],
+      "cells": 68026504,
+      "estimated_process_host_rss_gib": 51.618110847468024
+    },
+    {
+      "device": "mode_converter",
+      "ppw": 15,
+      "realized_grid_shape": [
+        2424,
+        300,
+        63
+      ],
+      "cells": 45813600,
+      "estimated_process_host_rss_gib": 35.525096948759895
+    },
+    {
+      "device": "mode_converter",
+      "ppw": 20,
+      "realized_grid_shape": [
+        3232,
+        398,
+        84
+      ],
+      "cells": 108052224,
+      "estimated_process_host_rss_gib": 80.61632144909849
+    },
+    {
+      "device": "polarization_splitter_rotator",
+      "ppw": 15,
+      "realized_grid_shape": [
+        2464,
+        268,
+        72
+      ],
+      "cells": 47545344,
+      "estimated_process_host_rss_gib": 36.779727152041936
+    },
+    {
+      "device": "polarization_splitter_rotator",
+      "ppw": 20,
+      "realized_grid_shape": [
+        3284,
+        355,
+        96
+      ],
+      "cells": 111918720,
+      "estimated_process_host_rss_gib": 83.41755688717086
+    },
+    {
+      "device": "polarization_splitter_rotator",
+      "ppw": 25,
+      "realized_grid_shape": [
+        4106,
+        442,
+        119
+      ],
+      "cells": 215967388,
+      "estimated_process_host_rss_gib": 158.79971584603854
+    },
+    {
+      "device": "ring_resonator",
+      "ppw": 10,
+      "realized_grid_shape": [
+        720,
+        514,
+        43
+      ],
+      "cells": 15913440,
+      "estimated_process_host_rss_gib": 13.862747421944444
+    },
+    {
+      "device": "ring_resonator",
+      "ppw": 15,
+      "realized_grid_shape": [
+        1079,
+        767,
+        63
+      ],
+      "cells": 52138359,
+      "estimated_process_host_rss_gib": 40.10731791784072
+    },
+    {
+      "device": "ring_resonator",
+      "ppw": 20,
+      "realized_grid_shape": [
+        1438,
+        1021,
+        84
+      ],
+      "cells": 123328632,
+      "estimated_process_host_rss_gib": 91.68391739541583
+    }
+  ]
+}

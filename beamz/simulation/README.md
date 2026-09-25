@@ -170,3 +170,11 @@ Analysis may consume specs and results. A static architecture contract prevents
 the simulation API, execution, result, monitor-result, normalization, and memory
 modules from importing analysis behavior. Lazy plotting and labeled-data convenience
 methods resolve analysis functions only when called.
+
+### Long-run monitor time
+
+Monitor timestamps are derived from the simulation's time origin and integer
+step count. They must not be advanced by repeated float32 additions: small clock
+errors accumulate into large optical DFT phase errors in long simulations. The
+same rule applies across `advance()` calls and automatic-termination chunks.
+The source and monitor clocks therefore share the same absolute time grid.

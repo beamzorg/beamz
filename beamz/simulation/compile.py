@@ -411,6 +411,7 @@ def _prepare_compilation(
         num_steps=num_steps,
         plane_2d=request.domain.plane_2d,
         is_3d=bool(request.domain.is_3d),
+        t0=float(request.run.t0),
         metric_kind=request.materials.metric_kind,
         polarization_2d=request.domain.polarization_2d,
         loop_kind=loop_kind,
