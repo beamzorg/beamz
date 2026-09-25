@@ -64,6 +64,7 @@ BEAMZ_CELL float Source(const BeamzLaunch& l, int component, const int global[3]
   return Read(input, Offset(input, local));
 }
 
+template <int Phase>
 BEAMZ_CELL float Difference(const BeamzLaunch& l, int component, int axis,
                             const int global[3]) {
   const auto* geometry = static_cast<const int32_t*>(l.shard_geometry.data);
@@ -77,7 +78,7 @@ BEAMZ_CELL float Difference(const BeamzLaunch& l, int component, int axis,
     scale = Read(l.metrics[axis], metric_index);
   }
   int other[3] = {global[0], global[1], global[2]};
-  if (l.phase == 0) {
+  if constexpr (Phase == 0) {
     if (coordinate < 0 || coordinate + 1 >= size) return 0.0f;
     ++other[axis];
     return (Source(l, component, other) - Source(l, component, global)) * scale;
@@ -115,7 +116,8 @@ BEAMZ_CELL float CorrectCpml(const BeamzLaunch& l, int term, float derivative,
   return sign * (derivative * Read(l.inputs[coefficient + 2], packed) + next);
 }
 
-BEAMZ_CELL void UpdateCell(const BeamzLaunch& l, int component, int z, int y, int x) {
+template <int Phase, int component>
+BEAMZ_CELL void UpdateCell(const BeamzLaunch& l, int z, int y, int x) {
   const BeamzBuffer& output = l.outputs[component];
   if (z >= output.dims[0] || y >= output.dims[1] || x >= output.dims[2]) return;
   const auto* geometry = static_cast<const int32_t*>(l.shard_geometry.data);
@@ -134,8 +136,8 @@ BEAMZ_CELL void UpdateCell(const BeamzLaunch& l, int component, int z, int y, in
   }
   constexpr int source0[3] = {2, 0, 1}, source1[3] = {1, 2, 0};
   constexpr int axis0[3] = {1, 0, 2}, axis1[3] = {0, 2, 1};
-  const float d0 = Difference(l, source0[component], axis0[component], global);
-  const float d1 = Difference(l, source1[component], axis1[component], global);
+  const float d0 = Difference<Phase>(l, source0[component], axis0[component], global);
+  const float d1 = Difference<Phase>(l, source1[component], axis1[component], global);
   const float curl = l.nterms == 0 ? d0 - d1
       : CorrectCpml(l, 2 * component, d0, local, global)
       + CorrectCpml(l, 2 * component + 1, d1, local, global);
@@ -147,14 +149,14 @@ BEAMZ_CELL void UpdateCell(const BeamzLaunch& l, int component, int z, int y, in
   }
   bool constrained = false;
   for (int d = 0; d < 3; ++d) {
-    if ((l.phase == 0) != (d == 2 - component)) continue;
+    if ((Phase == 0) != (d == 2 - component)) continue;
     constrained |= (global[d] == 0 && (l.metallic_edges & (1 << (2 * d)))) ||
         (global[d] == logical[d] - 1 && (l.metallic_edges & (1 << (2 * d + 1))));
   }
   const float decay = Read(l.inputs[6 + component], Offset(l.inputs[6 + component], local));
   const float source = Read(l.inputs[9 + component], Offset(l.inputs[9 + component], local));
   const float next = decay * Read(l.inputs[component], offset)
-      + (l.phase == 0 ? -source : source) * curl;
+      + (Phase == 0 ? -source : source) * curl;
   Write(output, offset, constrained ? 0.0f : next);
 }
 

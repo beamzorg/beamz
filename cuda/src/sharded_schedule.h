@@ -28,20 +28,36 @@ inline int LaunchBlocks(const BeamzLaunch& launch) {
   return static_cast<int>(blocks > kMaxBlocks ? kMaxBlocks : blocks);
 }
 
-// Use 64-bit offsets for the loop increment, including its final iteration.
-// Each component has its own Yee support and therefore its own linear bounds.
+// ValidBuffer restricts every buffer to INT_MAX elements. Coordinates can use
+// 32-bit division while the grid-stride increment stays 64-bit to avoid overflow
+// after the final iteration. Phase and component are fixed for each traversal.
+template <int Phase, int Component>
+BEAMZ_SCHEDULE void UpdateComponent(const BeamzLaunch& launch, int64_t first,
+                                    int64_t stride) {
+  const auto& output = launch.outputs[Component];
+  const int64_t count = CellCount(output);
+  const int nx = static_cast<int>(output.dims[2]);
+  const int ny = static_cast<int>(output.dims[1]);
+  for (int64_t index = first; index < count; index += stride) {
+    const int cell = static_cast<int>(index);
+    const int x = cell % nx;
+    const int row = cell / nx;
+    const int y = row % ny;
+    const int z = row / ny;
+    UpdateCell<Phase, Component>(launch, z, y, x);
+  }
+}
+
 BEAMZ_SCHEDULE void UpdateThread(const BeamzLaunch& launch, int64_t first,
                                  int64_t stride) {
-  for (int c = 0; c < 3; ++c) {
-    const auto& output = launch.outputs[c];
-    const int64_t count = CellCount(output);
-    for (int64_t index = first; index < count; index += stride) {
-      const int x = static_cast<int>(index % output.dims[2]);
-      const int64_t row = index / output.dims[2];
-      const int y = static_cast<int>(row % output.dims[1]);
-      const int z = static_cast<int>(row / output.dims[1]);
-      UpdateCell(launch, c, z, y, x);
-    }
+  if (launch.phase == 0) {
+    UpdateComponent<0, 0>(launch, first, stride);
+    UpdateComponent<0, 1>(launch, first, stride);
+    UpdateComponent<0, 2>(launch, first, stride);
+  } else {
+    UpdateComponent<1, 0>(launch, first, stride);
+    UpdateComponent<1, 1>(launch, first, stride);
+    UpdateComponent<1, 2>(launch, first, stride);
   }
 }
 
