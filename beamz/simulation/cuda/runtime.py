@@ -179,6 +179,7 @@ def _ffi_phase(
     cuda_flags,
     metallic_edges,
     shard_geometry=None,
+    shard_halos=(),
 ):
     if len(terms) != len(psi_terms):
         raise ValueError(
@@ -199,6 +200,7 @@ def _ffi_phase(
         *psi_terms,
         *metrics,
         *((shard_geometry,) if shard_geometry is not None else ()),
+        *shard_halos,
     )
     psi_start = 13 + 3 * len(terms)
     aliases = {0: 0, 1: 1, 2: 2}

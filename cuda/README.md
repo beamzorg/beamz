@@ -70,7 +70,9 @@ result = simulation.advance(
 This path has native C++ arithmetic and CPU FFI coverage, but has **not yet been
 validated on multiple CUDA GPUs**. `auto` continues selecting JAX for sharded
 requests. Rebuild the optional CUDA extension: this path requires component
-**0.19.0 / ABI 19**, including `beamz_cuda_sharded`.
+**0.20.0 / ABI 20**, including `beamz_cuda_sharded`. ABI 20 passes separate neighbor faces to sharded
+phases, avoiding full-field halo concatenations. Rebuild the native wheel when
+updating Python code across this ABI boundary.
 
 All six components share partition interfaces along the selected x, y, or z
 axis. `shard_map` exchanges one-cell neighbor halos before each H/E phase and
@@ -144,7 +146,7 @@ override is read at native invocation and included in the graph-cache key; it
 changes scheduling only. It allows small parity and sanitizer workloads to
 exercise fusion, including odd tile tails and sources crossing the shell.
 
-Experimental layout and temporal-blocking controls (ABI 19):
+Experimental layout and temporal-blocking controls (ABI 20):
 
 - `BEAMZ_CUDA_STORAGE_AXES=012|120|201` selects an internal cyclic storage
   permutation. The default `012` preserves canonical `(z,y,x)` storage;

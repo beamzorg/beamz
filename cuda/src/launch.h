@@ -56,6 +56,9 @@ struct BeamzLaunch {
   // Sharded phases only: [axis, origin, return_curl], three logical target
   // shapes, then three logical source shapes. Resident on the execution device.
   BeamzBuffer shard_geometry;
+  // Separate lower/upper one-cell faces, interleaved by source component.
+  // Owned source fields remain contiguous; no field-sized halo concatenation.
+  BeamzBuffer shard_halos[6];
 };
 
 struct BeamzSourceGroupLaunch {

@@ -323,7 +323,7 @@ ffi::Error Dispatch(Launcher launcher, void* stream, ffi::RemainingArgs args,
   const size_t payload_count = 13 + 4 * static_cast<size_t>(nterms);
   const size_t output_count = 3 + static_cast<size_t>(nterms);
   const bool sharded = launcher == BeamzLaunchSharded;
-  if (args.size() != payload_count + 3 + (sharded ? 1 : 0) ||
+  if (args.size() != payload_count + 3 + (sharded ? 7 : 0) ||
       rets.size() != output_count) {
     return ffi::Error::InvalidArgument("invalid BeamZ CUDA phase buffer count");
   }
@@ -347,6 +347,12 @@ ffi::Error Dispatch(Launcher launcher, void* stream, ffi::RemainingArgs args,
     if (!decoded) return decoded.error();
     if (auto error = DecodeBuffer(*decoded, &launch.shard_geometry);
         error.failure()) return error;
+    for (size_t face = 0; face < 6; ++face) {
+      auto halo = args.get<ffi::AnyBuffer>(payload_count + 4 + face);
+      if (!halo) return halo.error();
+      if (auto error = DecodeBuffer(*halo, &launch.shard_halos[face]);
+          error.failure()) return error;
+    }
   }
   const int error = launcher(stream, launch);
   return error == 0 ? ffi::Error::Success()
@@ -929,6 +935,9 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_streamed, StreamedHandler,
                                   .Attr<int32_t>("boundary_code")
                                   .Attr<int32_t>("metric_kind"));
 
+// This handler only validates descriptors and enqueues kernels on XLA's stream.
+// Declaring capture compatibility lets XLA include distributed phases in its
+// command buffers instead of forcing a host launch boundary at each half-step.
 #ifdef BEAMZ_CUDA_CPU_CONTRACT
 XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_sharded, ShardedHostHandler,
                               ffi::Ffi::Bind()
@@ -946,7 +955,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_sharded, ShardedHandler,
                                   .Attr<float>("dt")
                                   .Attr<float>("resolution")
                                   .Attr<int32_t>("boundary_code")
-                                  .Attr<int32_t>("metric_kind"));
+                                  .Attr<int32_t>("metric_kind"),
+                              {ffi::Traits::kCmdBufferCompatible});
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_program, ProgramHandler,
                               ffi::Ffi::Bind()

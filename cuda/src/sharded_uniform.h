@@ -16,12 +16,18 @@ template<int Component>
 BEAMZ_UNIFORM float UniformSource(const BeamzLaunch& l, const int p[3],
                                   int axis, int derivative_axis, int delta) {
   const auto& source = l.inputs[3 + Component];
-  const int q[3] = {
-      p[0] + (axis == 0) + (derivative_axis == 0 ? delta : 0),
-      p[1] + (axis == 1) + (derivative_axis == 1 ? delta : 0),
-      p[2] + (axis == 2) + (derivative_axis == 2 ? delta : 0)};
-  const int offset = (q[0] * int(source.dims[1]) + q[1]) * int(source.dims[2]) + q[2];
-  return static_cast<const float*>(source.data)[offset];
+  const int q[3] = {p[0] + (derivative_axis == 0 ? delta : 0),
+                    p[1] + (derivative_axis == 1 ? delta : 0),
+                    p[2] + (derivative_axis == 2 ? delta : 0)};
+  const int coordinate = axis == 0 ? q[0] : axis == 1 ? q[1] : q[2];
+  if (coordinate < 0 || coordinate >= source.dims[axis]) {
+    const auto& face = l.shard_halos[2*Component + (coordinate >= 0)];
+    const int z = axis == 0 ? 0 : q[0];
+    const int y = axis == 1 ? 0 : q[1];
+    const int x = axis == 2 ? 0 : q[2];
+    return static_cast<const float*>(face.data)[(z * int(face.dims[1]) + y) * int(face.dims[2]) + x];
+  }
+  return static_cast<const float*>(source.data)[(q[0] * int(source.dims[1]) + q[1]) * int(source.dims[2]) + q[2]];
 }
 
 template<int Phase, int Component, int Axis>

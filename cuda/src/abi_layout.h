@@ -7,8 +7,8 @@
 
 namespace beamz::cuda::abi {
 
-inline constexpr int32_t kAbiVersion = 19;
-inline constexpr char kComponentVersion[] = "0.19.0";
+inline constexpr int32_t kAbiVersion = 20;
+inline constexpr char kComponentVersion[] = "0.20.0";
 inline constexpr char kStreamedTarget[] = "beamz_cuda_streamed";
 inline constexpr char kShardedTarget[] = "beamz_cuda_sharded";
 inline constexpr char kProgramTarget[] = "beamz_cuda_program";

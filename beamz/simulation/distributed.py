@@ -11,8 +11,8 @@ from jax.sharding import PartitionSpec as P
 _MESH_AXIS = "fdtd"
 
 
-def exchange_halos(value, *, axis, num_devices, lower=True, upper=True):
-    """Attach adjacent one-cell faces inside a manual ``fdtd`` mesh.
+def exchange_faces(value, *, axis, num_devices, lower=True, upper=True):
+    """Exchange adjacent one-cell faces inside a manual ``fdtd`` mesh.
 
     The outer faces are zero, never periodic. Only source buffers have halos;
     the native phase returns owned cells in the original partition layout.
@@ -31,7 +31,15 @@ def exchange_halos(value, *, axis, num_devices, lower=True, upper=True):
         if upper
         else jnp.zeros_like(low)
     )
-    return jnp.concatenate((from_low, value, from_high), axis=axis)
+    return from_low, from_high
+
+
+def exchange_halos(value, *, axis, num_devices, lower=True, upper=True):
+    """Attach exchanged faces for the pure-JAX stencil representation."""
+    low, high = exchange_faces(
+        value, axis=axis, num_devices=num_devices, lower=lower, upper=upper
+    )
+    return jnp.concatenate((low, value, high), axis=axis)
 
 
 def _owned_psi(value, term, *, axis, origin, extent, logical_shape):

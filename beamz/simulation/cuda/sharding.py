@@ -11,7 +11,7 @@ from jax.sharding import PartitionSpec as P
 
 from beamz.simulation import _cuda_abi as abi
 from beamz.simulation.backend import CudaBackendUnavailable
-from beamz.simulation.distributed import _owned_psi, exchange_halos
+from beamz.simulation.distributed import _owned_psi, exchange_faces
 
 _MESH_AXIS = "fdtd"
 
@@ -132,19 +132,7 @@ def _phase(state, ctx, coeffs, *, phase):
             abi.CUDA_SHARDED_TARGET,
             phase,
             local_targets,
-            tuple(
-                exchange_halos(
-                    value,
-                    axis=axis,
-                    num_devices=count,
-                    # H uses forward differences, E backward differences.
-                    # A curl never differentiates the normal field component
-                    # along the partition axis (array axes are z, y, x).
-                    lower=phase == 1 and component != 2 - axis,
-                    upper=phase == 0 and component != 2 - axis,
-                )
-                for component, value in enumerate(local_sources)
-            ),
+            local_sources,
             local_materials,
             local_terms,
             local_psi,
@@ -155,6 +143,17 @@ def _phase(state, ctx, coeffs, *, phase):
             cuda_flags=ctx.config.cuda_flags,
             metallic_edges=ctx.boundary.cpml.metallic_edges,
             shard_geometry=geometry,
+            shard_halos=tuple(
+                face
+                for component, value in enumerate(local_sources)
+                for face in exchange_faces(
+                    value,
+                    axis=axis,
+                    num_devices=count,
+                    lower=phase == 1 and component != 2 - axis,
+                    upper=phase == 0 and component != 2 - axis,
+                )
+            ),
         )
         return (
             *outputs[:3],

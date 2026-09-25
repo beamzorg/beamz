@@ -26,6 +26,7 @@ __device__ __forceinline__ bool BulkTile(const BeamzLaunch& l) {
   const int thickness = l.uniform_cpml_thickness;
   for (int d = 0; d < 3; ++d) {
     const int global_first = first[d] + (d == g[0] ? g[1] : 0);
+    if (d == g[0] && (first[d] < 1 || first[d] + width[d] >= l.outputs[0].dims[d])) return false;
     if (global_first < thickness + 1) return false;
     for (int c = 0; c < 3; ++c) {
       if (first[d] + width[d] > l.outputs[c].dims[d] ||
@@ -40,10 +41,7 @@ template<int Phase, int Component, int Axis>
 __device__ __forceinline__ float BulkDifference(const BeamzLaunch& l,
                                                const int p[3], int shard_axis) {
   const auto& value = l.inputs[3 + Component];
-  // Sources carry one lower ghost cell. Explicit coordinates avoid a
-  // dynamically indexed thread-local array in the memory-bound bulk kernel.
-  const int q[3] = {p[0] + (shard_axis == 0), p[1] + (shard_axis == 1),
-                    p[2] + (shard_axis == 2)};
+  const int q[3] = {p[0], p[1], p[2]};
   const int offset = (q[0] * int(value.dims[1]) + q[1]) * int(value.dims[2]) + q[2];
   constexpr int sign = Phase == 0 ? 1 : -1;
   const int stride = Axis == 0 ? int(value.dims[1] * value.dims[2])

@@ -13,8 +13,8 @@
 #endif
 
 // This arithmetic is shared by the CUDA launch and the CPU FFI contract tests.
-// Fields and transverse CPML slabs are local; source fields have one ghost cell
-// at each end of the partition axis. CPML slabs normal to that axis are small
+// Fields and transverse CPML slabs are local; one-cell source faces are passed
+// separately from the contiguous owned fields. CPML slabs normal to that axis are small
 // replicated packed arrays, with each rank owning disjoint recurrence entries.
 namespace beamz::cuda::sharded {
 
@@ -58,8 +58,14 @@ BEAMZ_CELL float Source(const BeamzLaunch& l, int component, const int global[3]
   int local[3];
   for (int d = 0; d < 3; ++d) {
     if (global[d] < 0 || global[d] >= logical[d]) return 0.0f;
-    local[d] = global[d] - (d == axis ? origin - 1 : 0);
-    if (local[d] < 0 || local[d] >= input.dims[d]) return 0.0f;
+    local[d] = global[d] - (d == axis ? origin : 0);
+    if (d != axis && (local[d] < 0 || local[d] >= input.dims[d])) return 0.0f;
+  }
+  if (local[axis] < 0 || local[axis] >= input.dims[axis]) {
+    if (local[axis] != -1 && local[axis] != input.dims[axis]) return 0.0f;
+    const auto& face = l.shard_halos[2 * component + (local[axis] >= 0)];
+    local[axis] = 0;
+    return Read(face, Offset(face, local));
   }
   return Read(input, Offset(input, local));
 }
@@ -189,6 +195,23 @@ inline bool Validate(const BeamzLaunch& l) {
   }
   for (int i = 0; i < 6; ++i)
     if (l.inputs[i].rank != 3 || l.inputs[i].element_type != kBeamzF32) return false;
+  for (int c = 0; c < 3; ++c) {
+    for (int side = 0; side < 2; ++side) {
+      const auto& face = l.shard_halos[2*c + side];
+      if (!ValidBuffer(face) || face.rank != 3 || face.element_type != kBeamzF32)
+        return false;
+      bool compatible = false;
+      for (int axis = 0; axis < 3; ++axis) {
+        bool match = face.dims[axis] == 1;
+        for (int d = 0; d < 3; ++d)
+          if (d != axis) match &= face.dims[d] == l.inputs[3+c].dims[d];
+        compatible |= match;
+      }
+      if (!compatible) return false;
+      for (int d = 0; d < 3; ++d)
+        if (face.dims[d] != l.shard_halos[2*c].dims[d]) return false;
+    }
+  }
   for (int i = 6; i < 12; ++i)
     if ((l.inputs[i].rank != 0 && l.inputs[i].rank != 3) ||
         l.inputs[i].element_type != kBeamzF32) return false;
