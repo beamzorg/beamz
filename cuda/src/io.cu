@@ -646,6 +646,71 @@ AccumulateDftPair(const __grid_constant__ DftFields first,
   }
 }
 
+// Each lane owns one interpolation point. Reuse its sample in registers across
+// a small frequency batch; separate batches retain frequency parallelism.
+// Small frequency plans keep the original fused kernel.
+constexpr int kDftFrequencyBatch = 8;
+__global__ void AccumulateDftReusedSamples(
+    const __grid_constant__ DftFields fields,
+    const __grid_constant__ BeamzDftGroupLaunch monitors) {
+  const int point = blockIdx.x * blockDim.x + threadIdx.x;
+  const int monitor = blockIdx.y / 6, component = blockIdx.y % 6;
+  const int first_frequency = blockIdx.z * kDftFrequencyBatch;
+  const int frequency_stop = first_frequency + kDftFrequencyBatch;
+  const auto* counts = static_cast<const int32_t*>(monitors.counts.data);
+  const int nf = counts[5 * monitor], np = counts[5 * monitor + 1];
+  const int interval = max(1, counts[5 * monitor + 2]);
+  const int vo = counts[5 * monitor + 3], wo = counts[5 * monitor + 4];
+  const int max_nf = monitors.frequencies.dims[1];
+  const int max_np = monitors.indices.dims[2];
+  if (nf < 1 || nf > max_nf || np < 1 || np > max_np || point >= np ||
+      first_frequency >= nf || vo < 0 || wo < 0 ||
+      static_cast<int64_t>(vo) + 6LL * nf * np > monitors.dft_re.dims[0] ||
+      static_cast<int64_t>(vo) + 6LL * nf * np > monitors.dft_im.dims[0] ||
+      static_cast<int64_t>(wo) + nf > monitors.dft_weight.dims[0])
+    return;
+  const float window = static_cast<const float*>(monitors.phase_window.data)
+      [monitor * max_nf];
+  if (window == 0.f) return;
+  if (component == 0 && point == 0) {
+    for (int frequency = first_frequency; frequency < min(nf, frequency_stop);
+         ++frequency)
+      static_cast<float*>(monitors.dft_weight.data)[wo + frequency] += window;
+  }
+  if (static_cast<const float*>(monitors.component_masks.data)
+          [monitor * 6 + component] == 0.f)
+    return;
+  const auto& field = fields.values[component];
+  const int neighbors = monitors.indices.dims[3];
+  const int base = ((monitor * 6 + component) * max_np + point) * neighbors;
+  float sample = 0.f;
+  for (int neighbor = 0; neighbor < neighbors; ++neighbor) {
+    const int index =
+        static_cast<const int32_t*>(monitors.indices.data)[base + neighbor];
+    if (index >= 0 && index < ElementCount(field))
+      sample += static_cast<const float*>(field.data)
+                    [BeamzPhysicalIndex(field, index)] *
+                static_cast<const float*>(monitors.weights.data)[base + neighbor];
+  }
+  float scale = window;
+  if (static_cast<const int32_t*>(monitors.codes.data)[2 * monitor + 1] == 1) {
+    const float length =
+        static_cast<const float*>(monitors.windows.data)[3 * monitor + 2];
+    if (!isfinite(length) || length <= 0.f) return;
+    scale *= fields.dt * static_cast<float>(interval) * 299792458.0f /
+             length / sqrtf(6.2831853071795864769f);
+  }
+  for (int frequency = first_frequency; frequency < min(nf, frequency_stop);
+         ++frequency) {
+    const int po = monitor * max_nf + frequency;
+    const int offset = vo + (component * nf + frequency) * np + point;
+    static_cast<float*>(monitors.dft_re.data)[offset] +=
+        scale * sample * static_cast<const float*>(monitors.phase_cos.data)[po];
+    static_cast<float*>(monitors.dft_im.data)[offset] +=
+        scale * sample * static_cast<const float*>(monitors.phase_sin.data)[po];
+  }
+}
+
 cudaError_t LaunchDftGroups(cudaStream_t stream, const BeamzLaunch &h_launch,
                             const BeamzLaunch &e_launch,
                             const BeamzDftGroupLaunch &monitors, int32_t step) {
@@ -674,7 +739,15 @@ cudaError_t LaunchDftGroups(cudaStream_t stream, const BeamzLaunch &h_launch,
       return error;
     }
   }
-  if (monitors.monitor_count == 1 && cache_phase) {
+  if (cache_phase && monitors.frequencies.dims[1] >= 16) {
+    const dim3 reuse_threads(128);
+    const dim3 reuse_blocks(
+        (monitors.indices.dims[2] + reuse_threads.x - 1) / reuse_threads.x,
+        monitors.monitor_count * 6,
+        (monitors.frequencies.dims[1] + kDftFrequencyBatch - 1) / kDftFrequencyBatch);
+    AccumulateDftReusedSamples<<<reuse_blocks, reuse_threads, 0, stream>>>(
+        fields, monitors);
+  } else if (monitors.monitor_count == 1 && cache_phase) {
     AccumulateDftGroups<true, true>
         <<<blocks, threads, 0, stream>>>(fields, monitors, step);
   } else if (monitors.monitor_count == 1) {

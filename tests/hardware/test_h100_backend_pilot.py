@@ -14,6 +14,7 @@ STATUS = cuda_backend_status()
 pytestmark = pytest.mark.skipif(not STATUS.available, reason=STATUS.reason or "no CUDA")
 
 
+@pytest.mark.parametrize("frequencies", [3, 101])
 @pytest.mark.parametrize(
     "backend,count",
     [
@@ -22,7 +23,7 @@ pytestmark = pytest.mark.skipif(not STATUS.available, reason=STATUS.reason or "n
         ("cuda_streamed", 4),
     ],
 )
-def test_modal_backend_complete_state(backend, count):
+def test_modal_backend_complete_state(backend, count, frequencies):
     if len(jax.devices()) < count:
         pytest.skip("insufficient GPUs")
     sim = build_simulation(
@@ -31,7 +32,7 @@ def test_modal_backend_complete_state(backend, count):
             steps=33,
             pml=12,
             monitors=2,
-            frequencies=3,
+            frequencies=frequencies,
             material="binary",
             source="mode",
             monitor_type="mode",

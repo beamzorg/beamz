@@ -899,10 +899,11 @@ def test_streamed_cuda_matches_jax_on_nonuniform_grids(metric_kind, cpml):
     _assert_state_close(reference, actual)
 
 
+@pytest.mark.parametrize("frequencies", [3, 101])
 @pytest.mark.parametrize("interval,normalization", [(1, 0), (2, 1), (3, 1)])
 @pytest.mark.parametrize("pair_tile", ["16x8x16", "single"])
 def test_temporal_pair_dft_windows_and_intervals(
-    interval, normalization, pair_tile, monkeypatch
+    interval, normalization, pair_tile, frequencies, monkeypatch
 ):
     """Two observations, masked components, inactive windows and an odd tail."""
     from argparse import Namespace
@@ -919,7 +920,7 @@ def test_temporal_pair_dft_windows_and_intervals(
             steps=65,
             pml=12,
             monitors=2,
-            frequencies=3,
+            frequencies=frequencies,
             material="binary",
             source="mode",
             monitor_type="field",
