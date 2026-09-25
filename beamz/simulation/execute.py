@@ -678,6 +678,13 @@ def build_scan(program, *, donate_state: bool = False):
         state: SimulationState,
         coeffs: UpdateCoefficients,
     ):
+        local_cuda_cpml = (
+            cfg.backend == "cuda_streamed" and program.sharding.layout.enabled
+        )
+        if local_cuda_cpml:
+            from beamz.simulation.distributed import scan_local_cpml
+
+            state = scan_local_cpml(state, program)
         # Compute differentiable material scales once per invocation. Expressing
         # the lossy update as an increment avoids a field-sized division each step.
         if (
@@ -810,6 +817,8 @@ def build_scan(program, *, donate_state: bool = False):
                 ),
                 state,
             )
+        if local_cuda_cpml:
+            scan_out = scan_local_cpml(scan_out, program, assemble=True)
         return scan_out
 
     # 8. Buffer donation is an explicit ownership transfer. The default executable

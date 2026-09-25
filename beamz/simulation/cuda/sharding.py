@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from functools import partial
-from typing import cast
 
 import jax
 import jax.numpy as jnp
@@ -12,6 +11,7 @@ from jax.sharding import PartitionSpec as P
 
 from beamz.simulation import _cuda_abi as abi
 from beamz.simulation.backend import CudaBackendUnavailable
+from beamz.simulation.distributed import _owned_psi, exchange_halos
 
 _MESH_AXIS = "fdtd"
 
@@ -36,54 +36,6 @@ def validate_sharded_config(config, boundary, plan):
     _validate_devices(plan.mesh)
 
 
-def exchange_halos(value, *, axis, num_devices, lower=True, upper=True):
-    """Attach adjacent one-cell faces inside a manual ``fdtd`` mesh.
-
-    The outer faces are zero, never periodic. Only source buffers have halos;
-    the native phase returns owned cells in the original partition layout.
-    """
-    low = jax.lax.slice_in_dim(value, 0, 1, axis=axis)
-    high = jax.lax.slice_in_dim(
-        value, value.shape[axis] - 1, value.shape[axis], axis=axis
-    )
-    from_low = (
-        jax.lax.ppermute(high, _MESH_AXIS, [(i, i + 1) for i in range(num_devices - 1)])
-        if lower
-        else jnp.zeros_like(high)
-    )
-    from_high = (
-        jax.lax.ppermute(low, _MESH_AXIS, [(i + 1, i) for i in range(num_devices - 1)])
-        if upper
-        else jnp.zeros_like(low)
-    )
-    return jnp.concatenate((from_low, value, from_high), axis=axis)
-
-
-def _owned_psi(value, term, *, axis, origin, extent, logical_shape):
-    """Keep only this rank's physical recurrence entries; neutralize padding."""
-    mask = jnp.asarray(True)
-    for d, size in enumerate(value.shape):
-        positions = jnp.arange(size, dtype=jnp.int32)
-        if d == term.axis:
-            positions = cast(
-                jax.Array,
-                jnp.where(
-                    positions < term.slab.low,
-                    positions,
-                    positions - term.slab.low + logical_shape[d] - term.slab.high,
-                ),
-            )
-        elif d == axis:
-            positions = positions + origin
-        valid = (positions >= 0) & (positions < logical_shape[d])
-        if d == axis and d == term.axis:
-            valid &= (positions >= origin) & (positions < origin + extent)
-        shape = [1, 1, 1]
-        shape[d] = size
-        mask = mask & valid.reshape(shape)
-    return jnp.where(mask, value, jnp.zeros_like(value))
-
-
 def _phase(state, ctx, coeffs, *, phase):
     from . import runtime
 
@@ -105,7 +57,11 @@ def _phase(state, ctx, coeffs, *, phase):
     # A normal CPML slab is only a pair of thin faces, never a full field. It is
     # replicated and reduced over disjoint owners; transverse slabs partition
     # with the fields. This preserves the public packed continuation layout.
-    psi_specs = tuple(P() if term.axis == axis else spec for term in terms)
+    owner_local = tuple(value.ndim == 4 for value in psi)
+    psi_specs = tuple(
+        P(_MESH_AXIS) if owned else P() if term.axis == axis else spec
+        for term, owned in zip(terms, owner_local, strict=True)
+    )
     profiles = tuple(
         value for term in terms for value in (term.a, term.b, term.inv_kappa)
     )
@@ -158,6 +114,10 @@ def _phase(state, ctx, coeffs, *, phase):
             for i, term in enumerate(terms)
         )
         local_psi = tuple(
+            value[0] if owned else value
+            for value, owned in zip(local_psi, owner_local, strict=True)
+        )
+        local_psi = tuple(
             _owned_psi(
                 value,
                 term,
@@ -199,8 +159,14 @@ def _phase(state, ctx, coeffs, *, phase):
         return (
             *outputs[:3],
             *(
-                jax.lax.psum(value, _MESH_AXIS) if term.axis == axis else value
-                for value, term in zip(outputs[3:], terms, strict=True)
+                value[None, ...]
+                if owned
+                else jax.lax.psum(value, _MESH_AXIS)
+                if term.axis == axis
+                else value
+                for value, term, owned in zip(
+                    outputs[3:], terms, owner_local, strict=True
+                )
             ),
         )
 
