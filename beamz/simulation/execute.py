@@ -459,6 +459,7 @@ def apply_source_phase(
     timing: str,
     *,
     dense_single_slab: bool,
+    sharding_plan=None,
 ) -> SimulationState:
     # Apply sources in their scheduled leapfrog phase so amplitude normalization
     # matches field time.
@@ -468,12 +469,23 @@ def apply_source_phase(
         value = getattr(eng, field_name)
         batch, rest = batches[(timing, component)]
         if batch is not None:
-            value = _apply_batched_slabs(
-                value,
-                abs_step,
-                batch,
-                dense_single_slab=dense_single_slab,
-            )
+            use_local = sharding_plan is not None and sharding_plan.layout.enabled
+            if use_local:
+                from beamz.simulation.distributed_sources import (
+                    apply_batched_slabs,
+                    requires_local_injection,
+                )
+
+                use_local = requires_local_injection(value, batch, sharding_plan)
+            if use_local:
+                value = apply_batched_slabs(value, abs_step, batch, sharding_plan)
+            else:
+                value = _apply_batched_slabs(
+                    value,
+                    abs_step,
+                    batch,
+                    dense_single_slab=dense_single_slab,
+                )
         if rest:
             value = _apply_specs(value, abs_step, rest)
         updates[field_name] = value.astype(getattr(eng, field_name).dtype)
@@ -504,6 +516,7 @@ def forward_step(
         ctx.source_batches,
         "pre_e",
         dense_single_slab=cfg.source_single_slab_dense,
+        sharding_plan=program.sharding,
     )
     state = update_kernel.update_h(state, ctx, coeffs)
 
@@ -515,6 +528,7 @@ def forward_step(
         ctx.source_batches,
         "h",
         dense_single_slab=cfg.source_single_slab_dense,
+        sharding_plan=program.sharding,
     )
     cuda_owns_pec = (
         cfg.backend == "cuda_streamed"
@@ -536,6 +550,7 @@ def forward_step(
         ctx.source_batches,
         "e",
         dense_single_slab=cfg.source_single_slab_dense,
+        sharding_plan=program.sharding,
     )
     if not cuda_owns_pec:
         ex, ey, ez = update_runtime.apply_post_source_boundaries(
