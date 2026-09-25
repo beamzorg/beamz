@@ -481,6 +481,20 @@ def prepare_state(program, state, *, replicated_fields):
         }
     )
     placed = place_tree(program, state)
+    if program.config.backend == "cuda_streamed" and program.sharding.layout.enabled:
+        # Match the native phase's persistent ownership: normal slabs replicate,
+        # transverse slabs partition alongside their field components.
+        updates = {}
+        for phase in ("h", "e"):
+            name = f"cpml_psi_{phase}_terms"
+            terms = getattr(program.boundary.cpml, f"{phase}_terms")
+            updates[name] = tuple(
+                place_tree(program, value, shard_arrays=False)
+                if term.axis == program.sharding.layout.axis
+                else value
+                for value, term in zip(getattr(placed, name), terms, strict=True)
+            )
+        placed = placed._replace(**updates)
     return placed._replace(
         **{
             name: place_tree(program, getattr(state, name), shard_arrays=False)

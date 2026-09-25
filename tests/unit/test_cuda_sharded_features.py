@@ -270,3 +270,55 @@ def test_native_sharded_feature_parity_on_cpu(case):
         env=env,
         timeout=300,
     )
+
+
+def check_normal_cpml_placement():
+    from beamz.simulation.execute import runtime_inputs
+    from beamz.simulation.sharding import prepare_state
+    from tests.performance.h100_workloads import H100Workload
+
+    with native_cpu_backend():
+        sim = H100Workload(
+            name="cpml_placement",
+            shape_zyx=(9, 10, 11),
+            timesteps=2,
+            resolution=80e-9,
+            pml_cells=2,
+            cpml=True,
+            heterogeneous=True,
+        ).build()
+        for axis in ("z", "y", "x"):
+            program = sim.compile(
+                num_steps=2,
+                backend="cuda_streamed",
+                sharding=dict(axis=axis, num_devices=4, backend="cpu"),
+            )
+            state = runtime_inputs(program, sim.initial_state(), monitor_steps=2)
+            placed = prepare_state(program, state, replicated_fields=())
+            partition_axis = program.sharding.layout.axis
+            for phase in ("h", "e"):
+                values = getattr(placed, f"cpml_psi_{phase}_terms")
+                terms = getattr(program.boundary.cpml, f"{phase}_terms")
+                for value, term in zip(values, terms, strict=True):
+                    spec = value.sharding.spec
+                    if term.axis == partition_axis:
+                        assert spec == jax.sharding.PartitionSpec()
+                    else:
+                        assert spec[partition_axis] == "fdtd"
+
+
+def test_normal_cpml_slabs_remain_replicated_between_native_phases():
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from tests.unit.test_cuda_sharded_features import check_normal_cpml_placement; check_normal_cpml_placement()",
+        ],
+        check=True,
+        env=dict(
+            os.environ,
+            XLA_FLAGS="--xla_force_host_platform_device_count=4",
+            JAX_PLATFORMS="cpu",
+        ),
+        timeout=120,
+    )
