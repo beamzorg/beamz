@@ -8,6 +8,7 @@ import json
 import platform
 import subprocess
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import jax
@@ -101,25 +102,34 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
         shape_zyx=None if args.shape is None else tuple(args.shape),
         timesteps=args.timesteps,
     )
-    sim = workload.build()
-    sim.clear_compiled_cache()
-    program = sim.compile(
-        num_steps=workload.timesteps,
-        sharding=sharding,
-        backend=args.backend,
+    setup_device = (
+        jax.default_device(jax.devices("cpu")[0])
+        if getattr(args, "host_setup", False)
+        else nullcontext()
     )
-    state = initial_program_state(
-        program,
-        t=float(sim.time[0]),
-        current_step=0,
-        monitor_steps=workload.timesteps,
-    )
+    with setup_device:
+        sim = workload.build()
+        sim.clear_compiled_cache()
+        program = sim.compile(
+            num_steps=workload.timesteps,
+            sharding=sharding,
+            backend=args.backend,
+        )
+        state = initial_program_state(
+            program,
+            t=float(sim.time[0]),
+            current_step=0,
+            monitor_steps=workload.timesteps,
+        )
     state = sharding_runtime.prepare_state(
         program,
         state,
         replicated_fields=(*monitor_runtime.MONITOR_FIELDS, "t", "current_step"),
     )
     coefficients = sharding_runtime.place_tree(program, program.coefficients)
+    if getattr(args, "host_setup", False) and args.devices == 1:
+        state = jax.device_put(state, visible_devices[0])
+        coefficients = jax.device_put(coefficients, visible_devices[0])
     execution_devices = _array_devices(state.ex)
     if not execution_devices:
         raise RuntimeError("could not determine devices used by the benchmark state")
@@ -226,6 +236,7 @@ def _parser() -> argparse.ArgumentParser:
         default="auto",
     )
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--host-setup", action="store_true")
     parser.add_argument(
         "--allow-cpu",
         action="store_true",

@@ -17,9 +17,13 @@ def main():
     parser.add_argument("--backend", choices=("jax", "cuda_streamed"), required=True)
     parser.add_argument("--devices", type=int, default=1)
     parser.add_argument(
-        "--workload", choices=("realistic_3d", "crossing36"), default="realistic_3d"
+        "--workload",
+        choices=("realistic_3d", "crossing36", "modal_cpml12"),
+        default="realistic_3d",
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--shape", type=int, nargs=3)
+    parser.add_argument("--frequencies", type=int, default=3)
     parser.add_argument(
         "--hlo", action="store_true", help="Save optimized HLO for kernel attribution"
     )
@@ -33,8 +37,26 @@ def main():
         from benchmark_cosine_h100 import crossing
 
         sim = crossing(36)
+    elif args.workload == "modal_cpml12":
+        from benchmark_h100_backends import ModalWorkload
+
+        sim = (
+            ModalWorkload(frequencies=args.frequencies)
+            .resized(
+                timesteps=32,
+                shape_zyx=None if args.shape is None else tuple(args.shape),
+            )
+            .build()
+        )
     else:
-        sim = H100_WORKLOADS["realistic_3d"].resized(timesteps=32).build()
+        sim = (
+            H100_WORKLOADS["realistic_3d"]
+            .resized(
+                timesteps=32,
+                shape_zyx=None if args.shape is None else tuple(args.shape),
+            )
+            .build()
+        )
     program = sim.compile(num_steps=32, backend=args.backend, sharding=shard)
     state = initial_program_state(program, t=0, current_step=0, monitor_steps=32)
     state = placement.prepare_state(

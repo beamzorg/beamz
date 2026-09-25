@@ -43,6 +43,11 @@ def main():
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--max-wall-seconds", type=float, default=3600)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--host-setup",
+        action="store_true",
+        help="Avoid constructing the complete global grid on GPU 0",
+    )
     args = parser.parse_args()
     if (
         any(n not in (1, 2, 4, 8) for n in args.counts)
@@ -127,6 +132,8 @@ def main():
                 "--output",
                 str(output.resolve()),
             ]
+            if args.host_setup:
+                command.append("--host-setup")
             record = dict(
                 name=name,
                 suite=suite,

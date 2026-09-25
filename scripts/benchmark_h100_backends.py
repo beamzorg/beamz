@@ -61,7 +61,7 @@ class ModalWorkload:
 def worker(args):
     import benchmark_h100 as harness
     import jax
-    import numpy as np
+    import jax.numpy as jnp
 
     harness.H100_WORKLOADS["modal_cpml12"] = ModalWorkload(frequencies=args.frequencies)
     final_states = []
@@ -79,17 +79,22 @@ def worker(args):
     args.allow_cpu = False
     started = time.perf_counter()
     record = harness.run_benchmark(args)
-    if record.backend != args.backend or record.device_count != args.devices:
+    if (
+        record.backend != args.backend
+        or record.device_count != args.devices
+        or "H100" not in record.device
+    ):
         raise RuntimeError("Requested and resolved execution do not match")
     data = record.as_dict()
     final_state = final_states[0]
     for leaf in jax.tree.leaves(final_state):
-        if not np.isfinite(np.asarray(leaf)).all():
+        if not bool(jax.device_get(jnp.all(jnp.isfinite(leaf)))):
             raise RuntimeError("Final state contains non-finite values")
     data.update(
         final_state_finite=True,
         worker_measurement_wall_s=time.perf_counter() - started,
         shard_axis=args.shard_axis,
+        host_setup=args.host_setup,
         allocator={k: v for k, v in os.environ.items() if k.startswith("XLA_")},
         cuda_env={k: v for k, v in os.environ.items() if k.startswith("BEAMZ_CUDA_")},
         nccl_env={k: v for k, v in os.environ.items() if k.startswith("NCCL_")},
@@ -113,6 +118,11 @@ def main():
     parser.add_argument("--frequencies", type=int, default=3)
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--worker", action="store_true")
+    parser.add_argument(
+        "--host-setup",
+        action="store_true",
+        help="Construct the grid and initial state on CPU before distributing to GPUs",
+    )
     parser.add_argument("--workload", default="realistic_3d")
     parser.add_argument("--shape", type=int, nargs=3)
     parser.add_argument(
@@ -122,6 +132,8 @@ def main():
     parser.add_argument("--shard-axis", choices=["auto", "x", "y", "z"], default="auto")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if args.frequencies < 1 or args.samples < 5 or args.timesteps < 32:
+        parser.error("need positive frequencies, >=5 samples and >=32 steps")
     if args.worker:
         worker(args)
         return
@@ -202,6 +214,8 @@ def main():
                     "--frequencies",
                     str(args.frequencies),
                 ]
+                if args.host_setup:
+                    command.append("--host-setup")
                 print(name, flush=True)
                 if args.dry_run:
                     summary.append({"name": name, "command": command})
