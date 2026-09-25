@@ -828,3 +828,42 @@ def test_pair_publication_mask_staggered_arbitrary_gathers():
         expected[z, y // 8, x // 16] = 1
     actual = cuda_runtime._pair_publication_mask(state, (jnp.asarray(indices),))
     np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("loop_kind", ["scan", "fori"])
+def test_long_scan_observation_clock_uses_run_origin(monkeypatch, loop_kind):
+    """A continuation's entry time is authoritative; optical phase must not drift."""
+    program, state, _ = _program_and_state(cpml=False)
+    steps = 14570
+    dt = np.float32(6.863669437257166e-17)
+    origin = np.float32(2.1e-13)
+    program = replace(
+        program,
+        config=replace(
+            program.config, num_steps=steps, dt=float(dt), loop_kind=loop_kind
+        ),
+    )
+    state = state._replace(t=jnp.asarray(origin), current_step=jnp.int32(91))
+
+    def identity(state, *_):
+        return state
+
+    monkeypatch.setattr(
+        "beamz.simulation.execute.update_runtime.select_update_kernel",
+        lambda _: SimpleNamespace(update_h=identity, update_e=identity),
+    )
+    # Exercise forward_step's actual observation dispatch at every iteration.
+    # Store the phase itself, so correcting only the returned clock cannot pass.
+    omega = np.float32(2 * np.pi * 299792458.0 / 1.31e-6)
+
+    def observe(_program, state, _step, t, *_args):
+        return state._replace(ex=jnp.full_like(state.ex, jnp.sin(omega * t)))
+
+    monkeypatch.setattr(
+        "beamz.simulation.execute.monitor_runtime.update_monitors", observe
+    )
+    result = build_scan(program)(state, program.coefficients)
+    expected_t = np.float32(origin + dt * np.float32(steps))
+    np.testing.assert_allclose(result.t, expected_t, rtol=1e-7, atol=0)
+    np.testing.assert_allclose(result.ex, np.sin(omega * expected_t), rtol=0, atol=3e-4)
+    assert int(result.current_step) == 91 + steps

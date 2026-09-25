@@ -490,6 +490,7 @@ def forward_step(
     coeffs: UpdateCoefficients,
     program,
     update_kernel: update_runtime.StepUpdateKernel,
+    observation_time=None,
 ):
     """Advance one compiled timestep."""
     cfg = ctx.config
@@ -544,7 +545,7 @@ def forward_step(
         state = state._replace(ex=ex, ey=ey, ez=ez)
 
     # 4. Observe only fully constrained end-of-step fields, then advance both clocks.
-    t_phys = state.t + ctx.dt_scalar
+    t_phys = state.t + ctx.dt_scalar if observation_time is None else observation_time
     state = monitor_runtime.update_monitors(
         program,
         state,
@@ -734,9 +735,12 @@ def build_scan(program, *, donate_state: bool = False):
                         tail_steps,
                         full_chunks * CUDA_GRAPH_MAX_STEPS,
                     )
+        # Every observation uses the immutable run origin, as native CUDA does.
+        # Repeated float32 additions drift over long optical simulations. The
+        # entry time remains authoritative for explicit continuation states.
         elif cfg.loop_kind == "scan":
 
-            def _scan_body(carry, _unused):
+            def _scan_body(carry, step_index):
                 # Emit no per-step output because final state and explicit buffers hold results.
                 return (
                     forward_step(
@@ -745,6 +749,7 @@ def build_scan(program, *, donate_state: bool = False):
                         coeffs=coeffs,
                         program=program,
                         update_kernel=update_kernel,
+                        observation_time=state.t + dt_scalar * (step_index + 1),
                     ),
                     None,
                 )
@@ -752,8 +757,7 @@ def build_scan(program, *, donate_state: bool = False):
             scan_out, _ = jax.lax.scan(
                 _scan_body,
                 state,
-                xs=None,
-                length=cfg.num_steps,
+                xs=jnp.arange(cfg.num_steps, dtype=jnp.int32),
             )
         else:
             scan_out = jax.lax.fori_loop(
@@ -765,6 +769,7 @@ def build_scan(program, *, donate_state: bool = False):
                     coeffs=coeffs,
                     program=program,
                     update_kernel=update_kernel,
+                    observation_time=state.t + dt_scalar * (_i + 1),
                 ),
                 state,
             )
