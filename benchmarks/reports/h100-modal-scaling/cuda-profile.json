@@ -1,0 +1,82 @@
+[
+  {
+    "trace": "cuda_streamed/plugins/profile/2026_09_25_18_06_31/2a0d6b06c97a.trace.json.gz",
+    "gpu_count": 2,
+    "gpu_events": 6716,
+    "summed_gpu_event_ms": 49.21640399999994,
+    "category_ms": {
+      "other": 9.98469099999993,
+      "copies": 0.8155789999999998,
+      "sharded_update": 28.59316700000001,
+      "nccl": 9.822966999999997
+    },
+    "category_percent": {
+      "other": 20.287323307895356,
+      "copies": 1.6571283834552417,
+      "sharded_update": 58.09682275852589,
+      "nccl": 19.958725550123507
+    },
+    "top_kernels": [
+      {
+        "name": "__nv_static_32__36c2399d_10_sharded_cu_0ca36643__ZN43_GLOBAL__N__36c2399d_10_sharded_cu_0ca3664317UpdateShardedTileILi1EEEv11BeamzLaunch",
+        "count": 64,
+        "duration_ms": 15.641739999999999
+      },
+      {
+        "name": "__nv_static_32__36c2399d_10_sharded_cu_0ca36643__ZN43_GLOBAL__N__36c2399d_10_sharded_cu_0ca3664317UpdateShardedTileILi0EEEv11BeamzLaunch",
+        "count": 64,
+        "duration_ms": 12.951426999999992
+      },
+      {
+        "name": "ncclDevKernel_AllReduce_f32_RING(ncclDevKernelArgsStorage<4096ul>)",
+        "count": 130,
+        "duration_ms": 5.541291000000004
+      },
+      {
+        "name": "ncclDevKernel_SendRecv(ncclDevKernelArgsStorage<4096ul>)",
+        "count": 128,
+        "duration_ms": 4.281676
+      },
+      {
+        "name": "loop_select_fusion_16",
+        "count": 64,
+        "duration_ms": 0.518524
+      },
+      {
+        "name": "loop_select_fusion_19",
+        "count": 64,
+        "duration_ms": 0.46409399999999995
+      },
+      {
+        "name": "loop_select_fusion_14",
+        "count": 128,
+        "duration_ms": 0.41795400000000016
+      },
+      {
+        "name": "loop_select_fusion_15",
+        "count": 128,
+        "duration_ms": 0.4087659999999999
+      },
+      {
+        "name": "memcpy32_post",
+        "count": 280,
+        "duration_ms": 0.32335699999999973
+      },
+      {
+        "name": "MemcpyD2H",
+        "count": 128,
+        "duration_ms": 0.32223900000000016
+      },
+      {
+        "name": "Memset 3",
+        "count": 320,
+        "duration_ms": 0.31333999999999856
+      },
+      {
+        "name": "input_reduce_fusion_1",
+        "count": 256,
+        "duration_ms": 0.2941430000000004
+      }
+    ]
+  }
+]

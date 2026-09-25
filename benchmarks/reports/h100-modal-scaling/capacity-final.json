@@ -1,0 +1,122 @@
+{
+  "checked_at": "2026-09-25 20:32:57 UTC",
+  "product": "POD",
+  "items": [
+    {
+      "cloud": "SECURE",
+      "count": 8,
+      "availability": "NONE",
+      "community": true,
+      "cudaVersions": [
+        {
+          "available": false,
+          "version": "12.8"
+        },
+        {
+          "available": false,
+          "version": "13.0"
+        },
+        {
+          "available": false,
+          "version": "13.2"
+        }
+      ],
+      "id": "NVIDIA H100 80GB HBM3",
+      "manufacturer": "NVIDIA",
+      "maxCount": {
+        "community": 1,
+        "secure": 8
+      },
+      "memory": 80,
+      "name": "H100 SXM",
+      "pool": "ADA_80_PRO",
+      "price": {
+        "community": 2.69,
+        "secure": 3.49,
+        "serverless": 4.79
+      },
+      "secure": true
+    },
+    {
+      "cloud": "SECURE",
+      "count": 8,
+      "availability": "NONE",
+      "community": true,
+      "cudaVersions": [
+        {
+          "available": false,
+          "version": "13.0"
+        }
+      ],
+      "id": "NVIDIA H100 NVL",
+      "manufacturer": "NVIDIA",
+      "maxCount": {
+        "community": 10,
+        "secure": 8
+      },
+      "memory": 94,
+      "name": "H100 NVL",
+      "pool": "ADA_80_PRO",
+      "price": {
+        "community": 2.59,
+        "secure": 3.19,
+        "serverless": 4.79
+      },
+      "secure": true
+    },
+    {
+      "cloud": "SECURE",
+      "count": 8,
+      "availability": "NONE",
+      "community": true,
+      "cudaVersions": [
+        {
+          "available": false,
+          "version": "13.0"
+        }
+      ],
+      "id": "NVIDIA H100 PCIe",
+      "manufacturer": "NVIDIA",
+      "maxCount": {
+        "community": 1,
+        "secure": 8
+      },
+      "memory": 80,
+      "name": "H100 PCIe",
+      "pool": "ADA_80_PRO",
+      "price": {
+        "community": 1.99,
+        "secure": 2.89,
+        "serverless": 4.79
+      },
+      "secure": true
+    },
+    {
+      "cloud": "COMMUNITY",
+      "count": 8,
+      "availability": "NONE",
+      "community": true,
+      "cudaVersions": [
+        {
+          "available": false,
+          "version": "12.8"
+        }
+      ],
+      "id": "NVIDIA H100 NVL",
+      "manufacturer": "NVIDIA",
+      "maxCount": {
+        "community": 10,
+        "secure": 8
+      },
+      "memory": 94,
+      "name": "H100 NVL",
+      "pool": "ADA_80_PRO",
+      "price": {
+        "community": 2.59,
+        "secure": 3.19,
+        "serverless": 4.79
+      },
+      "secure": true
+    }
+  ]
+}

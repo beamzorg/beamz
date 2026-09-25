@@ -1,0 +1,13 @@
+Simulation runtime: 0.01 s
+GCUPS: 0.161
+Simulation runtime: 0.01 s
+GCUPS: 0.177
+Simulation runtime: 0.01 s
+GCUPS: 0.175
+Simulation runtime: 0.01 s
+GCUPS: 0.174
+Simulation runtime: 0.01 s
+GCUPS: 0.178
+Simulation runtime: 0.01 s
+GCUPS: 0.177
+Final callback retained exactly one finite state after five samples per path

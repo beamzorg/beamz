@@ -32,9 +32,22 @@ Implementation sequence:
    and fallback for unsupported configurations.
 4. Measure local-volume saturation and strong/weak scaling; inspect exposed halo
    communication and source/monitor ownership before extending decomposition.
+5. Localize CUDA slab injection, remove proven-redundant boundary masks and use
+   contiguous partition-normal storage where supported. Preserve the original
+   physical source/monitor ordering and validate continuation across all axes.
 
-Eight-device targets require actual eight-device measurements. The initial
-RunPod budget remains $100 total; prior estimated compute is $36.93. Start with
-same-node controls on two devices, currently available, and recheck eight-device
+The available two-device validation uses local cubes 384³/512³/640³, with both
+3 and 101 frequencies. The largest coupled domain is 640×640×1280. A separate
+128×1024×2048 planar domain checks a less cubic aspect ratio. Propagated spectra
+are checked separately from these short throughput windows.
+
+Eight-device targets require actual eight-device measurements. The user increased the
+RunPod cap to $175 total ($100 initial plus $75); prior estimated compute is
+$36.93. Start with same-node controls on two devices, currently available, and recheck eight-device
 capacity before final validation. GPU allocation and teardown are deliberately
 outside the sweep script; `--max-wall-seconds` limits only the sweep process.
+
+Implementation and one-/two-device measurements are recorded in
+[the results report](H100_MODAL_SCALING_RESULTS.md). Four-/eight-device validation
+remains blocked by capacity. The single-device CUDA DFT discrepancy is unchanged
+from baseline and is recorded as a failed strict comparison, not waived.

@@ -1,0 +1,6 @@
+ex (33, 33, 64) NamedSharding(mesh=Mesh('fdtd': 2, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) [(0, (33, 33, 64)), (1, (33, 33, 64))]
+ey (33, 32, 65) NamedSharding(mesh=Mesh('fdtd': 2, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) [(0, (33, 32, 65)), (1, (33, 32, 65))]
+ez (32, 33, 65) NamedSharding(mesh=Mesh('fdtd': 2, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) [(0, (32, 33, 65)), (1, (32, 33, 65))]
+hx (32, 32, 65) NamedSharding(mesh=Mesh('fdtd': 2, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) [(0, (32, 32, 65)), (1, (32, 32, 65))]
+hy (32, 33, 64) NamedSharding(mesh=Mesh('fdtd': 2, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) [(0, (32, 33, 64)), (1, (32, 33, 64))]
+hz (33, 32, 64) NamedSharding(mesh=Mesh('fdtd': 2, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) [(0, (33, 32, 64)), (1, (33, 32, 64))]

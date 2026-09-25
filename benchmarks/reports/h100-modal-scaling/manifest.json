@@ -1,0 +1,128 @@
+{
+  "schema": "beamz.modal-h100-evidence/v1",
+  "runtime_commit": "23defe19e5a865e736bd18b2af788b3c0ebd0761",
+  "baseline_commit": "795c8c5",
+  "pod": {
+    "id": "93njfmkf0pwq2o",
+    "name": "beamz-modal-scaling",
+    "created_at": "2026-09-25T15:48:55.963Z",
+    "termination_requested_at": "2026-09-25T20:26:36Z",
+    "termination_status": 204,
+    "verified_get_status": 404,
+    "hourly_usd": 6.98,
+    "elapsed_hours": 4.6277880555555555,
+    "compute_estimate_usd": 32.3
+  },
+  "budget": {
+    "cap_usd": 175,
+    "prior_compute_estimate_usd": 36.93,
+    "total_compute_estimate_usd": 69.23,
+    "remaining_estimate_usd": 105.77
+  },
+  "evidence": {
+    "archive": "benchmarks/results/h100-modal-20260925-evidence.tar.gz",
+    "bytes": 340051341,
+    "sha256": "8e8d99664240fbc4c832f90a57218e1fc9350995b1b74fd62889ed61c43de6c3",
+    "verified_remote_files": 349,
+    "runtime_archive_sha256": "0f6fa029079ead62d4686f788539acd2b6a43049019112fddc0d2fe265fe09f0",
+    "native_wheel_sha256": "c83cb042686c0a319bcd44b0b0eb337a4562a975e67608c050c3704f18c0ac84",
+    "native_binary_sha256": "f82c4d2291f42cc675307191b62d89b233b346d46ac1e60f8966a4ce24b79b14"
+  },
+  "hardware": {
+    "count": 2,
+    "model": "H100 SXM 80GB",
+    "nvlink": "NV18",
+    "driver": "580.159.04",
+    "python": "3.12.3",
+    "jax": "0.9.0",
+    "jaxlib": "0.9.0",
+    "cuda_flags": 128,
+    "cpml_psi_precision": "float32",
+    "NCCL_NVLS_ENABLE": "0"
+  },
+  "acceptance": {
+    "targets_8_gpu_gcups": {
+      "cuda_streamed": 150,
+      "jax": 75
+    },
+    "eight_gpu_measured": false,
+    "distributed_large_spectra_passed": true,
+    "single_cuda_spectra_matches_jax": false,
+    "single_cuda_dft_flux_bitwise_unchanged_from_baseline": true
+  },
+  "capacity_after_teardown": {
+    "checked_at": "2026-09-25 20:28:06 UTC",
+    "items": [
+      {
+        "count": 4,
+        "cloud": "SECURE",
+        "availability": "NONE",
+        "community": true,
+        "cudaVersions": [
+          {
+            "available": false,
+            "version": "12.8"
+          },
+          {
+            "available": false,
+            "version": "13.0"
+          },
+          {
+            "available": false,
+            "version": "13.2"
+          }
+        ],
+        "id": "NVIDIA H100 80GB HBM3",
+        "manufacturer": "NVIDIA",
+        "maxCount": {
+          "community": 1,
+          "secure": 8
+        },
+        "memory": 80,
+        "name": "H100 SXM",
+        "pool": "ADA_80_PRO",
+        "price": {
+          "community": 2.69,
+          "secure": 3.49,
+          "serverless": 4.79
+        },
+        "secure": true
+      },
+      {
+        "count": 8,
+        "cloud": "SECURE",
+        "availability": "NONE",
+        "community": true,
+        "cudaVersions": [
+          {
+            "available": false,
+            "version": "12.8"
+          },
+          {
+            "available": false,
+            "version": "13.0"
+          },
+          {
+            "available": false,
+            "version": "13.2"
+          }
+        ],
+        "id": "NVIDIA H100 80GB HBM3",
+        "manufacturer": "NVIDIA",
+        "maxCount": {
+          "community": 1,
+          "secure": 8
+        },
+        "memory": 80,
+        "name": "H100 SXM",
+        "pool": "ADA_80_PRO",
+        "price": {
+          "community": 2.69,
+          "secure": 3.49,
+          "serverless": 4.79
+        },
+        "secure": true
+      }
+    ]
+  }
+}
