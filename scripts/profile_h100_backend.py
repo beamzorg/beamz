@@ -20,6 +20,9 @@ def main():
         "--workload", choices=("realistic_3d", "crossing36"), default="realistic_3d"
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--hlo", action="store_true", help="Save optimized HLO for kernel attribution"
+    )
     args = parser.parse_args()
     shard = (
         None
@@ -41,6 +44,9 @@ def main():
     executable = (
         build_scan(program, donate_state=False).lower(state, coefficients).compile()
     )
+    if args.hlo:
+        args.output.mkdir(parents=True, exist_ok=True)
+        (args.output / "optimized-hlo.txt").write_text(executable.as_text())
     for _ in range(3):
         jax.block_until_ready(executable(state, coefficients))
     with jax.profiler.trace(str(args.output), create_perfetto_trace=True):

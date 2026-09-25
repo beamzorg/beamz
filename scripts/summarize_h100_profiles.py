@@ -17,7 +17,9 @@ def category(name):
         return "sharded_update"
     if "UpdateCombinedCpmlQueue" in name:
         return "streamed_update"
-    if "AccumulateDftGroups" in name or "PrepareDftPhases" in name:
+    if any(
+        token in name for token in ("AccumulateDft", "PrepareDftPhases", "GatherDft")
+    ):
         return "native_dft"
     if "ApplySingleSourceGroup" in name:
         return "native_sources"

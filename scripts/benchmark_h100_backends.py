@@ -91,6 +91,7 @@ def worker(args):
         shard_axis=args.shard_axis,
         allocator={k: v for k, v in os.environ.items() if k.startswith("XLA_")},
         cuda_env={k: v for k, v in os.environ.items() if k.startswith("BEAMZ_CUDA_")},
+        nccl_env={k: v for k, v in os.environ.items() if k.startswith("NCCL_")},
         device_memory=[{"id": d.id, "stats": d.memory_stats()} for d in devices],
     )
     if args.backend.startswith("cuda"):
