@@ -6,6 +6,5 @@
 extern "C" XLA_FFI_Error* beamz_cuda_streamed(XLA_FFI_CallFrame* call_frame);
 extern "C" XLA_FFI_Error* beamz_cuda_sharded(XLA_FFI_CallFrame* call_frame);
 extern "C" XLA_FFI_Error* beamz_cuda_program(XLA_FFI_CallFrame* call_frame);
-extern "C" XLA_FFI_Error* beamz_cuda_hopper(XLA_FFI_CallFrame* call_frame);
 
 #endif  // BEAMZ_CUDA_FFI_HANDLER_H_

@@ -899,28 +899,6 @@ def test_streamed_cuda_matches_jax_on_nonuniform_grids(metric_kind, cpml):
     _assert_state_close(reference, actual)
 
 
-@pytest.mark.skipif(
-    not STATUS.compute_capabilities
-    or any(capability < 90 for capability in STATUS.compute_capabilities),
-    reason="Hopper tiled target requires SM90+",
-)
-@pytest.mark.parametrize("cpml", [False, True], ids=["pec", "cpml"])
-def test_hopper_cuda_matches_streamed_complete_state(cpml):
-    simulation, state = _simulation_and_seed(cpml=cpml)
-    reference = simulation.advance(
-        state=_copy_state(state),
-        num_steps=simulation.num_steps,
-        backend="cuda_streamed",
-    ).state
-    actual = simulation.advance(
-        state=_copy_state(state),
-        num_steps=simulation.num_steps,
-        backend="cuda_hopper",
-    ).state
-
-    _assert_state_close(reference, actual)
-
-
 @pytest.mark.parametrize("interval,normalization", [(1, 0), (2, 1), (3, 1)])
 @pytest.mark.parametrize("pair_tile", ["16x8x16", "single"])
 def test_temporal_pair_dft_windows_and_intervals(

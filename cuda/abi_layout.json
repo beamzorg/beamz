@@ -4,8 +4,7 @@
   "targets": {
     "streamed": "beamz_cuda_streamed",
     "sharded": "beamz_cuda_sharded",
-    "program": "beamz_cuda_program",
-    "hopper": "beamz_cuda_hopper"
+    "program": "beamz_cuda_program"
   },
   "streamed_targets": [
     "streamed",

@@ -220,11 +220,7 @@ def _ffi_phase(
 
 def update_h(state, ctx, coeffs) -> SimulationState:
     """Advance the three magnetic fields and optional CPML memory on CUDA."""
-    target = (
-        abi.CUDA_HOPPER_TARGET
-        if ctx.config.backend == "cuda_hopper"
-        else abi.CUDA_STREAMED_TARGET
-    )
+    target = abi.CUDA_STREAMED_TARGET
     terms = ctx.boundary.cpml.h_terms
     materials = (
         coeffs.h_decay_x,
@@ -259,11 +255,7 @@ def update_h(state, ctx, coeffs) -> SimulationState:
 
 def update_e(state, ctx, coeffs) -> SimulationState:
     """Advance the three electric fields and optional CPML memory on CUDA."""
-    target = (
-        abi.CUDA_HOPPER_TARGET
-        if ctx.config.backend == "cuda_hopper"
-        else abi.CUDA_STREAMED_TARGET
-    )
+    target = abi.CUDA_STREAMED_TARGET
     terms = ctx.boundary.cpml.e_terms
     materials = (
         coeffs.e_decay_x,

@@ -6,7 +6,6 @@ __all__ = [
     "CUDA_STREAMED_TARGET",
     "CUDA_SHARDED_TARGET",
     "CUDA_PROGRAM_TARGET",
-    "CUDA_HOPPER_TARGET",
     "CUDA_STREAMED_TARGETS",
     "CUDA_GRAPH_CACHE",
     "CUDA_BF16_PSI",
@@ -79,7 +78,6 @@ CUDA_COMPONENT_VERSION = "0.19.0"
 CUDA_STREAMED_TARGET = "beamz_cuda_streamed"
 CUDA_SHARDED_TARGET = "beamz_cuda_sharded"
 CUDA_PROGRAM_TARGET = "beamz_cuda_program"
-CUDA_HOPPER_TARGET = "beamz_cuda_hopper"
 
 CUDA_STREAMED_TARGETS = frozenset(
     (

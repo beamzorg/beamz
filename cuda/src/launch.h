@@ -122,6 +122,5 @@ struct BeamzProgramLaunch {
 int BeamzLaunchStreamed(void* stream, const BeamzLaunch& launch);
 int BeamzLaunchSharded(void* stream, const BeamzLaunch& launch);
 int BeamzLaunchProgram(void* stream, const BeamzProgramLaunch& program);
-int BeamzLaunchHopper(void* stream, const BeamzLaunch& launch);
 
 #endif  // BEAMZ_CUDA_LAUNCH_H_

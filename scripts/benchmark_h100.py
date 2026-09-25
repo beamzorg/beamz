@@ -211,7 +211,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--samples", type=int, default=5)
     parser.add_argument(
         "--backend",
-        choices=("auto", "jax", "cuda", "cuda_streamed", "cuda_hopper"),
+        choices=("auto", "jax", "cuda", "cuda_streamed"),
         default="auto",
     )
     parser.add_argument(

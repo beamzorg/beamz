@@ -3,7 +3,6 @@
 #include "sharded_schedule.h"
 
 int BeamzLaunchStreamed(void*, const BeamzLaunch&) { return 1; }
-int BeamzLaunchHopper(void*, const BeamzLaunch&) { return 1; }
 int BeamzLaunchProgram(void*, const BeamzProgramLaunch&) { return 1; }
 
 int BeamzLaunchSharded(void*, const BeamzLaunch& launch) {

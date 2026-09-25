@@ -496,7 +496,7 @@ def main():
     parser.add_argument("--mode", choices=["throughput", "full"], default="throughput")
     parser.add_argument(
         "--backend",
-        choices=["cuda_streamed", "jax", "cuda_hopper"],
+        choices=["cuda_streamed", "jax"],
         default="cuda_streamed",
     )
     parser.add_argument("--steps", type=int, default=256)

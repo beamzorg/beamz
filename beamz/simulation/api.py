@@ -1080,7 +1080,7 @@ class Simulation:
         donate_state : bool, default=False
             Allow JAX to recycle buffers owned by ``state``. After a donating call,
             the input state must not be read or reused.
-        backend : {"auto", "jax", "cuda", "cuda_streamed", "cuda_hopper"}, default="auto"
+        backend : {"auto", "jax", "cuda", "cuda_streamed"}, default="auto"
             Execution policy. ``auto`` uses the optional CUDA extension when it is
             compatible and otherwise retains the JAX implementation.
 
@@ -1207,7 +1207,7 @@ class Simulation:
             length is used when omitted.
         sharding : ShardingConfig or compatible value, optional
             Runtime device-sharding policy. ``None`` selects the default placement.
-        backend : {"auto", "jax", "cuda", "cuda_streamed", "cuda_hopper"}, default="auto"
+        backend : {"auto", "jax", "cuda", "cuda_streamed"}, default="auto"
             Execution policy. Explicit CUDA variants fail if their required typed
             FFI target or GPU architecture is unavailable.
         progress : bool, default=False
@@ -1375,7 +1375,7 @@ class Simulation:
         donate_state : bool, default=False
             Transfer ownership of the input state's device buffers to JAX. This can
             reduce peak memory, but the input state must never be used afterward.
-        backend : {"auto", "jax", "cuda", "cuda_streamed", "cuda_hopper"}, default="auto"
+        backend : {"auto", "jax", "cuda", "cuda_streamed"}, default="auto"
             Execution policy. ``auto`` preserves JAX as the fallback when the
             optional CUDA runtime is not installed.
         performance : bool, default=True
@@ -1485,7 +1485,7 @@ class Simulation:
             material regions needed by configured analysis monitors.
         sharding : ShardingConfig or compatible value, optional
             Runtime device-sharding policy.
-        backend : {"auto", "jax", "cuda", "cuda_streamed", "cuda_hopper"}, default="auto"
+        backend : {"auto", "jax", "cuda", "cuda_streamed"}, default="auto"
             Execution policy. ``cuda`` chooses the best compatible CUDA target.
         termination : AutoTermination, optional
             Bounded convergence policy. When supplied, BeamZ executes reusable

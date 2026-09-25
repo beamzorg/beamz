@@ -19,7 +19,6 @@ from beamz.simulation._cuda_abi import (
     CUDA_FIELD_PAD64,
     CUDA_FIELD_PAD_Y8,
     CUDA_GRAPH_CACHE,
-    CUDA_HOPPER_TARGET,
     CUDA_SHELL32X4,
     CUDA_SHELL32X8,
     CUDA_STREAMED_TARGETS,
@@ -31,9 +30,8 @@ ExecutionBackend = Literal[
     "jax",
     "cuda",
     "cuda_streamed",
-    "cuda_hopper",
 ]
-ResolvedBackend = Literal["jax", "cuda_streamed", "cuda_hopper"]
+ResolvedBackend = Literal["jax", "cuda_streamed"]
 
 _EXTENSION_MODULE = "beamz._cuda"
 _REGISTERED_MODULE: ModuleType | None = None
@@ -161,14 +159,11 @@ def normalize_backend(backend: str | None) -> ExecutionBackend:
         "streamed": "cuda_streamed",
         "cuda_streamed": "cuda_streamed",
         "cuda-streamed": "cuda_streamed",
-        "hopper": "cuda_hopper",
-        "cuda_hopper": "cuda_hopper",
-        "cuda-hopper": "cuda_hopper",
     }
     try:
         return aliases[value.strip().lower()]  # type: ignore[return-value]
     except KeyError as exc:
-        choices = "auto, jax, cuda, cuda_streamed, cuda_hopper"
+        choices = "auto, jax, cuda, cuda_streamed"
         raise ValueError(
             f"Unknown execution backend {value!r}; use one of: {choices}."
         ) from exc
@@ -196,7 +191,7 @@ def _compute_capability(device) -> int:
         parts = capability.replace("sm_", "").split(".")
         return int(parts[0]) * 10 + int(parts[1]) if len(parts) == 2 else int(parts[0])
     if capability is None:
-        # The model name is enough for safe Hopper dispatch when older jaxlib builds
+        # The model name is enough for hardware diagnostics when older jaxlib builds
         # do not expose compute capability directly.
         return 90 if "H100" in str(getattr(device, "device_kind", "")).upper() else 0
     return int(capability)
@@ -220,7 +215,7 @@ def _validated_registrations(extension: ModuleType) -> dict[str, object]:
             "beamz._cuda is missing required streamed FFI targets: "
             + ", ".join(missing)
         )
-    return registrations
+    return {name: registrations[name] for name in sorted(CUDA_STREAMED_TARGETS)}
 
 
 def register_cuda_ffi_targets(module: ModuleType | None = None) -> tuple[str, ...]:
@@ -300,17 +295,6 @@ def resolve_backend(backend: str | None) -> ResolvedBackend:
             "Build BeamZ's optional CUDA component, or use backend='jax'."
         )
     has_streamed = CUDA_STREAMED_TARGETS.issubset(status.targets)
-    has_hopper = (
-        CUDA_HOPPER_TARGET in status.targets
-        and bool(status.compute_capabilities)
-        and all(capability >= 90 for capability in status.compute_capabilities)
-    )
-    if requested == "cuda_hopper":
-        if not has_hopper:
-            raise CudaBackendUnavailable(
-                "cuda_hopper requires the beamz_cuda_hopper target and SM90+ GPUs"
-            )
-        return "cuda_hopper"
     if requested == "cuda_streamed":
         if not has_streamed:
             raise CudaBackendUnavailable(

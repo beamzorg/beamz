@@ -57,7 +57,7 @@ def test_auto_preserves_jax_for_unsupported_2d_simulations(monkeypatch):
     assert program.config.backend == "jax"
 
 
-@pytest.mark.parametrize("backend", ["cuda_streamed", "cuda_hopper"])
+@pytest.mark.parametrize("backend", ["cuda_streamed"])
 @pytest.mark.parametrize("polarization", ["tm", "te"])
 def test_explicit_cuda_rejects_2d_simulations(backend, polarization):
     simulation = bz.Simulation(
@@ -127,13 +127,6 @@ def test_auto_preserves_jax_for_multi_device_sharding(monkeypatch):
     )
 
     assert program.config.backend == "jax"
-
-
-def test_hopper_cuda_rejects_rectilinear_3d_simulations():
-    with pytest.raises(
-        backend_runtime.CudaBackendUnavailable, match="Hopper-specific kernel"
-    ):
-        _rectilinear_3d_simulation().compile(backend="cuda_hopper")
 
 
 def _full_tensor_3d_simulation():
@@ -207,7 +200,7 @@ def test_cuda_status_exposes_complete_diagnostics():
 
 
 def test_cuda_defaults_to_validated_streamed_target_on_sm90(monkeypatch):
-    extension = _extension("beamz_cuda_streamed", "beamz_cuda_hopper")
+    extension = _extension("beamz_cuda_streamed")
     monkeypatch.setattr(backend_runtime, "_gpu_devices", lambda: (_FakeDevice(),))
     monkeypatch.setattr(backend_runtime, "_load_extension", lambda: extension)
     monkeypatch.setattr(
@@ -218,7 +211,6 @@ def test_cuda_defaults_to_validated_streamed_target_on_sm90(monkeypatch):
 
     assert backend_runtime.resolve_backend("cuda") == "cuda_streamed"
     assert backend_runtime.resolve_backend("cuda_streamed") == "cuda_streamed"
-    assert backend_runtime.resolve_backend("cuda_hopper") == "cuda_hopper"
     assert backend_runtime.resolve_backend("auto") == "cuda_streamed"
 
 
@@ -248,45 +240,10 @@ def test_incompatible_cuda_extension_falls_back_or_fails_explicitly(
         backend_runtime.resolve_backend("cuda_streamed")
 
 
-def test_explicit_hopper_rejects_pre_sm90(monkeypatch):
-    device = _FakeDevice()
-    device.compute_capability = (8, 0)
-    extension = _extension("beamz_cuda_streamed", "beamz_cuda_hopper")
-    monkeypatch.setattr(backend_runtime, "_gpu_devices", lambda: (device,))
-    monkeypatch.setattr(backend_runtime, "_load_extension", lambda: extension)
-    monkeypatch.setattr(
-        backend_runtime,
-        "register_cuda_ffi_targets",
-        lambda module=None: tuple(sorted(extension.registrations())),
-    )
-
-    with pytest.raises(backend_runtime.CudaBackendUnavailable, match="SM90"):
-        backend_runtime.resolve_backend("cuda_hopper")
-    assert backend_runtime.resolve_backend("cuda") == "cuda_streamed"
-
-
-def test_hopper_only_extension_is_rejected_as_incomplete(monkeypatch):
-    extension = _extension("beamz_cuda_hopper")
-    monkeypatch.setattr(backend_runtime, "_gpu_devices", lambda: (_FakeDevice(),))
-    monkeypatch.setattr(backend_runtime, "_load_extension", lambda: extension)
-    monkeypatch.setattr(
-        backend_runtime,
-        "register_cuda_ffi_targets",
-        lambda module=None: tuple(sorted(extension.registrations())),
-    )
-
-    assert backend_runtime.resolve_backend("auto") == "jax"
-    with pytest.raises(
-        backend_runtime.CudaBackendUnavailable, match="missing required"
-    ):
-        backend_runtime.resolve_backend("cuda_hopper")
-
-
 def test_typed_ffi_registrations_use_cuda_api_v1(monkeypatch):
     extension = _extension(
         "beamz_cuda_streamed",
         "beamz_cuda_program",
-        "beamz_cuda_hopper",
     )
     registrations = []
     monkeypatch.setattr(backend_runtime, "_REGISTERED_MODULE", None)
@@ -299,7 +256,6 @@ def test_typed_ffi_registrations_use_cuda_api_v1(monkeypatch):
     targets = backend_runtime.register_cuda_ffi_targets(extension)
 
     assert targets == (
-        "beamz_cuda_hopper",
         "beamz_cuda_program",
         "beamz_cuda_sharded",
         "beamz_cuda_streamed",
@@ -316,7 +272,6 @@ def test_typed_ffi_registrations_use_cuda_api_v1(monkeypatch):
     [
         ("xla", "jax"),
         ("cuda-streamed", "cuda_streamed"),
-        ("hopper", "cuda_hopper"),
     ],
 )
 def test_backend_aliases(value, expected):
@@ -448,3 +403,26 @@ def test_cuda_storage_axes_refuse_unsupported_scan(monkeypatch):
     program = _rectilinear_3d_simulation().compile(backend="cuda_streamed")
     with pytest.raises(ValueError, match="uniform-grid CPML native graph"):
         build_scan(program)
+
+
+@pytest.mark.parametrize("name", ["hopper", "cuda_hopper", "cuda-hopper"])
+def test_removed_hopper_backend_is_rejected(name, monkeypatch):
+    with pytest.raises(ValueError, match="Unknown execution backend"):
+        backend_runtime.resolve_backend(name)
+    monkeypatch.setenv("BEAMZ_EXECUTION_BACKEND", name)
+    with pytest.raises(ValueError, match="Unknown execution backend"):
+        backend_runtime.normalize_backend(None)
+
+
+def test_obsolete_extension_targets_are_not_registered(monkeypatch):
+    extension = _extension("beamz_cuda_streamed", "beamz_cuda_hopper")
+    registered = []
+    monkeypatch.setattr(backend_runtime, "_REGISTERED_MODULE", None)
+    monkeypatch.setattr(
+        backend_runtime.jax.ffi,
+        "register_ffi_target",
+        lambda name, capsule, **kwargs: registered.append(name),
+    )
+    targets = backend_runtime.register_cuda_ffi_targets(extension)
+    assert set(targets) == backend_runtime.CUDA_STREAMED_TARGETS
+    assert set(registered) == backend_runtime.CUDA_STREAMED_TARGETS

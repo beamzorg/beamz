@@ -913,16 +913,6 @@ ffi::Error ProgramHandler(
   }
 }
 
-ffi::Error HopperHandler(void* stream, ffi::RemainingArgs args,
-                         ffi::RemainingRets rets, int32_t abi_version,
-                         int32_t cuda_flags, int32_t phase, int32_t nterms,
-                         float dt, float resolution, int32_t boundary_code,
-                         int32_t metric_kind) {
-  return Dispatch(BeamzLaunchHopper, stream, args, rets, abi_version,
-                  cuda_flags, phase, nterms, dt, resolution, boundary_code,
-                  metric_kind);
-}
-
 }  // namespace
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_streamed, StreamedHandler,
@@ -981,16 +971,3 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_program, ProgramHandler,
                                   .Attr<int32_t>("logical_y")
                                   .Attr<int32_t>("logical_x")
                                   .Attr<int32_t>("temporal_steps"));
-XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_hopper, HopperHandler,
-                              ffi::Ffi::Bind()
-                                  .Ctx<ffi::PlatformStream<void*>>()
-                                  .RemainingArgs()
-                                  .RemainingRets()
-                                  .Attr<int32_t>("abi_version")
-                                  .Attr<int32_t>("cuda_flags")
-                                  .Attr<int32_t>("phase")
-                                  .Attr<int32_t>("nterms")
-                                  .Attr<float>("dt")
-                                  .Attr<float>("resolution")
-                                  .Attr<int32_t>("boundary_code")
-                                  .Attr<int32_t>("metric_kind"));
