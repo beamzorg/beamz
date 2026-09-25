@@ -189,7 +189,7 @@ def build_sharding_plan(
         for name, shape in logical_shapes.items()
     }
     if aligned_components:
-        # Native stencils use the same local coordinate for every component.
+        # Explicit local stencils use the same coordinate for every component.
         # Independent rounding can otherwise put their interfaces on different
         # global cells (for example 16 versus 18 cells split across two GPUs).
         extent = max(shape[axis] for shape in padded_shapes.values())
@@ -481,9 +481,13 @@ def prepare_state(program, state, *, replicated_fields):
         }
     )
     placed = place_tree(program, state)
-    if program.config.backend == "cuda_streamed" and program.sharding.layout.enabled:
-        # Match the native phase's persistent ownership: normal slabs replicate,
-        # transverse slabs partition alongside their field components.
+    from beamz.simulation import jax_sharding
+
+    if program.sharding.layout.enabled and (
+        program.config.backend == "cuda_streamed" or jax_sharding.supported(program)
+    ):
+        # Public scan inputs replicate normal slabs; the scan distributes their
+        # recurrence entries internally. Transverse slabs follow field ownership.
         updates = {}
         for phase in ("h", "e"):
             name = f"cpml_psi_{phase}_terms"

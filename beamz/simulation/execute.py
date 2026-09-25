@@ -618,6 +618,11 @@ def build_scan(program, *, donate_state: bool = False):
         sharding_plan=program.sharding,
     )
     update_kernel = update_runtime.select_update_kernel(step_context)
+    from beamz.simulation import jax_sharding
+
+    local_jax_cpml = jax_sharding.supported(program)
+    if local_jax_cpml:
+        update_kernel = jax_sharding.select_kernel()
     graph_source_groups = tuple(
         source_batches[(timing, component)][0]
         for timing, components in SOURCE_PHASE_COMPONENTS.items()
@@ -681,7 +686,7 @@ def build_scan(program, *, donate_state: bool = False):
         local_cuda_cpml = (
             cfg.backend == "cuda_streamed" and program.sharding.layout.enabled
         )
-        if local_cuda_cpml:
+        if local_cuda_cpml or local_jax_cpml:
             from beamz.simulation.distributed import scan_local_cpml
 
             state = scan_local_cpml(state, program)
@@ -817,7 +822,7 @@ def build_scan(program, *, donate_state: bool = False):
                 ),
                 state,
             )
-        if local_cuda_cpml:
+        if local_cuda_cpml or local_jax_cpml:
             scan_out = scan_local_cpml(scan_out, program, assemble=True)
         return scan_out
 

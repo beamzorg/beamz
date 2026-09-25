@@ -344,7 +344,7 @@ def _prepare_compilation(
         logical_fields,
         sharding_cfg,
         is_3d=bool(request.domain.is_3d),
-        aligned_components=request.run.backend != "jax",
+        aligned_components=True,
     )
     sharding_layout = sharding.layout
     effective_sharding = (
