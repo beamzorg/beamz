@@ -577,7 +577,7 @@ def build_scan(program, *, donate_state: bool = False):
 
     cfg = program.config
     boundary = program.boundary
-    if cfg.backend == "jax":
+    if cfg.backend == "jax" or cfg.sharding.enabled:
         boundary = compact_boundary_masks(boundary)
     resolution = float(cfg.resolution)
     dt = float(cfg.dt)
