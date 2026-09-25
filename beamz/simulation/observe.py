@@ -357,18 +357,20 @@ def monitor_dft_sample_scale(
     return jnp.where(jnp.asarray(normalization_code) == 1, physical, native)
 
 
-def _sample_components(fields, indices, weights):
+def _sample_components(fields, indices, weights, *, active_mask=None):
     """Apply one canonical weighted-gather plan to Ex, Ey, Ez, Hx, Hy, and Hz."""
     # Retain the spatial axes so SPMD can gather sparse samples locally. Flattening
     # a sharded field can instead all-gather the complete volume on every device.
     return jnp.stack(
         tuple(
-            jnp.sum(
+            jnp.zeros(flat_idx.shape[:-1], dtype=field.dtype)
+            if active_mask is not None and active_mask[component] == 0
+            else jnp.sum(
                 field[jnp.unravel_index(flat_idx, field.shape)] * component_weights,
                 axis=-1,
             )
-            for field, flat_idx, component_weights in zip(
-                fields, indices, weights, strict=True
+            for component, (field, flat_idx, component_weights) in enumerate(
+                zip(fields, indices, weights, strict=True)
             )
         ),
         axis=0,
@@ -562,7 +564,12 @@ def _accumulate_dft(mon, carry, field_arrays, t_phys, dt_scalar):
     )
 
     # Compilation has already encoded dimensional colocation in these weighted gathers.
-    vectors = _sample_components(field_arrays, mon.dft_flat_idx, mon.dft_weights)
+    vectors = _sample_components(
+        field_arrays,
+        mon.dft_flat_idx,
+        mon.dft_weights,
+        active_mask=np.asarray(mon.dft_component_mask),
+    )
     component_mask = mon.dft_component_mask.astype(dtype)[:, None, None]
     delta_re = (
         scale
