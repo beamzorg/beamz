@@ -178,6 +178,10 @@ def run_case(case):
             ):
                 print(profile, flush=True)
                 compare(_feature_simulation(profile))
+            # More than two slabs use the dynamic-batch path in the reference.
+            # Include an overlapping third source to check additive ownership.
+            sim = _feature_simulation("multiple_sources")
+            compare(sim.updated_copy(sources=(*sim.sources, sim.sources[0])))
         elif case == "nonuniform":
             for metric in ("axis_uniform", "rectilinear"):
                 for cpml in (False, True):
