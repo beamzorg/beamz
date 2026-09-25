@@ -91,6 +91,8 @@ def worker(args):
         if not bool(jax.device_get(jnp.all(jnp.isfinite(leaf)))):
             raise RuntimeError("Final state contains non-finite values")
     data.update(
+        harness_sha256=hashlib.sha256(Path(harness.__file__).read_bytes()).hexdigest(),
+        worker_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         final_state_finite=True,
         worker_measurement_wall_s=time.perf_counter() - started,
         shard_axis=args.shard_axis,

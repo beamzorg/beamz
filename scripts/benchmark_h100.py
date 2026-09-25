@@ -145,6 +145,7 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
     # One unreported launch primes allocator and clocks before the measured samples.
     warm_state = executable(state, coefficients)
     _block(warm_state)
+    del warm_state
     kernel_samples = tuple(
         _time_call(lambda: executable(state, coefficients))[1]
         for _ in range(args.samples)
@@ -157,6 +158,7 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
         backend=args.backend,
     )
     _block(warm_run.state)
+    del warm_run
     end_to_end_samples = tuple(
         _time_call(
             lambda: (
