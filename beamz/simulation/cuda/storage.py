@@ -244,3 +244,93 @@ def wrap_native_calls(run_steps, run_program_steps, run_source_group_steps, axes
         return plain(state, ctx, coeffs, (None,) * 9, None, nsteps)
 
     return plain_call, program, source_call
+
+
+def wrap_sharded_phase(original, axes):
+    """Rotate a local phase and its faces without changing physical ownership."""
+    axes = tuple(axes)
+    if axes not in ((0, 1, 2), (1, 2, 0), (2, 0, 1)):
+        raise ValueError("CUDA storage axes must be a right-handed cyclic permutation")
+    inverse_axes = tuple(axes.index(a) for a in range(3))
+    components = tuple(2 - axes[2 - c] for c in range(3))
+    inverse_components = tuple(components.index(c) for c in range(3))
+
+    def transpose(value):
+        return jnp.transpose(value, axes) if value.ndim == 3 else value
+
+    def call(target, phase, targets, sources, materials, terms, psi, metrics, **kwargs):
+        if axes == (0, 1, 2):
+            return original(
+                target,
+                phase,
+                targets,
+                sources,
+                materials,
+                terms,
+                psi,
+                metrics,
+                **kwargs,
+            )
+        order = tuple(2 * c + k for c in components for k in range(2)) if terms else ()
+        inverse_terms = tuple(order.index(t) for t in range(len(terms)))
+        rotated_terms = []
+        for new_index, old_index in enumerate(order):
+            term = terms[old_index]
+            axis = inverse_axes[term.axis]
+            if axis != (1, 0, 0, 2, 2, 1)[new_index] or term.sign != (
+                1 if new_index % 2 == 0 else -1
+            ):
+                raise ValueError("Cyclic storage requires canonical 3D CPML curl terms")
+            rotated_terms.append(
+                replace(
+                    term,
+                    component=term.component[0] + "xyz"[new_index // 2],
+                    axis=axis,
+                    a=transpose(term.a),
+                    b=transpose(term.b),
+                    inv_kappa=transpose(term.inv_kappa),
+                    slab=term.slab._replace(
+                        axis=axis, shape=tuple(term.slab.shape[a] for a in axes)
+                    ),
+                )
+            )
+        faces = (("front", "back"), ("bottom", "top"), ("left", "right"))
+        old_edges = kwargs["metallic_edges"]
+        kwargs["metallic_edges"] = frozenset(
+            faces[new][side]
+            for new, old in enumerate(axes)
+            for side in range(2)
+            if faces[old][side] in old_edges
+        )
+        geometry = kwargs["shard_geometry"]
+        # Origin and return-curl mode are unchanged. Axis and component shapes
+        # rotate with the fields; normal-first storage makes the new axis zero.
+        new_axis = jnp.asarray(inverse_axes, dtype=jnp.int32)[geometry[0, 0]]
+        header = geometry[:1].at[0, 0].set(new_axis)
+        rows = jnp.asarray((*[1 + c for c in components], *[4 + c for c in components]))
+        kwargs["shard_geometry"] = jnp.concatenate(
+            (header, geometry[rows][:, jnp.asarray(axes)])
+        )
+        halos = kwargs["shard_halos"]
+        kwargs["shard_halos"] = tuple(
+            transpose(halos[2 * c + s]) for c in components for s in (0, 1)
+        )
+        outputs = original(
+            target,
+            phase,
+            tuple(transpose(targets[c]) for c in components),
+            tuple(transpose(sources[c]) for c in components),
+            tuple(
+                transpose(materials[base + c]) for base in (0, 3) for c in components
+            ),
+            tuple(rotated_terms),
+            tuple(transpose(psi[t]) for t in order),
+            tuple(metrics[a] for a in axes),
+            **kwargs,
+        )
+        return (
+            *(jnp.transpose(outputs[c], inverse_axes) for c in inverse_components),
+            *(jnp.transpose(outputs[3 + t], inverse_axes) for t in inverse_terms),
+        )
+
+    return call

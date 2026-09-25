@@ -41,6 +41,20 @@ def _phase(state, ctx, coeffs, *, phase):
 
     plan = ctx.sharding_plan
     axis, count = plan.layout.axis, plan.layout.num_devices
+    phase_call = runtime._ffi_phase
+    if (
+        axis == 2
+        and ctx.config.metric_kind == "isotropic_uniform"
+        and runtime._uniform_cpml_thickness(ctx) > 0
+        and not coeffs.e_inverse_offdiagonal.size
+        and all(
+            value.dtype == jnp.float32
+            for value in (*state.cpml_psi_h_terms, *state.cpml_psi_e_terms)
+        )
+    ):
+        from .storage import wrap_sharded_phase
+
+        phase_call = wrap_sharded_phase(phase_call, (2, 0, 1))
     spec = P(*(_MESH_AXIS if i == axis else None for i in range(3)))
     prefix = "h" if phase == 0 else "e"
     targets = tuple(getattr(state, prefix + c) for c in "xyz")
@@ -128,7 +142,7 @@ def _phase(state, ctx, coeffs, *, phase):
             )
             for value, term in zip(local_psi, terms, strict=True)
         )
-        outputs = runtime._ffi_phase(
+        outputs = phase_call(
             abi.CUDA_SHARDED_TARGET,
             phase,
             local_targets,
