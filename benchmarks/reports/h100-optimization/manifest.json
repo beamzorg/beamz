@@ -1,0 +1,48 @@
+{
+  "code_commit": "7561a5e",
+  "raw_directory": "benchmarks/results/h100-optimization",
+  "archives": [
+    {
+      "file": "h100-optimization-evidence.tar.gz",
+      "sha256": "b58f0c0da687a9e5e09c26a1b5e97469ad5fcde4077ca8a13e56ced2b7d6fb6f",
+      "bytes": 205945392
+    },
+    {
+      "file": "h100-scaling-evidence.tar.gz",
+      "sha256": "fb79934d65b6312e7946d0ee288746c05a832b085f0fee3273f38c377ec32267",
+      "bytes": 32902579
+    },
+    {
+      "file": "committed-source.tar.gz",
+      "sha256": "1c1fe6bd7b624cccfcc98b0ca5f03f3bbe8732d4a7168622f8153b1573cde999",
+      "bytes": 7547868
+    }
+  ],
+  "pods": [
+    {
+      "id": "10xeavr8hvgb4f",
+      "created_at": "2026-09-25T13:27:49.886+00:00",
+      "termination_confirmed_at": "2026-09-25T15:26:33+00:00",
+      "hourly_usd": 3.49,
+      "estimated_compute_usd": 6.9055,
+      "status": "terminated; get_pod returned 404"
+    },
+    {
+      "id": "tnx790ghk2egcy",
+      "created_at": "2026-09-25T14:32:46.926+00:00",
+      "termination_confirmed_at": "2026-09-25T15:25:01+00:00",
+      "hourly_usd": 6.98,
+      "estimated_compute_usd": 6.0766,
+      "status": "terminated; get_pod returned 404"
+    }
+  ],
+  "prior_initial_run_estimated_usd": 23.95,
+  "total_estimated_compute_usd": 36.93,
+  "budget_usd": 100,
+  "cost_note": "Elapsed-time estimate, not an invoice; includes setup and failed experiments.",
+  "final_cpu_validation": {
+    "tests_passed": 43,
+    "log": "final-cpu-validation.log",
+    "sha256": "2ba782da5bde23aac989a17b266ecb92d551f51be3af05eb52cfad33abac3b6e"
+  }
+}
