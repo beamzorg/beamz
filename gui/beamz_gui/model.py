@@ -37,6 +37,7 @@ import uuid
 from typing import Any, Optional
 
 import beamz as bz
+import numpy as np
 from PySide6.QtCore import QObject, Signal
 
 from . import geometry_adapters as ga
@@ -65,6 +66,13 @@ MONITOR_KINDS = (
     "FieldMonitor",
     "FluxMonitor",
     "ModeMonitor",
+    # A real beamz monitor class (subclasses beamz's internal _Monitor,
+    # confirmed directly — `Simulation(monitors=...)` accepts it in the
+    # exact same list as the three above, no separate kwarg needed) that
+    # had simply never been wired into the GUI before now: records raw
+    # time-domain field snapshots (Ex/Ey/Ez/Hx/Hy/Hz) on a center/size
+    # plane, as opposed to FieldMonitor's frequency-domain DFT fields.
+    "FieldRecorder",
 )
 # Not a real beamz class — a GUI-only placeable representing the FDTD
 # simulation region itself (Lumerical calls this the "FDTD" object).
@@ -110,6 +118,40 @@ def _recipe_from_instance(obj: Any) -> dict[str, Any]:
     not accepted as constructor args) are excluded automatically.
     """
     return {f.name: getattr(obj, f.name) for f in dataclasses.fields(obj) if f.init}
+
+
+def _values_equal(a: Any, b: Any) -> bool:
+    """Safe equality for recipe values — needed by restore()'s diff below
+    because a plain `a == b` on some recipe values doesn't return a bool
+    at all: a numpy array's `==` (e.g. a FieldMonitor's `freqs`) returns
+    an ELEMENTWISE array, and `bool()`-ing that to decide "are these
+    equal" raises "the truth value of an array... is ambiguous" instead
+    of ever getting an answer. Recurses into dicts/lists/tuples and
+    beamz dataclass instances (Material, GaussianPulse, ...) field-by-
+    field rather than comparing by identity/repr, so two SEPARATELY
+    CONSTRUCTED but equal-content values (e.g. the same Material made
+    twice) still compare equal.
+    """
+    if isinstance(a, np.ndarray) or isinstance(b, np.ndarray):
+        return np.array_equal(a, b)
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_values_equal(a[k], b[k]) for k in a)
+    if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+        return len(a) == len(b) and all(_values_equal(x, y) for x, y in zip(a, b))
+    if (
+        dataclasses.is_dataclass(a)
+        and dataclasses.is_dataclass(b)
+        and not isinstance(a, type)
+        and not isinstance(b, type)
+    ):
+        if type(a) is not type(b):
+            return False
+        return all(_values_equal(getattr(a, f.name), getattr(b, f.name)) for f in dataclasses.fields(a) if f.init)
+    return a == b
+
+
+def _recipe_equal(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    return _values_equal(a, b)
 
 
 @dataclasses.dataclass
@@ -185,6 +227,19 @@ class BeamzConnector(QObject):
         constructor kwargs (the canonical, unrotated recipe).
         """
         sid = uuid.uuid4().hex[:8]
+        # `recipe` may ALREADY carry its own "name" entry — e.g. a
+        # monitor's stored `so.recipe` (see the setdefault() a few lines
+        # down) needs "name" baked in so `_regenerate()`'s `cls(**so.recipe)`
+        # reproduces a monitor with a name at all, and restore()/
+        # duplicate()/paste all reconstruct FROM that stored recipe while
+        # ALSO passing an explicit `name=` for the (possibly different,
+        # e.g. "_copy"-suffixed) new name. Without this, those two collide
+        # — Python raises "got multiple values for keyword argument
+        # 'name'" — which is exactly what undo/redo surfaced (restore()
+        # is the one call site that always passes both). The explicit
+        # `name` parameter is authoritative; strip any duplicate out of
+        # the raw recipe before it can conflict.
+        recipe.pop("name", None)
         name = name or f"{class_name}_{sid}"
 
         # If the class has its own `name` constructor field (monitors do
@@ -231,6 +286,22 @@ class BeamzConnector(QObject):
         self._name_to_sid.pop(so.name, None)
 
         self.structure_removed.emit(sid)
+        self.design_changed.emit()
+
+    def set_enabled(self, sid: str, enabled: bool) -> None:
+        """Suppress/restore a structure/source/monitor from a run WITHOUT
+        deleting it (SceneObject.enabled — see its docstring; already
+        respected by build_design/build_sources/build_monitors, just
+        nothing in the UI could set it until now). A no-op, on-purpose,
+        for the simulation region: it doesn't participate in
+        build_design/sources/monitors as an object in its own right, so
+        "disabling" it wouldn't mean anything.
+        """
+        so = self._structures[sid]
+        if so.category == "region" or so.enabled == enabled:
+            return
+        so.enabled = enabled
+        self.structure_changed.emit(sid)
         self.design_changed.emit()
 
     def update_param(self, sid: str, **changes: Any) -> None:
@@ -323,6 +394,20 @@ class BeamzConnector(QObject):
     def get(self, sid: str) -> SceneObject:
         return self._structures[sid]
 
+    def has(self, sid: str) -> bool:
+        return sid in self._structures
+
+    def name_exists(self, name: str) -> bool:
+        """Whether `name` is already in use by some OTHER tracked object —
+        used by the Rename UI to reject a name collision before it reaches
+        `rename()` (which does not check this itself: a script-driven
+        rebind onto an existing name is a legitimate, if unusual, thing to
+        do, and sync_from_script relies on rename never refusing on its
+        own). A GUI-initiated rename should not be allowed to silently
+        make two SceneObjects share one namespace key.
+        """
+        return name in self._name_to_sid
+
     def all_structures(self) -> list[SceneObject]:
         """All placeable objects (despite the name, kept for backwards
         compatibility) in insertion order. Use `by_category` to filter.
@@ -388,6 +473,74 @@ class BeamzConnector(QObject):
             self.update_rotation(new_sid, so.rotation, axis=so.rotation_axis)
         return new_sid
 
+    def export_entries(self, sids: list[str]) -> list[dict[str, Any]]:
+        """Same per-object shape `snapshot()` uses (recipe/rotation/etc,
+        NOT JSON-safe — see snapshot()'s docstring), but only for the
+        given ids, and silently skipping the simulation region (there's
+        only ever one; copying it never makes sense). Used by Copy —
+        `workspace.py`'s `entries_to_clipboard_text()` wraps this with
+        the actual JSON conversion, same layering as snapshot()/
+        `_serialize_model()` for full-workspace save.
+        """
+        out = []
+        for sid in sids:
+            so = self._structures.get(sid)
+            if so is None or so.category == "region":
+                continue
+            out.append(
+                dict(
+                    category=so.category,
+                    class_name=so.class_name,
+                    name=so.name,
+                    recipe=dict(so.recipe),
+                    rotation=so.rotation,
+                    rotation_axis=so.rotation_axis,
+                )
+            )
+        return out
+
+    def import_entries(self, entries: list[dict[str, Any]]) -> list[str]:
+        """Create fresh objects from `export_entries()`-shaped entries —
+        used by Paste. Each gets a name guaranteed not to collide with
+        anything already tracked (via `_unique_name`, same as
+        `duplicate()`) rather than the original name verbatim, since the
+        whole point of Paste is landing a copy ALONGSIDE existing objects
+        (including, for copy/paste BETWEEN two separate running windows,
+        one that may already have an object with that exact name) — and
+        nudged by the same small, visible x/y offset `duplicate()` uses,
+        for the same reason: so it doesn't land exactly on top of
+        whatever's already there.
+        """
+        new_sids = []
+        for entry in entries:
+            new_recipe = dict(entry["recipe"])
+            adapter = ga.get_adapter(entry["class_name"])
+            if adapter is not None:
+                x, y, _z = ga.get_xyz(new_recipe, adapter)
+                offset = 0.5e-6
+                new_recipe.update(ga.xyz_changes(new_recipe, adapter, x=x + offset, y=y + offset))
+
+            new_name = self._unique_name(f"{entry['name']}_copy")
+            new_sid = self.add_object(entry["category"], entry["class_name"], name=new_name, **new_recipe)
+            if entry.get("rotation"):
+                self.update_rotation(new_sid, entry["rotation"], axis=entry.get("rotation_axis", "z"))
+            new_sids.append(new_sid)
+        return new_sids
+
+    def add_from_object(self, category: str, obj: Any, name: Optional[str] = None) -> str:
+        """Track an ALREADY-CONSTRUCTED beamz instance (e.g. one produced
+        by an external importer like GDS import — see workspace.py-style
+        importers in main_window._import_gds) as a new SceneObject,
+        capturing its current field values as the canonical recipe — the
+        same technique sync_from_script() uses for script-created objects
+        (see _recipe_from_instance). `add_object()` then reconstructs an
+        equivalent instance from that captured recipe (`cls(**recipe)`),
+        same as it does for anything else — nothing here bypasses the
+        normal construction path, `obj` itself is only ever read from,
+        never stored directly.
+        """
+        return self.add_object(category, type(obj).__name__, name, **_recipe_from_instance(obj))
+
     def snapshot(self) -> list[dict[str, Any]]:
         """A lightweight, in-memory snapshot of every placeable's state —
         used by UndoManager (undo.py) for undo/redo. NOT JSON-safe
@@ -411,23 +564,80 @@ class BeamzConnector(QObject):
         ]
 
     def restore(self, snapshot: list[dict[str, Any]]) -> None:
-        """Replace the ENTIRE current scene with `snapshot` (from an
-        earlier `snapshot()` call, or a JSON-decoded equivalent from
-        workspace.py). Goes through the normal add_object/add_region/
-        update_rotation methods — not a bypass — so every view stays in
-        sync via the usual structure_added/removed signals; nothing
-        extra needs to know undo/workspace-load happened.
+        """Bring the scene to match `snapshot` (from an earlier
+        `snapshot()` call, or a JSON-decoded equivalent from
+        workspace.py) — as a DIFF against the CURRENT scene, matched by
+        name, not a blanket remove-everything-then-recreate-everything.
+        An object whose name/recipe/rotation/enabled are all already
+        exactly what the snapshot says keeps its sid and gets touched
+        NOT AT ALL (no signal fires for it); one that differs gets
+        updated in place via the normal update_param/update_rotation/
+        set_enabled (same sid — it stays the same tracked object, just
+        with new content); one absent from the snapshot gets removed;
+        one present in the snapshot but not currently tracked gets added
+        fresh. Matching is by NAME since a snapshot never records sids —
+        so undoing a RENAME specifically still shows as a remove+re-add
+        (there is no earlier sid recorded to revert a name onto), but
+        every OTHER object in the scene, unaffected by whatever's being
+        undone, is genuinely left alone.
+
+        This isn't just an efficiency nicety: an earlier version's
+        unconditional remove-everything-then-recreate-everything meant
+        undoing ONE change also tore down and rebuilt every OTHER,
+        completely unrelated object in the scene as a side effect —
+        confirmed as the source of a specific reported bug where
+        pressing Undo right after adding a structure appeared to do
+        nothing (a visible delete-then-recreate of that exact structure,
+        completely unchanged) whenever the scene had other content too:
+        the unconditional approach can't tell "already correct, leave it"
+        from "needs to change", so it always did the latter to
+        everything, and whatever the ACTUAL undo target was could be
+        buried in a wall of identical-looking del/re-add noise for
+        objects that never needed touching at all.
         """
-        for so in list(self.all_structures()):
-            self.remove_structure(so.id)
+        target_by_name = {entry["name"]: entry for entry in snapshot}
+        current_by_name = {so.name: so for so in self.all_structures()}
+
+        for name, so in list(current_by_name.items()):
+            if name not in target_by_name:
+                self.remove_structure(so.id)
+
         for entry in snapshot:
-            if entry["category"] == "region":
-                sid = self.add_region(name=entry["name"], **entry["recipe"])
-            else:
-                sid = self.add_object(entry["category"], entry["class_name"], name=entry["name"], **entry["recipe"])
-            if entry.get("rotation"):
-                self.update_rotation(sid, entry["rotation"], axis=entry.get("rotation_axis", "z"))
-            self._structures[sid].enabled = entry.get("enabled", True)
+            current = current_by_name.get(entry["name"])
+            if current is not None and current.class_name != entry["class_name"]:
+                # Same name, but a fundamentally different KIND of object
+                # between the two states (e.g. a script rebind that
+                # pointed a name at something else entirely) — can't
+                # update a Rectangle "in place" into a Circle, so this
+                # one case still falls back to remove-old + add-new
+                # (a fresh sid), same as if the name simply hadn't
+                # existed in the current scene at all.
+                self.remove_structure(current.id)
+                current = None
+
+            if current is None:
+                if entry["category"] == "region":
+                    sid = self.add_region(name=entry["name"], **entry["recipe"])
+                else:
+                    sid = self.add_object(
+                        entry["category"], entry["class_name"], name=entry["name"], **entry["recipe"]
+                    )
+                if entry.get("rotation"):
+                    self.update_rotation(sid, entry["rotation"], axis=entry.get("rotation_axis", "z"))
+                self._structures[sid].enabled = entry.get("enabled", True)
+                continue
+
+            so = current
+            target_rotation = entry.get("rotation", 0.0)
+            target_axis = entry.get("rotation_axis", "z")
+            target_enabled = entry.get("enabled", True)
+
+            if not _recipe_equal(so.recipe, entry["recipe"]):
+                self.update_param(so.id, **entry["recipe"])
+            if so.rotation != target_rotation or so.rotation_axis != target_axis:
+                self.update_rotation(so.id, target_rotation, axis=target_axis)
+            if so.enabled != target_enabled:
+                self.set_enabled(so.id, target_enabled)
 
     def _regenerate(self, so: SceneObject) -> None:
         """The one place a beamz instance actually gets constructed from

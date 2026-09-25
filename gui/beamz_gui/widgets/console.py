@@ -96,6 +96,13 @@ class ScriptConsole(QWidget):
         self._history_index = len(self._history)
         self._append(PROMPT + code)
 
+        # Pre-snapshot, checkpoint only pushed if the line actually
+        # changed something — same reasoning as Property Editor's Apply
+        # (see undo.py's checkpoint_with()): a script line can be a
+        # no-op (e.g. `print(wg)`), a failed statement, or a real scene
+        # edit, and only the last of those should consume an undo slot.
+        pre_snapshot = self.connector.snapshot()
+
         self._suppress_echo = True
         try:
             output, is_error = scripting.run_snippet(code, self.connector.namespace)
@@ -110,6 +117,9 @@ class ScriptConsole(QWidget):
 
         if affected:
             self._append(f"# synced {len(affected)} structure(s) with GUI: {', '.join(affected)}")
+            window = self.window()
+            if hasattr(window, "_checkpoint_with_snapshot"):
+                window._checkpoint_with_snapshot(pre_snapshot)
 
     # ------------------------------------------------------------------ #
     # GUI-action echoing — see class docstring.

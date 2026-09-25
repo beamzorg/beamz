@@ -46,9 +46,13 @@ class Preview3D(QWidget):
         self.plotter.set_background("black")  # match the rest of the app's
         # dark theme — VTK's own default background otherwise looks
         # inconsistent next to the other (dark-themed) panels.
-        self.plotter.add_axes(interactive=False, color="white")  # CAD-style XYZ orientation
-        # gizmo in the corner, matching Fusion360/Blender/etc. — pyvista
-        # ships this as a one-line built-in, no need to build one.
+        # Deliberately only ONE orientation widget, not both: an earlier
+        # version kept `add_axes()` (a static, non-interactive labeled
+        # X/Y/Z triad) ALONGSIDE `add_camera_orientation_widget()` (the
+        # clickable one added below), which just put two overlapping
+        # legends in the view for no reason — the clickable one already
+        # shows which axis is which via its own coloring, and is strictly
+        # more useful since it's also the click-to-snap-camera control.
         layout.addWidget(self.plotter.interactor)
 
         self._actor_to_sid: dict[int, str] = {}
@@ -58,6 +62,7 @@ class Preview3D(QWidget):
         connector.structure_changed.connect(self._redraw)
 
         self._try_enable_picking()
+        self._try_enable_camera_orientation_widget()
         self._redraw()
 
     def _try_enable_picking(self) -> None:
@@ -85,6 +90,20 @@ class Preview3D(QWidget):
             self._picking_enabled = True
         except Exception:
             QTimer.singleShot(200, self._try_enable_picking)
+
+    def _try_enable_camera_orientation_widget(self) -> None:
+        """Adds the clickable orientation widget: click a face/axis on it
+        and the camera animates to look straight down that axis — e.g.
+        clicking its "top" face gives the same view as `view_xy()`. Same
+        render-window-not-ready caveat as `_try_enable_picking` above
+        (this needs `self.plotter.iren` too), so it gets the same
+        retry-shortly-after pattern rather than assuming construction
+        time is safe.
+        """
+        try:
+            self.plotter.add_camera_orientation_widget()
+        except Exception:
+            QTimer.singleShot(200, self._try_enable_camera_orientation_widget)
 
     # ------------------------------------------------------------------ #
     def _redraw(self, *_args) -> None:

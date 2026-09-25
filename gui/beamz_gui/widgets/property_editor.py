@@ -616,6 +616,7 @@ class PropertyEditor(QWidget):
 
     def _on_delete(self) -> None:
         if self.sid is not None:
+            self.window()._checkpoint()
             self.connector.remove_structure(self.sid)
             self.set_selection(None)
 
@@ -631,6 +632,12 @@ class PropertyEditor(QWidget):
         if self.sid is None:
             return
         so = self.connector.get(self.sid)
+        # Captured BEFORE attempting the mutation, but only pushed onto
+        # the undo stack on success (below) — Apply can fail validation
+        # (beamz rejecting a bad value), and a failed Apply shouldn't
+        # waste an undo slot on a no-op or clear the redo stack. See
+        # undo.py's checkpoint_with() docstring.
+        pre_snapshot = self.connector.snapshot()
 
         try:
             self.connector.update_param(self.sid, **self._working_recipe)
@@ -649,6 +656,8 @@ class PropertyEditor(QWidget):
                 self._error_label.setText(f"\u26a0 {exc}")
                 self._error_label.setVisible(True)
             return
+
+        self.window()._checkpoint_with_snapshot(pre_snapshot)
 
         # Success — rebuild fresh from the connector's new (authoritative)
         # state, which also clears the working copy / dirty marker / error.

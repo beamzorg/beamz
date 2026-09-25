@@ -106,6 +106,12 @@ _SCALED_DEFAULTS: dict[str, dict[str, Any]] = {
         size=(0.0, 3e-6, 1.5e-6),
         freqs=np.array([_DEFAULT_FREQ]),
     ),
+    "FieldRecorder": dict(
+        center=(0.0, 0.0, 0.0),
+        size=(0.0, 3e-6, 1.5e-6),
+        components=("Ez",),
+        interval=10,
+    ),
 }
 
 

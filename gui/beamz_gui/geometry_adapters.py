@@ -212,7 +212,7 @@ _CENTER_SIZE_ADAPTER = GeometryAdapter(
     y_span=SpanRef(("size", 1)),
     z_span=SpanRef(("size", 2)),
 )
-for _kind in ("GaussianBeamSource", "ModeSource", "FieldMonitor", "FluxMonitor", "ModeMonitor"):
+for _kind in ("GaussianBeamSource", "ModeSource", "FieldMonitor", "FluxMonitor", "ModeMonitor", "FieldRecorder"):
     ADAPTERS[_kind] = _CENTER_SIZE_ADAPTER
 # Polygon and CustomSource intentionally have no adapter: Polygon's shape
 # is arbitrary vertices with no clean x/y span, and CustomSource has an

@@ -3,8 +3,12 @@ from typing import Any
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
     QDockWidget,
     QFileDialog,
+    QInputDialog,
+    QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -13,7 +17,7 @@ from PySide6.QtWidgets import (
     QToolBar,
     QToolButton,
 )
-
+from PySide6.QtGui import QAction, QKeySequence
 from . import defaults
 from . import icons
 from . import serialization as ser
@@ -22,10 +26,12 @@ from .model import BeamzConnector, MONITOR_KINDS, SOURCE_KINDS, STRUCTURE_KINDS
 from .widgets.canvas_2d import Canvas2D
 from .widgets.console import ScriptConsole
 from .widgets.figure_dialog import FigureDialog
+from .widgets.gds_import_dialog import GdsImportDialog
 from .widgets.object_tree import ObjectTree
 from .widgets.preview_3d import Preview3D
 from .widgets.property_editor import PropertyEditor
-
+from .workspace import WorkspaceManager, entries_to_clipboard_text, entries_from_clipboard_text
+from .undo import UndoStack
 
 class MainWindow(QMainWindow):
     """Connector + object tree + 3D/2D views (tabbed, 3D first/default) +
@@ -40,6 +46,17 @@ class MainWindow(QMainWindow):
         self.resize(1440, 900)
 
         self.connector = BeamzConnector()
+
+        # Shared state a few call sites below need to exist before
+        # _build_toolbar()/_build_menu() reference them (toolbar/menu
+        # actions call back into undo_stack/current selection at CLICK
+        # time, not at build time, so this ordering is mostly for
+        # clarity — but _on_selected below does touch self.rename_action/
+        # self.duplicate_action, which _build_menu() creates).
+        self.workspace = WorkspaceManager(self.connector)
+        self.undo_stack = UndoStack(self.connector)
+        self.current_results = {}
+        self._current_sid: str | None = None
 
         # 3D is the default/primary view (Lumerical-style: precise editing
         # happens in the Properties panel, the 3D view is where you
@@ -101,10 +118,15 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ #
     def _on_selected(self, sid) -> None:
+        self._current_sid = sid
         self.props.set_selection(sid)
         self.tree.select_external(sid)
         self.canvas.select_external(sid)
         self.preview3d.select_external(sid)
+
+        so = self.connector.get(sid) if sid is not None else None
+        self.rename_action.setEnabled(sid is not None)
+        self.duplicate_action.setEnabled(sid is not None and so.category != "region")
 
     def _on_status_message(self, text: str) -> None:
         if text:
@@ -123,12 +145,223 @@ class MainWindow(QMainWindow):
     # here needs to know class names ahead of time.
     # ------------------------------------------------------------------ #
     def _build_menu(self) -> None:
-        file_menu = self.menuBar().addMenu("&File")
-        file_menu.addAction("Save Script...", self._on_save_script)
-        file_menu.addAction("Load Script...", self._on_load_script)
+        menu_bar = self.menuBar()
+        file_menu = menu_bar.addMenu("File")
 
-    def _on_save_script(self) -> None:
-        path, _filter = QFileDialog.getSaveFileName(self, "Save Script", "scene.py", "Python files (*.py)")
+        # Create Actions and connect to the MainWindow methods
+        open_ws_action = QAction("Open Workspace...", self)
+        open_ws_action.setShortcut(QKeySequence("Ctrl+O"))
+        open_ws_action.triggered.connect(self._open_workspace)
+        file_menu.addAction(open_ws_action)
+
+        save_ws_action = QAction("Save Workspace...", self)
+        save_ws_action.setShortcut(QKeySequence("Ctrl+S"))
+        save_ws_action.triggered.connect(self._save_workspace)
+        file_menu.addAction(save_ws_action)
+
+        file_menu.addSeparator()
+
+        import_script_action = QAction("Import Setup from Python...", self)
+        import_script_action.triggered.connect(self._import_script)
+        file_menu.addAction(import_script_action)
+
+        export_script_action = QAction("Export Setup as Python...", self)
+        export_script_action.triggered.connect(self._export_script)
+        file_menu.addAction(export_script_action)
+
+        file_menu.addSeparator()
+
+        import_gds_action = QAction("Import GDS Layout...", self)
+        import_gds_action.triggered.connect(self._import_gds)
+        file_menu.addAction(import_gds_action)
+
+        edit_menu = menu_bar.addMenu("Edit")
+
+        self.undo_action = QAction("Undo", self)
+        self.undo_action.setShortcut(QKeySequence.StandardKey.Undo)  # Ctrl+Z
+        self.undo_action.triggered.connect(self._on_undo)
+        self.undo_action.setEnabled(False)
+        edit_menu.addAction(self.undo_action)
+
+        self.redo_action = QAction("Redo", self)
+        # StandardKey.Redo already resolves to Ctrl+Y on Windows and
+        # Ctrl+Shift+Z elsewhere; adding Ctrl+Y explicitly on top makes it
+        # work everywhere, matching the TODO's explicit ask for Ctrl+Y.
+        self.redo_action.setShortcuts([QKeySequence.StandardKey.Redo, QKeySequence("Ctrl+Y")])
+        self.redo_action.triggered.connect(self._on_redo)
+        self.redo_action.setEnabled(False)
+        edit_menu.addAction(self.redo_action)
+
+        edit_menu.addSeparator()
+
+        self.rename_action = QAction("Rename...", self)
+        self.rename_action.setShortcut(QKeySequence("F2"))
+        self.rename_action.triggered.connect(self._rename_current)
+        self.rename_action.setEnabled(False)
+        edit_menu.addAction(self.rename_action)
+
+        self.duplicate_action = QAction("Duplicate", self)
+        self.duplicate_action.setShortcut(QKeySequence("Ctrl+D"))
+        self.duplicate_action.triggered.connect(self._duplicate_current)
+        self.duplicate_action.setEnabled(False)
+        edit_menu.addAction(self.duplicate_action)
+
+        edit_menu.addSeparator()
+
+        self.copy_action = QAction("Copy", self)
+        self.copy_action.setShortcut(QKeySequence.StandardKey.Copy)  # Ctrl+C
+        self.copy_action.triggered.connect(self._on_copy)
+        edit_menu.addAction(self.copy_action)
+
+        self.paste_action = QAction("Paste", self)
+        self.paste_action.setShortcut(QKeySequence.StandardKey.Paste)  # Ctrl+V
+        self.paste_action.triggered.connect(self._on_paste)
+        edit_menu.addAction(self.paste_action)
+
+    # ------------------------------------------------------------------ #
+    # Undo/Redo — whole-scene-snapshot, see undo.py. `_checkpoint()` is
+    # for actions guaranteed to succeed (Add/Delete/Duplicate/Rename):
+    # call it BEFORE the mutation. `_checkpoint_with_snapshot()` is for
+    # actions that might fail validation partway through (Property
+    # Editor Apply, script console lines): capture the snapshot before
+    # attempting the mutation, but only push it once success is
+    # confirmed — see undo.py's checkpoint_with() docstring.
+    # ------------------------------------------------------------------ #
+    def _checkpoint(self) -> None:
+        self.undo_stack.push_snapshot()
+        self._refresh_undo_actions()
+
+    def _checkpoint_with_snapshot(self, snapshot) -> None:
+        self.undo_stack.checkpoint_with(snapshot)
+        self._refresh_undo_actions()
+
+    def _refresh_undo_actions(self) -> None:
+        self.undo_action.setEnabled(self.undo_stack.can_undo())
+        self.redo_action.setEnabled(self.undo_stack.can_redo())
+
+    def _on_undo(self) -> None:
+        if self.undo_stack.undo():
+            self._resync_selection_after_restore()
+        self._refresh_undo_actions()
+
+    def _on_redo(self) -> None:
+        if self.undo_stack.redo():
+            self._resync_selection_after_restore()
+        self._refresh_undo_actions()
+
+    def _resync_selection_after_restore(self) -> None:
+        """After undo/redo, restore()'s diff (model.py) keeps the same
+        sid for anything that persisted with the same name and was
+        merely updated in place — so, unlike an earlier version where
+        EVERY undo/redo regenerated every sid unconditionally, the
+        current selection is usually still valid and worth keeping
+        (re-selecting it also refreshes the Properties panel to the
+        restored values). Only actually clears selection when the
+        selected object didn't survive the restore at all (removed, or
+        replaced via a rename/class-change edge case — see restore()'s
+        docstring).
+        """
+        if self._current_sid is not None and self.connector.has(self._current_sid):
+            self._on_selected(self._current_sid)
+        else:
+            self._on_selected(None)
+
+    # ------------------------------------------------------------------ #
+    # Rename / Duplicate — connector.rename()/duplicate() (model.py) did
+    # all the real work already; this is just the UI on top of it. Reused
+    # both from the Edit menu (acting on whatever's currently selected)
+    # and from the Object Tree's per-item context menu (acting on
+    # whichever row was right-clicked, which may not be the current
+    # selection).
+    # ------------------------------------------------------------------ #
+    def _rename_current(self) -> None:
+        if self._current_sid is not None:
+            self._rename_sid(self._current_sid)
+
+    def _duplicate_current(self) -> None:
+        if self._current_sid is not None:
+            self._duplicate_sid(self._current_sid)
+
+    def _rename_sid(self, sid: str) -> None:
+        so = self.connector.get(sid)
+        new_name, ok = QInputDialog.getText(self, "Rename", "New name:", QLineEdit.EchoMode.Normal, so.name)
+        if not ok:
+            return
+        new_name = new_name.strip()
+        if not new_name or new_name == so.name:
+            return
+        if self.connector.name_exists(new_name):
+            # Two SceneObjects sharing one namespace key silently breaks
+            # sync_from_script (one name can only ever point to one
+            # tracked sid) and workspace save/load — refuse rather than
+            # let it happen.
+            QMessageBox.warning(self, "Name already in use", f"'{new_name}' is already used by another object.")
+            return
+        self._checkpoint()
+        self.connector.rename(sid, new_name)
+
+    def _duplicate_sid(self, sid: str) -> None:
+        so = self.connector.get(sid)
+        if so.category == "region":
+            self.statusBar().showMessage("The simulation region can't be duplicated.", 5000)
+            return
+        self._checkpoint()
+        new_sid = self.connector.duplicate(sid)
+        self._on_selected(new_sid)
+
+    # ------------------------------------------------------------------ #
+    # Copy/Paste — via the OS clipboard (see workspace.py's
+    # entries_to/from_clipboard_text), which is what makes this work
+    # BETWEEN two separate running windows of the app, not just within
+    # one. Copy acts on whichever view actually holds a multi-selection
+    # (tree or canvas — see _active_selection_sids), falling back to
+    # the single "primary" selection for the ordinary single-click case.
+    # ------------------------------------------------------------------ #
+    def _active_selection_sids(self) -> list[str]:
+        tree_sids = self.tree.selected_sids()
+        if len(tree_sids) > 1:
+            return tree_sids
+        canvas_sids = self.canvas.selected_sids()
+        if len(canvas_sids) > 1:
+            return canvas_sids
+        return [self._current_sid] if self._current_sid is not None else []
+
+    def _copy_sids(self, sids: list[str]) -> None:
+        if not sids:
+            return
+        text = entries_to_clipboard_text(self.connector, sids)
+        QApplication.clipboard().setText(text)
+        self.statusBar().showMessage(f"Copied {len(sids)} object(s).", 3000)
+
+    def _on_copy(self) -> None:
+        self._copy_sids(self._active_selection_sids())
+
+    def _on_paste(self) -> None:
+        text = QApplication.clipboard().text()
+        try:
+            entries = entries_from_clipboard_text(text)
+        except (ValueError, TypeError) as exc:  # ValueError: no marker /
+            # bad JSON shape; TypeError: e.g. a beamz class that's since
+            # dropped/renamed a kwarg the copy was made with — either way
+            # this is untrusted clipboard content, not a crash.
+            self.statusBar().showMessage(f"Can't paste: {exc}", 5000)
+            return
+        if not entries:
+            return
+        pre_snapshot = self.connector.snapshot()
+        try:
+            new_sids = self.connector.import_entries(entries)
+        except Exception as exc:  # noqa: BLE001 — clipboard content could
+            # in principle be a copy from an incompatible beamz version;
+            # same reasoning as _import_script's catch-all.
+            QMessageBox.warning(self, "Can't paste", str(exc))
+            return
+        self._checkpoint_with_snapshot(pre_snapshot)
+        if new_sids:
+            self._on_selected(new_sids[-1])
+
+    def _export_script(self) -> None:
+        path, _filter = QFileDialog.getSaveFileName(self, "Export Setup", "setup.py", "Python files (*.py)")
         if not path:
             return
         try:
@@ -137,8 +370,8 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             QMessageBox.warning(self, "Can't save script", str(exc))
 
-    def _on_load_script(self) -> None:
-        path, _filter = QFileDialog.getOpenFileName(self, "Load Script", "", "Python files (*.py)")
+    def _import_script(self) -> None:
+        path, _filter = QFileDialog.getOpenFileName(self, "Import Setup", "", "Python files (*.py)")
         if not path:
             return
         try:
@@ -147,6 +380,11 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             QMessageBox.warning(self, "Can't read script", str(exc))
             return
+        # Pre-snapshot, checkpoint only pushed on success — same reasoning
+        # as Property Editor's Apply (see undo.py's checkpoint_with()):
+        # an import can fail partway through arbitrary user code, and a
+        # failed import shouldn't waste an undo slot on a no-op.
+        pre_snapshot = self.connector.snapshot()
         try:
             ser.import_script(self.connector, code)
         except Exception as exc:  # noqa: BLE001 — loaded scripts are
@@ -154,7 +392,70 @@ class MainWindow(QMainWindow):
             # rejecting a bad value can happen here, and showing the
             # message beats crashing on a bad file.
             QMessageBox.warning(self, "Can't load script", str(exc))
+            self.props.set_selection(None)
+            return
+        self._checkpoint_with_snapshot(pre_snapshot)
         self.props.set_selection(None)
+
+    def _import_gds(self) -> None:
+        path, _filter = QFileDialog.getOpenFileName(self, "Import GDS Layout", "", "GDS files (*.gds *.gds2 *.gdsii)")
+        if not path:
+            return
+        dialog = GdsImportDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted or dialog.result_kwargs is None:
+            return
+
+        try:
+            from beamz.design import import_gds
+        except ImportError as exc:
+            QMessageBox.warning(self, "GDS import unavailable", str(exc))
+            return
+        try:
+            imported = import_gds(path, **dialog.result_kwargs)
+        except ImportError as exc:
+            # beamz's own import_gds() raises this INSIDE the call too —
+            # beamz.design itself has no import-time dependency on
+            # gdsfactory (per gds.py's own module docstring), so the
+            # module import above can succeed even without it installed;
+            # the real check only happens once a GDS function actually
+            # runs.
+            QMessageBox.warning(self, "GDS import unavailable", f"{exc}\n\nInstall it with: pip install beamz[gds]")
+            return
+        except Exception as exc:  # noqa: BLE001 — bad file, requested
+            # layer absent from it, unresolvable component, etc.
+            QMessageBox.warning(self, "Can't import GDS file", str(exc))
+            return
+
+        # One checkpoint for the whole import (potentially many
+        # structures) — see undo.py's checkpoint_with() docstring.
+        pre_snapshot = self.connector.snapshot()
+        new_sids = [self.connector.add_from_object("structure", structure) for structure in imported.design.structures]
+        self._checkpoint_with_snapshot(pre_snapshot)
+
+        n_ports = len(imported.ports)
+        message = f"Imported {len(new_sids)} structure(s) from GDS."
+        if n_ports:
+            # Ports (modal port planes at the component's original layout
+            # boundary) aren't auto-converted into ModeSource/ModeMonitor
+            # placeables yet — flagged rather than silently dropped, so
+            # it's clear this import isn't a fully wired-up simulation on
+            # its own.
+            message += f" ({n_ports} port(s) available but not yet auto-added as sources/monitors.)"
+        self.statusBar().showMessage(message, 8000)
+
+        answer = QMessageBox.question(
+            self,
+            "Match Simulation Domain?",
+            "Also resize the Design domain (width/height/depth/background) to match "
+            f"the imported layout ({imported.design.width * 1e6:.3g} \u00d7 {imported.design.height * 1e6:.3g} "
+            f"\u00d7 {imported.design.depth * 1e6:.3g} \u00b5m)?",
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.connector.design_width = imported.design.width
+            self.connector.design_height = imported.design.height
+            self.connector.design_depth = imported.design.depth
+            self.connector.background_material = imported.design.background
+            self.connector.design_changed.emit()
 
     def _build_toolbar(self) -> None:
         tb = QToolBar("Add", self)
@@ -211,12 +512,23 @@ class MainWindow(QMainWindow):
         except TypeError as exc:
             self.statusBar().showMessage(f"Can't add {class_name}: {exc}", 5000)
             return
-        self.connector.add_object(category, class_name, **recipe)
+        # Checkpoint BEFORE the mutation — see undo.py's checkpoint()
+        # docstring for why the ordering matters. Deliberately after the
+        # recipe-build try/except above: a TypeError there means nothing
+        # is actually about to change, so nothing needs to be undoable.
+        self._checkpoint()
+        # Extract name to prevent kwarg collision
+        obj_name = recipe.pop("name", None)
+        if obj_name:
+            self.connector.add_object(category, class_name, name=obj_name, **recipe)
+        else:
+            self.connector.add_object(category, class_name, **recipe)
 
     def _add_region(self) -> None:
         if self.connector.by_category("region"):
             self.statusBar().showMessage("A Simulation Region already exists — select it to edit.", 5000)
             return
+        self._checkpoint()
         self.connector.add_region()
 
     def _fit_current_view(self) -> None:
@@ -379,6 +691,7 @@ class MainWindow(QMainWindow):
             self._progress_dialog.close()
             self._progress_dialog = None
         self.last_results = results
+        self.current_results = sr.build_results_datasets(results, self.connector)
         self.statusBar().showMessage("Simulation finished. Right-click a monitor to view results.", 8000)
 
     def _on_run_failed(self, message: str) -> None:
@@ -394,14 +707,46 @@ class MainWindow(QMainWindow):
             )
             return
         so = self.connector.get(sid)
+        # FluxMonitor/ModeMonitor have no spatial field frame at all
+        # (plot_field() is a FieldMonitor-only concept — a flux/mode
+        # monitor only has scalar-per-frequency data), so each gets its
+        # own spectrum plot instead. Only the FieldMonitor path draws
+        # actual space-domain axes, so only it gets the coordinate-offset
+        # relabeling below.
         try:
-            fig, axes = self.last_results.plot_field(monitor_name=so.name, show=False)
+            if so.class_name == "FluxMonitor":
+                fig, axes = sr.plot_flux_spectrum(self.last_results, so)
+            elif so.class_name == "ModeMonitor":
+                fig, axes = sr.plot_mode_spectrum(self.last_results, so)
+            else:
+                fig, axes = self.last_results.plot_field(monitor_name=so.name, show=False)
         except Exception as exc:  # noqa: BLE001 — e.g. the monitor wasn't
             # part of the simulation that produced `last_results` (deleted
-            # and re-added since, or the run predates it existing).
+            # and re-added since, or the run predates it existing), or
+            # (Flux/Mode) simply has no recorded frequency-domain data yet.
             QMessageBox.warning(self, "Can't plot monitor results", str(exc))
             return
-        self._apply_coordinate_offset_labels(axes)
+        if so.class_name not in ("FluxMonitor", "ModeMonitor"):
+            self._apply_coordinate_offset_labels(axes)
         dialog = FigureDialog(fig, title=f"Results \u2014 {so.name}", parent=self)
         dialog.show()
         self._open_dialogs.append(dialog)
+
+    # --- Slot Implementations ---
+    def _save_workspace(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Save Workspace", "", "BEAMZ Workspace (*.h5)")
+        if path:
+            try:
+                self.workspace.save_workspace(path, self.current_results)
+                self.statusBar().showMessage(f"Saved workspace to {path}", 3000)
+            except Exception as e:
+                QMessageBox.critical(self, "Save Error", str(e))
+
+    def _open_workspace(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Open Workspace", "", "BEAMZ Workspace (*.h5)")
+        if path:
+            try:
+                self.current_results = self.workspace.load_workspace(path)
+                self.statusBar().showMessage(f"Loaded workspace from {path}", 3000)
+            except Exception as e:
+                QMessageBox.critical(self, "Load Error", str(e))

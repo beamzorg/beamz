@@ -11,6 +11,7 @@ import math
 from typing import Any, Optional
 
 import beamz as bz
+import numpy as np
 from PySide6.QtCore import QObject, QThread, Signal
 
 from . import geometry_adapters as ga
@@ -203,6 +204,113 @@ def build_simulation(
     )
 
     return bz.Simulation(**kwargs)
+
+
+def plot_flux_spectrum(results: "bz.SimulationResults", so) -> tuple[Any, Any]:
+    """(figure, axes) for a FluxMonitor's transmitted/reflected power
+    spectrum vs wavelength. `SimulationResults.plot_field()` only knows
+    how to draw a spatial field frame (a FieldMonitor concept) — a flux
+    monitor has no field frame at all, just one scalar flux value per
+    recorded frequency, so it needs a plot of its own. Uses beamz's own
+    public `beamz.analysis.monitor_flux()` (the same helper
+    `MonitorResults.get_dft_flux()`-style code paths in beamz itself
+    reduce to) rather than re-deriving flux from raw DFT field
+    components by hand.
+    """
+    import matplotlib.pyplot as plt
+
+    mr = results.monitor(so.name)
+    freqs = np.asarray(mr.get_dft_frequencies())
+    if freqs.size == 0:
+        raise ValueError(f"Monitor '{so.name}' has no recorded frequency-domain data in this run.")
+    flux = np.asarray(bz.analysis.monitor_flux(mr))
+    wavelengths_um = bz.LIGHT_SPEED / freqs * 1e6
+    order = np.argsort(wavelengths_um)
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(wavelengths_um[order], flux[order], marker="o")
+    ax.set_xlabel("Wavelength (\u00b5m)")
+    ax.set_ylabel("Flux (W)")
+    ax.set_title(f"Flux spectrum \u2014 {so.name}")
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    return fig, ax
+
+
+def plot_mode_spectrum(results: "bz.SimulationResults", so) -> tuple[Any, Any]:
+    """(figure, axes) for a ModeMonitor's per-mode power spectrum vs
+    wavelength — |amplitude|^2 for every mode index beamz projected the
+    field onto, forward direction solid / backward dashed (only drawn if
+    any backward amplitude is actually nonzero). Built on beamz's own
+    public `beamz.analysis.mode_data()`, which does the actual modal
+    projection; same reasoning as plot_flux_spectrum above — plot_field()
+    has nothing to show for modal-decomposition data.
+    """
+    import matplotlib.pyplot as plt
+
+    data = bz.analysis.mode_data(results, so.name)
+    freqs = np.asarray(data.amps.coords["f"].values)
+    if freqs.size == 0:
+        raise ValueError(f"Monitor '{so.name}' has no recorded frequency-domain data in this run.")
+    wavelengths_um = bz.LIGHT_SPEED / freqs * 1e6
+    order = np.argsort(wavelengths_um)
+    amps = np.asarray(data.amps.values)  # dims: (f, direction, mode_index)
+    num_modes = amps.shape[-1]
+    has_backward = amps.shape[1] > 1 and bool(np.any(np.abs(amps[:, 1, :]) > 0))
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    for idx in range(num_modes):
+        # `marker="o"` matters more than it looks like it should: these
+        # monitors default to a SINGLE frequency point (freqs=[1550nm] —
+        # see defaults.py), and matplotlib draws nothing at all for a
+        # 1-point line with no marker — a real result rendering as a
+        # totally empty axes, easy to mistake for "the run produced no
+        # data" rather than "there's one point and you can't see it".
+        ax.plot(wavelengths_um[order], (np.abs(amps[:, 0, idx]) ** 2)[order], marker="o", label=f"mode {idx} (+)")
+        if has_backward:
+            ax.plot(wavelengths_um[order], (np.abs(amps[:, 1, idx]) ** 2)[order], "--", marker="o", label=f"mode {idx} (-)")
+    ax.set_xlabel("Wavelength (\u00b5m)")
+    ax.set_ylabel("Modal power |a|\u00b2 (a.u.)")
+    ax.set_title(f"Mode overlap \u2014 {so.name}")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    return fig, ax
+
+
+def build_results_datasets(results: "bz.SimulationResults", connector: BeamzConnector) -> dict[str, Any]:
+    """Per-monitor xarray Datasets for every monitor in the current scene
+    that has data in `results`, keyed by monitor name — the shape
+    `WorkspaceManager.save_workspace()` (workspace.py) expects for its
+    `results` argument. Without this, "Save Workspace" always wrote setup
+    only, silently, since nothing ever populated it after a run.
+
+    beamz's own public `SimulationResults.to_xarray()` returns exactly
+    ONE dataset (whichever monitor it picks as the default — see its
+    docstring), not one per monitor, and `beamz.analysis.monitor_to_xarray()`
+    needs a per-monitor `AnalysisData` as input, which nothing under
+    `beamz.analysis`'s top-level `__all__` actually constructs on its own.
+    `analysis_data()` lives in `beamz.analysis.data` — a real,
+    non-underscored module that `beamz.analysis.adapters` (the module
+    `monitor_to_xarray` itself lives in) imports from the exact same way,
+    so this isn't reaching past anything beamz itself doesn't already
+    depend on this way, just not re-exported one level higher.
+    """
+    from beamz.analysis.data import analysis_data
+
+    datasets: dict[str, Any] = {}
+    for so in connector.by_category("monitor", enabled_only=True):
+        try:
+            if so.class_name == "ModeMonitor":
+                datasets[so.name] = bz.analysis.mode_data(results, so.name).to_xarray()
+            else:
+                datasets[so.name] = bz.analysis.monitor_to_xarray(analysis_data(results, so.name))
+        except Exception:
+            # Monitor wasn't part of the run that produced `results`
+            # (added/deleted since), or has no recorded data for this
+            # particular run — skip it rather than fail the whole save.
+            continue
+    return datasets
 
 
 def device_info() -> dict[str, Any]:

@@ -1,39 +1,12 @@
-"""
-Save/load the FULL workspace — setup (structures/sources/monitors/
-region) AND monitor results — as a single HDF5 file.
-
-HDF5 is the established format for exactly this in scientific/HPC
-computing: hierarchical structure + large numeric arrays + attached
-metadata, all in one portable, language-agnostic, compressible file.
-It's also what beamz's own `SimulationResults.to_xarray()` output
-naturally maps onto (an `xarray.Dataset` writes to NetCDF, which IS HDF5
-under the hood) — this standardizes on a format the underlying data
-already has a natural path into, rather than inventing a bespoke one.
-
-Distinct from serialization.py's export_script()/import_script(), which
-write/read a plain, human-readable, re-runnable .py file — genuinely
-useful as a readable/git-diffable artifact and a "this is the exact
-beamz code your GUI represents" teaching aid, but setup-only, no results.
-Both are offered as separate File-menu actions: this module is "save my
-whole session", that one is "show me the code".
-
-Honest caveat: the results-saving path (`_save_results`/the results half
-of `load_workspace`) was written without being able to run beamz
-interactively to confirm `SimulationResults.to_xarray()`'s exact output
-shape. It's wrapped defensively — a mismatch there raises separately
-rather than losing an otherwise-successful setup save — but should be
-verified against a real run before being trusted for anything valuable.
-"""
-from __future__ import annotations
-
-import dataclasses
+import h5py
 import json
-from typing import Any, Optional
+import datetime
+import dataclasses
+from typing import Any
 
 import beamz as bz
 import numpy as np
-
-BEAMZ_GUI_FORMAT_VERSION = 1
+import xarray as xr
 
 
 def _is_beamz_instance(value: Any) -> bool:
@@ -41,24 +14,6 @@ def _is_beamz_instance(value: Any) -> bool:
 
 
 def _to_jsonable(value: Any) -> Any:
-    """Recursively converts a recipe value into something json.dumps can
-    handle:
-      - numpy arrays -> a tagged dict (so _from_jsonable can convert back
-        to an ndarray rather than leaving it as a plain list).
-      - nested beamz dataclass instances (Material, GaussianPulse, ...)
-        -> {"__beamz_class__": ..., "kwargs": {...}}, recursing into
-        THEIR fields the same way.
-      - tuples -> a tagged list (JSON has no tuple type; leaving this
-        untagged would silently turn e.g. `position` into a list on
-        reload, and beamz's own validation is stricter about tuples in
-        some paths).
-    Material is special-cased before the generic dataclass branch for the
-    same reason serialization.py's _pyrepr special-cases it: its actual
-    dataclass fields are private, internal storage already expanded into
-    full tensor form — NOT its public constructor parameter names.
-    Recursing into the raw fields would produce kwargs Material's own
-    constructor doesn't accept.
-    """
     if isinstance(value, np.ndarray):
         return {"__ndarray__": value.tolist()}
     if isinstance(value, bz.Material):
@@ -71,14 +26,20 @@ def _to_jsonable(value: Any) -> Any:
             },
         }
     if _is_beamz_instance(value):
-        kwargs = {f.name: _to_jsonable(getattr(value, f.name)) for f in dataclasses.fields(value) if f.init}
-        return {"__beamz_class__": type(value).__name__, "kwargs": kwargs}
+        return {
+            "__beamz_class__": type(value).__name__,
+            "kwargs": {
+                f.name: _to_jsonable(getattr(value, f.name))
+                for f in dataclasses.fields(value)
+                if f.init
+            },
+        }
     if isinstance(value, tuple):
-        return {"__tuple__": [_to_jsonable(v) for v in value]}
+        return {"__tuple__": [_to_jsonable(item) for item in value]}
     if isinstance(value, dict):
-        return {k: _to_jsonable(v) for k, v in value.items()}
+        return {key: _to_jsonable(item) for key, item in value.items()}
     if isinstance(value, list):
-        return [_to_jsonable(v) for v in value]
+        return [_to_jsonable(item) for item in value]
     return value
 
 
@@ -88,94 +49,135 @@ def _from_jsonable(value: Any) -> Any:
             return np.array(value["__ndarray__"])
         if "__beamz_class__" in value:
             cls = getattr(bz, value["__beamz_class__"])
-            kwargs = {k: _from_jsonable(v) for k, v in value["kwargs"].items()}
-            return cls(**kwargs)
+            return cls(**{key: _from_jsonable(item) for key, item in value["kwargs"].items()})
         if "__tuple__" in value:
-            return tuple(_from_jsonable(v) for v in value["__tuple__"])
-        return {k: _from_jsonable(v) for k, v in value.items()}
+            return tuple(_from_jsonable(item) for item in value["__tuple__"])
+        return {key: _from_jsonable(item) for key, item in value.items()}
     if isinstance(value, list):
-        return [_from_jsonable(v) for v in value]
+        return [_from_jsonable(item) for item in value]
     return value
 
 
-def _export_setup(connector) -> dict[str, Any]:
-    entries = [{**entry, "recipe": _to_jsonable(entry["recipe"])} for entry in connector.snapshot()]
+def _serialize_model(connector) -> dict[str, Any]:
     return {
-        "format_version": BEAMZ_GUI_FORMAT_VERSION,
         "design_width": connector.design_width,
         "design_height": connector.design_height,
         "design_depth": connector.design_depth,
-        "objects": entries,
+        "objects": [
+            {**entry, "recipe": _to_jsonable(entry["recipe"])}
+            for entry in connector.snapshot()
+        ],
     }
 
 
-def _import_setup(connector, setup: dict[str, Any]) -> None:
-    connector.design_width = setup.get("design_width", connector.design_width)
-    connector.design_height = setup.get("design_height", connector.design_height)
-    connector.design_depth = setup.get("design_depth", connector.design_depth)
-    decoded = [{**entry, "recipe": _from_jsonable(entry["recipe"])} for entry in setup["objects"]]
-    connector.restore(decoded)
+def _deserialize_model(connector, state: dict[str, Any]) -> None:
+    connector.design_width = state.get("design_width", connector.design_width)
+    connector.design_height = state.get("design_height", connector.design_height)
+    connector.design_depth = state.get("design_depth", connector.design_depth)
+    connector.restore([
+        {**entry, "recipe": _from_jsonable(entry["recipe"])}
+        for entry in state.get("objects", [])
+    ])
+
+CLIPBOARD_MARKER = "__BEAMZ_GUI_CLIPBOARD_V1__"
 
 
-def save_workspace(connector, path: str, results: Optional[Any] = None) -> None:
-    """Writes `path` as an HDF5 file containing the current setup, and —
-    if a completed run's `results` (a beamz.SimulationResults) is passed
-    — its data too (best-effort; see module docstring).
+def entries_to_clipboard_text(connector, sids: list[str]) -> str:
+    """JSON text for Copy — same `_to_jsonable` pass `_serialize_model()`
+    uses for full-workspace save, just over `connector.export_entries()`
+    instead of the whole scene. Prefixed with a marker so Paste can tell
+    actual BEAMZ-copied objects apart from arbitrary clipboard text
+    (which the system clipboard may hold anything at all) before trying
+    to `json.loads()` it — and, since this is the OS clipboard, this is
+    also what makes copy/paste work BETWEEN two separate running windows
+    of the app, not just within one.
     """
-    import h5py
-
-    with h5py.File(path, "w") as f:
-        f.attrs["beamz_gui_format_version"] = BEAMZ_GUI_FORMAT_VERSION
-        f.attrs["setup_json"] = json.dumps(_export_setup(connector))
-        if results is not None:
-            _save_results(f, results)
+    entries = [{**entry, "recipe": _to_jsonable(entry["recipe"])} for entry in connector.export_entries(sids)]
+    return CLIPBOARD_MARKER + json.dumps(entries)
 
 
-def _save_results(h5file, results: Any) -> None:
-    """Walks whatever `results.to_xarray()` returns and writes each data
-    variable / coordinate as its own HDF5 dataset under /results.
-    Wrapped so a shape mismatch here (see module docstring's caveat)
-    doesn't take down the setup save that, by this point, already
-    succeeded — the error is recorded as an attribute instead of raised.
+def entries_from_clipboard_text(text: str) -> list[dict[str, Any]]:
+    """Inverse of `entries_to_clipboard_text()`. Raises ValueError if
+    `text` doesn't carry the marker (i.e. it's not something Copy put
+    there) rather than attempting — and likely failing confusingly deep
+    inside `_from_jsonable` — to parse arbitrary clipboard text as if it
+    were beamz JSON.
     """
-    try:
-        dataset = results.to_xarray()
-        group = h5file.create_group("results")
-        for name, coord in dataset.coords.items():
-            group.create_dataset(f"coords/{name}", data=coord.values)
-        for name, var in dataset.data_vars.items():
-            ds = group.create_dataset(f"data/{name}", data=var.values)
-            ds.attrs["dims"] = json.dumps(list(var.dims))
-    except Exception as exc:  # noqa: BLE001 — best-effort, see docstring
-        h5file.attrs["results_save_error"] = str(exc)
+    if not text.startswith(CLIPBOARD_MARKER):
+        raise ValueError("Clipboard does not contain a copied BEAMZ GUI object.")
+    entries = json.loads(text[len(CLIPBOARD_MARKER):])
+    return [{**entry, "recipe": _from_jsonable(entry["recipe"])} for entry in entries]
 
 
-def load_workspace(connector, path: str) -> Optional[Any]:
-    """Replaces the connector's scene with what's saved in `path`.
-    Returns an xarray.Dataset of the saved results if present, else None.
-    Raw HDF5 data, not reconstructed into a beamz.SimulationResults —
-    beamz has no public constructor for building one from saved data, so
-    the caller gets the underlying arrays to work with directly instead
-    of a fake SimulationResults pretending to be a fresh run's output.
-    """
-    import h5py
+class WorkspaceManager:
+    def __init__(self, connector):
+        self.connector = connector
+        self.current_filepath = None
 
-    with h5py.File(path, "r") as f:
-        setup = json.loads(f.attrs["setup_json"])
-        _import_setup(connector, setup)
+    def save_workspace(self, filepath: str, results: dict = None):
+        """
+        Saves the complete workspace (setup + results + metadata) to an HDF5 file.
+        results: dict mapping monitor_name -> xarray.Dataset
+        """
+        # 1. Get the JSON setup state
+        setup_dict = _serialize_model(self.connector)
+        setup_json = json.dumps(setup_dict)
 
-        if "results" not in f:
-            return None
-        try:
-            import xarray as xr
+        # 2. Write Setup and Metadata via h5py
+        with h5py.File(filepath, 'w') as f:
+            # Metadata
+            f.attrs['beamz_gui_version'] = '0.1.0'
+            f.attrs['beamz_version'] = 'latest' # Pull from beamz.__version__ if available
+            f.attrs['saved_at'] = datetime.datetime.now().isoformat()
 
-            group = f["results"]
-            data_vars = {}
-            for name in group.get("data", {}):
-                ds = group["data"][name]
-                dims = json.loads(ds.attrs.get("dims", "[]")) or [f"dim_{i}" for i in range(ds.ndim)]
-                data_vars[name] = (dims, ds[()])
-            coords = {name: group["coords"][name][()] for name in group.get("coords", {})}
-            return xr.Dataset(data_vars=data_vars, coords=coords)
-        except Exception:
-            return None
+            # Setup Dataset (variable length UTF-8 string)
+            dt = h5py.string_dtype(encoding='utf-8')
+            f.create_dataset('/setup', data=setup_json, dtype=dt)
+
+        # 3. Append Results via xarray (h5netcdf engine writes directly to HDF5)
+        if results:
+            for mon_name, dataset in results.items():
+                dataset.to_netcdf(
+                    filepath, 
+                    group=f"/results/{mon_name}", 
+                    engine="h5netcdf", 
+                    mode="a"
+                )
+        
+        self.current_filepath = filepath
+
+    def load_workspace(self, filepath: str) -> dict:
+        """
+        Loads the setup into the connector and returns the results dict.
+        """
+        loaded_results = {}
+        
+        with h5py.File(filepath, 'r') as f:
+            # 1. Restore Setup
+            if '/setup' in f:
+                setup_json = f['/setup'][()].decode('utf-8')
+                setup_dict = json.loads(setup_json)
+                _deserialize_model(self.connector, setup_dict)
+                # design_changed — not "state_changed", which
+                # BeamzConnector has never actually had; this raised
+                # AttributeError on every single load, right after
+                # restore() (inside _deserialize_model above) had already
+                # correctly rebuilt the scene, aborting before the
+                # results section below ever ran and surfacing a
+                # confusing "Load Error: no attribute 'state_changed'"
+                # over what was otherwise a working load.
+                self.connector.design_changed.emit()
+
+            # 2. Load Results
+            if '/results' in f:
+                for mon_name in f['/results'].keys():
+                    # Load lazily or fully into memory depending on size
+                    ds = xr.open_dataset(
+                        filepath, 
+                        group=f"/results/{mon_name}", 
+                        engine="h5netcdf"
+                    ).load() # .load() pulls it into RAM so we can close the file safely
+                    loaded_results[mon_name] = ds
+                    
+        self.current_filepath = filepath
+        return loaded_results

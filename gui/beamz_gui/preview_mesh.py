@@ -18,11 +18,11 @@ from typing import Any, Optional
 import numpy as np
 import pyvista as pv
 
+from . import materials
 from .model import SceneObject
 
 # Structures render solid; sources/monitors render as translucent planes
 # so they read as annotations rather than physical material.
-DEFAULT_STRUCTURE_COLOR = "#6699cc"
 SOURCE_COLOR = "#e67e22"
 MONITOR_COLOR = "#2980b9"
 REGION_COLOR = "#f1c40f"  # bright yellow — deliberately the most eye-
@@ -116,20 +116,25 @@ def mesh_and_style_for(so: SceneObject) -> Optional[tuple[Any, dict]]:
         mesh = structure_mesh(so)
         if mesh is None:
             return None
-        color = getattr(so.obj, "color", None) or DEFAULT_STRUCTURE_COLOR
-        return mesh, dict(color=color, opacity=0.9, pickable=True)
-
-    if so.category == "source":
-        return plane_mesh(so), dict(color=SOURCE_COLOR, opacity=0.45, pickable=True)
-
-    if so.category == "monitor":
-        return plane_mesh(so), dict(
+        color = materials.color_for_material(so.recipe.get("material"))
+        style = dict(color=color, opacity=0.9, pickable=True)
+    elif so.category == "source":
+        mesh, style = plane_mesh(so), dict(color=SOURCE_COLOR, opacity=0.45, pickable=True)
+    elif so.category == "monitor":
+        mesh, style = plane_mesh(so), dict(
             color=MONITOR_COLOR, opacity=0.35, style="wireframe", line_width=2, pickable=True
         )
-
-    if so.category == "region":
-        return region_box_mesh(so), dict(
+    elif so.category == "region":
+        mesh, style = region_box_mesh(so), dict(
             color=REGION_COLOR, opacity=1.0, style="wireframe", line_width=3, pickable=False
         )
+    else:
+        return None
 
-    return None
+    if not so.enabled:
+        # Suppressed-from-a-run objects still show up (still
+        # editable/selectable — see SceneObject.enabled's docstring) but
+        # visibly faded, so it's obvious at a glance which ones won't
+        # actually be part of the next Run Solver.
+        style["opacity"] *= 0.25
+    return mesh, style

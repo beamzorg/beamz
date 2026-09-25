@@ -1,18 +1,6 @@
 """
-Whole-scene-snapshot undo/redo. Coarse-grained by design: a "checkpoint"
-captures the ENTIRE scene state (every structure/source/monitor/region),
-not a per-field diff. Simpler and more robust than a fine-grained command
-pattern, and cheap enough to be practical — recipes are small plain
-dicts, not full beamz objects or large arrays (aside from the occasional
-monitor `freqs` array or source `signal`, still tiny next to actual
-simulation field data).
-
-GUI code is responsible for calling `checkpoint()` right BEFORE a
-discrete, user-visible mutating action (an Apply click, a Delete, an
-Add-from-toolbar) — not on every keystroke while a value is still being
-typed. The Property Editor's own staged working-copy already makes this
-natural: nothing reaches the connector until Apply, so there's exactly
-one checkpoint-worthy moment per edit regardless.
+Whole-scene-snapshot undo/redo. Checkpoints capture the complete scene and
+are restored through the connector's snapshot/restore API.
 """
 from __future__ import annotations
 
@@ -27,12 +15,25 @@ class UndoManager:
         self._max_depth = max_depth
 
     def checkpoint(self) -> None:
-        """Call BEFORE a mutating action. Pushes the CURRENT (pre-change)
-        state onto the undo stack and clears the redo stack — making a
-        fresh change invalidates any previously-undone redo history, the
-        usual rule in every app that has both.
+        """Save the current scene before a discrete mutating action.
+
+        Call this BEFORE the action runs, not after — the whole point is
+        to capture the state undo should return TO. Calling it after the
+        mutation instead pushes the post-action state, which makes undo()
+        restore the scene to itself (a no-op) rather than back it out.
         """
-        self._undo_stack.append(self.connector.snapshot())
+        self.checkpoint_with(self.connector.snapshot())
+
+    def checkpoint_with(self, snapshot: list[dict[str, Any]]) -> None:
+        """Push an ALREADY-CAPTURED snapshot rather than the connector's
+        current state. For actions that might fail validation partway
+        through (e.g. the Property Editor's Apply, or a script console
+        line) — capture the snapshot before attempting the mutation, then
+        call this only once success is confirmed, so a rejected/failed
+        edit never wastes an undo slot on a no-op and clears the redo
+        stack for nothing.
+        """
+        self._undo_stack.append(snapshot)
         if len(self._undo_stack) > self._max_depth:
             self._undo_stack.pop(0)
         self._redo_stack.clear()
@@ -47,23 +48,23 @@ class UndoManager:
         if not self._undo_stack:
             return False
         self._redo_stack.append(self.connector.snapshot())
-        state = self._undo_stack.pop()
-        self.connector.restore(state)
+        self.connector.restore(self._undo_stack.pop())
         return True
 
     def redo(self) -> bool:
         if not self._redo_stack:
             return False
         self._undo_stack.append(self.connector.snapshot())
-        state = self._redo_stack.pop()
-        self.connector.restore(state)
+        self.connector.restore(self._redo_stack.pop())
         return True
 
     def clear(self) -> None:
-        """Called after a full scene replacement that shouldn't itself be
-        undoable back to whatever was open before it — loading a
-        workspace or importing a script is "open a different file", not
-        an editable action within the current one.
-        """
         self._undo_stack.clear()
         self._redo_stack.clear()
+
+
+class UndoStack(UndoManager):
+    """Compatibility name for the main window's existing call sites."""
+
+    def push_snapshot(self) -> None:
+        self.checkpoint()

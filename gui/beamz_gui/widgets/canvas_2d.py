@@ -11,8 +11,13 @@ from PySide6.QtWidgets import (
     QGraphicsScene,
     QGraphicsSimpleTextItem,
     QGraphicsView,
+    QHBoxLayout,
+    QToolButton,
+    QWidget,
 )
 
+from .. import geometry_adapters as ga
+from .. import materials
 from ..model import BeamzConnector, SceneObject
 
 # beamz coordinates are in metres; a photonic device is typically a
@@ -32,26 +37,88 @@ SID_KEY = 0  # QGraphicsItem::data() key used to stash the scene-object id
 SUSPICIOUS_EXTENT_PX = 1e5
 
 
+class _AxisLegend(QWidget):
+    """CAD-style clickable axis legend (X/Y/Z), overlaid as a plain child
+    widget in the corner of the viewport rather than drawn into the
+    QGraphicsScene — same idea as the 3D preview's own corner axes gizmo:
+    it needs to stay fixed on screen regardless of pan/zoom, which a
+    scene item (subject to the view's transform) would not do.
+
+    Click an axis to look ALONG it, same convention as any CAD view-cube
+    / the 3D preview's own orientation widget: the axis you click is the
+    one that collapses to a point ("goes into the screen"), so clicking
+    "Z" gives the Top (XY) view, "Y" gives Front (XZ), "X" gives Side
+    (YZ) — this is what replaced the separate plane-selector toolbar
+    dropdown a first version of this had: the legend already tells you
+    which way is which, so it may as well BE the control too, rather
+    than duplicating that information in two separate widgets.
+    """
+
+    AXES = (("X", "#e74c3c", "yz"), ("Y", "#2ecc71", "xz"), ("Z", "#3498db", "xy"))
+
+    def __init__(self, on_axis_clicked, parent=None) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(4)
+        self._buttons: dict[str, QToolButton] = {}
+        for label, color, plane in self.AXES:
+            btn = QToolButton(self)
+            btn.setText(label)
+            btn.setAutoRaise(True)
+            btn.setCheckable(True)
+            btn.setToolTip(f"View along {label} ({plane.upper()} plane)")
+            btn.setStyleSheet(
+                f"QToolButton {{ color: {color}; font-weight: bold; background: rgba(0,0,0,140);"
+                f" border: 1px solid {color}; border-radius: 9px; min-width: 18px; min-height: 18px; }}"
+                f"QToolButton:checked {{ background: {color}; color: black; }}"
+                f"QToolButton:hover {{ background: {color}; color: black; }}"
+            )
+            btn.clicked.connect(lambda _checked=False, p=plane: on_axis_clicked(p))
+            layout.addWidget(btn)
+            self._buttons[plane] = btn
+        self.set_active_plane("xy")
+
+    def set_active_plane(self, plane: str) -> None:
+        for p, btn in self._buttons.items():
+            btn.setChecked(p == plane)
+
+
 class Canvas2D(QGraphicsView):
-    """Top-down (XY) layout view, analogous to Lumerical's 2D layout
-    editor. Structures are rendered generically from `obj.vertices` (+
-    `obj.interiors` for holes) via a painter path — this works uniformly
-    for every structure kind, INCLUDING a rotated one, which beamz
-    represents as a `Polygon` with different vertices rather than a
-    rotated Rectangle (see model.py). No per-shape special-casing needed.
+    """Layout view, analogous to Lumerical's 2D layout editor — Top (XY)
+    by default, with Front (XZ) / Side (YZ) also selectable (see
+    `set_plane`) so every side of a device is actually inspectable in 2D,
+    not just the top-down footprint. Structures are rendered generically:
+    in the XY plane, straight from `obj.vertices` (+ `obj.interiors` for
+    holes) via a painter path, which works uniformly for every structure
+    kind, INCLUDING a rotated one (beamz represents that as a `Polygon`
+    with different vertices rather than a rotated Rectangle — see
+    model.py) with no per-shape special-casing needed; in XZ/YZ, as an
+    axis-aligned bounding box (see `_make_structure_bbox_item` for why
+    that's an approximation, not the true side silhouette).
 
     Sources/monitors don't have `vertices` at all — they're plane-based
     (`center` + `size`, with one axis usually zeroed) — so they get a
     distinct glyph: a line across the plane's in-view extent, dashed for
-    monitors, with a small direction tick for sources.
+    monitors, with a small direction tick for sources. Being a plain
+    center+size box already, this one generalizes to any of the three
+    view planes exactly, with no approximation needed.
     """
 
     selected = Signal(object)  # sid: str | None
     status_message = Signal(str)  # empty string means "clear"
 
+    # plane -> (u_axis_index, v_axis_index, u_label, v_label, title)
+    _PLANES = {
+        "xy": (0, 1, "x", "y", "Top (XY)"),
+        "xz": (0, 2, "x", "z", "Front (XZ)"),
+        "yz": (1, 2, "y", "z", "Side (YZ)"),
+    }
+
     def __init__(self, connector: BeamzConnector, parent=None) -> None:
         super().__init__(parent)
         self.connector = connector
+        self._plane = "xy"
 
         self._scene = QGraphicsScene(self)
         self.setScene(self._scene)
@@ -59,18 +126,52 @@ class Canvas2D(QGraphicsView):
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.scale(1, -1)  # +y points up, matching physical convention
+        # QGraphicsView defaults to NoFocus — without this, clicking into
+        # the canvas selects an item fine (that's mouse-event routing,
+        # unrelated to focus) but arrow-key nudge and Delete never fire
+        # at all, since keyPressEvent is never called on a widget that
+        # never actually holds keyboard focus.
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         self._items: dict[str, QGraphicsItem] = {}
         self._suppress_selection_signal = False
         self._panning = False
         self._pan_start = None
         self._has_fit_once = False
+        # Real content-only bounds, captured BEFORE _draw_grid() adds its
+        # own (much larger) grid lines to the scene — see _redraw()'s
+        # comment on why fit-to-content must use THIS, not
+        # `self._scene.itemsBoundingRect()`.
+        self._content_bounds = None
 
         connector.structure_added.connect(self._redraw)
         connector.structure_removed.connect(self._redraw)
         connector.structure_changed.connect(self._redraw)
 
         self._scene.selectionChanged.connect(self._on_scene_selection_changed)
+
+        # Corner-anchored, positioned in resizeEvent (not layout-managed —
+        # QGraphicsView has no layout of its own to speak of; this floats
+        # as a plain child widget over the viewport, top-left corner).
+        self._axis_legend = _AxisLegend(self.set_plane, self)
+        self._axis_legend.adjustSize()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._axis_legend.move(8, 8)
+
+    def set_plane(self, plane: str) -> None:
+        """Switch the view to "xy" (top, default) / "xz" (front) / "yz"
+        (side). A no-op if already on that plane. Always re-fits after
+        switching — whatever pan/zoom made sense for the old projection
+        has no reason to make sense for a completely different one.
+        """
+        if plane not in self._PLANES or plane == self._plane:
+            return
+        self._plane = plane
+        self._axis_legend.set_active_plane(plane)
+        self._redraw()
+        self.fit_to_content()
 
     # ------------------------------------------------------------------ #
     def _redraw(self, *_args) -> None:
@@ -99,6 +200,18 @@ class Canvas2D(QGraphicsView):
                 self._scene.addItem(item)
                 self._items[so.id] = item
 
+            # Captured BEFORE _draw_grid() adds its own grid lines (which
+            # deliberately extend past the content on every side — see
+            # _draw_grid()) to the scene. A previous version fit to
+            # `self._scene.itemsBoundingRect()` AFTER _draw_grid() ran,
+            # which meant "fit to content" was actually fitting to the
+            # GRID's extent instead — several grid-steps wider/taller
+            # than the real content on every side, which is exactly why
+            # the initial view looked zoomed out far more than the
+            # actual structures warranted. Confirmed directly: removing
+            # _draw_grid()'s lines from the equation shrank the "fit"
+            # view to a sensible size.
+            self._content_bounds = self._scene.itemsBoundingRect()
             self._draw_grid()
 
             if previously_selected is not None and previously_selected in self._items:
@@ -143,6 +256,16 @@ class Canvas2D(QGraphicsView):
         return None
 
     def _make_structure_item(self, so: SceneObject) -> Optional[QGraphicsItem]:
+        item = self._make_structure_outline_item(so) if self._plane == "xy" else self._make_structure_bbox_item(so)
+        if item is not None and not so.enabled:
+            item.setOpacity(0.25)  # suppressed-from-a-run — see SceneObject.enabled
+        return item
+
+    def _make_structure_outline_item(self, so: SceneObject) -> Optional[QGraphicsItem]:
+        """The TRUE footprint (XY plane only) straight from `obj.vertices`
+        — exact for every structure kind, rotated or not, unlike the
+        XZ/YZ bounding-box approximation below.
+        """
         obj = so.obj
         vertices = getattr(obj, "vertices", None)
         if not vertices:
@@ -160,9 +283,54 @@ class Canvas2D(QGraphicsView):
         path.setFillRule(Qt.FillRule.OddEvenFill)  # cuts holes (Ring, etc.)
 
         item = QGraphicsPathItem(path)
-        item.setBrush(QBrush(QColor(getattr(obj, "color", "#6699cc"))))
+        # Colored by MATERIAL index, not beamz's own `.color` field —
+        # that field turned out to be a fixed default identical across
+        # every structure regardless of `material` (see
+        # materials.color_for_material's docstring), which is why two
+        # structures with deliberately different materials used to
+        # render as the exact same shade of blue.
+        item.setBrush(QBrush(QColor(materials.color_for_material(so.recipe.get("material")))))
         pen = QPen(Qt.GlobalColor.black)
         pen.setWidth(0)  # cosmetic pen: always 1px regardless of view scale
+        item.setPen(pen)
+        return item
+
+    def _make_structure_bbox_item(self, so: SceneObject) -> Optional[QGraphicsItem]:
+        """XZ/YZ side-view APPROXIMATION: an axis-aligned rectangle built
+        from the structure's center +/- span on the two displayed axes,
+        via the exact same geometry_adapters math the Property Editor's
+        x/y/z fields use. This is NOT the true side silhouette of an
+        extruded arbitrary polygon — a Ring's real XZ cross-section, say,
+        is two separate bars (inner/outer wall), not one solid box — that
+        would need actual 3D projection, which this 2D canvas doesn't do.
+        Good enough to see where something sits and how tall/deep it is;
+        the 3D preview is where you go for the real shape. Returns None
+        for classes with no position/span mapping at all (Polygon,
+        CustomSource — same limitation the XY view already accepts for
+        anything with no usable geometry description).
+        """
+        adapter = ga.get_adapter(so.class_name)
+        if adapter is None:
+            return None
+        ui, vi, *_ = self._PLANES[self._plane]
+
+        center = ga.get_xyz(so.recipe, adapter)
+        spans = (
+            ga.get_span(so.recipe, adapter.x_span) or 0.0,
+            ga.get_span(so.recipe, adapter.y_span) or 0.0,
+            ga.get_span(so.recipe, adapter.z_span) or 0.0,
+        )
+        u, v = center[ui], center[vi]
+        su, sv = spans[ui], spans[vi]
+
+        s = PIXELS_PER_METRE
+        rect_path = QPainterPath()
+        rect_path.addRect((u - su / 2) * s, (v - sv / 2) * s, su * s, sv * s)
+
+        item = QGraphicsPathItem(rect_path)
+        item.setBrush(QBrush(QColor(materials.color_for_material(so.recipe.get("material")))))
+        pen = QPen(Qt.GlobalColor.black)
+        pen.setWidth(0)
         item.setPen(pen)
         return item
 
@@ -170,11 +338,12 @@ class Canvas2D(QGraphicsView):
         s = PIXELS_PER_METRE
         center = so.recipe.get("center", (0.0, 0.0, 0.0))
         size = so.recipe.get("size", (0.0, 0.0, 0.0))
-        cx, cy = center[0], center[1]
-        sx, sy = size[0], size[1]
+        ui, vi, *_ = self._PLANES[self._plane]
+        cu, cv = center[ui], center[vi]
+        su, sv = size[ui], size[vi]
 
-        x0, y0 = (cx - sx / 2) * s, (cy - sy / 2) * s
-        x1, y1 = (cx + sx / 2) * s, (cy + sy / 2) * s
+        x0, y0 = (cu - su / 2) * s, (cv - sv / 2) * s
+        x1, y1 = (cu + su / 2) * s, (cv + sv / 2) * s
 
         path = QPainterPath()
         path.moveTo(x0, y0)
@@ -200,6 +369,8 @@ class Canvas2D(QGraphicsView):
         if dashed:
             pen.setStyle(Qt.PenStyle.DashLine)
         item.setPen(pen)
+        if not so.enabled:
+            item.setOpacity(0.25)  # suppressed-from-a-run — see SceneObject.enabled
         return item
 
     # ------------------------------------------------------------------ #
@@ -208,8 +379,8 @@ class Canvas2D(QGraphicsView):
     # (routed to MainWindow) when content spans a suspiciously large area.
     # ------------------------------------------------------------------ #
     def _draw_grid(self) -> None:
-        bounds = self._scene.itemsBoundingRect()
-        if bounds.isEmpty():
+        bounds = self._content_bounds
+        if bounds is None or bounds.isEmpty():
             return
         span = max(bounds.width(), bounds.height())
         step = _nice_grid_step(span)
@@ -230,7 +401,8 @@ class Canvas2D(QGraphicsView):
             y += step
 
         step_um = step / PIXELS_PER_METRE * 1e6
-        label = QGraphicsSimpleTextItem(f"grid: {step_um:g} \u00b5m")
+        _u, _v, u_label, v_label, title = self._PLANES[self._plane]
+        label = QGraphicsSimpleTextItem(f"{title}  ({u_label}\u2192, {v_label}\u2191)  \u2014  grid: {step_um:g} \u00b5m")
         label.setBrush(QBrush(QColor("#999")))
         # Keeps constant on-screen size/orientation regardless of the
         # view's zoom AND its y-flip — without this the label would
@@ -241,8 +413,8 @@ class Canvas2D(QGraphicsView):
         self._scene.addItem(label)
 
     def _fit_to_content(self) -> None:
-        bounds = self._scene.itemsBoundingRect()
-        if bounds.isEmpty():
+        bounds = self._content_bounds
+        if bounds is None or bounds.isEmpty():
             self.status_message.emit("")
             return
         margin = max(bounds.width(), bounds.height(), 1.0) * 0.15
@@ -258,8 +430,8 @@ class Canvas2D(QGraphicsView):
         self._has_fit_once = True
 
     def _check_extent_warning(self) -> None:
-        bounds = self._scene.itemsBoundingRect()
-        if bounds.isEmpty():
+        bounds = self._content_bounds
+        if bounds is None or bounds.isEmpty():
             self.status_message.emit("")
             return
         span = max(bounds.width(), bounds.height())
@@ -314,6 +486,63 @@ class Canvas2D(QGraphicsView):
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    # ------------------------------------------------------------------ #
+    # Multi-select (native to QGraphicsScene once items are selectable —
+    # RubberBandDrag, set in __init__, already lets a drag select several
+    # at once; Ctrl/Shift-click extend/toggle a single item into that same
+    # selection for free too) + arrow-key nudge on a single selection.
+    # ------------------------------------------------------------------ #
+    _NUDGE_STEP_M = 0.01e-6  # 10 nm
+    _NUDGE_STEP_FINE_M = 0.001e-6  # 1 nm, with Shift held
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        key = event.key()
+        if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            sids = self.selected_sids()
+            if sids:
+                # One checkpoint for the whole batch, not one per item —
+                # a single Delete press (even on several items) is one
+                # discrete user action, and should undo as one.
+                self.window()._checkpoint()
+                for sid in sids:
+                    self.connector.remove_structure(sid)
+                return
+        if key in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down):
+            sids = self.selected_sids()
+            if len(sids) == 1 and self._nudge(sids[0], key, fine=bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier), first_press=not event.isAutoRepeat()):
+                return
+        super().keyPressEvent(event)
+
+    def _nudge(self, sid: str, key, *, fine: bool, first_press: bool) -> bool:
+        """Move the selected object by one small step in x/y. Only
+        defined for classes geometry_adapters knows how to read a
+        position out of (Polygon/CustomSource fall back to no-op, same
+        as everywhere else geometry_adapters is used) — returns False for
+        those so the caller can fall through to default key handling.
+        """
+        so = self.connector.get(sid)
+        adapter = ga.get_adapter(so.class_name)
+        if adapter is None:
+            return False
+
+        step = self._NUDGE_STEP_FINE_M if fine else self._NUDGE_STEP_M
+        dx = {Qt.Key.Key_Left: -step, Qt.Key.Key_Right: step}.get(key, 0.0)
+        dy = {Qt.Key.Key_Down: -step, Qt.Key.Key_Up: step}.get(key, 0.0)
+
+        x, y, _z = ga.get_xyz(so.recipe, adapter)
+        changes = ga.xyz_changes(so.recipe, adapter, x=x + dx, y=y + dy)
+        if first_press:
+            # Coalesce a held-down arrow key's auto-repeated events into
+            # ONE undo step for the whole nudge gesture — only the actual
+            # first (non-autorepeat) press gets a checkpoint, matching
+            # how most graphics editors treat a held nudge as one undo.
+            self.window()._checkpoint()
+        self.connector.update_param(sid, **changes)
+        return True
+
+    def selected_sids(self) -> list[str]:
+        return [item.data(SID_KEY) for item in self._scene.selectedItems() if item.data(SID_KEY)]
 
     # ------------------------------------------------------------------ #
     def _on_scene_selection_changed(self) -> None:
