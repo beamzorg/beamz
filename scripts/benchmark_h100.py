@@ -25,7 +25,8 @@ from tests.performance.h100_workloads import H100_WORKLOADS
 
 
 def _block(state) -> None:
-    state.ez.block_until_ready()
+    # Include every field, CPML recurrence and monitor accumulator on all ranks.
+    jax.block_until_ready(state)
 
 
 def _git_commit() -> str:
