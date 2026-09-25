@@ -711,6 +711,71 @@ __global__ void AccumulateDftReusedSamples(
   }
 }
 
+// Severe aperture/frequency mismatch makes a rectangular launch mostly empty.
+// Traverse the exact packed accumulator arena instead, retaining frequency
+// parallelism. Bound monitor count so the small descriptor search stays cheap.
+__global__ void AccumulateDftPacked(
+    const __grid_constant__ DftFields fields,
+    const __grid_constant__ BeamzDftGroupLaunch monitors) {
+  const int offset = blockIdx.x * blockDim.x + threadIdx.x;
+  if (offset >= monitors.dft_re.dims[0]) return;
+  const auto* counts = static_cast<const int32_t*>(monitors.counts.data);
+  int monitor = 0, nf = 0, np = 0, vo = 0;
+  for (; monitor < monitors.monitor_count; ++monitor) {
+    nf = counts[5 * monitor];
+    np = counts[5 * monitor + 1];
+    vo = counts[5 * monitor + 3];
+    if (nf > 0 && np > 0 && offset >= vo &&
+        static_cast<int64_t>(offset) < vo + 6LL * nf * np) break;
+  }
+  if (monitor == monitors.monitor_count) return;
+  const int max_nf = monitors.frequencies.dims[1];
+  const int max_np = monitors.indices.dims[2];
+  const int interval = max(1, counts[5 * monitor + 2]);
+  const int wo = counts[5 * monitor + 4];
+  if (nf > max_nf || np > max_np || vo < 0 || wo < 0 ||
+      vo + 6LL * nf * np > monitors.dft_re.dims[0] ||
+      vo + 6LL * nf * np > monitors.dft_im.dims[0] ||
+      static_cast<int64_t>(wo) + nf > monitors.dft_weight.dims[0] ||
+      offset >= monitors.dft_im.dims[0]) return;
+  const int component = (offset - vo) / (nf * np);
+  const int frequency = ((offset - vo) / np) % nf;
+  const int point = (offset - vo) % np;
+  const float window = static_cast<const float*>(monitors.phase_window.data)
+      [monitor * max_nf + frequency];
+  if (window == 0.f) return;
+  if (component == 0 && point == 0)
+    static_cast<float*>(monitors.dft_weight.data)[wo + frequency] += window;
+  if (static_cast<const float*>(monitors.component_masks.data)
+          [monitor * 6 + component] == 0.f)
+    return;
+  const auto& field = fields.values[component];
+  const int neighbors = monitors.indices.dims[3];
+  const int base = ((monitor * 6 + component) * max_np + point) * neighbors;
+  float sample = 0.f;
+  for (int neighbor = 0; neighbor < neighbors; ++neighbor) {
+    const int index =
+        static_cast<const int32_t*>(monitors.indices.data)[base + neighbor];
+    if (index >= 0 && index < ElementCount(field))
+      sample += static_cast<const float*>(field.data)
+                    [BeamzPhysicalIndex(field, index)] *
+                static_cast<const float*>(monitors.weights.data)[base + neighbor];
+  }
+  float scale = window;
+  if (static_cast<const int32_t*>(monitors.codes.data)[2 * monitor + 1] == 1) {
+    const float length =
+        static_cast<const float*>(monitors.windows.data)[3 * monitor + 2];
+    if (!isfinite(length) || length <= 0.f) return;
+    scale *= fields.dt * static_cast<float>(interval) * 299792458.0f /
+             length / sqrtf(6.2831853071795864769f);
+  }
+  const int po = monitor * max_nf + frequency;
+  static_cast<float*>(monitors.dft_re.data)[offset] +=
+      scale * sample * static_cast<const float*>(monitors.phase_cos.data)[po];
+  static_cast<float*>(monitors.dft_im.data)[offset] +=
+      scale * sample * static_cast<const float*>(monitors.phase_sin.data)[po];
+}
+
 cudaError_t LaunchDftGroups(cudaStream_t stream, const BeamzLaunch &h_launch,
                             const BeamzLaunch &e_launch,
                             const BeamzDftGroupLaunch &monitors, int32_t step) {
@@ -739,7 +804,17 @@ cudaError_t LaunchDftGroups(cudaStream_t stream, const BeamzLaunch &h_launch,
       return error;
     }
   }
-  if (cache_phase && monitors.frequencies.dims[1] >= 16) {
+  const int64_t rectangular_values = monitors.monitor_count * 6LL *
+      monitors.indices.dims[2] * monitors.frequencies.dims[1];
+  const bool packed_launch = cache_phase && monitors.monitor_count <= 8 &&
+      monitors.dft_re.dims[0] > 0 &&
+      monitors.dft_re.dims[0] <= std::numeric_limits<int>::max() &&
+      monitors.dft_re.dims[0] * 4 < rectangular_values;
+  if (packed_launch) {
+    const int threads = 256;
+    const int blocks = (monitors.dft_re.dims[0] + threads - 1) / threads;
+    AccumulateDftPacked<<<blocks, threads, 0, stream>>>(fields, monitors);
+  } else if (cache_phase && monitors.frequencies.dims[1] >= 16) {
     const dim3 reuse_threads(128);
     const dim3 reuse_blocks(
         (monitors.indices.dims[2] + reuse_threads.x - 1) / reuse_threads.x,

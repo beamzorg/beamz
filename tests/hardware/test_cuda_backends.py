@@ -929,7 +929,9 @@ def test_temporal_pair_dft_windows_and_intervals(
     first, second = simulation.monitors
     second = second.updated_copy(
         size=(first.size[1] * 0.5, 0, first.size[2] * 0.75),
-        freqs=np.asarray(second.freqs)[:2],
+        freqs=np.asarray(second.freqs)
+        if frequencies == 101
+        else np.asarray(second.freqs)[:2],
         interval=interval + 1,
     )
     inactive = first.updated_copy(
@@ -939,7 +941,12 @@ def test_temporal_pair_dft_windows_and_intervals(
     )
     simulation = simulation.updated_copy(
         monitors=(
-            first.updated_copy(interval=interval),
+            first.updated_copy(
+                interval=interval,
+                freqs=np.asarray(first.freqs)[:1]
+                if frequencies == 101
+                else first.freqs,
+            ),
             second,
             inactive,
         )
