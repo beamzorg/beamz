@@ -661,6 +661,26 @@ def build_scan(program, *, donate_state: bool = False):
         state: SimulationState,
         coeffs: UpdateCoefficients,
     ):
+        # Compute differentiable material scales once per invocation. Expressing
+        # the lossy update as an increment avoids a field-sized division each step.
+        if (
+            cfg.backend == "jax"
+            and cfg.is_3d
+            and boundary.cpml.enabled
+            and cfg.metric_kind == "isotropic_uniform"
+            and not coeffs.e_inverse_offdiagonal.size
+        ):
+            dt_mu, dt_eps = dt_scalar / MU_0, dt_scalar / EPS_0
+            scales = {}
+            for component in "xyz":
+                sigma_h = getattr(coeffs, f"h_sigma_m_{component}")
+                sigma_e = getattr(coeffs, f"e_conductivity_{component}")
+                epsilon = getattr(coeffs, f"e_permittivity_{component}")
+                scales[f"h_source_{component}"] = dt_mu / (1 + 0.5 * dt_mu * sigma_h)
+                scales[f"e_source_{component}"] = dt_eps / (
+                    epsilon + 0.5 * dt_eps * sigma_e
+                )
+            coeffs = coeffs._replace(**scales)
         # 4. Run the same transition through scan or fori_loop. The choice changes the
         # lowering strategy, not timestep semantics.
         if cuda_multi_step:

@@ -481,6 +481,7 @@ def cpml_update_h_from_e_3d(
     psi_terms,
     dt,
     magnetic_conductivities,
+    source_scales=None,
 ):
     """Advance 3D H fields and their six packed CPML memories."""
     derivatives = (
@@ -505,6 +506,14 @@ def cpml_update_h_from_e_3d(
         strict=True,
     )
     curls = tuple(corrected[index] + corrected[index + 1] for index in (0, 2, 4))
+    if source_scales is not None:
+        updated = tuple(
+            field - scale * (curl + sigma * field)
+            for field, curl, sigma, scale in zip(
+                (hx, hy, hz), curls, magnetic_conductivities, source_scales, strict=True
+            )
+        )
+        return *updated, tuple(next_psi)
     one = jnp.asarray(1.0, dtype=hx.dtype)
     dt_over_mu = jnp.asarray(dt, dtype=hx.dtype) / jnp.asarray(MU_0, dtype=hx.dtype)
     updated = []
@@ -582,6 +591,7 @@ def cpml_update_e_from_h_3d(
     inverse_diagonals=None,
     inverse_offdiagonal=None,
     logical_shapes=None,
+    source_scales=None,
 ):
     """Advance 3D E fields and their six packed CPML memories."""
     views = build_h_boundary_views_for_e_3d(
@@ -619,6 +629,14 @@ def cpml_update_e_from_h_3d(
             inverse_offdiagonal,
             ("Ex", "Ey", "Ez"),
             dt,
+        )
+        return *updated, tuple(next_psi)
+    if source_scales is not None:
+        updated = tuple(
+            field + scale * (curl - sigma * field)
+            for field, curl, sigma, scale in zip(
+                (ex, ey, ez), curls, conductivities, source_scales, strict=True
+            )
         )
         return *updated, tuple(next_psi)
     one = jnp.asarray(1.0, dtype=ex.dtype)
@@ -1099,6 +1117,11 @@ def update_h_3d_cpml(eng, ctx, coeffs):
         terms=cpml.h_terms,
         psi_terms=eng.cpml_psi_h_terms,
         dt=ctx.dt_scalar,
+        source_scales=(
+            (coeffs.h_source_x, coeffs.h_source_y, coeffs.h_source_z)
+            if coeffs.h_source_x.size
+            else None
+        ),
         magnetic_conductivities=(
             coeffs.h_sigma_m_x,
             coeffs.h_sigma_m_y,
@@ -1146,6 +1169,11 @@ def update_e_3d_cpml(eng, ctx, coeffs):
         psi_terms=eng.cpml_psi_e_terms,
         metallic_edges=cpml.metallic_edges,
         dt=ctx.dt_scalar,
+        source_scales=(
+            (coeffs.e_source_x, coeffs.e_source_y, coeffs.e_source_z)
+            if coeffs.e_source_x.size
+            else None
+        ),
         conductivities=(
             coeffs.e_conductivity_x,
             coeffs.e_conductivity_y,
