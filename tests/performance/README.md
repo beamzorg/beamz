@@ -25,13 +25,13 @@ python scripts/benchmark_h100.py --workload realistic_3d \
   --output benchmarks/realistic-h100.json
 ```
 
-Pass `--devices 4 --shard-axis auto` for a four-device JAX record. CUDA backends
-currently require `--devices 1`. The runner derives device identity, count, and peak
+Pass `--devices 4 --shard-axis auto` for a four-device JAX or explicit
+`cuda_streamed` record. The runner derives device identity, count, and peak
 memory only from devices that own the placed field state, so unrelated visible GPUs
 do not change the record.
 
 Use `compare_benchmarks()` for same-backend regression gates and
-`compare_backend_speedup()` to compare JAX, streamed CUDA, and Hopper records for the
+`compare_backend_speedup()` to compare JAX and streamed CUDA records for the
 same physical workload and hardware.
 
 `RTX3090.md` documents the controlled PR-versus-`origin/main` harness. Unlike the
