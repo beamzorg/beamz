@@ -26,13 +26,19 @@ from beamz.simulation.execute import build_scan, initial_program_state
 
 def build_simulation(args):
     nz, ny, nx = args.shape
-    dx = 80e-9
+    dx = float(getattr(args, "resolution_nm", 80.0)) * 1e-9
     size = np.array((nx, ny, nz)) * dx
     dt = 0.95 * dx / (bz.LIGHT_SPEED * np.sqrt(3))
     total_steps = args.steps + getattr(args, "presteps", 0)
     times = np.arange(total_steps) * dt
     eps = np.full((nz, ny, nx), 1.44**2, dtype=np.float32)
-    eps[nz // 2 - 2 : nz // 2 + 2, ny // 2 - 3 : ny // 2 + 3, :] = 3.48**2
+    half_z = max(1, round(160e-9 / dx))
+    half_y = max(1, round(240e-9 / dx))
+    eps[
+        nz // 2 - half_z : nz // 2 + half_z,
+        ny // 2 - half_y : ny // 2 + half_y,
+        :,
+    ] = 3.48**2
     if args.material == "smooth":
         eps += np.linspace(0, 0.01, nx, dtype=np.float32)[None, None, :]
     if args.material == "scalar":
@@ -51,7 +57,10 @@ def build_simulation(args):
     )
     freq = bz.LIGHT_SPEED / 1.55e-6
     steps = np.arange(total_steps)
-    signal = np.exp(-(((steps - 24) / 8) ** 2)) * np.sin(2 * np.pi * freq * times)
+    refinement = 80e-9 / dx
+    signal = np.exp(-(((steps - 24 * refinement) / (8 * refinement)) ** 2)) * np.sin(
+        2 * np.pi * freq * times
+    )
     sources = [
         bz.ModeSource(
             center=(0.3 * size[0], size[1] / 2, size[2] / 2),

@@ -32,6 +32,7 @@ def main():
     p.add_argument("--devices", type=int, required=True)
     p.add_argument("--backend", choices=["cuda_streamed", "jax"], required=True)
     p.add_argument("--frequencies", type=int, default=101)
+    p.add_argument("--resolution-nm", type=float, default=80.0)
     p.add_argument("--timesteps", type=int, default=256)
     p.add_argument("--samples", type=int, default=5)
     p.add_argument("--host-setup", action="store_true")
@@ -50,6 +51,8 @@ def main():
         or a.timesteps < 32
         or min(a.shape) <= 24
         or a.frequencies < 1
+        or not np.isfinite(a.resolution_nm)
+        or a.resolution_nm <= 0
     ):
         p.error(
             "requires requested H100 count, >=5 samples, >=32 steps, dimensions >24"
@@ -63,7 +66,10 @@ def main():
     )
     with context:
         sim = ModalWorkload(
-            shape_zyx=tuple(a.shape), timesteps=a.timesteps, frequencies=a.frequencies
+            shape_zyx=tuple(a.shape),
+            timesteps=a.timesteps,
+            frequencies=a.frequencies,
+            resolution_nm=a.resolution_nm,
         ).build()
         sim.clear_compiled_cache()
         program = sim.compile(num_steps=a.timesteps, backend=a.backend, sharding=cfg)
@@ -77,6 +83,7 @@ def main():
     )
     coeffs = sharding.place_tree(program, program.coefficients)
     jax.block_until_ready((state, coeffs))
+    prepared_memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
     setup_s = time.perf_counter() - started
     print(json.dumps(dict(stage="prepared", setup_s=setup_s)), flush=True)
     tick = time.perf_counter()
@@ -97,6 +104,7 @@ def main():
     finite = all(
         bool(jax.device_get(jnp.all(jnp.isfinite(x)))) for x in jax.tree.leaves(result)
     )
+    timed_memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
     del result
     if not finite:
         raise RuntimeError("Non-finite stepping output")
@@ -131,6 +139,11 @@ def main():
         steps=a.timesteps,
         frequencies=a.frequencies,
         cpml_cells=12,
+        resolution_nm=a.resolution_nm,
+        physical_size_zyx_um=(np.asarray(a.shape) * a.resolution_nm / 1000).tolist(),
+        prepared_memory=prepared_memory,
+        timed_memory=timed_memory,
+        runtime_cv=statistics.stdev(samples) / statistics.mean(samples),
         setup_s=setup_s,
         compile_s=compile_s,
         warm_runtime_samples_s=samples,

@@ -25,6 +25,7 @@ class ModalWorkload:
     shape_zyx: tuple[int, int, int] = (128, 256, 384)
     timesteps: int = 256
     frequencies: int = 3
+    resolution_nm: float = 80.0
 
     def resized(self, *, shape_zyx=None, timesteps=None):
         return dataclasses.replace(
@@ -54,6 +55,7 @@ class ModalWorkload:
                 material="binary",
                 source="mode",
                 monitor_type="mode",
+                resolution_nm=self.resolution_nm,
             )
         )
 
