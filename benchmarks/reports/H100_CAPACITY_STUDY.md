@@ -64,3 +64,12 @@ the required permission. Hardware bandwidth, occupancy, and stall metrics
 are unavailable on this run. Sampled NVML activity must not be substituted for
 those metrics. The probe ran between benchmark processes with all GPUs idle;
 its log and the idle check are retained.
+
+## Interim larger-domain result
+
+At 704³ cells/GPU (2,791,309,312 physical cells total), the measured rate is
+154.18 GCUPS with 0.11% sample coefficient of variation. That is a 0.96%
+increase over 640³/GPU for 33.1% more cells. Peak live allocation is 35.84 GiB
+on GPU 0 and was already reached during preparation. The live allocation with
+the final timed output retained is 24.68 GiB; the 64 GiB allocator pool on GPU 0
+is not the same quantity. Larger-domain results remain pending.
