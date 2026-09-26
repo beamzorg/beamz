@@ -111,7 +111,7 @@ def main():
         if args.devices == 1
         else dict(axis="x", num_devices=args.devices, backend="gpu")
     )
-    state, rows, previous_flux = None, [], None
+    state, rows, previous_dft = None, [], None
     peak = 0.0
     for step in range(args.chunk, args.steps + 1, args.chunk):
         tick = time.perf_counter()
@@ -130,21 +130,31 @@ def main():
         norm = float(field_norm(state))
         peak = max(peak, norm)
         flux = np.stack([np.asarray(run.results[f"mode_{i}"].flux) for i in range(2)])
+        # Public flux includes a running 1 / weight_sum**2 normalization.
+        # Compare raw complex DFT integrals so adding zero-field samples does
+        # not masquerade as a changing spectrum. Both apertures have equal size.
+        dft = (
+            np.asarray(state.dft_vec_re).astype(np.float64)
+            + 1j * np.asarray(state.dft_vec_im).astype(np.float64)
+        ).reshape(2, -1)
         change = (
             None
-            if previous_flux is None
+            if previous_dft is None
             else float(
-                np.linalg.norm(flux - previous_flux) / max(np.linalg.norm(flux), 1e-300)
+                max(
+                    np.linalg.norm(a - b) / max(np.linalg.norm(a), 1e-300)
+                    for a, b in zip(dft, previous_dft, strict=True)
+                )
             )
         )
-        previous_flux = flux
+        previous_dft = dft
         rows.append(
             dict(
                 step=step,
                 call_s=elapsed,
                 field_norm=norm,
                 relative_field_norm=norm / max(peak, 1e-300),
-                flux_change=change,
+                dft_change=change,
             )
         )
         print(json.dumps(rows[-1]), flush=True)
@@ -158,8 +168,8 @@ def main():
         and all(
             r["step"] > 1024
             and r["relative_field_norm"] < 1e-6
-            and r["flux_change"] is not None
-            and r["flux_change"] < 1e-4
+            and r["dft_change"] is not None
+            and r["dft_change"] < 1e-4
             for r in tail
         )
     )
@@ -184,7 +194,7 @@ def main():
         total_wall_s=time.perf_counter() - started,
         simulated_time_s=args.steps * dt,
         checkpoints=rows,
-        convergence_criterion="last 3 checkpoints: scaled field norm / sampled peak < 1e-6 and relative flux L2 change < 1e-4; source off after step 1024",
+        convergence_criterion="last 3 checkpoints: scaled field norm / sampled peak < 1e-6 and per-monitor raw DFT relative L2 change < 1e-4; source off after step 1024",
         script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
