@@ -127,9 +127,11 @@ def main():
             )
         if sample < a.samples - 1:
             del result
-    finite = all(
-        bool(jax.device_get(jnp.all(jnp.isfinite(x)))) for x in jax.tree.leaves(result)
-    )
+    stepped_memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
+    # Fuse the reduction rather than materializing a field-sized boolean array
+    # merely to validate a near-capacity simulation after timing.
+    all_finite = jax.jit(lambda value: jnp.all(jnp.isfinite(value)))
+    finite = all(bool(jax.device_get(all_finite(x))) for x in jax.tree.leaves(result))
     timed_memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
     weights = np.asarray(jax.device_get(result.dft_weight_sum))
     final_current_step = int(jax.device_get(result.current_step))
@@ -187,6 +189,7 @@ def main():
         physical_size_zyx_um=(np.asarray(a.shape) * a.resolution_nm / 1000).tolist(),
         prepared_memory=prepared_memory,
         timed_memory=timed_memory,
+        stepped_memory=stepped_memory,
         runtime_cv=statistics.stdev(samples) / statistics.mean(samples),
         monitor_weight_min=float(weights.min()),
         monitor_weight_max=float(weights.max()),

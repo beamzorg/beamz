@@ -459,24 +459,12 @@ def place_tree(program, tree, *, shard_arrays: bool = True):
                 if shard_arrays
                 else _replicated_sharding(mesh)
             )
-            devices = sorted(target.addressable_devices, key=lambda d: d.id)
-            before = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
-            placed = _place_array(value, target)
-            placed.block_until_ready()
-            record = dict(
-                path=jax.tree_util.keystr(path),
-                shape=list(value.shape) if hasattr(value, "shape") else [],
-                dtype=str(getattr(value, "dtype", type(value).__name__)),
-                source_devices=[str(d) for d in value.devices()]
-                if isinstance(value, jax.Array)
-                else ["host"],
-                target=str(target),
-                before=before,
-                after=[dict(id=d.id, stats=d.memory_stats()) for d in devices],
+            return _trace_placement(
+                jax.tree_util.keystr(path),
+                value,
+                target,
+                lambda: _place_array(value, target),
             )
-            with open(trace_path, "a") as stream:
-                stream.write(json.dumps(record) + "\n")
-            return placed
 
         return jax.tree_util.tree_map_with_path(traced_place, tree)
     return jax.tree_util.tree_map(
@@ -488,6 +476,71 @@ def place_tree(program, tree, *, shard_arrays: bool = True):
         ),
         tree,
     )
+
+
+def _trace_placement(path, value, target, operation):
+    trace_path = os.getenv("BEAMZ_TRACE_PLACEMENT")
+    if not trace_path:
+        return operation()
+    devices = sorted(target.addressable_devices, key=lambda d: d.id)
+    before = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
+    placed = operation()
+    placed.block_until_ready()
+    record = dict(
+        path=path,
+        shape=list(getattr(value, "shape", ())),
+        output_shape=list(placed.shape),
+        dtype=str(getattr(value, "dtype", type(value).__name__)),
+        source_devices=[str(d) for d in value.devices()]
+        if isinstance(value, jax.Array)
+        else ["host"],
+        target=str(target),
+        before=before,
+        after=[dict(id=d.id, stats=d.memory_stats()) for d in devices],
+    )
+    with open(trace_path, "a") as stream:
+        stream.write(json.dumps(record) + "\n")
+    return placed
+
+
+def _place_padded_host_array(value, shape, target):
+    """Crop/pad only destination shards, never a full global field copy."""
+    host = np.asarray(value)
+
+    def shard(index):
+        bounds = [part.indices(size) for part, size in zip(index, shape, strict=True)]
+        if any(step != 1 for _, _, step in bounds):
+            raise ValueError("Host padding requires contiguous shard indices")
+        slices = tuple(
+            slice(min(lo, size), min(hi, size))
+            for (lo, hi, _), size in zip(bounds, host.shape, strict=True)
+        )
+        local = host[slices]
+        padding = tuple(
+            (0, hi - lo - size)
+            for (lo, hi, _), size in zip(bounds, local.shape, strict=True)
+        )
+        return np.pad(local, padding) if any(high for _, high in padding) else local
+
+    return jax.make_array_from_callback(shape, target, shard)
+
+
+def _prepare_component(program, component, value):
+    layout = program.sharding.layout
+    if layout.enabled and _is_host_array(value):
+        shape = layout.padded_shapes[component]
+        target = _array_sharding(
+            program,
+            jax.ShapeDtypeStruct(shape, value.dtype),
+            program.sharding.mesh,
+        )
+        return _trace_placement(
+            f"padded.{component}",
+            value,
+            target,
+            lambda: _place_padded_host_array(value, shape, target),
+        )
+    return pad_component(program, component, value)
 
 
 @lru_cache(maxsize=128)
@@ -569,7 +622,9 @@ def prepare_state(program, state, *, replicated_fields):
     """Pad and place a logical runtime state for execution."""
     state = state._replace(
         **{
-            name.lower(): pad_component(program, name, getattr(state, name.lower()))
+            name.lower(): _prepare_component(
+                program, name, getattr(state, name.lower())
+            )
             for name in _COMPONENT_NAMES
         }
     )

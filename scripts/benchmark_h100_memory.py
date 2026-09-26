@@ -20,6 +20,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--deadline", required=True, help="Timezone-aware ISO time")
+    parser.add_argument(
+        "--target-only",
+        action="store_true",
+        help="Attempt only 15B after an earlier setup/control run",
+    )
     args = parser.parse_args()
     deadline = dt.datetime.fromisoformat(args.deadline)
     if deadline.tzinfo is None:
@@ -36,7 +41,12 @@ def main():
         BEAMZ_CUDA_CPML_PSI_PRECISION="fp32",
         NUMPY_MADVISE_HUGEPAGE="0",
     )
-    rows = []
+    summary_path = args.output / "summary.json"
+    rows = (
+        json.loads(summary_path.read_text())
+        if args.target_only and summary_path.exists()
+        else []
+    )
     previous = None
     # Reproduce the old x-partition setup failure first. For capacity, z
     # partitions use contiguous native storage without per-phase x rotations.
@@ -46,6 +56,8 @@ def main():
         ("10B", (10000, 1000, 1000), "z"),
         ("15B", (10000, 1250, 1200), "z"),
     ]
+    if args.target_only:
+        cases = cases[-1:]
     for name, shape, axis in cases:
         cells = shape[0] * shape[1] * shape[2]
         remaining = cutoff - time.time()
@@ -113,6 +125,7 @@ def main():
             cells=cells,
             command=command,
             started_utc=dt.datetime.now(dt.timezone.utc).isoformat(),
+            target_only=args.target_only,
         )
         print(json.dumps(dict(stage="start", **row)), flush=True)
         start = time.monotonic()

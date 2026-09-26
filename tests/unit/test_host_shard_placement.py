@@ -41,6 +41,14 @@ for axis in range(3):
         result = sharding._place_array(padded, target)
         result.block_until_ready()
     np.testing.assert_array_equal(result, padded)
+    # Padding belongs to destination slices, never a global six-field copy.
+    pad = np.pad
+    def reject_global_pad(value, widths, *args, **kwargs):
+        assert value.size < original.size
+        return pad(value, widths, *args, **kwargs)
+    with patch('numpy.pad', side_effect=reject_global_pad):
+        direct = sharding._place_padded_host_array(cpu_array, tuple(shape), target)
+    np.testing.assert_array_equal(direct, padded)
     assert len(result.addressable_shards) == 4
     assert sharding._place_array(result, target) is result
     replicated = jax.sharding.NamedSharding(mesh, jax.sharding.PartitionSpec())
