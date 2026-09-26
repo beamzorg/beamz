@@ -1,0 +1,7 @@
+{
+  "path": "benchmarks/results/h100-device-20260926/evidence.tar.gz",
+  "bytes": 249180104,
+  "sha256": "44f9a60485d88974184418102796e149db2f2681a980565b59036676e877ef7f",
+  "files": 296,
+  "note": "295 verified raw files plus their SHA-256 manifest; every archived payload, final source file, and tested native wheel hash was verified."
+}

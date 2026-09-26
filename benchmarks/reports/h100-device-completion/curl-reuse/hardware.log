@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=1765119814
+rootdir: /workspace/beamz-h100
+configfile: pytest.ini
+plugins: cov-7.1.0, randomly-5.0.0, hypothesis-6.168.0, anyio-4.14.2
+collected 8 items / 5 deselected / 3 selected
+
+tests/hardware/test_local_cpml_scaling.py ...                            [100%]
+
+======================= 3 passed, 5 deselected in 47.62s =======================

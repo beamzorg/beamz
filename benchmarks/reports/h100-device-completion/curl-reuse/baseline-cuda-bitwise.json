@@ -1,0 +1,12 @@
+{
+  "reference": "completion-final/cuda_streamed-8.npz",
+  "candidate": "curl-reuse/completion-cuda_streamed.npz",
+  "array_equal": {
+    "dft_vec_re": true,
+    "dft_vec_im": true,
+    "dft_weight_sum": true,
+    "flux_0": true,
+    "flux_1": true
+  },
+  "all_equal": true
+}

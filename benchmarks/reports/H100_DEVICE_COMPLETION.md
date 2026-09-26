@@ -5,6 +5,13 @@ stepping throughput on a size sweep. The acceptance targets remain 150 GCUPS for
 `cuda_streamed` and 75 GCUPS for pure JAX on eight H100 SXMs. A short stepping
 benchmark does not establish time to a converged optical spectrum.
 
+Final accepted CUDA commit `f98fdc4` reaches **151.57 GCUPS** on eight GPUs
+at 640×640×5120 cells, versus **73.92 GCUPS** for pure JAX. The CUDA target is
+met for that warm capacity case; JAX remains 1.08 GCUPS short. The thinner
+128×1024×8192 case reaches **135.50 / 66.76 GCUPS** (CUDA / JAX), so the targets
+are not met for every shape. The accepted completion comparisons pass the original
+numerical gate. The owned pod is deleted and all raw evidence is verified locally.
+
 ## Correctness changes
 
 The original 4,096-step, 128×512×1024 modal comparison exposed two independent
@@ -200,7 +207,7 @@ uses a native graph on one GPU and distributed tile updates on multiple GPUs.
 
 At 512³ cells per GPU, CUDA measures 24.81 GCUPS on one GPU, 33.82 on
 two, and 135.02 on eight. The two-to-eight ratio is 3.993× (99.8% of
-linear scaling), while the one-to-eight ratio is 5.441× (68.0%). JAX measures
+linear scaling), while the one-to-eight ratio is 5.44× (68.0%). JAX measures
 18.08 GCUPS on two GPUs and 71.28 on eight: 3.943× (98.6% of linear).
 This separates the single-to-distributed implementation transition from the
 subsequent multi-GPU scaling. Optimizing distributed per-rank update throughput
@@ -252,9 +259,53 @@ headroom. The current native tile kernels use 32 registers, no local-memory
 spills, and no shared memory, according to `cuobjdump`. This does not establish
 an HBM bandwidth roofline; hardware memory counters were not collected.
 
+## Optional JAX compiler-setting trial
+
+`JAX_OPTIMIZATION_LEVEL=O1` measured **71.06 GCUPS** on the largest eight-GPU
+case, versus 73.92 with the default setting: 3.9% slower. Its 16,384-step
+S-bend converged and passed the same pointwise DFT/flux gate against one-GPU
+JAX; completion took 97.45 seconds in that single cold trial. The configuration
+is **not enabled by default or recommended for this workload**. The trial uses
+runtime `46d495b`; `optimization-o1/protocol.json` records the setting explicitly.
+
+## CUDA bulk-load reuse
+
+The distributed bulk kernel now computes all three curls before writing any
+field component. This allows source-center loads to be reused across components.
+The generated H and E kernels each contain three fewer global-load instructions;
+both still use 32 registers and no local-memory spills. This does not by itself
+measure HBM traffic, but the throughput improvement is directly measured.
+
+The largest case reaches **151.57 GCUPS**, up **7.7%** from 140.73, meeting the
+150 GCUPS target for this warm, 2.097-billion-cell stepping case. The three-axis
+bulk/CPML continuation tests pass. The 16,384-step S-bend converges in 82.68 seconds
+and passes the original one-GPU JAX comparison. Its saved raw DFT arrays, weights,
+and both modal flux spectra are also **bitwise identical** to the previous
+eight-GPU CUDA result. The change is confined to the distributed bulk update;
+the single-GPU rates in the baseline table were measured before this change.
+
+Source commit: `f98fdc4`. All measurements below use five synchronized warm samples.
+
+| H100s | Shape (z×y×x) | Baseline GCUPS | Optimized GCUPS | Change |
+|---:|---|---:|---:|---:|
+| 8 | 640×640×5120 | 140.73 | 151.57 | +7.7% |
+| 8 | 512×512×512 | 95.28 | 102.77 | +7.9% |
+| 2 | 512×512×1024 | 33.82 | 36.54 | +8.1% |
+| 8 | 128×1024×8192 | 127.42 | 135.50 | +6.3% |
+
+All four tested shapes improved. The planar result remains below 150 GCUPS;
+the target is met on the largest capacity case, not across all shapes.
+
+The accepted native SHA-256 is
+`6753641e1a682751ad00c10abda53bd4cd33fd3569ccf048baea018bb94be00d`.
+Rebuild the native component to use this optimization; the interface remains
+ABI 21 / component 0.21.0. Warm throughput does not include cold setup or establish
+time to optical convergence for the billion-cell domains. Pure JAX's best
+measured rate remains 73.92 GCUPS, below its 75 GCUPS target.
+
 ## Evidence and reproduction
 
-Completion-table runtime: `dbed19a`. Final scaling runtime/harness: `a436070`
+Completion-table runtime: `dbed19a`. Baseline scaling runtime/harness: `a436070`
 (including host-state placement fix `1d314d3`; native graph-cache fix `ea5aa4d`). Source hashes and raw artifacts accompany the
 compact evidence. Build native SM90 with fast math disabled and FP32 CPML memory.
 Use `scripts/benchmark_device_completion.py` for completion and
@@ -271,3 +322,23 @@ The 80 nm grid is a performance and backend-parity case. Pulse decay and backend
 agreement do not establish spatial discretization accuracy; a separate mesh
 refinement study is needed before interpreting the S-bend's transmission as a
 converged physical prediction.
+
+## Provenance, archive, and cost
+
+Worker JSON `commit` fields contain the pod checkout's deployment snapshot
+`3dcb7bfb525e2e8423c44286085963e2e662d74c`, not the local measurement revision.
+The `deployment*.json` source-file hashes and revision mappings are authoritative:
+`dbed19a` for original completion; `a436070` for baseline scaling; `46d495b` for
+the initial-copy control and O1 trial; `f98fdc4` for the accepted CUDA optimization.
+
+The full local archive is `benchmarks/results/h100-device-20260926/evidence.tar.gz`
+(ignored by Git). It contains raw NPZ spectra, profiles, traces, native binaries,
+the candidate wheel, and diagnostic/invalid trials. All 295 raw files
+(308,280,109 bytes) were verified against the pod's SHA-256 manifest before
+teardown. Compact results, source hashes, and the raw-file manifest are committed.
+
+Pod `1sh9krdy7t7tz5` was deleted at 2026-09-26 16:28:21 UTC; the API returned
+204 and a subsequent read returned 404. At $27.92/hour, creation-to-deletion
+compute is estimated at $101.91 for this session and **$171.14 cumulative**
+including the prior $69.23, against the $175 cap. This is a compute estimate,
+not a reconciled account invoice.

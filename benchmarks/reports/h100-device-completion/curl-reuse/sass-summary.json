@@ -1,0 +1,16 @@
+{
+  "h": {
+    "instruction_count_before": 1632,
+    "instruction_count_after": 1632,
+    "identical": false,
+    "load_instructions_before": 134,
+    "load_instructions_after": 131
+  },
+  "e": {
+    "instruction_count_before": 2160,
+    "instruction_count_after": 2160,
+    "identical": false,
+    "load_instructions_before": 149,
+    "load_instructions_after": 146
+  }
+}

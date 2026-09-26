@@ -1,0 +1,7 @@
+{
+  "native_sha256": "6753641e1a682751ad00c10abda53bd4cd33fd3569ccf048baea018bb94be00d",
+  "source_sha256": "291f4905b84ad9d7eb163c7128f0bec16f4ef9ad94e16059f3598bae74cac82e",
+  "baseline": "a436070",
+  "setup_fix": "committed_source_placement",
+  "JAX_OPTIMIZATION_LEVEL": "default"
+}
