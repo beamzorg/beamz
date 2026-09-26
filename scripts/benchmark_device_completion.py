@@ -129,7 +129,6 @@ def main():
         state = run.state
         norm = float(field_norm(state))
         peak = max(peak, norm)
-        flux = np.stack([np.asarray(run.results[f"mode_{i}"].flux) for i in range(2)])
         # Public flux includes a running 1 / weight_sum**2 normalization.
         # Compare raw complex DFT integrals so adding zero-field samples does
         # not masquerade as a changing spectrum. Both apertures have equal size.
@@ -173,6 +172,9 @@ def main():
             for r in tail
         )
     )
+    # Modal decomposition is only needed for the delivered spectrum. Raw DFT
+    # convergence above avoids repeating mode solves at every checkpoint.
+    flux = np.stack([np.asarray(run.results[f"mode_{i}"].flux) for i in range(2)])
     arrays = {
         name: np.asarray(getattr(state, name))
         for name in ("dft_vec_re", "dft_vec_im", "dft_weight_sum")
