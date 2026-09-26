@@ -22,6 +22,13 @@ def main():
         for key in ("shape", "steps", "frequencies", "cpml_cells"):
             if info[key] != metadata[key]:
                 raise ValueError(f"Mismatched {key}: {candidate}")
+        for key in ("workload", "resolution_m", "chunk", "script_sha256"):
+            if info.get(key) != metadata.get(key):
+                raise ValueError(f"Mismatched {key}: {candidate}")
+        if "converged" in metadata and not (
+            metadata["converged"] and info.get("converged", False)
+        ):
+            raise ValueError(f"Completion comparison requires converged runs: {candidate}")
         if not info["finite_state"] or not metadata["finite_state"]:
             raise ValueError("Non-finite simulation state")
         actual = np.load(candidate.with_suffix(".npz"))

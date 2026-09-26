@@ -22,7 +22,14 @@ def main():
         "--steps", nargs="+", type=int, default=[1, 2, 8, 32, 128, 256, 512, 1024]
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--native-graph-steps", type=int)
     args = parser.parse_args()
+    if args.native_graph_steps is not None:
+        import beamz.simulation.execute as execute
+
+        if args.native_graph_steps < 1:
+            parser.error("native graph size must be positive")
+        execute.CUDA_GRAPH_MAX_STEPS = args.native_graph_steps
     records = []
     for steps in args.steps:
         states = []
