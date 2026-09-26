@@ -986,7 +986,10 @@ def initial_program_state(
         # Fresh runs use the compiled lattice; continuations supply evolved canonical
         # arrays without reconstructing a mutable field container.
         return (
-            jnp.array(getattr(program.grid, name))
+            jnp.array(
+                getattr(program.grid, name),
+                device=getattr(getattr(program.grid, name), "sharding", None),
+            )
             if continuation is None
             else getattr(continuation, name.lower())
         )

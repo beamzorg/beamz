@@ -229,15 +229,22 @@ class SimulationState(NamedTuple):
         Application code should normally use ``Simulation.initial_state()`` so the
         state is guaranteed to match the simulation's compiled lattice.
         """
+
+        def copy_field(name):
+            value = getattr(fields, name)
+            # Uncommitted arrays created under a CPU setup context otherwise
+            # migrate to the default GPU when that context has ended.
+            return jnp.array(value, device=getattr(value, "sharding", None))
+
         empty2 = jnp.zeros((0, 0), dtype=jnp.float32)
         return cls(
             # Copies keep the compiled lattice reusable when JAX donates runtime buffers.
-            ex=jnp.array(fields.Ex),
-            ey=jnp.array(fields.Ey),
-            ez=jnp.array(fields.Ez),
-            hx=jnp.array(fields.Hx),
-            hy=jnp.array(fields.Hy),
-            hz=jnp.array(fields.Hz),
+            ex=copy_field("Ex"),
+            ey=copy_field("Ey"),
+            ez=copy_field("Ez"),
+            hx=copy_field("Hx"),
+            hy=copy_field("Hy"),
+            hz=copy_field("Hz"),
             cpml_psi_h_terms=(),
             cpml_psi_e_terms=(),
             powers=empty2,
