@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=2312732916
+rootdir: /workspace/beamz-h100
+configfile: pytest.ini
+plugins: cov-7.1.0, randomly-5.0.0, hypothesis-6.168.0, anyio-4.14.2
+collected 357 items / 345 deselected / 12 selected
+
+tests/hardware/test_cuda_backends.py ............                        [100%]
+
+===================== 12 passed, 345 deselected in 44.80s ======================

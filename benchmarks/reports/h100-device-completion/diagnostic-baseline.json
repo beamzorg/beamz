@@ -1,0 +1,541 @@
+[
+  {
+    "steps": 1,
+    "arrays": {
+      "ex": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "ey": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "ez": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "hx": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "hy": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "hz": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "cpml_psi_e_terms": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "cpml_psi_h_terms": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "dft_vec_re": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "dft_vec_im": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "dft_weight_sum": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 1.0
+      },
+      "t": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 1.4636332281860284e-16
+      }
+    }
+  },
+  {
+    "steps": 2,
+    "arrays": {
+      "ex": {
+        "max_abs": 9.5367431640625e-07,
+        "relative_l2": 8.056084202581612e-09,
+        "exact": false,
+        "reference_max": 64.505859375
+      },
+      "ey": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 431.6986999511719
+      },
+      "ez": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 210.09048461914062
+      },
+      "hx": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "hy": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.4482695162296295
+      },
+      "hz": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 3.4620938301086426
+      },
+      "cpml_psi_e_terms": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "cpml_psi_h_terms": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "dft_vec_re": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "dft_vec_im": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "dft_weight_sum": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 2.0
+      },
+      "t": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 2.927266456372057e-16
+      }
+    }
+  },
+  {
+    "steps": 32,
+    "arrays": {
+      "ex": {
+        "max_abs": 2.0,
+        "relative_l2": 8.943632749189917e-08,
+        "exact": false,
+        "reference_max": 30123918.0
+      },
+      "ey": {
+        "max_abs": 3.0,
+        "relative_l2": 9.26861384184482e-08,
+        "exact": false,
+        "reference_max": 41111132.0
+      },
+      "ez": {
+        "max_abs": 1.125,
+        "relative_l2": 2.0538723396231824e-07,
+        "exact": false,
+        "reference_max": 5718610.0
+      },
+      "hx": {
+        "max_abs": 0.01171875,
+        "relative_l2": 1.3967786734832884e-07,
+        "exact": false,
+        "reference_max": 84182.4453125
+      },
+      "hy": {
+        "max_abs": 0.013671875,
+        "relative_l2": 2.8086994025279047e-07,
+        "exact": false,
+        "reference_max": 31900.958984375
+      },
+      "hz": {
+        "max_abs": 0.0625,
+        "relative_l2": 1.1319307647441648e-07,
+        "exact": false,
+        "reference_max": 283256.5
+      },
+      "cpml_psi_e_terms": {
+        "max_abs": 96.0,
+        "relative_l2": 1.2089192780934755e-07,
+        "exact": false,
+        "reference_max": 532870080.0
+      },
+      "cpml_psi_h_terms": {
+        "max_abs": 28672.0,
+        "relative_l2": 1.2848690930078203e-07,
+        "exact": false,
+        "reference_max": 108713738240.0
+      },
+      "dft_vec_re": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "dft_vec_im": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 0.0
+      },
+      "dft_weight_sum": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 32.0
+      },
+      "t": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 4.683626330195291e-15
+      }
+    }
+  },
+  {
+    "steps": 128,
+    "arrays": {
+      "ex": {
+        "max_abs": 6.0,
+        "relative_l2": 4.0417214615386015e-07,
+        "exact": false,
+        "reference_max": 14876498.0
+      },
+      "ey": {
+        "max_abs": 7.5,
+        "relative_l2": 3.812127954174056e-07,
+        "exact": false,
+        "reference_max": 20586664.0
+      },
+      "ez": {
+        "max_abs": 5.0,
+        "relative_l2": 6.669395294386436e-07,
+        "exact": false,
+        "reference_max": 9715264.0
+      },
+      "hx": {
+        "max_abs": 0.041015625,
+        "relative_l2": 4.985811247652153e-07,
+        "exact": false,
+        "reference_max": 77787.296875
+      },
+      "hy": {
+        "max_abs": 0.0322265625,
+        "relative_l2": 9.135870164079053e-07,
+        "exact": false,
+        "reference_max": 33575.1171875
+      },
+      "hz": {
+        "max_abs": 0.0546875,
+        "relative_l2": 3.057265457528922e-07,
+        "exact": false,
+        "reference_max": 212388.9375
+      },
+      "cpml_psi_e_terms": {
+        "max_abs": 7064.0,
+        "relative_l2": 9.66134396573779e-07,
+        "exact": false,
+        "reference_max": 5389604352.0
+      },
+      "cpml_psi_h_terms": {
+        "max_abs": 1998848.0,
+        "relative_l2": 9.831825337672374e-07,
+        "exact": false,
+        "reference_max": 1276358557696.0
+      },
+      "dft_vec_re": {
+        "max_abs": 8.25,
+        "relative_l2": 7.739855138463756e-07,
+        "exact": false,
+        "reference_max": 5038321.5
+      },
+      "dft_vec_im": {
+        "max_abs": 9.21875,
+        "relative_l2": 8.389079289895738e-07,
+        "exact": false,
+        "reference_max": 5024670.0
+      },
+      "dft_weight_sum": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 128.0
+      },
+      "t": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 1.8734505320781164e-14
+      }
+    }
+  },
+  {
+    "steps": 256,
+    "arrays": {
+      "ex": {
+        "max_abs": 7.0,
+        "relative_l2": 5.226283132748895e-07,
+        "exact": false,
+        "reference_max": 14619694.0
+      },
+      "ey": {
+        "max_abs": 9.125,
+        "relative_l2": 4.930547684776974e-07,
+        "exact": false,
+        "reference_max": 17882456.0
+      },
+      "ez": {
+        "max_abs": 4.75,
+        "relative_l2": 8.854108927664856e-07,
+        "exact": false,
+        "reference_max": 9748323.0
+      },
+      "hx": {
+        "max_abs": 0.0439453125,
+        "relative_l2": 6.668237481664866e-07,
+        "exact": false,
+        "reference_max": 72886.96875
+      },
+      "hy": {
+        "max_abs": 0.03515625,
+        "relative_l2": 1.145520607886971e-06,
+        "exact": false,
+        "reference_max": 37232.40234375
+      },
+      "hz": {
+        "max_abs": 0.1171875,
+        "relative_l2": 4.978010889803446e-07,
+        "exact": false,
+        "reference_max": 151919.53125
+      },
+      "cpml_psi_e_terms": {
+        "max_abs": 61440.0,
+        "relative_l2": 1.8059739432932595e-06,
+        "exact": false,
+        "reference_max": 45241544704.0
+      },
+      "cpml_psi_h_terms": {
+        "max_abs": 4194304.0,
+        "relative_l2": 2.5503904124258235e-06,
+        "exact": false,
+        "reference_max": 6204598255616.0
+      },
+      "dft_vec_re": {
+        "max_abs": 58.46875,
+        "relative_l2": 1.6211262452287208e-06,
+        "exact": false,
+        "reference_max": 21471638.0
+      },
+      "dft_vec_im": {
+        "max_abs": 71.0,
+        "relative_l2": 2.0407494658810963e-06,
+        "exact": false,
+        "reference_max": 20639434.0
+      },
+      "dft_weight_sum": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 256.0
+      },
+      "t": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 3.746901064156233e-14
+      }
+    }
+  },
+  {
+    "steps": 512,
+    "arrays": {
+      "ex": {
+        "max_abs": 8.0,
+        "relative_l2": 6.959946191071684e-07,
+        "exact": false,
+        "reference_max": 14397191.0
+      },
+      "ey": {
+        "max_abs": 8.875,
+        "relative_l2": 7.166237707481001e-07,
+        "exact": false,
+        "reference_max": 16289278.0
+      },
+      "ez": {
+        "max_abs": 5.625,
+        "relative_l2": 1.1868981379907477e-06,
+        "exact": false,
+        "reference_max": 9713159.0
+      },
+      "hx": {
+        "max_abs": 0.0576171875,
+        "relative_l2": 9.712722430804314e-07,
+        "exact": false,
+        "reference_max": 69388.9140625
+      },
+      "hy": {
+        "max_abs": 0.0458984375,
+        "relative_l2": 1.5705256747779381e-06,
+        "exact": false,
+        "reference_max": 35207.27734375
+      },
+      "hz": {
+        "max_abs": 0.140625,
+        "relative_l2": 7.146197414184829e-07,
+        "exact": false,
+        "reference_max": 138977.46875
+      },
+      "cpml_psi_e_terms": {
+        "max_abs": 62464.0,
+        "relative_l2": 5.793443386185841e-07,
+        "exact": false,
+        "reference_max": 248217862144.0
+      },
+      "cpml_psi_h_terms": {
+        "max_abs": 6635520.0,
+        "relative_l2": 9.78437649454863e-07,
+        "exact": false,
+        "reference_max": 25195876188160.0
+      },
+      "dft_vec_re": {
+        "max_abs": 2896.0,
+        "relative_l2": 2.2751340644387113e-06,
+        "exact": false,
+        "reference_max": 438540064.0
+      },
+      "dft_vec_im": {
+        "max_abs": 1728.0,
+        "relative_l2": 2.159604453040555e-06,
+        "exact": false,
+        "reference_max": 438030976.0
+      },
+      "dft_weight_sum": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 512.0
+      },
+      "t": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 7.493802128312466e-14
+      }
+    }
+  },
+  {
+    "steps": 1024,
+    "arrays": {
+      "ex": {
+        "max_abs": 13.0,
+        "relative_l2": 8.477676690539666e-07,
+        "exact": false,
+        "reference_max": 14461482.0
+      },
+      "ey": {
+        "max_abs": 11.0,
+        "relative_l2": 1.0208985737441327e-06,
+        "exact": false,
+        "reference_max": 12603381.0
+      },
+      "ez": {
+        "max_abs": 5.875,
+        "relative_l2": 1.2593220753806251e-06,
+        "exact": false,
+        "reference_max": 9765178.0
+      },
+      "hx": {
+        "max_abs": 0.045654296875,
+        "relative_l2": 1.2089470600191493e-06,
+        "exact": false,
+        "reference_max": 65016.40234375
+      },
+      "hy": {
+        "max_abs": 0.0382080078125,
+        "relative_l2": 1.910682373226615e-06,
+        "exact": false,
+        "reference_max": 33440.53515625
+      },
+      "hz": {
+        "max_abs": 0.087890625,
+        "relative_l2": 1.3649132447021603e-06,
+        "exact": false,
+        "reference_max": 119292.7734375
+      },
+      "cpml_psi_e_terms": {
+        "max_abs": 130560.0,
+        "relative_l2": 6.852962158097647e-06,
+        "exact": false,
+        "reference_max": 28049354752.0
+      },
+      "cpml_psi_h_terms": {
+        "max_abs": 24805376.0,
+        "relative_l2": 7.536865926481535e-06,
+        "exact": false,
+        "reference_max": 5245078339584.0
+      },
+      "dft_vec_re": {
+        "max_abs": 2708.0,
+        "relative_l2": 2.3813483853394176e-06,
+        "exact": false,
+        "reference_max": 414348896.0
+      },
+      "dft_vec_im": {
+        "max_abs": 1920.0,
+        "relative_l2": 2.2442241360533804e-06,
+        "exact": false,
+        "reference_max": 407566272.0
+      },
+      "dft_weight_sum": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 1024.0
+      },
+      "t": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 1.498760425662493e-13
+      }
+    }
+  }
+]

@@ -1,0 +1,34 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=1258202721
+rootdir: /workspace/beamz-h100
+configfile: pytest.ini
+plugins: cov-7.1.0, randomly-5.0.0, hypothesis-6.168.0, anyio-4.14.2
+collected 1 item
+
+tests/hardware/test_cuda_graph_key.py .                                  [100%]
+
+============================== 1 passed in 2.25s ===============================
+Processing ./cuda
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: beamz-cuda-component
+  Building wheel for beamz-cuda-component (pyproject.toml): started
+  Building wheel for beamz-cuda-component (pyproject.toml): finished with status 'done'
+  Created wheel for beamz-cuda-component: filename=beamz_cuda_component-0.21.0-cp312-cp312-linux_x86_64.whl size=24742107 sha256=0e05f311a0d980b9d119ae5bd81afa38541bb8e3c50460dda660e93f48bc9fea
+  Stored in directory: /tmp/pip-ephem-wheel-cache-bjcrhi8n/wheels/03/66/7a/1032238dff11ea32c9ad43c2495a8a65093fd200c2c0b267c2
+Successfully built beamz-cuda-component
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=1850450555
+rootdir: /workspace/beamz-h100
+configfile: pytest.ini
+plugins: cov-7.1.0, randomly-5.0.0, hypothesis-6.168.0, anyio-4.14.2
+collected 357 items / 355 deselected / 2 selected
+
+tests/hardware/test_cuda_backends.py ..                                  [100%]
+
+====================== 2 passed, 355 deselected in 13.31s ======================
+Simulation runtime: 11.52 s
+GCUPS: 23.868
+All 1 modal comparisons passed
