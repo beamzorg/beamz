@@ -20,12 +20,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--deadline", required=True, help="Timezone-aware ISO time")
+    parser.add_argument("--timesteps", type=int, default=256)
     parser.add_argument(
         "--target-only",
         action="store_true",
         help="Attempt only 15B after an earlier setup/control run",
     )
     args = parser.parse_args()
+    if args.timesteps < 32:
+        parser.error("capacity samples require at least 32 timesteps")
     deadline = dt.datetime.fromisoformat(args.deadline)
     if deadline.tzinfo is None:
         parser.error("deadline must include timezone")
@@ -110,7 +113,7 @@ def main():
             "--host-setup",
             "--donate-state",
             "--timesteps",
-            "256",
+            str(args.timesteps),
             "--samples",
             "5",
             "--frequencies",
@@ -154,8 +157,8 @@ def main():
             if not (
                 result["final_state_finite"]
                 and result["donate_state"]
-                and result["final_current_step"] == 1536
-                and result["monitor_weight_min"] == 1536
+                and result["final_current_step"] == 6 * args.timesteps
+                and result["monitor_weight_min"] == 6 * args.timesteps
             ):
                 raise RuntimeError(f"Invalid continuation result: {name}")
             row["gcups"] = result["kernel_gcups"]
