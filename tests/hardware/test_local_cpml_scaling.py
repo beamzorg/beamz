@@ -41,6 +41,19 @@ def test_distributed_bulk_and_cpml_continuation(backend, axis):
     first = sim.advance(
         state=state, num_steps=16, backend=backend, sharding=cfg, progress=False
     ).state
+    from beamz.simulation import sharding
+    from beamz.simulation.execute import runtime_inputs
+    from beamz.simulation.observe import MONITOR_FIELDS
+
+    program = sim.compile(num_steps=16, backend=backend, sharding=cfg)
+    with jax.transfer_guard_device_to_host("disallow"):
+        prepared = sharding.prepare_state(
+            program,
+            runtime_inputs(program, first, monitor_steps=16),
+            replicated_fields=(*MONITOR_FIELDS, "t", "current_step"),
+        )
+        jax.block_until_ready(prepared)
+    del prepared
     continued = sim.advance(
         state=first, num_steps=16, backend=backend, sharding=cfg, progress=False
     ).state

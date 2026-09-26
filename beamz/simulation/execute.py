@@ -1008,10 +1008,16 @@ def initial_program_state(
             in (shape, sharding_runtime.logical_cpml_shape(layout, term))
             for value, shape, term in zip(old, shapes, terms, strict=True)
         ):
-            converter = np.asarray if layout.enabled else jnp.asarray
             return tuple(
                 sharding_runtime._pad_high_to_shape(
-                    converter(value, dtype=dtype), shape, pad_value=0.0
+                    # Host-created setup slabs stay on the host, but evolved
+                    # device slabs must not round-trip through NumPy at every
+                    # continuation boundary.
+                    (np.asarray if isinstance(value, np.ndarray) else jnp.asarray)(
+                        value, dtype=dtype
+                    ),
+                    shape,
+                    pad_value=0.0,
                 )
                 for value, shape in zip(old, shapes, strict=True)
             )

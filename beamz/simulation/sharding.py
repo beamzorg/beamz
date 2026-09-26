@@ -449,7 +449,7 @@ def place_tree(program, tree, *, shard_arrays: bool = True):
         )
     mesh = program.sharding.mesh
     return jax.tree_util.tree_map(
-        lambda value: jax.device_put(
+        lambda value: _place_array(
             value,
             _array_sharding(program, value, mesh)
             if shard_arrays
@@ -457,6 +457,25 @@ def place_tree(program, tree, *, shard_arrays: bool = True):
         ),
         tree,
     )
+
+
+@lru_cache(maxsize=128)
+def _device_reshard(sharding):
+    # Eager device_put can assemble a differently partitioned array on the host.
+    # Let compiled collectives convert public and solver layouts on-device.
+    return jax.jit(lambda value: value, out_shardings=sharding)
+
+
+def _place_array(value, target):
+    if (
+        isinstance(value, jax.Array)
+        and len(value.sharding.device_set) > 1
+        and value.sharding.device_set == target.device_set
+    ):
+        if value.sharding.is_equivalent_to(target, value.ndim):
+            return value
+        return _device_reshard(target)(value)
+    return jax.device_put(value, target)
 
 
 def pad_component(program, component: str, value):

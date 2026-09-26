@@ -22,6 +22,42 @@ def check(case):
     from tests.hardware.test_cuda_backends import _feature_simulation
     from tests.performance.h100_workloads import H100Workload
 
+    if case == "device_continuation":
+        sim = H100Workload(
+            name="device_continuation",
+            shape_zyx=(9, 10, 11),
+            timesteps=4,
+            resolution=80e-9,
+            pml_cells=2,
+            cpml=True,
+            heterogeneous=True,
+        ).build()
+        cfg = dict(axis="x", num_devices=2, backend="cpu")
+        first = sim.advance(
+            state=seed_state(sim), num_steps=2, backend="jax", sharding=cfg
+        ).state
+        program = sim.compile(num_steps=2, backend="jax", sharding=cfg)
+        slabs = (*first.cpml_psi_h_terms, *first.cpml_psi_e_terms)
+        assert slabs and all(isinstance(value, jax.Array) for value in slabs)
+        original_asarray = np.asarray
+
+        def no_device_transfer(value, *args, **kwargs):
+            if any(value is slab for slab in slabs):
+                raise AssertionError("Continuation transferred CPML state to host")
+            return original_asarray(value, *args, **kwargs)
+
+        with patch("numpy.asarray", side_effect=no_device_transfer):
+            restored = runtime_inputs(program, first, monitor_steps=2)
+        for old, new in zip(
+            slabs,
+            (*restored.cpml_psi_h_terms, *restored.cpml_psi_e_terms),
+            strict=True,
+        ):
+            assert isinstance(new, jax.Array)
+            logical = tuple(slice(0, size) for size in old.shape)
+            np.testing.assert_array_equal(new[logical], old)
+        return
+
     sim = (
         mode_simulation()
         if case in {"mode", "local_dft", "dft_gradient"}
@@ -136,7 +172,15 @@ def check(case):
 
 @pytest.mark.parametrize(
     "case",
-    ["asymmetric_cpml", "mixed_faces", "mode", "gradient", "local_dft", "dft_gradient"],
+    [
+        "asymmetric_cpml",
+        "mixed_faces",
+        "mode",
+        "gradient",
+        "local_dft",
+        "dft_gradient",
+        "device_continuation",
+    ],
 )
 def test_local_jax_contract(case):
     subprocess.run(
