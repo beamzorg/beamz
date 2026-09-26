@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--deadline", required=True, help="UTC ISO 8601 cutoff")
     parser.add_argument("--case-timeout", type=int, default=1200)
+    parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     deadline = dt.datetime.fromisoformat(args.deadline).timestamp()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -36,21 +37,57 @@ def main():
         BEAMZ_CUDA_CPML_PSI_PRECISION="fp32",
         NUMPY_MADVISE_HUGEPAGE="0",
     )
-    cases = [
-        (f"balanced-{n}", (n, n, 8 * n), 80.0) for n in (512, 640, 704, 768, 832, 896)
-    ]
-    cases += [(f"planar-{n}", (n, 8 * n, 64 * n), 80.0) for n in (128, 160, 192, 224)]
-    cases += [(f"refined-{n}", (n, n, 8 * n), 80.0 * 512 / n) for n in (640, 768, 896)]
-    rows = []
-    failed_groups = set()
+    # Cover all three controls early, then spend the remaining time on capacity.
+    cases = [(f"balanced-{n}", (n, n, 8 * n), 80.0) for n in (512, 640)]
+    cases += [("refined-640", (640, 640, 5120), 64.0)]
+    cases += [("planar-128", (128, 1024, 8192), 80.0)]
+    cases += [(f"balanced-{n}", (n, n, 8 * n), 80.0) for n in (704, 768, 832, 896)]
+    cases += [(f"planar-{n}", (n, 8 * n, 64 * n), 80.0) for n in (192, 224)]
+    cases += [(f"refined-{n}", (n, n, 8 * n), 80.0 * 512 / n) for n in (768, 896)]
+    summary_path = args.output / "summary.json"
+    rows = (
+        json.loads(summary_path.read_text())
+        if args.resume and summary_path.exists()
+        else []
+    )
+    failed_groups = {r["name"].split("-")[0] for r in rows if r["status"] != "ok"}
     for name, shape, resolution in cases:
+        output = args.output / f"{name}.json"
+        if args.resume and output.exists():
+            data = json.loads(output.read_text())
+            if (
+                data["shape"] != list(shape)
+                or data["resolution_nm"] != resolution
+                or data["backend"] != "cuda_streamed"
+                or not data["final_state_finite"]
+            ):
+                raise RuntimeError(f"Cannot resume incompatible result: {output}")
+            if not any(r["name"] == name for r in rows):
+                rows.append(
+                    dict(
+                        name=name,
+                        shape=shape,
+                        resolution_nm=resolution,
+                        status="ok",
+                        recovered_existing_result=True,
+                        wall_s=data["worker_measurement_wall_s"],
+                        gcups=data["kernel_gcups"],
+                        max_peak_live_bytes=max(
+                            d["stats"]["peak_bytes_in_use"]
+                            for d in data["device_memory"]
+                        ),
+                    )
+                )
+                summary_path.write_text(json.dumps(rows, indent=2) + "\n")
+            continue
         group = name.split("-")[0]
         if group in failed_groups:
             continue
         remaining = deadline - time.time()
         if remaining < 360:
             break
-        output = args.output / f"{name}.json"
+        if output.exists():
+            raise RuntimeError(f"Refusing to overwrite existing result: {output}")
         command = [
             sys.executable,
             "scripts/benchmark_modal_stepping.py",
