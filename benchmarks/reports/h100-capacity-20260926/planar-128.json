@@ -1,0 +1,415 @@
+{
+  "protocol": "five_synchronized_warm_stepping_samples",
+  "backend": "cuda_streamed",
+  "devices": 8,
+  "shape": [
+    128,
+    1024,
+    8192
+  ],
+  "steps": 256,
+  "frequencies": 101,
+  "cpml_cells": 12,
+  "resolution_nm": 80.0,
+  "physical_size_zyx_um": [
+    10.24,
+    81.92,
+    655.36
+  ],
+  "prepared_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 153,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 15144175360,
+        "largest_alloc_size": 4336980224,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 1,
+      "stats": {
+        "num_allocs": 71,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 7075375104,
+        "largest_alloc_size": 542122752,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 8589934592,
+        "peak_pool_bytes": 8589934592
+      }
+    },
+    {
+      "id": 2,
+      "stats": {
+        "num_allocs": 71,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 7075375104,
+        "largest_alloc_size": 542122752,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 8589934592,
+        "peak_pool_bytes": 8589934592
+      }
+    },
+    {
+      "id": 3,
+      "stats": {
+        "num_allocs": 71,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 7075375104,
+        "largest_alloc_size": 542122752,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 8589934592,
+        "peak_pool_bytes": 8589934592
+      }
+    },
+    {
+      "id": 4,
+      "stats": {
+        "num_allocs": 71,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 7075375104,
+        "largest_alloc_size": 542122752,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 8589934592,
+        "peak_pool_bytes": 8589934592
+      }
+    },
+    {
+      "id": 5,
+      "stats": {
+        "num_allocs": 71,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 7075375104,
+        "largest_alloc_size": 542122752,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 8589934592,
+        "peak_pool_bytes": 8589934592
+      }
+    },
+    {
+      "id": 6,
+      "stats": {
+        "num_allocs": 71,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 7075375104,
+        "largest_alloc_size": 542122752,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 8589934592,
+        "peak_pool_bytes": 8589934592
+      }
+    },
+    {
+      "id": 7,
+      "stats": {
+        "num_allocs": 71,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 7075375104,
+        "largest_alloc_size": 542122752,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 8589934592,
+        "peak_pool_bytes": 8589934592
+      }
+    }
+  ],
+  "timed_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 715,
+        "bytes_in_use": 10881132032,
+        "peak_bytes_in_use": 15144175360,
+        "largest_alloc_size": 4336980224,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 1,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 10881131776,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 2,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 10881131776,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 3,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 10881131776,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 4,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 10881131776,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 5,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 10881131776,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 6,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 10881131776,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 7,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 10881131776,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    }
+  ],
+  "runtime_cv": 0.003314410946793437,
+  "monitor_weight_min": 256.0,
+  "monitor_weight_max": 256.0,
+  "monitor_count": 2,
+  "setup_s": 173.53888350818306,
+  "compile_s": 27.520004278980196,
+  "warm_runtime_samples_s": [
+    2.0358268413692713,
+    2.044635851867497,
+    2.050676974467933,
+    2.033945782110095,
+    2.041345864534378
+  ],
+  "kernel_gcups": 134.6552349210546,
+  "final_state_finite": true,
+  "public_api_measured": false,
+  "diagnostic_profiled_public_call_s": null,
+  "peak_memory_bytes": 108381179136,
+  "device_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 715,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 15144175360,
+        "largest_alloc_size": 4336980224,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 1,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 2,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 3,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 4,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 5,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 6,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 7,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 80766617815,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    }
+  ],
+  "worker_measurement_wall_s": 218.17735505104065,
+  "worker_sha256": "bee89a95f64f8f3a78577f98ce0f6f2e9ad56997dae9d4340c1b4aad193826ac",
+  "commit": "999d24a1f769ced78a5ebd5942070af7c00a366f",
+  "environment": {
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+    "XLA_PYTHON_CLIENT_MEM_FRACTION": ".95",
+    "NCCL_NVLS_ENABLE": "0",
+    "BEAMZ_CUDA_CPML_PSI_PRECISION": "fp32",
+    "NUMPY_MADVISE_HUGEPAGE": "0"
+  },
+  "native_sha256": "6753641e1a682751ad00c10abda53bd4cd33fd3569ccf048baea018bb94be00d",
+  "cuda_flags": 128
+}

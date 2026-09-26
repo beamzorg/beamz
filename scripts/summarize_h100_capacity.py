@@ -77,7 +77,7 @@ def main():
     (a.output / "capacity.json").write_text(json.dumps(rows, indent=2) + "\n")
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.8), constrained_layout=True)
     labels = dict(
-        balanced="Domain growth: balanced",
+        balanced="Domain growth: cubic shards",
         planar="Domain growth: planar",
         refined="Resolution refinement",
     )
@@ -88,6 +88,10 @@ def main():
         )
         if not group:
             continue
+        if series == "refined":
+            # The 80 nm balanced-512 run is also the identical physical-domain
+            # reference for the refinement series; no duplicate measurement.
+            group = [r for r in rows if r["name"] == "balanced-512"] + group
         rate = np.array([r["gcups"] for r in group])
         error = np.array(
             [
@@ -126,6 +130,9 @@ def main():
     for ax in axes:
         ax.grid(alpha=0.25)
         ax.set_ylim(bottom=0)
+    for ax in axes[:2]:
+        ax.set_ylim(0, 1.12 * max(r["gcups_max"] for r in rows))
+    axes[2].set_ylim(0, 1.12 * max(r["timestep_ms"] for r in rows))
     axes[0].legend(fontsize=8)
     fig.suptitle(
         "8× H100 SXM · streamed CUDA · CPML12 + mode source + 2×101-frequency monitors\nFive synchronized warm samples; whiskers show sample range",
