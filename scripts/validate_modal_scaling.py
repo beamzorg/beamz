@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--shape", type=int, nargs=3, default=(64, 96, 256))
     parser.add_argument("--steps", type=int, default=2048)
     parser.add_argument("--frequencies", type=int, default=101)
+    parser.add_argument("--resolution-nm", type=float, default=80.0)
     parser.add_argument("--shard-axis", choices=("x", "y", "z"), default="x")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -42,6 +43,7 @@ def main():
             material="binary",
             source="mode",
             monitor_type="mode",
+            resolution_nm=args.resolution_nm,
         )
     )
     cfg = (
@@ -77,6 +79,7 @@ def main():
         steps=args.steps,
         frequencies=args.frequencies,
         cpml_cells=12,
+        resolution_m=args.resolution_nm * 1e-9,
         finite_state=finite,
         total_wall_s=time.perf_counter() - started,
         shard_axis=args.shard_axis,
