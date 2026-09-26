@@ -651,9 +651,10 @@ def build_scan(program, *, donate_state: bool = False):
         sharding_plan=program.sharding,
     )
     update_kernel = update_runtime.select_update_kernel(step_context)
-    from beamz.simulation import jax_sharding
+    from beamz.simulation import distributed_monitors, jax_sharding
 
     local_jax_cpml = jax_sharding.supported(program)
+    local_dft = distributed_monitors.supported(program)
     if local_jax_cpml:
         update_kernel = jax_sharding.select_kernel()
     graph_source_groups = tuple(
@@ -716,6 +717,8 @@ def build_scan(program, *, donate_state: bool = False):
         state: SimulationState,
         coeffs: UpdateCoefficients,
     ):
+        if local_dft:
+            state = distributed_monitors.scan_local_dft(state, program)
         local_cuda_cpml = (
             cfg.backend == "cuda_streamed" and program.sharding.layout.enabled
         )
@@ -859,6 +862,10 @@ def build_scan(program, *, donate_state: bool = False):
             )
         if local_cuda_cpml or local_jax_cpml:
             scan_out = scan_local_cpml(scan_out, program, assemble=True)
+        if local_dft:
+            scan_out = distributed_monitors.scan_local_dft(
+                scan_out, program, assemble=True
+            )
         return scan_out
 
     # 8. Buffer donation is an explicit ownership transfer. The default executable

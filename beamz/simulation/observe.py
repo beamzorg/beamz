@@ -547,7 +547,9 @@ def _dft_phase_angle(frequencies, time, dtype):
     return omega * time
 
 
-def _accumulate_dft(mon, carry, field_arrays, t_phys, dt_scalar):
+def _accumulate_dft(
+    mon, carry, field_arrays, t_phys, dt_scalar, *, sampled_vectors=None
+):
     """Gather and accumulate one monitor's compiled field-vector DFT."""
     d_re, d_im, d_w = carry
     dtype = d_re.dtype
@@ -574,12 +576,14 @@ def _accumulate_dft(mon, carry, field_arrays, t_phys, dt_scalar):
     )
 
     # Compilation has already encoded dimensional colocation in these weighted gathers.
-    vectors = _sample_components(
-        field_arrays,
-        mon.dft_flat_idx,
-        mon.dft_weights,
-        active_mask=np.asarray(mon.dft_component_mask),
-    )
+    vectors = sampled_vectors
+    if vectors is None:
+        vectors = _sample_components(
+            field_arrays,
+            mon.dft_flat_idx,
+            mon.dft_weights,
+            active_mask=np.asarray(mon.dft_component_mask),
+        )
     component_mask = mon.dft_component_mask.astype(dtype)[:, None, None]
     delta_re = (
         scale
@@ -786,11 +790,18 @@ def update_monitors(
                 mon.dft_record_interval,
             )
 
+            def accumulate(carry, mon=mon):
+                if carry[0].ndim == 2:
+                    from .distributed_monitors import accumulate_dft
+
+                    return accumulate_dft(
+                        program, mon, carry, field_arrays, t_phys, dt_scalar
+                    )
+                return _accumulate_dft(mon, carry, field_arrays, t_phys, dt_scalar)
+
             dft_vec_re, dft_vec_im, dft_weight_sum = jax.lax.cond(
                 do_dft,
-                lambda carry, mon=mon: _accumulate_dft(
-                    mon, carry, field_arrays, t_phys, dt_scalar
-                ),
+                accumulate,
                 lambda carry: carry,
                 (dft_vec_re, dft_vec_im, dft_weight_sum),
             )

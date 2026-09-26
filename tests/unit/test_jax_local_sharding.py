@@ -24,7 +24,7 @@ def check(case):
 
     sim = (
         mode_simulation()
-        if case == "mode"
+        if case in {"mode", "local_dft", "dft_gradient"}
         else _feature_simulation(case)
         if case != "gradient"
         else H100Workload(
@@ -37,15 +37,26 @@ def check(case):
             heterogeneous=True,
         ).build()
     )
+    if case in {"local_dft", "dft_gradient"}:
+        sim = sim.updated_copy(monitors=sim.monitors[:2])
     state = seed_state(sim)
-    steps = 4 if case == "gradient" else 12
+    gradient = case in {"gradient", "dft_gradient"}
+    steps = 4 if gradient else 12
+    if case in {"local_dft", "dft_gradient"}:
+        from beamz.simulation.distributed_monitors import supported
+
+        assert supported(
+            sim.compile(
+                backend="jax", sharding=dict(axis="x", num_devices=2, backend="cpu")
+            )
+        )
     with patch(
         "beamz.simulation.cuda.runtime._ffi_phase",
         side_effect=AssertionError("JAX called native FFI"),
     ):
-        if case != "gradient":
+        if not gradient:
             reference = sim.advance(state=state, num_steps=steps, backend="jax").state
-            for count in (2, 4):
+            for count in (2, 4, 8) if case == "local_dft" else (2, 4):
                 for axis in "xyz":
                     cfg = dict(axis=axis, num_devices=count, backend="cpu")
                     actual = sim.advance(
@@ -113,6 +124,8 @@ def check(case):
                         }
                     )
                     result = sharding.crop_state(program, scan(prepared, varied))
+                    if case == "dft_gradient":
+                        return jnp.sum(result.dft_vec_re**2 + result.dft_vec_im**2)
                     return sum(
                         jnp.sum(getattr(result, c) ** 2) for c in ("ex", "ey", "ez")
                     )
@@ -121,7 +134,10 @@ def check(case):
             np.testing.assert_allclose(results[1], results[0], rtol=1e-4, atol=1e-10)
 
 
-@pytest.mark.parametrize("case", ["asymmetric_cpml", "mixed_faces", "mode", "gradient"])
+@pytest.mark.parametrize(
+    "case",
+    ["asymmetric_cpml", "mixed_faces", "mode", "gradient", "local_dft", "dft_gradient"],
+)
 def test_local_jax_contract(case):
     subprocess.run(
         [
@@ -132,7 +148,8 @@ def test_local_jax_contract(case):
         ],
         env=dict(
             os.environ,
-            XLA_FLAGS="--xla_force_host_platform_device_count=4",
+            XLA_FLAGS="--xla_force_host_platform_device_count="
+            + ("8" if case == "local_dft" else "4"),
             JAX_PLATFORMS="cpu",
         ),
         check=True,
