@@ -533,15 +533,25 @@ def _reduce_power(samples: jnp.ndarray, spec: CompiledMonitorSpec):
     )
 
 
+def _dft_phase_angle(frequencies, time, dtype):
+    """Round angular frequency and observation time before their product.
+
+    XLA otherwise reassociates constant frequencies with the timestep arithmetic.
+    That changes optical phases by many float32 ULPs over long runs relative to
+    the native monitor kernel, even when the fields and clocks agree.
+    """
+    omega = jax.lax.optimization_barrier(
+        jnp.asarray(2.0 * np.pi, dtype=dtype) * jnp.asarray(frequencies, dtype=dtype)
+    )
+    time = jax.lax.optimization_barrier(jnp.asarray(time, dtype=dtype))
+    return omega * time
+
+
 def _accumulate_dft(mon, carry, field_arrays, t_phys, dt_scalar):
     """Gather and accumulate one monitor's compiled field-vector DFT."""
     d_re, d_im, d_w = carry
     dtype = d_re.dtype
-    theta = (
-        jnp.asarray(2.0 * np.pi, dtype=dtype)
-        * jnp.asarray(mon.freq_hz, dtype=dtype)
-        * jnp.asarray(t_phys, dtype=dtype)
-    )
+    theta = _dft_phase_angle(mon.freq_hz, t_phys, dtype)
     phase_re, phase_im = jnp.cos(theta), jnp.sin(theta)
     window = jnp.asarray(
         monitor_dft_window_weight(
