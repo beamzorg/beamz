@@ -49,6 +49,21 @@ def main():
         estimate = (
             previous["wall_s"] * cells / previous["cells"] * 1.2 if previous else 1200
         )
+        # Preserve time for the actual target when an intermediate 10B probe
+        # plus 15B would exceed the budget. Selection uses wall time, not GCUPS.
+        if name == "10B" and previous:
+            target_estimate = previous["wall_s"] * 15e9 / previous["cells"] * 1.2
+            if remaining < estimate + target_estimate + 180:
+                rows.append(
+                    dict(
+                        name=name,
+                        shape=shape,
+                        status="skipped_to_reserve_target_time",
+                        estimated_s=estimate,
+                        remaining_s=remaining,
+                    )
+                )
+                continue
         if remaining < estimate + 90:
             rows.append(
                 dict(
