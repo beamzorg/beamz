@@ -11,8 +11,10 @@ import hashlib
 import json
 import os
 import pstats
+import resource
 import statistics
 import subprocess
+import sys
 import time
 from contextlib import nullcontext
 from pathlib import Path
@@ -209,6 +211,8 @@ def main():
         ),
         device_memory=memory,
         worker_measurement_wall_s=time.perf_counter() - started,
+        host_max_rss_bytes=int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        * (1 if sys.platform == "darwin" else 1024),
         worker_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         commit=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         environment={
