@@ -13,7 +13,7 @@ def test_fresh_field_copies_preserve_setup_device_and_ownership():
             """
 import jax
 import numpy as np
-from beamz.simulation.model import SimulationState
+from beamz.simulation.model import SimulationState, _copy_initial_field
 from beamz.simulation.execute import initial_program_state
 from tests.performance.h100_workloads import H100Workload
 setup_device = jax.devices()[1]
@@ -21,6 +21,10 @@ with jax.default_device(setup_device):
     sim = H100Workload(name='initial_placement', shape_zyx=(9,10,11),
         timesteps=2, resolution=80e-9, pml_cells=2, cpml=True).build()
     program = sim.compile(backend='jax')
+with jax.transfer_guard('disallow_explicit'):
+    copied = _copy_initial_field(program.grid.Ex)
+    copied.block_until_ready()
+assert copied.devices() == {setup_device}
 for state in (SimulationState.initial(program.grid, t=0),
               initial_program_state(program, t=0, current_step=0)):
     for component in ('ex','ey','ez','hx','hy','hz'):

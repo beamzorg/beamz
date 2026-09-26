@@ -14,7 +14,7 @@ def test_host_setup_fresh_state_stays_on_host_until_partitioned(backend):
     if not cuda_backend_status().available or len(jax.devices()) < 2:
         pytest.skip("requires two CUDA GPUs and the native component")
     from beamz.simulation.execute import initial_program_state
-    from beamz.simulation.model import SimulationState
+    from beamz.simulation.model import SimulationState, _copy_initial_field
 
     cfg = dict(axis="x", num_devices=2, backend="gpu")
     host = jax.devices("cpu")[0]
@@ -29,6 +29,11 @@ def test_host_setup_fresh_state_stays_on_host_until_partitioned(backend):
             heterogeneous=True,
         ).build()
         program = sim.compile(backend=backend, sharding=cfg)
+    with jax.transfer_guard("disallow_explicit"):
+        copied = _copy_initial_field(program.grid.Ex)
+        copied.block_until_ready()
+    assert copied.devices() == {host}
+    del copied
     for state in (
         SimulationState.initial(program.grid, t=0),
         initial_program_state(program, t=0, current_step=0),

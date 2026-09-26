@@ -33,6 +33,7 @@ from beamz.simulation.model import (
     CompiledProgram,
     SimulationState,
     UpdateCoefficients,
+    _copy_initial_field,
 )
 
 from . import kernels as update_runtime
@@ -986,10 +987,7 @@ def initial_program_state(
         # Fresh runs use the compiled lattice; continuations supply evolved canonical
         # arrays without reconstructing a mutable field container.
         return (
-            jnp.array(
-                getattr(program.grid, name),
-                device=getattr(getattr(program.grid, name), "sharding", None),
-            )
+            _copy_initial_field(getattr(program.grid, name))
             if continuation is None
             else getattr(continuation, name.lower())
         )
