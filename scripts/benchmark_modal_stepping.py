@@ -39,7 +39,7 @@ def main():
     p.add_argument("--donate-state", action="store_true")
     p.add_argument("--worker", action="store_true")
     p.add_argument("--workload", choices=["modal_cpml12"], default="modal_cpml12")
-    p.add_argument("--shard-axis", choices=["x"], default="x")
+    p.add_argument("--shard-axis", choices=["x", "y", "z"], default="x")
     p.add_argument("--trace", type=Path)
     p.add_argument("--profile-public", type=Path)
     p.add_argument("--output", type=Path, required=True)
@@ -62,7 +62,9 @@ def main():
         )
     started = time.perf_counter()
     cfg = (
-        None if a.devices == 1 else dict(axis="x", num_devices=a.devices, backend="gpu")
+        None
+        if a.devices == 1
+        else dict(axis=a.shard_axis, num_devices=a.devices, backend="gpu")
     )
     context = (
         jax.default_device(jax.devices("cpu")[0]) if a.host_setup else nullcontext()
@@ -176,6 +178,7 @@ def main():
         continuation_memory=continuation_memory,
         backend=a.backend,
         devices=a.devices,
+        shard_axis=a.shard_axis,
         shape=a.shape,
         steps=a.timesteps,
         frequencies=a.frequencies,

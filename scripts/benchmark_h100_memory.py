@@ -38,12 +38,15 @@ def main():
     )
     rows = []
     previous = None
+    # Reproduce the old x-partition setup failure first. For capacity, z
+    # partitions use contiguous native storage without per-phase x rotations.
+    # The long dimension moves to z; this is a different physical domain.
     cases = [
-        ("5.75B", (896, 896, 7168)),
-        ("10B", (1000, 1000, 10000)),
-        ("15B", (1200, 1250, 10000)),
+        ("5.75B", (896, 896, 7168), "x"),
+        ("10B", (10000, 1000, 1000), "z"),
+        ("15B", (10000, 1250, 1200), "z"),
     ]
-    for name, shape in cases:
+    for name, shape, axis in cases:
         cells = shape[0] * shape[1] * shape[2]
         remaining = cutoff - time.time()
         estimate = (
@@ -90,6 +93,8 @@ def main():
             "8",
             "--backend",
             "cuda_streamed",
+            "--shard-axis",
+            axis,
             "--host-setup",
             "--donate-state",
             "--timesteps",
@@ -104,6 +109,7 @@ def main():
         row = dict(
             name=name,
             shape=shape,
+            shard_axis=axis,
             cells=cells,
             command=command,
             started_utc=dt.datetime.now(dt.timezone.utc).isoformat(),
