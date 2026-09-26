@@ -75,6 +75,29 @@ checkpoint checks, and final mode decomposition; it excludes writing the final
 NPZ. These are single fresh-process completion trials, not latency distributions.
 Stepping rates from the separate sweep exclude cold setup and compilation.
 
+## Large-domain initialization and reporting
+
+Fresh copies retain the setup device of their source field arrays. JAX arrays
+created under a CPU setup context can otherwise migrate to the default GPU after
+that context ends, temporarily placing the complete global grid on GPU 0 before
+partitioning. The first fix (`1d314d3`) preserves final placement. A stricter
+transfer-guard regression then exposed an intermediate copy on the default GPU
+even with `jnp.array(..., device=source.sharding)`. Committing the source placement
+with `jax.device_put` before copying avoids that transfer (`46d495b`). Tests verify placement,
+absence of intermediate transfers, and independent ownership under donation.
+
+The benchmark also queried an unused memory fallback after all timing samples.
+That query compiled a second default-backend plan outside the CPU setup context;
+the first billion-cell trial failed there while allocating another 4.02 GiB on
+GPU 0. Allocator statistics now bypass that fallback entirely when available.
+The CPU fallback still has a smoke test. Failed trials and an overlapping restart
+are retained as invalid diagnostic evidence; neither contributes accepted rates.
+
+These changes affect setup/placement and benchmark reporting, not the timestep
+arithmetic. The completion table below records its original runtime revision;
+the baseline scaling trials use `1d314d3` and the reporting fix. The subsequent
+public-call control measures the stricter intermediate-transfer fix separately.
+
 ## Completed S-bend results
 
 All eight trials converged. Every CUDA/device-count candidate passed the original
@@ -100,9 +123,139 @@ limit the benefit of more GPUs.
 The earlier completion trials use different runtime/protocol revisions and are
 retained only as diagnostic evidence. They are excluded from this table.
 
+## Billion-cell public API control
+
+A separate eight-GPU CUDA run on 512×512×4096 cells (1.074 billion physical
+cells) measured **134.51 GCUPS** over five synchronized 256-step samples. The
+same run's five fresh public calls took 79.67–81.02 seconds each (median 80.05),
+or 3.43 GCUPS including preparation and publication. Their reported solver
+execution was approximately 2.2 seconds. These are fresh calls, not continuations
+of one evolving state; a long simulation can amortize initial setup.
+
+This control used `a20da6e` and the full benchmark protocol. The remaining size
+sweep uses the separate stepping worker with the same five-sample timing and
+finite-output check. It does not claim to measure large-domain time to optical
+convergence or repeated fresh-call latency. A diagnostic public-call CPU profile
+and an untimed largest-case GPU trace are collected after the relevant stepping
+samples. Profiling is excluded from throughput timing.
+
+The weak-scaling cases lengthen one coupled straight-waveguide domain. Their
+large cladding cross-sections are throughput/capacity cases, not compact device
+layouts; a separate thin planar domain checks the effect of geometry and CPML
+surface area. Increasing empty cladding alone is not a practical device speedup.
+
+## Initial-copy fix: measured public-call effect
+
+On the same 512×512×4096, eight-GPU CUDA protocol, the profiled fresh public
+call fell from **113.89 to 71.85 seconds** after `46d495b`, a 36.9% reduction.
+The six field copies fell from 42.19 to 3.54 seconds cumulative. Warm stepping
+measured 134.51 GCUPS versus the baseline sweep's 135.02, within 0.4%.
+These are two single cold diagnostic profiles, not a latency distribution;
+the five-sample fresh-public-call control above is a different protocol.
+
+Placement remains expensive (28.94 → 26.81 seconds). Boundary-mask compaction
+is essentially unchanged (20.69 → 20.51 seconds); although it appears inside
+`build_scan`, this time belongs to mask processing, not XLA compilation.
+Avoiding repeated global mask scans and preparing reusable device-resident
+coefficients are the next setup targets. The transfer guard establishes that
+the initial-copy fix itself avoids intermediate device movement. Two H100
+host-setup regressions and 30 CPU placement/runtime-contract tests passed.
+
+## Scaling interpretation
+
+Weak scaling holds local physical volume fixed and lengthens one coupled domain;
+strong scaling holds the complete 512³ grid fixed. Count physical cells once per
+complete Yee timestep. Five synchronized warm samples follow one warmup, and the
+reported GCUPS uses their median. Setup, compilation, finite-state checking, and
+profiling are excluded. Source and monitor arithmetic remain enabled.
+
+<!-- scaling-tables-start -->
+### Baseline warm throughput (GCUPS)
+
+| H100s | CUDA, 512³/GPU | JAX, 512³/GPU | CUDA, 640³/GPU | JAX, 640³/GPU |
+|---:|---:|---:|---:|---:|
+| 1 | 24.81 | 7.75 | 25.87 | 7.92 |
+| 2 | 33.82 | 18.08 | 35.22 | 18.68 |
+| 4 | 67.14 | 35.77 | 70.16 | 37.02 |
+| 8 | 135.02 | 71.28 | 140.73 | 73.92 |
+
+Fixed 512³ global domain:
+
+| H100s | CUDA GCUPS | JAX GCUPS |
+|---:|---:|---:|
+| 1 | 24.81 | 7.76 |
+| 2 | 32.20 | 17.36 |
+| 4 | 58.28 | 30.73 |
+| 8 | 95.28 | 50.12 |
+
+![Measured warm strong and weak scaling](h100-device-completion/scaling.png)
+
+<!-- scaling-tables-end -->
+
+The one-GPU and multi-GPU implementations are specialized differently within each
+backend. In particular, pure JAX uses the explicit local CPML stencil path only
+with distributed sharding. A superlinear ratio relative to one GPU therefore
+cannot be interpreted as communication efficiency exceeding 100%. CUDA similarly
+uses a native graph on one GPU and distributed tile updates on multiple GPUs.
+
+At 512³ cells per GPU, CUDA measures 24.81 GCUPS on one GPU, 33.82 on
+two, and 135.02 on eight. The two-to-eight ratio is 3.993× (99.8% of
+linear scaling), while the one-to-eight ratio is 5.441× (68.0%). JAX measures
+18.08 GCUPS on two GPUs and 71.28 on eight: 3.943× (98.6% of linear).
+This separates the single-to-distributed implementation transition from the
+subsequent multi-GPU scaling. Optimizing distributed per-rank update throughput
+is more promising than treating the entire one-to-eight shortfall as network
+overhead. These comparisons also include changes in external-boundary work as
+the coupled domain lengthens.
+
+On the fixed 512³ global grid, two-to-eight scaling is only 2.959× for
+CUDA and 2.887× for JAX (74.0% and 72.2% of linear). Each rank has only
+16.8 million physical cells at eight GPUs, versus 134.2 million in the weak
+512³/GPU case. Larger local domains amortize launch and halo costs, but the
+512³-to-640³ local-volume comparison already shows diminishing returns.
+
+## Planar-domain control
+
+At the same 1.074 billion physical cells on eight GPUs:
+
+| Shape (z×y×x) | CUDA GCUPS | JAX GCUPS |
+|---|---:|---:|
+| 512×512×4096 | 135.02 | 71.28 |
+| 128×1024×8192 | 127.42 | 66.76 |
+
+The thinner shape is 5.6% slower for CUDA and 6.3% slower for JAX. Its 12-cell
+boundary shell occupies approximately 20.9% of physical cells, versus 9.7% in
+the more balanced shape, using `1 - product(1 - 24/dimension)` and ignoring
+Yee staggering. This is a geometry estimate, not a measured runtime share.
+With thickness fixed, increasing the lateral domain does not remove that
+thickness's CPML fraction. GCUPS is therefore a function of shape and physics,
+not just total cell count. Neither large-domain target is met by this planar
+baseline. Both outputs are finite; these remain short stepping measurements.
+
+## Largest-domain profile
+
+At 640×640×5120 cells, eight-GPU CUDA reached 140.73 GCUPS and pure JAX
+73.92 GCUPS in the baseline. Meeting the respective targets requires another
+6.6% and 1.5% throughput. Increasing local volume from 512³ to 640³ adds 95%
+more cells per GPU but only 4.2% CUDA and 3.7% JAX throughput.
+
+The untimed CUDA trace spans about 3.89 seconds per GPU. H/E update kernels occupy
+3.64–3.69 seconds per GPU (roughly 94% of that span), split into 1.59–1.62 seconds
+for H and 2.05–2.07 for E. Collective event durations sum to 0.039–0.103 seconds
+per GPU and include waiting. Event durations can overlap and are not additive
+wall-time shares. Rank 0 has about 1% more update-kernel time than the interior
+ranks, so load balancing alone cannot close the CUDA gap.
+
+The next CUDA optimization should target update-kernel memory traffic and E-field
+coefficient handling; reducing the remaining collectives alone has insufficient
+headroom. The current native tile kernels use 32 registers, no local-memory
+spills, and no shared memory, according to `cuobjdump`. This does not establish
+an HBM bandwidth roofline; hardware memory counters were not collected.
+
 ## Evidence and reproduction
 
-Final runtime source: `dbed19a` (native graph-cache fix: `ea5aa4d`). Source hashes and raw artifacts accompany the
+Completion-table runtime: `dbed19a`. Final scaling runtime/harness: `a436070`
+(including host-state placement fix `1d314d3`; native graph-cache fix `ea5aa4d`). Source hashes and raw artifacts accompany the
 compact evidence. Build native SM90 with fast math disabled and FP32 CPML memory.
 Use `scripts/benchmark_device_completion.py` for completion and
 `scripts/benchmark_modal_scaling.py` for the warm size sweep. The latter includes
