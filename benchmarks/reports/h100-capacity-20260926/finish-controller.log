@@ -1,0 +1,6 @@
+{"utc": "2026-09-26T18:30:10.309790+00:00", "stage": "hold_parent", "parent": 5756, "child": 13367, "monitor": 13366, "reason": "Finish largest probe before selecting remaining cases; wall cutoff remains 19:00 UTC"}
+{"utc": "2026-09-26T18:43:58.575263+00:00", "stage": "recorded", "name": "balanced-896", "status": "failed", "recovered_existing_result": true, "wait_status": 256, "controlled_cutoff": "19:00 UTC"}
+{"utc": "2026-09-26T18:43:58.575420+00:00", "stage": "release_for_validation"}
+{"utc": "2026-09-26T18:46:26.606270+00:00", "stage": "tail_selected", "name": "planar-192", "remaining_s": 1113.393782377243, "estimated_s": 883.6182879567147}
+{"utc": "2026-09-26T18:57:54.878267+00:00", "stage": "recorded", "name": "planar-192", "status": "ok", "command": ["/workspace/venv/bin/python", "scripts/benchmark_modal_stepping.py", "--shape", "192", "1536", "12288", "--devices", "8", "--backend", "cuda_streamed", "--host-setup", "--frequencies", "101", "--timesteps", "256", "--samples", "5", "--resolution-nm", "80", "--output", "/workspace/evidence/sweep/planar-192.json"], "adaptive_tail": true, "shape": [192, 1536, 12288], "resolution_nm": 80.0, "gcups": 151.6314821772107, "wall_s": 662.9670188957825, "max_peak_live_bytes": 50452241664}
+{"utc": "2026-09-26T18:57:54.878649+00:00", "stage": "done"}

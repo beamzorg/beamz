@@ -19,11 +19,19 @@ another 58.6% throughput improvement over the best measured rate.
 | Balanced, 80 nm | 832 × 832 × 6656 | 4.607 | **157.66** | 58.82 | 40.24 |
 | Balanced, 80 nm | 896 × 896 × 7168 | 5.755 | **Setup OOM** | unavailable | unavailable |
 | Planar, 80 nm | 128 × 1024 × 8192 | 1.074 | 134.66 | 14.10 | 10.13 |
+| Planar, 80 nm | 192 × 1536 × 12288 | 3.624 | 151.63 | 46.99 | 32.91 |
 | Refined, 64 nm | 640 × 640 × 5120 | 2.097 | 152.23† | 26.98 | 18.62 |
 
 † The 64 nm propagated raw-field comparison failed its existing pointwise gate;
 this is timing evidence, not an accepted accuracy result. Both flux spectra
-passed. See numerical validation below. The larger planar probe remains running.
+passed. See numerical validation below.
+
+The planar domain improves 12.6% for 3.375× more cells and reaches 151.63 GCUPS,
+2.94% below the balanced domain at the same 3.624-billion-cell count. Shape still
+matters, but its gap narrows from 7.8% at 1.074 billion cells. Only two planar
+sizes were tested, so that series alone does not establish a plateau. Refining
+the fixed physical domain from 80 to 64 nm gives 152.23 GCUPS, within 0.32% of
+the 80 nm domain-growth case with the same number of cells.
 
 ![Capacity and throughput curves](h100-capacity-20260926/capacity.png)
 
@@ -64,6 +72,9 @@ fast math disabled, 12-cell CPML on all external faces, a TE mode source, and tw
 the state, compiles, warms up once, then measures five synchronized 256-step
 samples. Input state is retained, matching the prior benchmark; this capacity
 limit is not necessarily the limit of a donating/evolving-state application.
+The geometry is a straight waveguide with extensive cladding at the larger
+sizes. It exercises realistic source, boundary, and monitor operations, but is
+not a benchmark of a densely populated full-chip device or arbitrary materials.
 
 The balanced domain-growth series uses `(z,y,x)=(n,n,8n)` at 80 nm spacing.
 The planar series uses `(n,8n,64n)` at 80 nm. The fixed-physical-domain series
@@ -98,8 +109,13 @@ size and any failed allocation boundary. A failed probe is retained as evidence.
 ## Execution
 
 RunPod pod `d5yvneey683trr`, AP-IN-1, created 2026-09-26 17:29:52.756 UTC at
-$27.92/hour. Additional spending authorization: $50. Measurement cutoff 19:00 UTC;
-independent MCP deletion guard 19:09 UTC. All-pair NV18 topology verified.
+$27.92/hour. Additional spending authorization: $50. All-pair NV18 topology
+verified. Deleted at 18:59:34 UTC after artifact verification; the follow-up
+lookup returned 404 at 18:59:39 UTC. Conservative creation-to-verification
+compute estimate is $41.77, approximately **$42 including disk**, below the
+$50 additional cap. The billing snapshot is delayed (only the 17:00–18:00
+bucket was available) and must not be presented as a final invoice. No volume
+was created. The independent deletion guard was cancelled only after the 404.
 
 The 640 baseline reproduces the previous accepted 151.57 GCUPS result within
 0.8%; the planar baseline reproduces 135.50 GCUPS within 0.7%. The balanced
@@ -140,9 +156,22 @@ compare eight-GPU CUDA with one-GPU JAX using the unchanged pointwise gate
   at most 6.09e-7. Tolerances were not relaxed. The cause remains under
   investigation, and the refinement result must not be treated as validated.
 
+A follow-up one-GPU CUDA run at 64 nm also fails the JAX raw-DFT comparison
+(maximum relative L2 5.76e-6) while its flux spectra pass. One- versus eight-GPU
+CUDA passes the full gate, with maximum DFT relative L2 6.43e-7. This points to
+a CUDA/JAX arithmetic discrepancy shared across device counts, rather than an
+eight-GPU-specific failure; it does not isolate the offending operation.
+
 These checks exercise pulse propagation but do not establish spatial or temporal
 convergence, or validate complete optical results on the billion-cell domains.
 No pure-JAX capacity/throughput sweep was performed in this additional run.
+
+The repository's Makefile lint scope passes Ruff and formatting (343 files).
+Small CPU construction/monitor smoke checks at 80 and 40 nm also passed.
+The broader `ruff check .` finds 132 errors and its format check finds 16 files
+requiring formatting, including archived diagnostic scripts outside that lint
+scope. No solver changes or new full CPU-suite run were made for this capacity
+study; the draft PR retains the preceding full-suite and audit failures.
 
 ## Environment controls
 
@@ -153,3 +182,31 @@ package differences are recorded in `dependency-differences.json`. Thus this is
 a calibrated reproduction of the previous rates, not a byte-identical Python
 environment. All points within the new sweep share the same environment.
 Cold setup times should not be compared directly across the two studies.
+
+## Evidence and reproduction
+
+[Compact JSON, CSV, plots, validation comparisons, source snapshots, and
+manifests](h100-capacity-20260926/) are committed with the benchmark scripts.
+The controller source is preserved verbatim as `finish-controller.py.txt`.
+The accepted native and worker hashes agree across all eight successful timing
+cases. Failed allocation logs are retained; no rate is assigned to that probe.
+
+Before deleting the pod, all **69 remote files (19,835,088 bytes)** were verified
+against their remote SHA-256 manifest. Raw NPZs and telemetry remain in the
+local 10,704,094-byte archive
+`benchmarks/results/h100-capacity-20260926/h100-capacity-20260926.tar.gz`, SHA-256
+`14d7c6dae277cd1a5bd0a10ca08f67cd7ae3c47f903299e1cd1359b1b884cecd`.
+That archive is not uploaded to the PR. It also contains the locally derived
+64 nm diagnostic counts, distinguished from remote evidence in `archive.json`.
+
+Regenerate the derived tables and figure from the extracted raw evidence:
+
+```sh
+python scripts/summarize_h100_capacity.py \
+  benchmarks/results/h100-capacity-20260926/raw/sweep \
+  benchmarks/reports/h100-capacity-20260926
+```
+
+The figure uses sample ranges, not confidence intervals. The green curve reuses
+the balanced-512 measurement as its identical 80 nm physical-domain reference.
+No solver or native-kernel optimization was introduced during this sweep.

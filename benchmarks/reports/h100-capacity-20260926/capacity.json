@@ -145,5 +145,26 @@
     "compile_s": 99.50348088052124,
     "finite": true,
     "monitor_weight_min": 256.0
+  },
+  {
+    "name": "planar-192",
+    "series": "planar",
+    "shape": "192x1536x12288",
+    "resolution_nm": 80.0,
+    "total_cells": 3623878656,
+    "cells_per_gpu": 452984832.0,
+    "gcups": 151.6314821772107,
+    "sample_cv_pct": 0.00806396354721963,
+    "gcups_min": 151.6109213211197,
+    "gcups_max": 151.64427776152206,
+    "timestep_ms": 23.899249707028503,
+    "peak_live_max_gib": 46.987311601638794,
+    "timed_live_max_gib": 32.910332918167114,
+    "peak_pool_max_gib": 64.0,
+    "sampled_resident_max_gib": 66.2236328125,
+    "setup_s": 544.6782094174996,
+    "compile_s": 75.89642269629985,
+    "finite": true,
+    "monitor_weight_min": 256.0
   }
 ]

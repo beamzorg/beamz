@@ -1,0 +1,9 @@
+{
+  "local_path": "benchmarks/results/h100-capacity-20260926/h100-capacity-20260926.tar.gz",
+  "bytes": 10704094,
+  "sha256": "14d7c6dae277cd1a5bd0a10ca08f67cd7ae3c47f903299e1cd1359b1b884cecd",
+  "remote_manifest_verified_files": 69,
+  "remote_manifest_verified_bytes": 19835088,
+  "raw_archive_uploaded_to_pr": false,
+  "note": "Raw includes locally derived validation/diagnostic-64.json in addition to the verified remote files. Native binary reused from previous evidence archive, identified by SHA in measurements."
+}
