@@ -1,0 +1,56 @@
+{
+  "protocol": "five_synchronized_warm_stepping_samples",
+  "backend": "cuda_streamed",
+  "devices": 1,
+  "shape": [
+    640,
+    640,
+    640
+  ],
+  "steps": 256,
+  "frequencies": 101,
+  "cpml_cells": 12,
+  "setup_s": 58.75718292500824,
+  "compile_s": 1.3886174708604813,
+  "warm_runtime_samples_s": [
+    2.594070475548506,
+    2.5940320612862706,
+    2.5940218679606915,
+    2.5940802125260234,
+    2.5939784813672304
+  ],
+  "kernel_gcups": 25.87048363878878,
+  "final_state_finite": true,
+  "public_api_measured": false,
+  "diagnostic_profiled_public_call_s": null,
+  "peak_memory_bytes": 24396081152,
+  "device_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 567,
+        "bytes_in_use": 10814400256,
+        "peak_bytes_in_use": 24396081152,
+        "largest_alloc_size": 6778808576,
+        "bytes_limit": 68013995816,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 34359738368,
+        "peak_pool_bytes": 34359738368
+      }
+    }
+  ],
+  "worker_measurement_wall_s": 80.12343747727573,
+  "worker_sha256": "2688dc8ad4110731851ed9442dd68bffce9c1e86771799a2bfcee8cc0406d949",
+  "commit": "3dcb7bfb525e2e8423c44286085963e2e662d74c",
+  "environment": {
+    "XLA_PYTHON_CLIENT_MEM_FRACTION": ".80",
+    "NCCL_NVLS_ENABLE": "0",
+    "BEAMZ_CUDA_CPML_PSI_PRECISION": "fp32",
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+    "NUMPY_MADVISE_HUGEPAGE": "0"
+  },
+  "native_sha256": "ccf71bf96bab825cb8c75b8445f971630cd6f138792cc4d913167a9a8da37f04",
+  "cuda_flags": 128
+}

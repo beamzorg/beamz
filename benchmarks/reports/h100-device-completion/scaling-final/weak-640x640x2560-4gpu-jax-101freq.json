@@ -1,0 +1,99 @@
+{
+  "protocol": "five_synchronized_warm_stepping_samples",
+  "backend": "jax",
+  "devices": 4,
+  "shape": [
+    640,
+    640,
+    2560
+  ],
+  "steps": 256,
+  "frequencies": 101,
+  "cpml_cells": 12,
+  "setup_s": 158.2442427854985,
+  "compile_s": 22.651609102264047,
+  "warm_runtime_samples_s": [
+    7.25056391954422,
+    7.257037922739983,
+    7.234611643478274,
+    7.256842856295407,
+    7.236468982882798
+  ],
+  "kernel_gcups": 37.022700438019754,
+  "final_state_finite": true,
+  "public_api_measured": false,
+  "diagnostic_profiled_public_call_s": null,
+  "peak_memory_bytes": 110076380160,
+  "device_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 595,
+        "bytes_in_use": 10037716224,
+        "peak_bytes_in_use": 36978542592,
+        "largest_alloc_size": 7532028160,
+        "bytes_limit": 68013995816,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 68013995776,
+        "peak_pool_bytes": 68013995776
+      }
+    },
+    {
+      "id": 1,
+      "stats": {
+        "num_allocs": 327,
+        "bytes_in_use": 10030678528,
+        "peak_bytes_in_use": 24365945856,
+        "largest_alloc_size": 7532028160,
+        "bytes_limit": 68013995816,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 34359738368,
+        "peak_pool_bytes": 34359738368
+      }
+    },
+    {
+      "id": 2,
+      "stats": {
+        "num_allocs": 327,
+        "bytes_in_use": 10030678528,
+        "peak_bytes_in_use": 24365945856,
+        "largest_alloc_size": 7532028160,
+        "bytes_limit": 68013995816,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 34359738368,
+        "peak_pool_bytes": 34359738368
+      }
+    },
+    {
+      "id": 3,
+      "stats": {
+        "num_allocs": 327,
+        "bytes_in_use": 10030678528,
+        "peak_bytes_in_use": 24365945856,
+        "largest_alloc_size": 7532028160,
+        "bytes_limit": 68013995816,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 34359738368,
+        "peak_pool_bytes": 34359738368
+      }
+    }
+  ],
+  "worker_measurement_wall_s": 228.97350661735982,
+  "worker_sha256": "2688dc8ad4110731851ed9442dd68bffce9c1e86771799a2bfcee8cc0406d949",
+  "commit": "3dcb7bfb525e2e8423c44286085963e2e662d74c",
+  "environment": {
+    "XLA_PYTHON_CLIENT_MEM_FRACTION": ".80",
+    "NCCL_NVLS_ENABLE": "0",
+    "BEAMZ_CUDA_CPML_PSI_PRECISION": "fp32",
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+    "NUMPY_MADVISE_HUGEPAGE": "0"
+  }
+}

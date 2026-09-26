@@ -1,0 +1,9 @@
+{
+  "accepted": false,
+  "directories": {
+    "scaling-metadata-failed": "Git ownership check before trials",
+    "scaling-before-initial-fix": "Unused memory fallback compiled global plan and OOMed after samples",
+    "scaling-overlap-invalid": "Old timeout/runner process tree survived launcher termination and overlapped a restart"
+  },
+  "restart_policy": "Verified all GPUs empty; exclusive flock launcher; all accepted scaling rows are fresh reruns"
+}

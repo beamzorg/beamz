@@ -1,0 +1,315 @@
+{
+  "note": "GPU event durations can overlap. Collective durations include waiting and are not pure transfer time. Span includes all GPU events in this trace.",
+  "devices": [
+    {
+      "gpu": "/device:GPU:0",
+      "span_ms": 3889.684616,
+      "groups": {
+        "other": {
+          "count": 18746,
+          "sum_ms": 128.3898189999968,
+          "median_us": 1.376
+        },
+        "tile_h": {
+          "count": 256,
+          "sum_ms": 1615.3799939999997,
+          "median_us": 6310.1335
+        },
+        "tile_e": {
+          "count": 256,
+          "sum_ms": 2073.969115,
+          "median_us": 8101.308
+        },
+        "collective": {
+          "count": 517,
+          "sum_ms": 38.990766,
+          "median_us": 37.824
+        }
+      }
+    },
+    {
+      "gpu": "/device:GPU:1",
+      "span_ms": 3889.6378860000004,
+      "groups": {
+        "other": {
+          "count": 18234,
+          "sum_ms": 127.81609699999802,
+          "median_us": 1.376
+        },
+        "tile_h": {
+          "count": 256,
+          "sum_ms": 1591.0145650000009,
+          "median_us": 6214.764
+        },
+        "tile_e": {
+          "count": 256,
+          "sum_ms": 2051.4758730000017,
+          "median_us": 8013.4715
+        },
+        "collective": {
+          "count": 517,
+          "sum_ms": 103.00709500000005,
+          "median_us": 208
+        }
+      }
+    },
+    {
+      "gpu": "/device:GPU:2",
+      "span_ms": 3889.671901,
+      "groups": {
+        "other": {
+          "count": 18234,
+          "sum_ms": 127.87725299999758,
+          "median_us": 1.408
+        },
+        "tile_h": {
+          "count": 256,
+          "sum_ms": 1594.856663,
+          "median_us": 6229.9545
+        },
+        "tile_e": {
+          "count": 256,
+          "sum_ms": 2054.787871999999,
+          "median_us": 8026.3330000000005
+        },
+        "collective": {
+          "count": 517,
+          "sum_ms": 81.43961400000005,
+          "median_us": 171.873
+        }
+      }
+    },
+    {
+      "gpu": "/device:GPU:3",
+      "span_ms": 3889.7583539999996,
+      "groups": {
+        "other": {
+          "count": 18234,
+          "sum_ms": 128.03959399999692,
+          "median_us": 1.408
+        },
+        "tile_h": {
+          "count": 256,
+          "sum_ms": 1595.1116749999987,
+          "median_us": 6230.8895
+        },
+        "tile_e": {
+          "count": 256,
+          "sum_ms": 2054.896168,
+          "median_us": 8026.804
+        },
+        "collective": {
+          "count": 517,
+          "sum_ms": 81.48452600000014,
+          "median_us": 154.945
+        }
+      }
+    },
+    {
+      "gpu": "/device:GPU:4",
+      "span_ms": 3889.5985390000005,
+      "groups": {
+        "other": {
+          "count": 18234,
+          "sum_ms": 127.77707399999636,
+          "median_us": 1.408
+        },
+        "tile_h": {
+          "count": 256,
+          "sum_ms": 1594.5362949999992,
+          "median_us": 6229.022
+        },
+        "tile_e": {
+          "count": 256,
+          "sum_ms": 2054.236498999999,
+          "median_us": 8024.615
+        },
+        "collective": {
+          "count": 517,
+          "sum_ms": 78.07928699999992,
+          "median_us": 125.857
+        }
+      }
+    },
+    {
+      "gpu": "/device:GPU:5",
+      "span_ms": 3889.6152679999996,
+      "groups": {
+        "other": {
+          "count": 18234,
+          "sum_ms": 128.21798199999787,
+          "median_us": 1.408
+        },
+        "tile_h": {
+          "count": 256,
+          "sum_ms": 1595.3614449999993,
+          "median_us": 6231.793
+        },
+        "tile_e": {
+          "count": 256,
+          "sum_ms": 2055.31116,
+          "median_us": 8028.657999999999
+        },
+        "collective": {
+          "count": 517,
+          "sum_ms": 78.83196200000003,
+          "median_us": 137.216
+        }
+      }
+    },
+    {
+      "gpu": "/device:GPU:6",
+      "span_ms": 3889.66321,
+      "groups": {
+        "other": {
+          "count": 18234,
+          "sum_ms": 127.95135599999733,
+          "median_us": 1.408
+        },
+        "tile_h": {
+          "count": 256,
+          "sum_ms": 1594.801702999999,
+          "median_us": 6229.695
+        },
+        "tile_e": {
+          "count": 256,
+          "sum_ms": 2054.4700229999994,
+          "median_us": 8025.363
+        },
+        "collective": {
+          "count": 517,
+          "sum_ms": 66.41743200000008,
+          "median_us": 76.704
+        }
+      }
+    },
+    {
+      "gpu": "/device:GPU:7",
+      "span_ms": 3889.545112,
+      "groups": {
+        "other": {
+          "count": 18746,
+          "sum_ms": 132.38269399999658,
+          "median_us": 1.408
+        },
+        "tile_h": {
+          "count": 256,
+          "sum_ms": 1597.9823290000004,
+          "median_us": 6241.4235
+        },
+        "tile_e": {
+          "count": 256,
+          "sum_ms": 2053.689724,
+          "median_us": 8021.572
+        },
+        "collective": {
+          "count": 517,
+          "sum_ms": 79.56182000000005,
+          "median_us": 84.448
+        }
+      }
+    }
+  ],
+  "top_kernels": [
+    {
+      "name": "__nv_static_32__49086e23_10_sharded_cu_0ca36643__ZN43_GLOBAL__N__49086e23_10_sharded_cu_0ca3664317UpdateShardedTileILi1EEEv11BeamzLaunch",
+      "count": 2048,
+      "sum_ms": 16452.836433999986
+    },
+    {
+      "name": "__nv_static_32__49086e23_10_sharded_cu_0ca36643__ZN43_GLOBAL__N__49086e23_10_sharded_cu_0ca3664317UpdateShardedTileILi0EEEv11BeamzLaunch",
+      "count": 2048,
+      "sum_ms": 12779.044668999986
+    },
+    {
+      "name": "ncclDevKernel_SendRecv(ncclDevKernelArgsStorage<4096ul>)",
+      "count": 4096,
+      "sum_ms": 595.0172590000008
+    },
+    {
+      "name": "loop_select_fusion_1",
+      "count": 2048,
+      "sum_ms": 222.92117200000004
+    },
+    {
+      "name": "loop_select_fusion_2",
+      "count": 2048,
+      "sum_ms": 222.04020000000003
+    },
+    {
+      "name": "loop_select_fusion",
+      "count": 2048,
+      "sum_ms": 221.09099699999982
+    },
+    {
+      "name": "input_transpose_fusion_1",
+      "count": 4096,
+      "sum_ms": 31.709837000000004
+    },
+    {
+      "name": "input_transpose_fusion_3",
+      "count": 4096,
+      "sum_ms": 27.75030400000036
+    },
+    {
+      "name": "wrapped_transpose",
+      "count": 16,
+      "sum_ms": 19.388865000000003
+    },
+    {
+      "name": "memcpy32_post",
+      "count": 12336,
+      "sum_ms": 18.846942000000464
+    },
+    {
+      "name": "wrapped_transpose_1",
+      "count": 24,
+      "sum_ms": 18.170334999999994
+    },
+    {
+      "name": "wrapped_transpose_2",
+      "count": 24,
+      "sum_ms": 18.166338
+    },
+    {
+      "name": "input_transpose_fusion_16",
+      "count": 16,
+      "sum_ms": 12.912044
+    },
+    {
+      "name": "ncclDevKernel_AllReduce_f32_RING(ncclDevKernelArgsStorage<4096ul>)",
+      "count": 40,
+      "sum_ms": 12.795243000000003
+    },
+    {
+      "name": "input_transpose_fusion_15",
+      "count": 16,
+      "sum_ms": 12.689708000000001
+    },
+    {
+      "name": "MemcpyD2H",
+      "count": 4096,
+      "sum_ms": 9.85373500000008
+    },
+    {
+      "name": "Memset 3",
+      "count": 7168,
+      "sum_ms": 9.625546999999981
+    },
+    {
+      "name": "input_concatenate_fusion_1",
+      "count": 4096,
+      "sum_ms": 8.44222000000005
+    },
+    {
+      "name": "input_reduce_fusion",
+      "count": 4096,
+      "sum_ms": 7.202358000000093
+    },
+    {
+      "name": "input_transpose_fusion_14",
+      "count": 8,
+      "sum_ms": 7.115129
+    }
+  ]
+}
