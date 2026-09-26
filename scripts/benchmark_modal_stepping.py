@@ -105,6 +105,13 @@ def main():
         bool(jax.device_get(jnp.all(jnp.isfinite(x)))) for x in jax.tree.leaves(result)
     )
     timed_memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
+    weights = np.asarray(jax.device_get(result.dft_weight_sum))
+    if (
+        len(program.monitors) != 2
+        or weights.size != 2 * a.frequencies
+        or not np.all(weights > 0)
+    ):
+        raise RuntimeError("Both frequency monitors must accumulate nonzero weights")
     del result
     if not finite:
         raise RuntimeError("Non-finite stepping output")
@@ -144,6 +151,9 @@ def main():
         prepared_memory=prepared_memory,
         timed_memory=timed_memory,
         runtime_cv=statistics.stdev(samples) / statistics.mean(samples),
+        monitor_weight_min=float(weights.min()),
+        monitor_weight_max=float(weights.max()),
+        monitor_count=len(program.monitors),
         setup_s=setup_s,
         compile_s=compile_s,
         warm_runtime_samples_s=samples,
