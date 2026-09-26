@@ -28,7 +28,9 @@ def main():
         if "converged" in metadata and not (
             metadata["converged"] and info.get("converged", False)
         ):
-            raise ValueError(f"Completion comparison requires converged runs: {candidate}")
+            raise ValueError(
+                f"Completion comparison requires converged runs: {candidate}"
+            )
         if not info["finite_state"] or not metadata["finite_state"]:
             raise ValueError("Non-finite simulation state")
         actual = np.load(candidate.with_suffix(".npz"))
