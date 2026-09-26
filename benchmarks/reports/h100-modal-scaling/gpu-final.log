@@ -1,0 +1,12 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=3561259069
+rootdir: /workspace/beamz-interior
+configfile: pytest.ini
+plugins: cov-7.1.0, randomly-5.0.0, hypothesis-6.168.0, anyio-4.14.2
+collected 363 items / 333 deselected / 30 selected
+
+tests/hardware/test_local_cpml_scaling.py ......                         [ 20%]
+tests/hardware/test_cuda_backends.py .s..s...s....s..s.....s.            [100%]
+
+========== 24 passed, 6 skipped, 333 deselected in 271.38s (0:04:31) ===========

@@ -1,0 +1,156 @@
+[
+  {
+    "steps": 512,
+    "arrays": {
+      "ex": {
+        "max_abs": 8.0,
+        "relative_l2": 6.959946191071684e-07,
+        "exact": false,
+        "reference_max": 14397191.0
+      },
+      "ey": {
+        "max_abs": 8.875,
+        "relative_l2": 7.166237707481001e-07,
+        "exact": false,
+        "reference_max": 16289278.0
+      },
+      "ez": {
+        "max_abs": 5.625,
+        "relative_l2": 1.1868981379907477e-06,
+        "exact": false,
+        "reference_max": 9713159.0
+      },
+      "hx": {
+        "max_abs": 0.0576171875,
+        "relative_l2": 9.712722430804314e-07,
+        "exact": false,
+        "reference_max": 69388.9140625
+      },
+      "hy": {
+        "max_abs": 0.0458984375,
+        "relative_l2": 1.5705256747779381e-06,
+        "exact": false,
+        "reference_max": 35207.27734375
+      },
+      "hz": {
+        "max_abs": 0.140625,
+        "relative_l2": 7.146197414184829e-07,
+        "exact": false,
+        "reference_max": 138977.46875
+      },
+      "cpml_psi_e_terms": {
+        "max_abs": 62464.0,
+        "relative_l2": 5.793443386185841e-07,
+        "exact": false,
+        "reference_max": 248217862144.0
+      },
+      "cpml_psi_h_terms": {
+        "max_abs": 6635520.0,
+        "relative_l2": 9.78437649454863e-07,
+        "exact": false,
+        "reference_max": 25195876188160.0
+      },
+      "dft_vec_re": {
+        "max_abs": 2896.0,
+        "relative_l2": 2.2751340644387113e-06,
+        "exact": false,
+        "reference_max": 438540064.0
+      },
+      "dft_vec_im": {
+        "max_abs": 1728.0,
+        "relative_l2": 2.159604453040555e-06,
+        "exact": false,
+        "reference_max": 438030976.0
+      },
+      "dft_weight_sum": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 512.0
+      },
+      "t": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 7.493802128312466e-14
+      }
+    }
+  },
+  {
+    "steps": 1024,
+    "arrays": {
+      "ex": {
+        "max_abs": 13.0,
+        "relative_l2": 8.477676690539666e-07,
+        "exact": false,
+        "reference_max": 14461482.0
+      },
+      "ey": {
+        "max_abs": 11.0,
+        "relative_l2": 1.0208985737441327e-06,
+        "exact": false,
+        "reference_max": 12603381.0
+      },
+      "ez": {
+        "max_abs": 5.875,
+        "relative_l2": 1.2593220753806251e-06,
+        "exact": false,
+        "reference_max": 9765178.0
+      },
+      "hx": {
+        "max_abs": 0.045654296875,
+        "relative_l2": 1.2089470600191493e-06,
+        "exact": false,
+        "reference_max": 65016.40234375
+      },
+      "hy": {
+        "max_abs": 0.0382080078125,
+        "relative_l2": 1.910682373226615e-06,
+        "exact": false,
+        "reference_max": 33440.53515625
+      },
+      "hz": {
+        "max_abs": 0.087890625,
+        "relative_l2": 1.3649132447021603e-06,
+        "exact": false,
+        "reference_max": 119292.7734375
+      },
+      "cpml_psi_e_terms": {
+        "max_abs": 130560.0,
+        "relative_l2": 6.852962158097647e-06,
+        "exact": false,
+        "reference_max": 28049354752.0
+      },
+      "cpml_psi_h_terms": {
+        "max_abs": 24805376.0,
+        "relative_l2": 7.536865926481535e-06,
+        "exact": false,
+        "reference_max": 5245078339584.0
+      },
+      "dft_vec_re": {
+        "max_abs": 2708.0,
+        "relative_l2": 2.3813483853394176e-06,
+        "exact": false,
+        "reference_max": 414348896.0
+      },
+      "dft_vec_im": {
+        "max_abs": 1920.0,
+        "relative_l2": 2.2442241360533804e-06,
+        "exact": false,
+        "reference_max": 407566272.0
+      },
+      "dft_weight_sum": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 1024.0
+      },
+      "t": {
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "exact": true,
+        "reference_max": 1.498760425662493e-13
+      }
+    }
+  }
+]

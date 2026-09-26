@@ -1,0 +1,8 @@
+{
+  "commit": "612ea5cadb1f7f215b57469a71fe8102569c4ea5",
+  "scope": "Runner scheduling/resume and resolution validation only; measurement worker and runtime/native unchanged",
+  "files": {
+    "scripts/benchmark_h100_capacity.py": "08d5a31712924fe686c6e61a17fd18afe64556cb54e83f430e2bf7b0d9688704",
+    "scripts/validate_modal_scaling.py": "4a1b19ffc69686f93be62f748584256cadc498d881f21ac6fd4b64d3f6a5a6cb"
+  }
+}

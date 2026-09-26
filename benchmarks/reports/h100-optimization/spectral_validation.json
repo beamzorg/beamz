@@ -1,0 +1,31 @@
+{
+  "single_gpu_full": {
+    "flux_through_relative_l2": 1.967116465175597e-06,
+    "flux_cross_relative_l2": 5.330805448759835e-06,
+    "finite_fields": true,
+    "transmission_db_max_abs_error": 2.0506241134782277e-05,
+    "crosstalk_db_max_abs_error": 2.8106150320894585e-05
+  },
+  "two_gpu_full_vs_single_jax": [
+    {
+      "backend": "jax",
+      "gcups": 3.0418626303890313,
+      "cells": 7983855,
+      "finite_fields": true,
+      "transmission_db_max_abs_error": 0.0,
+      "crosstalk_db_max_abs_error": 0.0,
+      "flux_through_relative_l2": 0.0,
+      "flux_cross_relative_l2": 0.0
+    },
+    {
+      "backend": "cuda_streamed",
+      "gcups": 5.334493542119067,
+      "cells": 7983855,
+      "finite_fields": true,
+      "transmission_db_max_abs_error": 1.5042694525430056e-06,
+      "crosstalk_db_max_abs_error": 3.2296741281356844e-06,
+      "flux_through_relative_l2": 1.2938415732889077e-07,
+      "flux_cross_relative_l2": 2.0649538487879251e-07
+    }
+  ]
+}

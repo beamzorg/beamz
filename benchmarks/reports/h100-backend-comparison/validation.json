@@ -1,0 +1,48 @@
+{
+  "completed_trials": 53,
+  "canonical_trials": 44,
+  "crossing_trials": 9,
+  "failures": 0,
+  "independent_gcups_recalculation": "passed",
+  "full_crossing_against_jax": {
+    "cuda_streamed": {
+      "flux_through": {
+        "max_absolute_delta": 0.0007775059612223911,
+        "relative_l2": 0.00044802586670952534
+      },
+      "flux_cross": {
+        "max_absolute_delta": 4.632794084141615e-06,
+        "relative_l2": 0.0017361390393314008
+      },
+      "transmission_db": {
+        "max_absolute_delta": 0.003458740610029973,
+        "relative_l2": 0.01509824537515675
+      },
+      "crosstalk_db": {
+        "max_absolute_delta": 0.01594920031695679,
+        "relative_l2": 0.0002545466155388687
+      },
+      "source_power_relative_delta": 0.0
+    },
+    "cuda_hopper": {
+      "flux_through": {
+        "max_absolute_delta": 2.819750182236902e-07,
+        "relative_l2": 1.0808821802109807e-07
+      },
+      "flux_cross": {
+        "max_absolute_delta": 7.795728047474415e-10,
+        "relative_l2": 3.234611844015608e-07
+      },
+      "transmission_db": {
+        "max_absolute_delta": 1.2637046905850102e-06,
+        "relative_l2": 3.643769978864206e-06
+      },
+      "crosstalk_db": {
+        "max_absolute_delta": 3.20421027311113e-06,
+        "relative_l2": 5.3955775588621805e-08
+      },
+      "source_power_relative_delta": 0.0
+    }
+  },
+  "full_crossing_acceptance_tolerance": "not specified; numerical differences reported, not asserted equivalent"
+}

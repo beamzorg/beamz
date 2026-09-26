@@ -1,11 +1,10 @@
 {
-  "abi_version": 19,
-  "component_version": "0.19.0",
+  "abi_version": 21,
+  "component_version": "0.21.0",
   "targets": {
     "streamed": "beamz_cuda_streamed",
     "sharded": "beamz_cuda_sharded",
-    "program": "beamz_cuda_program",
-    "hopper": "beamz_cuda_hopper"
+    "program": "beamz_cuda_program"
   },
   "streamed_targets": [
     "streamed",
@@ -53,7 +52,7 @@
     "source_group_coefficients_input": 0,
     "source_group_waveforms_input": 1,
     "source_group_starts_input": 2,
-    "monitor_input_count": 15,
+    "monitor_input_count": 16,
     "monitor_indices_input": 0,
     "monitor_weights_input": 1,
     "monitor_frequencies_input": 2,
@@ -84,6 +83,7 @@
     "temporal_h_psi_workspace_offset": 24,
     "temporal_e_psi_workspace_offset": 30,
     "temporal_field_workspace_input": 74,
-    "temporal_psi_workspace_input": 80
+    "temporal_psi_workspace_input": 80,
+    "monitor_elapsed_steps_input": 15
   }
 }

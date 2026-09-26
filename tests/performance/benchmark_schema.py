@@ -62,7 +62,7 @@ class BenchmarkRecord:
             raise ValueError("benchmark identity fields must be non-empty")
         if self.precision not in {"float32", "float64"}:
             raise ValueError("precision must be float32 or float64")
-        if self.backend not in {"jax", "cuda_streamed", "cuda_hopper"}:
+        if self.backend not in {"jax", "cuda_streamed"}:
             raise ValueError("unknown benchmark backend")
         if self.cpml_psi_precision not in {"float32", "bfloat16"}:
             raise ValueError("unknown CPML state precision")

@@ -1,0 +1,4 @@
+==PROF== Connected to process 5722 (/workspace/counter_probe)
+==ERROR== ERR_NVGPUCTRPERM - The user does not have permission to access NVIDIA GPU Performance Counters on the target device 0. For instructions on enabling permissions and to get more information see https://developer.nvidia.com/ERR_NVGPUCTRPERM
+cuda status no error
+==PROF== Disconnected from process 5722

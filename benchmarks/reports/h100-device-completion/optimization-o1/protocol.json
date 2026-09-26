@@ -1,0 +1,1 @@
+{"JAX_OPTIMIZATION_LEVEL":"O1","shape":[640,640,5120],"devices":8,"timesteps":256,"samples":5,"physics":"CPML12, mode source, two 101-frequency mode monitors"}

@@ -13,8 +13,8 @@ monitor schedules. JAX still owns tracing, buffers, and orchestration around tha
 small native interface, preserving BeamZ's public numerical semantics and JAX
 fallback without duplicating configuration-specific FFI targets.
 
-The native boundary has four typed FFI targets: a phase update, a sharded phase,
-a complete multi-step program, and the explicit Hopper experiment. The implementation is
+The native boundary has three typed FFI targets: a phase update, a sharded phase,
+and a complete multi-step program. The implementation is
 split by responsibility:
 
 - `ffi_handler.cc` decodes JAX buffers into a validated `BeamzProgramLaunch`;
@@ -33,14 +33,6 @@ single-kernel path so an extra launch cannot dominate their work.
 positional buffer constants. After editing it, regenerate both language bindings
 with `python scripts/generate_cuda_abi.py`; CI uses `--check` to reject drift.
 
-On SM90, the experimental `beamz_cuda_hopper` target uses the same ABI and arithmetic
-but maps each component to `32 × 4 × 2` spatial tiles. Each derivative input stages
-only its directional halo in shared memory, reusing values across neighboring
-updates while keeping the x direction warp-contiguous. Backend selection only
-exposes this target on compute capability 9.0 or newer. It remains explicit-only
-until hardware parity and throughput gates justify promotion; `auto` and generic
-`cuda` use the streamed path.
-
 Install BeamZ from this checkout, then build its optional component in a CUDA 12
 development environment:
 
@@ -55,8 +47,7 @@ intrinsics are available only for controlled experiments with
 result can be used for promotion.
 
 The wheel compiles SASS for SM80, SM86, SM89, and SM90. `backend="auto"` detects and
-registers it lazily; `backend="cuda_streamed"` requests it explicitly and
-`backend="cuda_hopper"` requests the tiled target. The first
+registers it lazily; `backend="cuda_streamed"` requests it explicitly. The first
 release supports float32 3D grids. `auto` retains JAX for multi-GPU and 2D
 simulations; only the explicitly selected CPML recurrence state may use BF16.
 
@@ -79,7 +70,10 @@ result = simulation.advance(
 This path has native C++ arithmetic and CPU FFI coverage, but has **not yet been
 validated on multiple CUDA GPUs**. `auto` continues selecting JAX for sharded
 requests. Rebuild the optional CUDA extension: this path requires component
-**0.19.0 / ABI 19**, including `beamz_cuda_sharded`.
+**0.21.0 / ABI 21**, including `beamz_cuda_sharded`. ABI 20 passes separate neighbor faces to sharded
+phases, avoiding full-field halo concatenations. ABI 21 adds an integer DFT
+chunk offset so every graph uses the same invocation time origin. Rebuild the native wheel when
+updating Python code across this ABI boundary.
 
 All six components share partition interfaces along the selected x, y, or z
 axis. `shard_map` exchanges one-cell neighbor halos before each H/E phase and
@@ -101,8 +95,7 @@ The existing lossless-electric-material restriction for full tensors still appli
 
 Multi-step native graphs and packed material codebooks are disabled on this
 path. They need communication-aware scheduling and local material packing before
-they can be restored. Sharding remains 3D-only, as in the existing JAX planner;
-the explicit Hopper variant remains single-device.
+they can be restored. Sharding remains 3D-only, as in the existing JAX planner.
 The first implementation exchanges both halo faces of all three source fields;
 communication overlap and tangential-field-only exchange remain optimizations.
 
@@ -154,7 +147,7 @@ override is read at native invocation and included in the graph-cache key; it
 changes scheduling only. It allows small parity and sanitizer workloads to
 exercise fusion, including odd tile tails and sources crossing the shell.
 
-Experimental layout and temporal-blocking controls (ABI 19):
+Experimental layout and temporal-blocking controls (ABI 20):
 
 - `BEAMZ_CUDA_STORAGE_AXES=012|120|201` selects an internal cyclic storage
   permutation. The default `012` preserves canonical `(z,y,x)` storage;

@@ -33,6 +33,7 @@ from beamz.simulation.model import (
     CompiledProgram,
     SimulationState,
     UpdateCoefficients,
+    _copy_initial_field,
 )
 
 from . import kernels as update_runtime
@@ -459,6 +460,8 @@ def apply_source_phase(
     timing: str,
     *,
     dense_single_slab: bool,
+    sharding_plan=None,
+    local_single_owner: bool = False,
 ) -> SimulationState:
     # Apply sources in their scheduled leapfrog phase so amplitude normalization
     # matches field time.
@@ -468,12 +471,25 @@ def apply_source_phase(
         value = getattr(eng, field_name)
         batch, rest = batches[(timing, component)]
         if batch is not None:
-            value = _apply_batched_slabs(
-                value,
-                abs_step,
-                batch,
-                dense_single_slab=dense_single_slab,
-            )
+            use_local = sharding_plan is not None and sharding_plan.layout.enabled
+            if use_local:
+                from beamz.simulation.distributed_sources import (
+                    apply_batched_slabs,
+                    requires_local_injection,
+                )
+
+                use_local = local_single_owner or requires_local_injection(
+                    value, batch, sharding_plan
+                )
+            if use_local:
+                value = apply_batched_slabs(value, abs_step, batch, sharding_plan)
+            else:
+                value = _apply_batched_slabs(
+                    value,
+                    abs_step,
+                    batch,
+                    dense_single_slab=dense_single_slab,
+                )
         if rest:
             value = _apply_specs(value, abs_step, rest)
         updates[field_name] = value.astype(getattr(eng, field_name).dtype)
@@ -490,6 +506,7 @@ def forward_step(
     coeffs: UpdateCoefficients,
     program,
     update_kernel: update_runtime.StepUpdateKernel,
+    observation_time=None,
 ):
     """Advance one compiled timestep."""
     cfg = ctx.config
@@ -503,6 +520,8 @@ def forward_step(
         ctx.source_batches,
         "pre_e",
         dense_single_slab=cfg.source_single_slab_dense,
+        sharding_plan=program.sharding,
+        local_single_owner=cfg.backend == "cuda_streamed",
     )
     state = update_kernel.update_h(state, ctx, coeffs)
 
@@ -514,13 +533,27 @@ def forward_step(
         ctx.source_batches,
         "h",
         dense_single_slab=cfg.source_single_slab_dense,
+        sharding_plan=program.sharding,
+        local_single_owner=cfg.backend == "cuda_streamed",
     )
-    cuda_owns_pec = (
+    kernel_owns_pec = (
         cfg.backend == "cuda_streamed"
         and not cfg.sharding.enabled
         and not program.sources
     )
-    if not cuda_owns_pec:
+    if (
+        update_kernel.kind in {"cuda_streamed_sharded", "jax_local_cpml"}
+        and ctx.boundary.cpml.enabled
+        and not coeffs.e_inverse_offdiagonal.size
+    ):
+        from beamz.simulation.distributed_sources import sources_are_interior
+
+        # These kernels already constrain their output. Interior source patches
+        # cannot undo that, so avoid six redundant full-volume mask passes.
+        kernel_owns_pec = sources_are_interior(
+            state, ctx.source_batches, program.sharding
+        )
+    if not kernel_owns_pec:
         hx, hy, hz = update_runtime.apply_post_source_boundaries(
             (state.hx, state.hy, state.hz),
             (metallic.hx_mask, metallic.hy_mask, metallic.hz_mask),
@@ -535,8 +568,10 @@ def forward_step(
         ctx.source_batches,
         "e",
         dense_single_slab=cfg.source_single_slab_dense,
+        sharding_plan=program.sharding,
+        local_single_owner=cfg.backend == "cuda_streamed",
     )
-    if not cuda_owns_pec:
+    if not kernel_owns_pec:
         ex, ey, ez = update_runtime.apply_post_source_boundaries(
             (state.ex, state.ey, state.ez),
             (metallic.ex_mask, metallic.ey_mask, metallic.ez_mask),
@@ -544,7 +579,7 @@ def forward_step(
         state = state._replace(ex=ex, ey=ey, ez=ez)
 
     # 4. Observe only fully constrained end-of-step fields, then advance both clocks.
-    t_phys = state.t + ctx.dt_scalar
+    t_phys = state.t + ctx.dt_scalar if observation_time is None else observation_time
     state = monitor_runtime.update_monitors(
         program,
         state,
@@ -558,6 +593,23 @@ def forward_step(
         state.hy,
         state.hz,
     )
+    if cfg.backend == "jax" and cfg.is_3d and not cfg.sharding.enabled:
+        # Keep a common field layout across scan iterations. Recent JAX can
+        # otherwise choose conflicting stencil/monitor layouts and insert copies.
+        # Older supported JAX releases retain their automatic layout selection.
+        try:
+            from jax.experimental.layout import Layout, with_layout_constraint
+        except ImportError:
+            pass
+        else:
+            state = state._replace(
+                **{
+                    name: with_layout_constraint(
+                        getattr(state, name), Layout((0, 1, 2))
+                    )
+                    for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+                }
+            )
     return state._replace(
         t=t_phys,
         current_step=state.current_step + jnp.array(1, dtype=jnp.int32),
@@ -576,7 +628,7 @@ def build_scan(program, *, donate_state: bool = False):
 
     cfg = program.config
     boundary = program.boundary
-    if cfg.backend == "jax":
+    if cfg.backend == "jax" or cfg.sharding.enabled:
         boundary = compact_boundary_masks(boundary)
     resolution = float(cfg.resolution)
     dt = float(cfg.dt)
@@ -600,6 +652,12 @@ def build_scan(program, *, donate_state: bool = False):
         sharding_plan=program.sharding,
     )
     update_kernel = update_runtime.select_update_kernel(step_context)
+    from beamz.simulation import distributed_monitors, jax_sharding
+
+    local_jax_cpml = jax_sharding.supported(program)
+    local_dft = distributed_monitors.supported(program)
+    if local_jax_cpml:
+        update_kernel = jax_sharding.select_kernel()
     graph_source_groups = tuple(
         source_batches[(timing, component)][0]
         for timing, components in SOURCE_PHASE_COMPONENTS.items()
@@ -660,6 +718,35 @@ def build_scan(program, *, donate_state: bool = False):
         state: SimulationState,
         coeffs: UpdateCoefficients,
     ):
+        if local_dft:
+            state = distributed_monitors.scan_local_dft(state, program)
+        local_cuda_cpml = (
+            cfg.backend == "cuda_streamed" and program.sharding.layout.enabled
+        )
+        if local_cuda_cpml or local_jax_cpml:
+            from beamz.simulation.distributed import scan_local_cpml
+
+            state = scan_local_cpml(state, program)
+        # Compute differentiable material scales once per invocation. Expressing
+        # the lossy update as an increment avoids a field-sized division each step.
+        if (
+            cfg.backend == "jax"
+            and cfg.is_3d
+            and boundary.cpml.enabled
+            and cfg.metric_kind == "isotropic_uniform"
+            and not coeffs.e_inverse_offdiagonal.size
+        ):
+            dt_mu, dt_eps = dt_scalar / MU_0, dt_scalar / EPS_0
+            scales = {}
+            for component in "xyz":
+                sigma_h = getattr(coeffs, f"h_sigma_m_{component}")
+                sigma_e = getattr(coeffs, f"e_conductivity_{component}")
+                epsilon = getattr(coeffs, f"e_permittivity_{component}")
+                scales[f"h_source_{component}"] = dt_mu / (1 + 0.5 * dt_mu * sigma_h)
+                scales[f"e_source_{component}"] = dt_eps / (
+                    epsilon + 0.5 * dt_eps * sigma_e
+                )
+            coeffs = coeffs._replace(**scales)
         # 4. Run the same transition through scan or fori_loop. The choice changes the
         # lowering strategy, not timestep semantics.
         if cuda_multi_step:
@@ -693,6 +780,8 @@ def build_scan(program, *, donate_state: bool = False):
                         graph_source_groups,
                         packed_graph_monitors,
                         chunk_steps,
+                        observation_origin=state.t,
+                        observation_step_offset=elapsed_steps,
                     )
                     if program.monitors
                     else run_source_group_steps(
@@ -734,9 +823,12 @@ def build_scan(program, *, donate_state: bool = False):
                         tail_steps,
                         full_chunks * CUDA_GRAPH_MAX_STEPS,
                     )
+        # Every observation uses the immutable run origin, as native CUDA does.
+        # Repeated float32 additions drift over long optical simulations. The
+        # entry time remains authoritative for explicit continuation states.
         elif cfg.loop_kind == "scan":
 
-            def _scan_body(carry, _unused):
+            def _scan_body(carry, step_index):
                 # Emit no per-step output because final state and explicit buffers hold results.
                 return (
                     forward_step(
@@ -745,6 +837,7 @@ def build_scan(program, *, donate_state: bool = False):
                         coeffs=coeffs,
                         program=program,
                         update_kernel=update_kernel,
+                        observation_time=state.t + dt_scalar * (step_index + 1),
                     ),
                     None,
                 )
@@ -752,8 +845,7 @@ def build_scan(program, *, donate_state: bool = False):
             scan_out, _ = jax.lax.scan(
                 _scan_body,
                 state,
-                xs=None,
-                length=cfg.num_steps,
+                xs=jnp.arange(cfg.num_steps, dtype=jnp.int32),
             )
         else:
             scan_out = jax.lax.fori_loop(
@@ -765,8 +857,15 @@ def build_scan(program, *, donate_state: bool = False):
                     coeffs=coeffs,
                     program=program,
                     update_kernel=update_kernel,
+                    observation_time=state.t + dt_scalar * (_i + 1),
                 ),
                 state,
+            )
+        if local_cuda_cpml or local_jax_cpml:
+            scan_out = scan_local_cpml(scan_out, program, assemble=True)
+        if local_dft:
+            scan_out = distributed_monitors.scan_local_dft(
+                scan_out, program, assemble=True
             )
         return scan_out
 
@@ -888,7 +987,7 @@ def initial_program_state(
         # Fresh runs use the compiled lattice; continuations supply evolved canonical
         # arrays without reconstructing a mutable field container.
         return (
-            jnp.array(getattr(program.grid, name))
+            _copy_initial_field(getattr(program.grid, name))
             if continuation is None
             else getattr(continuation, name.lower())
         )
@@ -910,10 +1009,16 @@ def initial_program_state(
             in (shape, sharding_runtime.logical_cpml_shape(layout, term))
             for value, shape, term in zip(old, shapes, terms, strict=True)
         ):
-            converter = np.asarray if layout.enabled else jnp.asarray
             return tuple(
                 sharding_runtime._pad_high_to_shape(
-                    converter(value, dtype=dtype), shape, pad_value=0.0
+                    # Host-created setup slabs stay on the host, but evolved
+                    # device slabs must not round-trip through NumPy at every
+                    # continuation boundary.
+                    (np.asarray if isinstance(value, np.ndarray) else jnp.asarray)(
+                        value, dtype=dtype
+                    ),
+                    shape,
+                    pad_value=0.0,
                 )
                 for value, shape in zip(old, shapes, strict=True)
             )

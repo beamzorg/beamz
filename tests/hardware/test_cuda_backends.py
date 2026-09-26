@@ -880,6 +880,10 @@ def test_streamed_cuda_bounded_graph_replay_preserves_native_result(
     actual = build_scan(program)(_copy_state(state), program.coefficients)
 
     _assert_state_close(reference, actual)
+    if monitor:
+        # Graph boundaries must not introduce a second float32 clock rounding.
+        np.testing.assert_array_equal(actual.dft_vec_re, reference.dft_vec_re)
+        np.testing.assert_array_equal(actual.dft_vec_im, reference.dft_vec_im)
 
 
 @pytest.mark.parametrize("metric_kind", ["axis_uniform", "rectilinear"])
@@ -899,32 +903,11 @@ def test_streamed_cuda_matches_jax_on_nonuniform_grids(metric_kind, cpml):
     _assert_state_close(reference, actual)
 
 
-@pytest.mark.skipif(
-    not STATUS.compute_capabilities
-    or any(capability < 90 for capability in STATUS.compute_capabilities),
-    reason="Hopper tiled target requires SM90+",
-)
-@pytest.mark.parametrize("cpml", [False, True], ids=["pec", "cpml"])
-def test_hopper_cuda_matches_streamed_complete_state(cpml):
-    simulation, state = _simulation_and_seed(cpml=cpml)
-    reference = simulation.advance(
-        state=_copy_state(state),
-        num_steps=simulation.num_steps,
-        backend="cuda_streamed",
-    ).state
-    actual = simulation.advance(
-        state=_copy_state(state),
-        num_steps=simulation.num_steps,
-        backend="cuda_hopper",
-    ).state
-
-    _assert_state_close(reference, actual)
-
-
+@pytest.mark.parametrize("frequencies", [3, 101])
 @pytest.mark.parametrize("interval,normalization", [(1, 0), (2, 1), (3, 1)])
 @pytest.mark.parametrize("pair_tile", ["16x8x16", "single"])
 def test_temporal_pair_dft_windows_and_intervals(
-    interval, normalization, pair_tile, monkeypatch
+    interval, normalization, pair_tile, frequencies, monkeypatch
 ):
     """Two observations, masked components, inactive windows and an odd tail."""
     from argparse import Namespace
@@ -941,7 +924,7 @@ def test_temporal_pair_dft_windows_and_intervals(
             steps=65,
             pml=12,
             monitors=2,
-            frequencies=3,
+            frequencies=frequencies,
             material="binary",
             source="mode",
             monitor_type="field",
@@ -950,7 +933,9 @@ def test_temporal_pair_dft_windows_and_intervals(
     first, second = simulation.monitors
     second = second.updated_copy(
         size=(first.size[1] * 0.5, 0, first.size[2] * 0.75),
-        freqs=np.asarray(second.freqs)[:2],
+        freqs=np.asarray(second.freqs)
+        if frequencies == 101
+        else np.asarray(second.freqs)[:2],
         interval=interval + 1,
     )
     inactive = first.updated_copy(
@@ -960,7 +945,12 @@ def test_temporal_pair_dft_windows_and_intervals(
     )
     simulation = simulation.updated_copy(
         monitors=(
-            first.updated_copy(interval=interval),
+            first.updated_copy(
+                interval=interval,
+                freqs=np.asarray(first.freqs)[:1]
+                if frequencies == 101
+                else first.freqs,
+            ),
             second,
             inactive,
         )

@@ -1,0 +1,98 @@
+Sat Sep 26 14:02:10 2026    /workspace/evidence/jax2-api-after.profile
+
+         7560868 function calls (7250843 primitive calls) in 215.610 seconds
+
+   Ordered by: cumulative time
+   List reduced from 9117 to 75 due to restriction <75>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+   2274/1    0.103    0.000  215.672  215.672 {built-in method builtins.exec}
+        1    0.000    0.000  215.672  215.672 scripts/benchmark_device_completion.py:1(<module>)
+        1    0.016    0.016  214.570  214.570 scripts/benchmark_device_completion.py:85(main)
+        4    0.000    0.000  202.784   50.696 /workspace/beamz-h100/beamz/simulation/api.py:1346(advance)
+        4    0.000    0.000  120.708   30.177 /workspace/beamz-h100/beamz/simulation/api.py:1194(compile)
+        4    0.000    0.000  120.708   30.177 /workspace/beamz-h100/beamz/simulation/compile.py:834(compile_program)
+        1    0.000    0.000  118.863  118.863 /workspace/beamz-h100/beamz/simulation/compile.py:559(compile_simulation)
+        1    0.000    0.000  101.512  101.512 /workspace/beamz-h100/beamz/simulation/compile.py:335(_prepare_compilation)
+        1    0.000    0.000  101.343  101.343 /workspace/beamz-h100/beamz/devices/sources/compiler.py:365(compile_source_specs)
+        2    0.000    0.000  101.341   50.671 /usr/lib/python3.12/functools.py:904(wrapper)
+        1    0.000    0.000  101.341  101.341 /workspace/beamz-h100/beamz/devices/sources/compiler.py:463(_lower_mode_source)
+        1    0.000    0.000  101.339  101.339 /workspace/beamz-h100/beamz/devices/sources/mode_launch.py:1014(plan_mode_source_launch)
+        1    0.000    0.000  101.339  101.339 /workspace/beamz-h100/beamz/devices/sources/mode_launch.py:602(_plan_3d_mode_source)
+        1    0.063    0.063   90.971   90.971 /workspace/beamz-h100/beamz/devices/sources/mode_launch.py:119(_symmetrize_centered_3d_profiles)
+        1   19.009   19.009   90.905   90.905 /workspace/beamz-h100/beamz/devices/sources/mode_launch.py:74(_centered_transverse_symmetry_axes)
+        4    0.001    0.000   81.807   20.452 /workspace/beamz-h100/beamz/simulation/execute.py:1323(run_simulation_program)
+        4    0.002    0.000   81.197   20.299 /workspace/beamz-h100/beamz/simulation/execute.py:1232(_run_program_state)
+        4    4.235    1.059   78.298   19.574 /workspace/beamz-h100/beamz/simulation/execute.py:1094(run_program)
+2848/2107    0.018    0.000   69.943    0.033 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/profiler.py:356(wrapper)
+        2    0.000    0.000   52.692   26.346 /workspace/beamz-h100/beamz/simulation/execute.py:1071(build_program_scan)
+        2    0.000    0.000   52.692   26.346 /workspace/beamz-h100/beamz/simulation/execute.py:618(build_scan)
+        6    0.007    0.001   52.483    8.747 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/numpy/_core/numeric.py:2277(allclose)
+       32   28.467    0.890   52.469    1.640 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/numpy/_core/numeric.py:2371(isclose)
+        2    0.039    0.019   52.335   26.168 /workspace/beamz-h100/beamz/simulation/boundary_masks.py:45(compact_boundary_masks)
+       12    1.211    0.101   52.296    4.358 /workspace/beamz-h100/beamz/simulation/boundary_masks.py:19(compact_mask)
+ 3878/896    0.008    0.000   46.407    0.052 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/traceback_util.py:191(reraise_with_filtered_traceback)
+ 3308/466    0.017    0.000   46.372    0.100 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/pjit.py:250(cache_miss)
+3308/3303    0.018    0.000   44.520    0.013 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/pjit.py:132(_run_python_pjit)
+15814/15252   19.349    0.001   44.409    0.003 {built-in method numpy.asarray}
+      466    0.006    0.000   44.140    0.095 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/pjit.py:1164(_pjit_call_impl_python)
+      466    0.004    0.000   34.701    0.074 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py:2485(compile)
+      466    0.025    0.000   34.697    0.074 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py:3000(from_hlo)
+      466    0.008    0.000   34.144    0.073 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py:2819(_cached_compilation)
+      466    0.009    0.000   34.031    0.073 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/compiler.py:396(compile_or_get_cached)
+      466    0.003    0.000   33.846    0.073 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/compiler.py:736(_compile_and_write_cache)
+      466   33.834    0.073   33.834    0.073 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/compiler.py:312(backend_compile_and_load)
+       12   30.809    2.567   30.884    2.574 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/numpy/_core/numeric.py:2522(array_equal)
+      480   25.077    0.052   25.080    0.052 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/array.py:631(_value)
+      278    0.001    0.000   25.070    0.090 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/array.py:436(__array__)
+     1074   24.001    0.022   24.001    0.022 {built-in method builtins.abs}
+        1    0.000    0.000    8.602    8.602 /workspace/beamz-h100/beamz/devices/_boundary_compile.py:832(lower_boundaries)
+        1    0.000    0.000    8.165    8.165 /workspace/beamz-h100/beamz/devices/_boundary_compile.py:823(compile_absorber_regions)
+        1    0.000    0.000    8.165    8.165 /workspace/beamz-h100/beamz/devices/_boundary_compile.py:206(compile_absorber_regions)
+2363/2362    0.016    0.000    7.742    0.003 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/numpy/array_methods.py:604(deferring_binary_op)
+8239/4172    0.026    0.000    7.290    0.002 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/core.py:634(_true_bind)
+8207/8086    0.017    0.000    6.649    0.001 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/core.py:630(bind)
+8207/8086    0.022    0.000    6.534    0.001 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/core.py:652(bind_with_trace)
+     1637    0.034    0.000    6.139    0.004 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/numpy/ufunc_api.py:175(__call__)
+        6    0.002    0.000    5.817    0.969 /workspace/beamz-h100/beamz/lattice.py:732(sample_voxel_grid_at_e_component_3d_centered)
+     1293    0.005    0.000    5.745    0.004 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/core.py:1196(process_primitive)
+     1293    0.158    0.000    5.735    0.004 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/dispatch.py:84(apply_primitive)
+      466    5.663    0.012    5.731    0.012 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py:1342(__call__)
+        1    0.194    0.194    5.246    5.246 scripts/benchmark_device_completion.py:23(build_device)
+     4857    5.206    0.001    5.206    0.001 {built-in method numpy.array}
+       20    5.203    0.260    5.203    0.260 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/numpy/_core/numeric.py:323(full)
+        1    0.000    0.000    5.168    5.168 /workspace/beamz-h100/beamz/simulation/compile.py:433(_compile_grid)
+        1    0.015    0.015    4.872    4.872 /workspace/beamz-h100/beamz/devices/modes/plane.py:416(solve_mode_plane_3d)
+        1    0.000    0.000    4.853    4.853 /workspace/beamz-h100/beamz/lattice.py:1070(build_material_coefficients)
+        4    0.000    0.000    4.853    1.213 /workspace/beamz-h100/beamz/lattice.py:1075(<genexpr>)
+        3    0.000    0.000    4.853    1.618 /workspace/beamz-h100/beamz/lattice.py:1034(_material_slice_for_e_3d)
+        1    0.000    0.000    4.697    4.697 /workspace/beamz-h100/beamz/devices/_boundary_compile.py:735(_create_cpml_profiles_3d)
+        1    0.000    0.000    4.529    4.529 /workspace/beamz-h100/beamz/devices/modes/plane.py:570(_local_component_materials)
+50796/49742    0.039    0.000    4.445    0.000 {built-in method builtins.all}
+       31    0.003    0.000    4.335    0.140 scripts/benchmark_device_completion.py:160(<genexpr>)
+        3    0.000    0.000    3.878    1.293 /workspace/beamz-h100/beamz/devices/sources/planar_tfsf.py:587(advance_incident_e_3d)
+        1    0.000    0.000    3.875    3.875 /workspace/beamz-h100/beamz/devices/sources/planar_tfsf.py:774(compute_discrete_3d_e_phasor_residuals)
+        1    0.001    0.001    3.870    3.870 /workspace/beamz-h100/beamz/devices/sources/planar_tfsf.py:711(_compute_3d_e_phasor_residuals_dense)
+      466    0.008    0.000    3.657    0.008 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/pjit.py:1109(_resolve_and_lower)
+      466    0.001    0.000    3.633    0.008 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/pjit.py:1281(_pjit_lower)
+      466    0.047    0.000    3.628    0.008 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py:2214(lower_sharding_computation)
+        1    0.042    0.042    3.468    3.468 /workspace/beamz-h100/beamz/devices/_boundary_compile.py:334(_extend_cpml_materials_to_absorber)
+      642    0.007    0.000    3.332    0.005 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/numpy/indexing.py:1174(rewriting_take)
+       30    0.002    0.000    3.315    0.110 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/numpy/reductions.py:568(all)
+        4    0.000    0.000    3.300    0.825 /workspace/beamz-h100/beamz/simulation/sharding.py:520(prepare_state)
+      466    0.017    0.000    3.292    0.007 /workspace/.venvs/beamz-h100/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py:1923(_cached_lowering_to_hlo)
+
+
+Sat Sep 26 14:02:10 2026    /workspace/evidence/jax2-api-after.profile
+
+         7560868 function calls (7250843 primitive calls) in 215.610 seconds
+
+   Ordered by: cumulative time
+   List reduced from 9117 to 3 due to restriction <'restore_psi|place_tree|prepare_state'>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        4    0.000    0.000    3.300    0.825 /workspace/beamz-h100/beamz/simulation/sharding.py:520(prepare_state)
+       88    0.000    0.000    2.752    0.031 /workspace/beamz-h100/beamz/simulation/sharding.py:435(place_tree)
+        8    0.000    0.000    0.257    0.032 /workspace/beamz-h100/beamz/simulation/execute.py:1003(restore_psi)
+
+

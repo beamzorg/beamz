@@ -378,7 +378,7 @@ def test_cuda_scan_routes_monitors_to_general_program_graph(
     calls = []
 
     def fake_run_program_steps(
-        chunk_state, _context, _coefficients, groups, monitors, nsteps
+        chunk_state, _context, _coefficients, groups, monitors, nsteps, **clock
     ):
         calls.append((groups, monitors, nsteps))
         return chunk_state
@@ -694,7 +694,8 @@ def test_cuda_program_graph_packs_monitor_batch_and_aliases_accumulators(monkeyp
     target, results, options, arguments, attributes = captured[0]
     assert target == abi.CUDA_PROGRAM_TARGET
     assert len(results) == 24
-    assert len(arguments) == 116
+    assert len(arguments) == 117
+    assert int(arguments[-1]) == 0
     assert packed[0].shape[:2] == (1, 6)
     assert options["input_output_aliases"][108] == 18
     assert options["input_output_aliases"][109] == 19
@@ -754,7 +755,8 @@ def test_cuda_program_graph_uses_temporal_cpml_field_banks(monkeypatch):
     target, results, options, arguments, attributes = captured[0]
     assert target == abi.CUDA_PROGRAM_TARGET
     assert len(results) == 42
-    assert len(arguments) == 134
+    assert len(arguments) == 135
+    assert int(arguments[-1]) == 0
     assert arguments[133] is state.current_step
     assert options["input_output_aliases"] == {
         **{index: index for index in range(6)},
@@ -786,47 +788,6 @@ def test_cuda_backend_selects_hybrid_jax_orchestration_kernel():
     assert selected.kind == "cuda_streamed"
     assert selected.update_h is cuda_runtime.update_h
     assert selected.update_e is cuda_runtime.update_e
-
-
-def test_hopper_backend_uses_sm90_tiled_target(monkeypatch):
-    program, state, context = _program_and_state(cpml=False)
-    context = replace(context, config=replace(context.config, backend="cuda_hopper"))
-    targets = []
-
-    def fake_ffi_call(target, result_metadata, **options):
-        del result_metadata, options
-        targets.append(target)
-        return lambda *arguments, **attributes: arguments[:3]
-
-    monkeypatch.setattr(cuda_runtime.jax.ffi, "ffi_call", fake_ffi_call)
-
-    cuda_runtime.update_h(state, context, program.coefficients)
-
-    assert targets == ["beamz_cuda_hopper"]
-
-
-def test_hopper_backend_reuses_streamed_coefficient_abi(monkeypatch):
-    program, state, context = _program_and_state(cpml=False)
-    context = replace(context, config=replace(context.config, backend="cuda_hopper"))
-    captured = []
-
-    def fake_ffi_call(_target, _result_metadata, **_options):
-        def call(*arguments, **_attributes):
-            captured.append(arguments)
-            return arguments[:3]
-
-        return call
-
-    monkeypatch.setattr(cuda_runtime.jax.ffi, "ffi_call", fake_ffi_call)
-
-    cuda_runtime.update_h(state, context, program.coefficients)
-
-    assert captured[0][6] is program.coefficients.h_decay_x
-    assert captured[0][7] is program.coefficients.h_decay_y
-    assert captured[0][8] is program.coefficients.h_decay_z
-    assert captured[0][9] is program.coefficients.h_source_x
-    assert captured[0][10] is program.coefficients.h_source_y
-    assert captured[0][11] is program.coefficients.h_source_z
 
 
 def test_uniform_cuda_coefficients_are_compacted_without_rounding():
@@ -869,3 +830,44 @@ def test_pair_publication_mask_staggered_arbitrary_gathers():
         expected[z, y // 8, x // 16] = 1
     actual = cuda_runtime._pair_publication_mask(state, (jnp.asarray(indices),))
     np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("loop_kind", ["scan", "fori"])
+def test_long_scan_observation_clock_uses_run_origin(monkeypatch, loop_kind):
+    """A continuation's entry time is authoritative; optical phase must not drift."""
+    program, state, _ = _program_and_state(cpml=False)
+    steps = 14570
+    dt = np.float32(6.863669437257166e-17)
+    origin = np.float32(2.1e-13)
+    program = replace(
+        program,
+        config=replace(
+            program.config, num_steps=steps, dt=float(dt), loop_kind=loop_kind
+        ),
+    )
+    state = state._replace(t=jnp.asarray(origin), current_step=jnp.int32(91))
+
+    def identity(state, *_):
+        return state
+
+    monkeypatch.setattr(
+        "beamz.simulation.execute.update_runtime.select_update_kernel",
+        lambda _: SimpleNamespace(
+            kind="identity", update_h=identity, update_e=identity
+        ),
+    )
+    # Exercise forward_step's actual observation dispatch at every iteration.
+    # Store the phase itself, so correcting only the returned clock cannot pass.
+    omega = np.float32(2 * np.pi * 299792458.0 / 1.31e-6)
+
+    def observe(_program, state, _step, t, *_args):
+        return state._replace(ex=jnp.full_like(state.ex, jnp.sin(omega * t)))
+
+    monkeypatch.setattr(
+        "beamz.simulation.execute.monitor_runtime.update_monitors", observe
+    )
+    result = build_scan(program)(state, program.coefficients)
+    expected_t = np.float32(origin + dt * np.float32(steps))
+    np.testing.assert_allclose(result.t, expected_t, rtol=1e-7, atol=0)
+    np.testing.assert_allclose(result.ex, np.sin(omega * expected_t), rtol=0, atol=3e-4)
+    assert int(result.current_step) == 91 + steps

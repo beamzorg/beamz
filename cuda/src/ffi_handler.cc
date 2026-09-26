@@ -235,6 +235,7 @@ BeamzDftGroupLaunch InitializeDftGroups(
   monitors.phase_window = phase_window;
   monitors.time = inputs[offset + kMonitorTimeInput];
   monitors.current_step = inputs[offset + kMonitorCurrentStepInput];
+  monitors.elapsed_steps = inputs[offset + kMonitorElapsedStepsInput];
   monitors.monitor_count = monitor_count;
   return monitors;
 }
@@ -323,7 +324,7 @@ ffi::Error Dispatch(Launcher launcher, void* stream, ffi::RemainingArgs args,
   const size_t payload_count = 13 + 4 * static_cast<size_t>(nterms);
   const size_t output_count = 3 + static_cast<size_t>(nterms);
   const bool sharded = launcher == BeamzLaunchSharded;
-  if (args.size() != payload_count + 3 + (sharded ? 1 : 0) ||
+  if (args.size() != payload_count + 3 + (sharded ? 7 : 0) ||
       rets.size() != output_count) {
     return ffi::Error::InvalidArgument("invalid BeamZ CUDA phase buffer count");
   }
@@ -347,6 +348,12 @@ ffi::Error Dispatch(Launcher launcher, void* stream, ffi::RemainingArgs args,
     if (!decoded) return decoded.error();
     if (auto error = DecodeBuffer(*decoded, &launch.shard_geometry);
         error.failure()) return error;
+    for (size_t face = 0; face < 6; ++face) {
+      auto halo = args.get<ffi::AnyBuffer>(payload_count + 4 + face);
+      if (!halo) return halo.error();
+      if (auto error = DecodeBuffer(*halo, &launch.shard_halos[face]);
+          error.failure()) return error;
+    }
   }
   const int error = launcher(stream, launch);
   return error == 0 ? ffi::Error::Success()
@@ -913,16 +920,6 @@ ffi::Error ProgramHandler(
   }
 }
 
-ffi::Error HopperHandler(void* stream, ffi::RemainingArgs args,
-                         ffi::RemainingRets rets, int32_t abi_version,
-                         int32_t cuda_flags, int32_t phase, int32_t nterms,
-                         float dt, float resolution, int32_t boundary_code,
-                         int32_t metric_kind) {
-  return Dispatch(BeamzLaunchHopper, stream, args, rets, abi_version,
-                  cuda_flags, phase, nterms, dt, resolution, boundary_code,
-                  metric_kind);
-}
-
 }  // namespace
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_streamed, StreamedHandler,
@@ -939,6 +936,9 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_streamed, StreamedHandler,
                                   .Attr<int32_t>("boundary_code")
                                   .Attr<int32_t>("metric_kind"));
 
+// This handler only validates descriptors and enqueues kernels on XLA's stream.
+// Declaring capture compatibility lets XLA include distributed phases in its
+// command buffers instead of forcing a host launch boundary at each half-step.
 #ifdef BEAMZ_CUDA_CPU_CONTRACT
 XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_sharded, ShardedHostHandler,
                               ffi::Ffi::Bind()
@@ -956,7 +956,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_sharded, ShardedHandler,
                                   .Attr<float>("dt")
                                   .Attr<float>("resolution")
                                   .Attr<int32_t>("boundary_code")
-                                  .Attr<int32_t>("metric_kind"));
+                                  .Attr<int32_t>("metric_kind"),
+                              {ffi::Traits::kCmdBufferCompatible});
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_program, ProgramHandler,
                               ffi::Ffi::Bind()
@@ -981,16 +982,3 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_program, ProgramHandler,
                                   .Attr<int32_t>("logical_y")
                                   .Attr<int32_t>("logical_x")
                                   .Attr<int32_t>("temporal_steps"));
-XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_hopper, HopperHandler,
-                              ffi::Ffi::Bind()
-                                  .Ctx<ffi::PlatformStream<void*>>()
-                                  .RemainingArgs()
-                                  .RemainingRets()
-                                  .Attr<int32_t>("abi_version")
-                                  .Attr<int32_t>("cuda_flags")
-                                  .Attr<int32_t>("phase")
-                                  .Attr<int32_t>("nterms")
-                                  .Attr<float>("dt")
-                                  .Attr<float>("resolution")
-                                  .Attr<int32_t>("boundary_code")
-                                  .Attr<int32_t>("metric_kind"));

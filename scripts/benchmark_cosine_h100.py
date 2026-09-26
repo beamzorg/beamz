@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import csv
 import gc
+import hashlib
 import json
 import math
 import os
@@ -145,12 +146,21 @@ def child(args):
     import numpy as np
 
     import beamz
+    from beamz.simulation import observe
     from beamz.simulation import sharding as placement
     from beamz.simulation.backend import cuda_backend_status
     from beamz.simulation.execute import build_scan, initial_program_state
 
-    (device,) = jax.devices("gpu")
-    assert "H100" in device.device_kind, device.device_kind
+    devices = jax.devices("gpu")
+    assert len(devices) == args.devices and all(
+        "H100" in d.device_kind for d in devices
+    )
+    device = devices[0]
+    sharding = (
+        None
+        if args.devices == 1
+        else dict(axis=args.shard_axis, num_devices=args.devices, backend="gpu")
+    )
     stage("geometry")
     start = time.perf_counter()
     sim = crossing(args.resolution)
@@ -158,11 +168,12 @@ def child(args):
     steps = sim.num_steps if args.mode == "full" else args.steps
     stage("rasterization")
     start = time.perf_counter()
-    sim.to_request(num_steps=steps, backend=args.backend)
+    sim.to_request(num_steps=steps, backend=args.backend, sharding=sharding)
     raster_s = time.perf_counter() - start
     stage("mode_and_program_setup")
     start = time.perf_counter()
-    program = sim.compile(num_steps=steps, backend=args.backend)
+    program = sim.compile(num_steps=steps, backend=args.backend, sharding=sharding)
+    assert program.sharding.layout.num_devices == args.devices
     setup_s = time.perf_counter() - start
     shape = tuple(int(n) for n in program.grid.permittivity.shape)
     stage("state_allocation")
@@ -172,6 +183,12 @@ def child(args):
         state = initial_program_state(
             program, t=float(sim.time[0]), current_step=0, monitor_steps=steps
         )
+        if args.devices > 1:
+            state = placement.prepare_state(
+                program,
+                state,
+                replicated_fields=(*observe.MONITOR_FIELDS, "t", "current_step"),
+            )
         return jax.block_until_ready(state)
 
     state = new_state()
@@ -219,7 +236,9 @@ def child(args):
         "median_runtime_s": statistics.median(samples),
         "gcups": math.prod(shape) * steps / statistics.median(samples) / 1e9,
         "device": device.device_kind,
-        "device_count": 1,
+        "device_count": len(devices),
+        "shard_axis": args.shard_axis if args.devices > 1 else None,
+        "nccl_env": {k: v for k, v in os.environ.items() if k.startswith("NCCL_")},
         "python_version": platform.python_version(),
         "jax_version": jax.__version__,
         "jaxlib_version": jaxlib.__version__,
@@ -240,10 +259,15 @@ def child(args):
         "finite_fields": bool(np.isfinite(np.asarray(result.ez)).all()),
     }
     if args.backend.startswith("cuda"):
+        import beamz._cuda as extension
+
         status = cuda_backend_status(register=False)
         metrics.update(
             cuda_component_version=status.extension_version,
             cuda_abi_version=status.abi_version,
+            extension_sha256=hashlib.sha256(
+                Path(extension.__file__).read_bytes()
+            ).hexdigest(),
         )
     if args.mode == "full":
         stage("result_extraction")
@@ -300,6 +324,8 @@ def child(args):
 def trial(args, resolution, mode="throughput", backend=None):
     backend = backend or args.backend
     stem = f"{mode}-{backend}-{resolution:g}nm"
+    if args.devices > 1:
+        stem += f"-{args.devices}gpu-{args.shard_axis}"
     target = args.output_dir / (stem + ".json")
     if target.exists():
         raise FileExistsError(
@@ -329,6 +355,10 @@ def trial(args, resolution, mode="throughput", backend=None):
         mode,
         "--backend",
         backend,
+        "--devices",
+        str(args.devices),
+        "--shard-axis",
+        args.shard_axis,
         "--steps",
         str(args.steps),
         "--samples",
@@ -496,10 +526,12 @@ def main():
     parser.add_argument("--mode", choices=["throughput", "full"], default="throughput")
     parser.add_argument(
         "--backend",
-        choices=["cuda_streamed", "jax", "cuda_hopper"],
+        choices=["cuda_streamed", "jax"],
         default="cuda_streamed",
     )
     parser.add_argument("--steps", type=int, default=256)
+    parser.add_argument("--devices", type=int, choices=(1, 2, 4, 8), default=1)
+    parser.add_argument("--shard-axis", choices=("x", "y", "z"), default="x")
     parser.add_argument("--samples", type=int, default=5)
     parser.add_argument("--timeout", type=float, default=1200)
     parser.add_argument("--output", type=Path, default=Path("trial.json"))

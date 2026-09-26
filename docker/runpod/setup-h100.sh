@@ -12,6 +12,10 @@ fi
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 venv_dir="${BEAMZ_RUNPOD_VENV:-/workspace/.venvs/beamz-h100}"
 build_jobs="${BEAMZ_BUILD_JOBS:-2}"
+# /workspace may be network-backed and fail concurrent compiler writes.
+build_scratch="$(mktemp -d "${TMPDIR:-/tmp}/beamz-build.XXXXXX")"
+trap 'rm -rf "$build_scratch"' EXIT
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$build_scratch/rust}"
 command -v nvcc >/dev/null || {
     echo "nvcc is missing. Choose a CUDA 12.8 DEVEL template, not a runtime image." >&2
     exit 1
@@ -62,10 +66,12 @@ mkdir -p "$repo_dir/.cache/runpod"
     --constraint "$repo_dir/.cache/runpod/constraints.txt" \
     'jax[cuda12]==0.9.0' jupyterlab ipykernel \
     'scikit-build-core>=0.10' 'nanobind>=2.4' 'cmake>=3.24' ninja
+# Use fresh objects: transferred source snapshots can predate cached binaries.
 wheel_dir="$(mktemp -d "$repo_dir/.cache/runpod/wheels.XXXXXX")"
 export PATH="${venv_dir}/bin:${PATH}"
 CMAKE_BUILD_PARALLEL_LEVEL="$build_jobs" "$py" -m pip wheel "$repo_dir/cuda" \
     --no-deps --no-build-isolation --wheel-dir "$wheel_dir" \
+    --config-settings=build-dir="$build_scratch/cuda" \
     --config-settings=cmake.define.BEAMZ_CUDA_ARCHITECTURES=90 \
     --config-settings=cmake.define.BEAMZ_CUDA_FAST_MATH=OFF \
     --config-settings=cmake.build-type=Release

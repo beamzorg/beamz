@@ -1,0 +1,73 @@
+{
+  "reference": "jax-1.json",
+  "rtol": 3e-05,
+  "atol": "max(1e-12, 2e-6 * max(abs(reference array)))",
+  "comparisons": [
+    {
+      "candidate": "jax-2.json",
+      "backend": "jax",
+      "devices": 2,
+      "passed": true,
+      "arrays": {
+        "dft_vec_re": {
+          "passed": true,
+          "relative_l2": 5.39481548381232e-07,
+          "max_abs": 544.0
+        },
+        "dft_vec_im": {
+          "passed": true,
+          "relative_l2": 5.46544118641004e-07,
+          "max_abs": 512.0
+        },
+        "dft_weight_sum": {
+          "passed": true,
+          "relative_l2": 0.0,
+          "max_abs": 0.0
+        },
+        "flux_0": {
+          "passed": true,
+          "relative_l2": 5.873003636423921e-07,
+          "max_abs": 1.5692097934394411e-06
+        },
+        "flux_1": {
+          "passed": true,
+          "relative_l2": 5.925021005200986e-07,
+          "max_abs": 1.19989976554713e-06
+        }
+      }
+    },
+    {
+      "candidate": "cuda_streamed-2.json",
+      "backend": "cuda_streamed",
+      "devices": 2,
+      "passed": true,
+      "arrays": {
+        "dft_vec_re": {
+          "passed": true,
+          "relative_l2": 5.014643287301605e-07,
+          "max_abs": 640.0
+        },
+        "dft_vec_im": {
+          "passed": true,
+          "relative_l2": 5.08492562945659e-07,
+          "max_abs": 448.0
+        },
+        "dft_weight_sum": {
+          "passed": true,
+          "relative_l2": 0.0,
+          "max_abs": 0.0
+        },
+        "flux_0": {
+          "passed": true,
+          "relative_l2": 3.933121001394538e-07,
+          "max_abs": 9.938657435926146e-07
+        },
+        "flux_1": {
+          "passed": true,
+          "relative_l2": 2.0535722504109695e-07,
+          "max_abs": 5.304324486310463e-07
+        }
+      }
+    }
+  ]
+}

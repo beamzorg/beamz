@@ -357,18 +357,20 @@ def monitor_dft_sample_scale(
     return jnp.where(jnp.asarray(normalization_code) == 1, physical, native)
 
 
-def _sample_components(fields, indices, weights):
+def _sample_components(fields, indices, weights, *, active_mask=None):
     """Apply one canonical weighted-gather plan to Ex, Ey, Ez, Hx, Hy, and Hz."""
     # Retain the spatial axes so SPMD can gather sparse samples locally. Flattening
     # a sharded field can instead all-gather the complete volume on every device.
     return jnp.stack(
         tuple(
-            jnp.sum(
+            jnp.zeros(flat_idx.shape[:-1], dtype=field.dtype)
+            if active_mask is not None and active_mask[component] == 0
+            else jnp.sum(
                 field[jnp.unravel_index(flat_idx, field.shape)] * component_weights,
                 axis=-1,
             )
-            for field, flat_idx, component_weights in zip(
-                fields, indices, weights, strict=True
+            for component, (field, flat_idx, component_weights) in enumerate(
+                zip(fields, indices, weights, strict=True)
             )
         ),
         axis=0,
@@ -531,15 +533,27 @@ def _reduce_power(samples: jnp.ndarray, spec: CompiledMonitorSpec):
     )
 
 
-def _accumulate_dft(mon, carry, field_arrays, t_phys, dt_scalar):
+def _dft_phase_angle(frequencies, time, dtype):
+    """Round angular frequency and observation time before their product.
+
+    XLA otherwise reassociates constant frequencies with the timestep arithmetic.
+    That changes optical phases by many float32 ULPs over long runs relative to
+    the native monitor kernel, even when the fields and clocks agree.
+    """
+    omega = jax.lax.optimization_barrier(
+        jnp.asarray(2.0 * np.pi, dtype=dtype) * jnp.asarray(frequencies, dtype=dtype)
+    )
+    time = jax.lax.optimization_barrier(jnp.asarray(time, dtype=dtype))
+    return omega * time
+
+
+def _accumulate_dft(
+    mon, carry, field_arrays, t_phys, dt_scalar, *, sampled_vectors=None
+):
     """Gather and accumulate one monitor's compiled field-vector DFT."""
     d_re, d_im, d_w = carry
     dtype = d_re.dtype
-    theta = (
-        jnp.asarray(2.0 * np.pi, dtype=dtype)
-        * jnp.asarray(mon.freq_hz, dtype=dtype)
-        * jnp.asarray(t_phys, dtype=dtype)
-    )
+    theta = _dft_phase_angle(mon.freq_hz, t_phys, dtype)
     phase_re, phase_im = jnp.cos(theta), jnp.sin(theta)
     window = jnp.asarray(
         monitor_dft_window_weight(
@@ -562,7 +576,14 @@ def _accumulate_dft(mon, carry, field_arrays, t_phys, dt_scalar):
     )
 
     # Compilation has already encoded dimensional colocation in these weighted gathers.
-    vectors = _sample_components(field_arrays, mon.dft_flat_idx, mon.dft_weights)
+    vectors = sampled_vectors
+    if vectors is None:
+        vectors = _sample_components(
+            field_arrays,
+            mon.dft_flat_idx,
+            mon.dft_weights,
+            active_mask=np.asarray(mon.dft_component_mask),
+        )
     component_mask = mon.dft_component_mask.astype(dtype)[:, None, None]
     delta_re = (
         scale
@@ -769,11 +790,18 @@ def update_monitors(
                 mon.dft_record_interval,
             )
 
+            def accumulate(carry, mon=mon):
+                if carry[0].ndim == 2:
+                    from .distributed_monitors import accumulate_dft
+
+                    return accumulate_dft(
+                        program, mon, carry, field_arrays, t_phys, dt_scalar
+                    )
+                return _accumulate_dft(mon, carry, field_arrays, t_phys, dt_scalar)
+
             dft_vec_re, dft_vec_im, dft_weight_sum = jax.lax.cond(
                 do_dft,
-                lambda carry, mon=mon: _accumulate_dft(
-                    mon, carry, field_arrays, t_phys, dt_scalar
-                ),
+                accumulate,
                 lambda carry: carry,
                 (dft_vec_re, dft_vec_im, dft_weight_sum),
             )

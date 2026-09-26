@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/quentinwach/Code/beamz-h100-benchmark
+configfile: pytest.ini
+plugins: cov-7.1.0
+collected 30 items
+
+tests/unit/test_initial_state_placement.py .                             [  3%]
+tests/unit/test_cuda_runtime_contract.py .............................   [100%]
+
+============================== 30 passed in 5.71s ==============================

@@ -185,6 +185,7 @@ void AppendMonitors(std::string* key, const BeamzDftGroupLaunch& value) {
   AppendBuffer(key, value.pair_samples);
   AppendBuffer(key, value.time);
   AppendBuffer(key, value.current_step);
+  AppendBuffer(key, value.elapsed_steps);
   Append(key, value.monitor_count);
 }
 

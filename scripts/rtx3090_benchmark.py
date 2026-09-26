@@ -158,7 +158,7 @@ class BackendMeasurement:
             or not self.beamz_version.strip()
         ):
             raise ValueError("measurement labels must be non-empty")
-        if self.backend not in {"jax", "cuda_streamed", "cuda_hopper"}:
+        if self.backend not in {"jax", "cuda_streamed"}:
             raise ValueError("unknown benchmark backend")
         if self.field_precision != "float32":
             raise ValueError("RTX 3090 FDTD records require float32 fields")

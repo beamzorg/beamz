@@ -7,12 +7,11 @@
 
 namespace beamz::cuda::abi {
 
-inline constexpr int32_t kAbiVersion = 19;
-inline constexpr char kComponentVersion[] = "0.19.0";
+inline constexpr int32_t kAbiVersion = 21;
+inline constexpr char kComponentVersion[] = "0.21.0";
 inline constexpr char kStreamedTarget[] = "beamz_cuda_streamed";
 inline constexpr char kShardedTarget[] = "beamz_cuda_sharded";
 inline constexpr char kProgramTarget[] = "beamz_cuda_program";
-inline constexpr char kHopperTarget[] = "beamz_cuda_hopper";
 
 inline constexpr int32_t kBeamzGraphCache = 1 << 7;
 inline constexpr int32_t kBeamzBf16Psi = 1 << 12;
@@ -49,7 +48,7 @@ inline constexpr size_t kSourceGroupBufferCount = 3;
 inline constexpr size_t kSourceGroupCoefficientsInput = 0;
 inline constexpr size_t kSourceGroupWaveformsInput = 1;
 inline constexpr size_t kSourceGroupStartsInput = 2;
-inline constexpr size_t kMonitorInputCount = 15;
+inline constexpr size_t kMonitorInputCount = 16;
 inline constexpr size_t kMonitorIndicesInput = 0;
 inline constexpr size_t kMonitorWeightsInput = 1;
 inline constexpr size_t kMonitorFrequenciesInput = 2;
@@ -81,6 +80,7 @@ inline constexpr size_t kTemporalHPsiWorkspaceOffset = 24;
 inline constexpr size_t kTemporalEPsiWorkspaceOffset = 30;
 inline constexpr size_t kTemporalFieldWorkspaceInput = 74;
 inline constexpr size_t kTemporalPsiWorkspaceInput = 80;
+inline constexpr size_t kMonitorElapsedStepsInput = 15;
 
 }  // namespace beamz::cuda::abi
 

@@ -1,0 +1,9 @@
+Processing ./cuda
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: beamz-cuda-component
+  Building wheel for beamz-cuda-component (pyproject.toml): started
+  Building wheel for beamz-cuda-component (pyproject.toml): finished with status 'done'
+  Created wheel for beamz-cuda-component: filename=beamz_cuda_component-0.21.0-cp312-cp312-linux_x86_64.whl size=24737731 sha256=bdbeec3c85225cedded69b00c6cafa165863e7de99766a3a20e754675814ca75
+  Stored in directory: /tmp/pip-ephem-wheel-cache-rh6hw407/wheels/03/66/7a/1032238dff11ea32c9ad43c2495a8a65093fd200c2c0b267c2
+Successfully built beamz-cuda-component

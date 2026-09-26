@@ -56,6 +56,9 @@ struct BeamzLaunch {
   // Sharded phases only: [axis, origin, return_curl], three logical target
   // shapes, then three logical source shapes. Resident on the execution device.
   BeamzBuffer shard_geometry;
+  // Separate lower/upper one-cell faces, interleaved by source component.
+  // Owned source fields remain contiguous; no field-sized halo concatenation.
+  BeamzBuffer shard_halos[6];
 };
 
 struct BeamzSourceGroupLaunch {
@@ -88,8 +91,10 @@ struct BeamzDftGroupLaunch {
   BeamzBuffer phase_window;
   // Paired monitor samples: [monitor, component, point, substep].
   BeamzBuffer pair_samples{};
+  // Immutable invocation origin and integer offset of this native chunk.
   BeamzBuffer time;
   BeamzBuffer current_step;
+  BeamzBuffer elapsed_steps;
   int32_t monitor_count;
 };
 
@@ -122,6 +127,5 @@ struct BeamzProgramLaunch {
 int BeamzLaunchStreamed(void* stream, const BeamzLaunch& launch);
 int BeamzLaunchSharded(void* stream, const BeamzLaunch& launch);
 int BeamzLaunchProgram(void* stream, const BeamzProgramLaunch& program);
-int BeamzLaunchHopper(void* stream, const BeamzLaunch& launch);
 
 #endif  // BEAMZ_CUDA_LAUNCH_H_

@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/quentinwach/Code/beamz-h100-benchmark
+configfile: pytest.ini
+plugins: cov-7.1.0
+collected 12 items
+
+tests/unit/test_cuda_sharded_features.py ........                        [ 66%]
+tests/unit/test_jax_local_sharding.py ....                               [100%]
+
+======================== 12 passed in 117.16s (0:01:57) ========================

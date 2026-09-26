@@ -1,0 +1,49 @@
+{
+  "targets_gcups_8gpu": {
+    "cuda_streamed": 150.0,
+    "jax": 75.0
+  },
+  "commit": "3dcb7bfb525e2e8423c44286085963e2e662d74c",
+  "runner_sha256": "07a4e5b0dc08eb90da477771faf2beb81b5d77566b11c44a7166fa7466b25d65",
+  "physics": {
+    "cpml_cells": 12,
+    "source": "mode",
+    "monitors": 2,
+    "monitor_type": "mode",
+    "resolution_m": 8e-08,
+    "material": "binary_waveguide"
+  },
+  "args": {
+    "output": "/workspace/evidence/scaling-final",
+    "counts": [
+      8,
+      1,
+      2,
+      4
+    ],
+    "local_sizes": [
+      512,
+      640
+    ],
+    "cubes": [
+      512
+    ],
+    "frequencies": [
+      101
+    ],
+    "backends": [
+      "cuda_streamed",
+      "jax"
+    ],
+    "timesteps": 256,
+    "samples": 5,
+    "timeout": 900,
+    "max_wall_seconds": 3600.0,
+    "dry_run": false,
+    "stepping_only": true,
+    "trace_largest": true,
+    "profile_public": true,
+    "host_setup": true
+  },
+  "note": "Warm throughput only; 256 steps may precede pulse arrival at distant monitors. Validate spectra separately with propagation-length-dependent duration."
+}

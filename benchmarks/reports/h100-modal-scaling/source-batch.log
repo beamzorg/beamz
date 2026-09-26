@@ -1,0 +1,10 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/quentinwach/Code/beamz-h100-benchmark
+configfile: pytest.ini
+plugins: cov-7.1.0
+collected 8 items / 7 deselected / 1 selected
+
+tests/unit/test_cuda_sharded_features.py .                               [100%]
+
+======================= 1 passed, 7 deselected in 17.13s =======================

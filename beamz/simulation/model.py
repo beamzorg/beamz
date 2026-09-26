@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, NamedTuple, TypeAlias
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -126,6 +127,15 @@ class CompiledGrid:
     mu_hz: jnp.ndarray
 
 
+def _copy_initial_field(value):
+    # Commit placement before copying: jnp.array(..., device=source.sharding)
+    # can execute the copy on the default accelerator before moving it back.
+    placement = getattr(value, "sharding", None)
+    if placement is not None:
+        value = jax.device_put(value, placement)
+    return jnp.array(value)
+
+
 class SimulationState(NamedTuple):
     """Store every evolving value required to continue a simulation.
 
@@ -229,15 +239,16 @@ class SimulationState(NamedTuple):
         Application code should normally use ``Simulation.initial_state()`` so the
         state is guaranteed to match the simulation's compiled lattice.
         """
+
         empty2 = jnp.zeros((0, 0), dtype=jnp.float32)
         return cls(
             # Copies keep the compiled lattice reusable when JAX donates runtime buffers.
-            ex=jnp.array(fields.Ex),
-            ey=jnp.array(fields.Ey),
-            ez=jnp.array(fields.Ez),
-            hx=jnp.array(fields.Hx),
-            hy=jnp.array(fields.Hy),
-            hz=jnp.array(fields.Hz),
+            ex=_copy_initial_field(fields.Ex),
+            ey=_copy_initial_field(fields.Ey),
+            ez=_copy_initial_field(fields.Ez),
+            hx=_copy_initial_field(fields.Hx),
+            hy=_copy_initial_field(fields.Hy),
+            hz=_copy_initial_field(fields.Hz),
             cpml_psi_h_terms=(),
             cpml_psi_e_terms=(),
             powers=empty2,

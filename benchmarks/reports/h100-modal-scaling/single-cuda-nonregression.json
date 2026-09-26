@@ -1,0 +1,40 @@
+{
+  "reference": "baseline-cuda_streamed-1.json",
+  "rtol": 3e-05,
+  "atol": "max(1e-12, 2e-6 * max(abs(reference array)))",
+  "comparisons": [
+    {
+      "candidate": "cuda_streamed-1.json",
+      "backend": "cuda_streamed",
+      "devices": 1,
+      "passed": true,
+      "arrays": {
+        "dft_vec_re": {
+          "passed": true,
+          "relative_l2": 0.0,
+          "max_abs": 0.0
+        },
+        "dft_vec_im": {
+          "passed": true,
+          "relative_l2": 0.0,
+          "max_abs": 0.0
+        },
+        "dft_weight_sum": {
+          "passed": true,
+          "relative_l2": 0.0,
+          "max_abs": 0.0
+        },
+        "flux_0": {
+          "passed": true,
+          "relative_l2": 0.0,
+          "max_abs": 0.0
+        },
+        "flux_1": {
+          "passed": true,
+          "relative_l2": 0.0,
+          "max_abs": 0.0
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,161 @@
+{
+  "protocol": "five_synchronized_warm_stepping_samples",
+  "backend": "cuda_streamed",
+  "devices": 8,
+  "shape": [
+    128,
+    1024,
+    8192
+  ],
+  "steps": 256,
+  "frequencies": 101,
+  "cpml_cells": 12,
+  "setup_s": 174.97863925341517,
+  "compile_s": 27.32351861614734,
+  "warm_runtime_samples_s": [
+    2.1570980744436383,
+    2.1563479667529464,
+    2.1572565296664834,
+    2.1577536910772324,
+    2.1574864955618978
+  ],
+  "kernel_gcups": 127.42012976384255,
+  "final_state_finite": true,
+  "public_api_measured": false,
+  "diagnostic_profiled_public_call_s": null,
+  "peak_memory_bytes": 133702270208,
+  "device_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 781,
+        "bytes_in_use": 6988141824,
+        "peak_bytes_in_use": 40465266432,
+        "largest_alloc_size": 4336980224,
+        "bytes_limit": 68013995816,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 68013995776,
+        "peak_pool_bytes": 68013995776
+      }
+    },
+    {
+      "id": 1,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 68013995816,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 2,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 68013995816,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 3,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 68013995816,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 4,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 68013995816,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 5,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 68013995816,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 6,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 68013995816,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    },
+    {
+      "id": 7,
+      "stats": {
+        "num_allocs": 339,
+        "bytes_in_use": 7075375104,
+        "peak_bytes_in_use": 13319571968,
+        "largest_alloc_size": 2438439936,
+        "bytes_limit": 68013995816,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      }
+    }
+  ],
+  "worker_measurement_wall_s": 220.09499355964363,
+  "worker_sha256": "2688dc8ad4110731851ed9442dd68bffce9c1e86771799a2bfcee8cc0406d949",
+  "commit": "3dcb7bfb525e2e8423c44286085963e2e662d74c",
+  "environment": {
+    "XLA_PYTHON_CLIENT_MEM_FRACTION": ".80",
+    "NCCL_NVLS_ENABLE": "0",
+    "BEAMZ_CUDA_CPML_PSI_PRECISION": "fp32",
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+    "NUMPY_MADVISE_HUGEPAGE": "0"
+  },
+  "native_sha256": "ccf71bf96bab825cb8c75b8445f971630cd6f138792cc4d913167a9a8da37f04",
+  "cuda_flags": 128
+}
