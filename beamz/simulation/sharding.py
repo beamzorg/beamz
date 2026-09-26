@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Mapping
 from dataclasses import replace
 from functools import lru_cache
@@ -231,7 +233,7 @@ def _array_ndim(arr) -> int:
 def _pad_high_to_shape(arr, shape: tuple[int, ...], *, pad_value=0.0):
     # Preserve NumPy setup arrays on the host and use the same crop/pad recipe for JAX.
     target_shape = tuple(int(v) for v in shape)
-    xp = np if isinstance(arr, np.ndarray) else jnp
+    xp = np if _is_host_array(arr) else jnp
     arr = xp.asarray(arr)
     if tuple(arr.shape) == target_shape:
         return arr
@@ -448,6 +450,35 @@ def place_tree(program, tree, *, shard_arrays: bool = True):
             tree,
         )
     mesh = program.sharding.mesh
+    trace_path = os.getenv("BEAMZ_TRACE_PLACEMENT")
+    if trace_path:
+
+        def traced_place(path, value):
+            target = (
+                _array_sharding(program, value, mesh)
+                if shard_arrays
+                else _replicated_sharding(mesh)
+            )
+            devices = sorted(target.addressable_devices, key=lambda d: d.id)
+            before = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
+            placed = _place_array(value, target)
+            placed.block_until_ready()
+            record = dict(
+                path=jax.tree_util.keystr(path),
+                shape=list(value.shape) if hasattr(value, "shape") else [],
+                dtype=str(getattr(value, "dtype", type(value).__name__)),
+                source_devices=[str(d) for d in value.devices()]
+                if isinstance(value, jax.Array)
+                else ["host"],
+                target=str(target),
+                before=before,
+                after=[dict(id=d.id, stats=d.memory_stats()) for d in devices],
+            )
+            with open(trace_path, "a") as stream:
+                stream.write(json.dumps(record) + "\n")
+            return placed
+
+        return jax.tree_util.tree_map_with_path(traced_place, tree)
     return jax.tree_util.tree_map(
         lambda value: _place_array(
             value,
@@ -466,6 +497,15 @@ def _device_reshard(sharding):
     return jax.jit(lambda value: value, out_shardings=sharding)
 
 
+def _is_host_array(value):
+    return isinstance(value, np.ndarray) or (
+        isinstance(value, jax.Array)
+        and value.is_fully_addressable
+        and len(value.devices()) == 1
+        and all(device.platform == "cpu" for device in value.devices())
+    )
+
+
 def _place_array(value, target):
     if (
         isinstance(value, jax.Array)
@@ -475,6 +515,14 @@ def _place_array(value, target):
         if value.sharding.is_equivalent_to(target, value.ndim):
             return value
         return _device_reshard(target)(value)
+    # A CPU JAX array can be uncommitted. Eager device_put's multi-slice may
+    # execute on the default accelerator after the CPU setup context has ended.
+    # Slice host storage explicitly, so no global array is staged on GPU 0.
+    if _is_host_array(value):
+        host = np.asarray(value)
+        return jax.make_array_from_callback(
+            host.shape, target, lambda index: host[index]
+        )
     return jax.device_put(value, target)
 
 

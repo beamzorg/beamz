@@ -36,6 +36,7 @@ def main():
     p.add_argument("--timesteps", type=int, default=256)
     p.add_argument("--samples", type=int, default=5)
     p.add_argument("--host-setup", action="store_true")
+    p.add_argument("--donate-state", action="store_true")
     p.add_argument("--worker", action="store_true")
     p.add_argument("--workload", choices=["modal_cpml12"], default="modal_cpml12")
     p.add_argument("--shard-axis", choices=["x"], default="x")
@@ -43,6 +44,8 @@ def main():
     p.add_argument("--profile-public", type=Path)
     p.add_argument("--output", type=Path, required=True)
     a = p.parse_args()
+    if a.donate_state and (a.trace or a.profile_public):
+        p.error("donating capacity runs do not support extra trace/public replays")
     devices = jax.devices()
     if (
         len(devices) != a.devices
@@ -87,18 +90,39 @@ def main():
     setup_s = time.perf_counter() - started
     print(json.dumps(dict(stage="prepared", setup_s=setup_s)), flush=True)
     tick = time.perf_counter()
-    exe = build_scan(program, donate_state=False).lower(state, coeffs).compile()
+    exe = (
+        build_scan(program, donate_state=a.donate_state).lower(state, coeffs).compile()
+    )
     compile_s = time.perf_counter() - tick
+    analysis = exe.memory_analysis()
+    compiled_memory = {
+        key: getattr(analysis, key, None)
+        for key in (
+            "argument_size_in_bytes",
+            "output_size_in_bytes",
+            "alias_size_in_bytes",
+            "temp_size_in_bytes",
+        )
+    }
     print(json.dumps(dict(stage="compiled", compile_s=compile_s)), flush=True)
     warm = exe(state, coeffs)
     jax.block_until_ready(warm)
+    if a.donate_state:
+        state = warm
     del warm
+    warm_memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
     samples = []
+    continuation_memory = []
     for sample in range(a.samples):
         tick = time.perf_counter()
         result = exe(state, coeffs)
         jax.block_until_ready(result)
         samples.append(time.perf_counter() - tick)
+        if a.donate_state:
+            state = result
+            continuation_memory.append(
+                [dict(id=d.id, stats=d.memory_stats()) for d in devices]
+            )
         if sample < a.samples - 1:
             del result
     finite = all(
@@ -106,6 +130,7 @@ def main():
     )
     timed_memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
     weights = np.asarray(jax.device_get(result.dft_weight_sum))
+    final_current_step = int(jax.device_get(result.current_step))
     if (
         len(program.monitors) != 2
         or weights.size != 2 * a.frequencies
@@ -139,7 +164,16 @@ def main():
         del public
     memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
     data = dict(
-        protocol="five_synchronized_warm_stepping_samples",
+        protocol=(
+            "five_donating_continuation_samples"
+            if a.donate_state
+            else "five_synchronized_warm_stepping_samples"
+        ),
+        donate_state=a.donate_state,
+        compiled_memory=compiled_memory,
+        final_current_step=final_current_step,
+        warm_memory=warm_memory,
+        continuation_memory=continuation_memory,
         backend=a.backend,
         devices=a.devices,
         shape=a.shape,

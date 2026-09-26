@@ -774,6 +774,15 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         polarization_2d=request.domain.polarization_2d,
     )
 
+    # Native CUDA consumes the precomputed decay/source coefficients, not the
+    # original constitutive grids used by JAX. Do not transfer a second material
+    # representation with every runtime invocation. The grid still owns setup
+    # materials, and coupled CUDA updates retain their explicit inverse tensors.
+    if request.run.backend == "cuda_streamed":
+        h_sigma_m_x = h_sigma_m_y = h_sigma_m_z = empty3
+        e_conductivity_x = e_conductivity_y = e_conductivity_z = empty3
+        e_permittivity_x = e_permittivity_y = e_permittivity_z = empty3
+
     # Assemble coefficients explicitly so renaming a planning local cannot silently
     # alter the compiled program through reflection.
     update_coefficients = UpdateCoefficients(
