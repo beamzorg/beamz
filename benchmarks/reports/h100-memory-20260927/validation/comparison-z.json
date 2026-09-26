@@ -1,0 +1,40 @@
+{
+  "reference": "jax.json",
+  "rtol": 3e-05,
+  "atol": "max(1e-12, 2e-6 * max(abs(reference array)))",
+  "comparisons": [
+    {
+      "candidate": "cuda-z.json",
+      "backend": "cuda_streamed",
+      "devices": 8,
+      "passed": true,
+      "arrays": {
+        "dft_vec_re": {
+          "passed": true,
+          "relative_l2": 5.960544979529056e-07,
+          "max_abs": 512.0
+        },
+        "dft_vec_im": {
+          "passed": true,
+          "relative_l2": 5.982339048629097e-07,
+          "max_abs": 480.0
+        },
+        "dft_weight_sum": {
+          "passed": true,
+          "relative_l2": 0.0,
+          "max_abs": 0.0
+        },
+        "flux_0": {
+          "passed": true,
+          "relative_l2": 2.742574908993693e-07,
+          "max_abs": 6.786246518064587e-07
+        },
+        "flux_1": {
+          "passed": true,
+          "relative_l2": 2.4331770871200757e-07,
+          "max_abs": 6.009949000684855e-07
+        }
+      }
+    }
+  ]
+}
