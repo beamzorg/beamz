@@ -52,12 +52,17 @@ __device__ __forceinline__ float BulkDifference(const BeamzLaunch& l,
 }
 
 template<int Phase, int Component>
-__device__ __forceinline__ void BulkComponent(const BeamzLaunch& l,
-                                             const int p[3], int shard_axis) {
+__device__ __forceinline__ float BulkCurl(const BeamzLaunch& l,
+                                         const int p[3], int shard_axis) {
   constexpr auto first = beamz::cuda::yee::FirstCurlTerm(Component);
   constexpr auto second = beamz::cuda::yee::SecondCurlTerm(Component);
-  const float curl = BulkDifference<Phase, first.source_component, first.derivative_axis>(l, p, shard_axis)
-                   - BulkDifference<Phase, second.source_component, second.derivative_axis>(l, p, shard_axis);
+  return BulkDifference<Phase, first.source_component, first.derivative_axis>(l, p, shard_axis)
+       - BulkDifference<Phase, second.source_component, second.derivative_axis>(l, p, shard_axis);
+}
+
+template<int Phase, int Component>
+__device__ __forceinline__ void BulkComponent(const BeamzLaunch& l,
+                                             const int p[3], float curl) {
   const int offset = local::Offset(l.outputs[Component], p);
   const float decay = local::Read(l.inputs[6 + Component], local::Offset(l.inputs[6 + Component], p));
   const float scale = local::Read(l.inputs[9 + Component], local::Offset(l.inputs[9 + Component], p));
@@ -73,9 +78,15 @@ __global__ void UpdateShardedTile(BeamzLaunch launch) {
                     int(blockIdx.x * blockDim.x + threadIdx.x)};
   if (BulkTile(launch)) {
     const int axis = static_cast<const int32_t*>(launch.shard_geometry.data)[0];
-    BulkComponent<Phase, 0>(launch, p, axis);
-    BulkComponent<Phase, 1>(launch, p, axis);
-    BulkComponent<Phase, 2>(launch, p, axis);
+    // Load all three curls before any field store. This lets the compiler
+    // reuse source centers across components without possible output aliasing
+    // invalidating those loads. Arithmetic order within each curl is unchanged.
+    const float curl_x = BulkCurl<Phase, 0>(launch, p, axis);
+    const float curl_y = BulkCurl<Phase, 1>(launch, p, axis);
+    const float curl_z = BulkCurl<Phase, 2>(launch, p, axis);
+    BulkComponent<Phase, 0>(launch, p, curl_x);
+    BulkComponent<Phase, 1>(launch, p, curl_y);
+    BulkComponent<Phase, 2>(launch, p, curl_z);
   } else {
     local::UpdateUniformCell<Phase, 0>(launch, p[0], p[1], p[2]);
     local::UpdateUniformCell<Phase, 1>(launch, p[0], p[1], p[2]);
