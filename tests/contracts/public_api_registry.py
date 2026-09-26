@@ -39,6 +39,7 @@ CONSTANT_EXPORTS = (
 MODULE_EXPORTS = ("design", "optimization")
 
 FUNCTION_EXPORTS = (
+    "fit_nk",
     "ramped_cosine",
     "display_status",
     "create_plain_progress",
@@ -60,6 +61,20 @@ RUNTIME_EXPORTS = (
 CONFIGURATION_CASES = (
     PublicConfigCase("AutoTermination", bz.AutoTermination),
     PublicConfigCase("Material", bz.Material),
+    PublicConfigCase(
+        "PoleResidue",
+        lambda: bz.PoleResidue.drude(
+            1.0, plasma_frequency=1e16, damping=1e14, frequency_range=(4e14, 8e14)
+        ),
+    ),
+    PublicConfigCase(
+        "PlaneWaveSource",
+        lambda: bz.PlaneWaveSource(
+            center=(0.0, 0.0, 0.0),
+            size=(1.0, 1.0, 0.0),
+            source_time=bz.GaussianPulse(5e14, 1e14),
+        ),
+    ),
     PublicConfigCase("Design", lambda: bz.Design(width=2.0, height=2.0)),
     PublicConfigCase("Box", bz.Box),
     PublicConfigCase("Rectangle", bz.Rectangle),
@@ -175,6 +190,7 @@ CONFIGURATION_CASES = (
     PublicConfigCase("PML", bz.PML),
     PublicConfigCase("PEC", bz.PEC),
     PublicConfigCase("Absorber", bz.Absorber),
+    PublicConfigCase("Periodic", bz.Periodic),
 )
 
 

@@ -1,0 +1,16 @@
+{
+  "python": "3.11.15",
+  "packages": {
+    "jax": "0.10.2",
+    "jaxlib": "0.10.2",
+    "jax-cuda12-plugin": "0.10.2",
+    "numpy": "2.4.6",
+    "scipy": "1.17.1",
+    "matplotlib": "3.11.2",
+    "pytest": "9.1.1"
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 610.43.03, 24576 MiB",
+  "base_commit": "2f41186f625bf3ecdff6f6259ee20b9b72df0f5c",
+  "execution_backend": "jax",
+  "precision": "float32 fields, complex64 polarization"
+}

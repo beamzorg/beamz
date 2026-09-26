@@ -26,9 +26,10 @@
 - **Multi-GPU** runs, handling **large-scale simulations** with _billions of cells_.
 - CPU-capable for **fast prototyping**, even on your laptop.
 - Dedicated CUDA-backend for acceleration beyond default Jax.
-- **CPML**, absorbing layers and PEC boundaries.
+- **CPML**, absorbing layers, PEC and zero-phase periodic boundaries (JAX).
 - **Unidirectional mode sources** (single freq. and broadband, Huygens fields + TFSF, TE/TM).
 - **3D Gaussian sources**, e.g. for grating coupler simulations.
+- **Broadband dispersive materials** (pole-residue, Drude/Lorentz) and uniform plane-wave sources on single-device JAX.
 - **DFT monitors** and S-parameter extraction workflow for compact modeling.
 - Integrated **FDFD mode solver** and **rasterization module**.
 - Regular and **rectilinear meshing**.
@@ -50,6 +51,9 @@ Try out notebooks from our growing **[example library](https://beamz.tech/simula
 - [6) Topology Optimized 90° Bend (2D)](https://beamz.tech/examples/ceviche_bend)
 - [7) GDSFactory PDK 1x2 MMI (3D)](https://www.beamz.tech/examples/gdsfactory_component_sparameters)
 
+
+- [CMOS RGB Image Sensor](https://beamz.tech/examples/cmos_rgb_sensor)
+- [High-Q Silicon Resonator](https://beamz.tech/examples/high_q_silicon_resonator)
 
 ## Integration 
 

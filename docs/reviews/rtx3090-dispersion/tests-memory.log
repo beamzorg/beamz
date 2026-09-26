@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=598722099
+rootdir: /home/quentinwach/.t3/worktrees/beamz/t3code-169e833b
+configfile: pytest.ini
+plugins: hypothesis-6.168.1, randomly-5.0.0, cov-7.1.0
+collected 14 items / 13 deselected / 1 selected
+
+tests/validation/analytical/test_dispersive_media.py .                   [100%]
+
+======================= 1 passed, 13 deselected in 0.79s =======================

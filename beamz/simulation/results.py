@@ -1261,6 +1261,7 @@ class SimulationResults:
         store_full_materials: bool = False,
         source_launch_powers: tuple[float | None, ...] = (),
         performance: SimulationPerformance | None = None,
+        completed_steps: int | None = None,
     ) -> "SimulationResults":
         """Detach canonical analysis outputs from completed runtime buffers.
 
@@ -1278,6 +1279,9 @@ class SimulationResults:
             Calibrated launched powers corresponding to simulation sources.
         performance : SimulationPerformance, optional
             Execution statistics measured around the compiled simulation executable.
+        completed_steps : int, optional
+            Number of acquired steps, including continuation history. Source DFT
+            normalization uses this elapsed window rather than the future run horizon.
 
         Returns
         -------
@@ -1307,6 +1311,13 @@ class SimulationResults:
             runtime_fields=runtime_fields,
             store_full_materials=store_full_materials,
         )
+        if completed_steps is not None:
+            metadata = replace(
+                metadata,
+                time=_array_snapshot(
+                    simulation.time[: int(completed_steps)], dtype=float
+                ),
+            )
         monitor_results_dict = {
             name: replace(
                 result,

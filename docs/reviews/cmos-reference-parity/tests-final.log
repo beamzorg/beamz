@@ -1,0 +1,14 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=954152859
+rootdir: /home/quentinwach/.t3/worktrees/beamz/t3code-169e833b
+configfile: pytest.ini
+plugins: hypothesis-6.168.1, randomly-5.0.0, cov-7.1.0, anyio-4.15.1
+collected 48 items
+
+tests/contracts/test_simulation_public_api_contracts.py .........        [ 18%]
+tests/validation/analytical/test_rectilinear_plane_wave.py ...........   [ 41%]
+tests/validation/analytical/test_dispersive_media.py ..............      [ 70%]
+tests/contracts/test_yee_coordinates.py ..............                   [100%]
+
+======================== 48 passed in 665.14s (0:11:05) ========================

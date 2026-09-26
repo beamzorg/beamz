@@ -1,0 +1,53 @@
+{
+  "device": "[CudaDevice(id=0)]",
+  "runs": [
+    {
+      "material": "aluminum",
+      "dx_nm": 10.0,
+      "R_max_abs_error": 0.00648686035993995,
+      "T_max_abs_error": 9.000225296254419e-06,
+      "min_absorption": 0.08352245160158357,
+      "seconds": 5.39989891301957
+    },
+    {
+      "material": "aluminum",
+      "dx_nm": 5.0,
+      "R_max_abs_error": 0.0033595289404368955,
+      "T_max_abs_error": 2.5625918844641906e-06,
+      "min_absorption": 0.08052115616889803,
+      "seconds": 6.870025885000359
+    },
+    {
+      "material": "aluminum",
+      "dx_nm": 2.5,
+      "R_max_abs_error": 0.002430524880536522,
+      "T_max_abs_error": 1.4112009009653419e-06,
+      "min_absorption": 0.07936801259000878,
+      "seconds": 9.775875317980535
+    },
+    {
+      "material": "silicon",
+      "dx_nm": 10.0,
+      "R_max_abs_error": 0.03290214781834111,
+      "T_max_abs_error": 0.001910946434454372,
+      "min_absorption": 0.37784307939960476,
+      "seconds": 5.2816868359805085
+    },
+    {
+      "material": "silicon",
+      "dx_nm": 5.0,
+      "R_max_abs_error": 0.008284312903269031,
+      "T_max_abs_error": 0.0005793469163911588,
+      "min_absorption": 0.3723512052707184,
+      "seconds": 7.000243568007136
+    },
+    {
+      "material": "silicon",
+      "dx_nm": 2.5,
+      "R_max_abs_error": 0.002225877351337502,
+      "T_max_abs_error": 0.0005313099223575868,
+      "min_absorption": 0.3708979009427943,
+      "seconds": 9.898537079017842
+    }
+  ]
+}

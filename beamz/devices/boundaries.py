@@ -10,8 +10,10 @@ import numpy as np
 from beamz.const import µm
 
 BoundaryEdges = tuple[str, ...] | str
+BoundaryAxes = tuple[str, ...] | str
 _PLANAR_EDGES = ("left", "right", "top", "bottom")
 _VOLUME_EDGES = (*_PLANAR_EDGES, "front", "back")
+_AXES = ("x", "y", "z")
 
 
 def normalize_edges(edges: BoundaryEdges) -> BoundaryEdges:
@@ -263,17 +265,153 @@ class Absorber:
         return list(edges_for_dimension(self.edges, bool(is_3d)))
 
 
-Boundary = PEC | PML | Absorber
+@dataclass(frozen=True, slots=True)
+class Periodic:
+    """Identify axes whose opposite domain faces are periodically coupled.
+
+    Parameters
+    ----------
+    axes : "all", str, or sequence of str, default="all"
+        Physical Cartesian axes to wrap. A periodic axis always owns both of its
+        domain faces, so mismatched one-sided periodic configurations cannot be
+        represented.
+
+    Examples
+    --------
+    >>> boundary = Periodic(axes=("x", "y"))
+
+    Notes
+    -----
+    This boundary implements zero-phase periodicity. Bloch phase shifts are not
+    accepted by this type; they require a complex-field execution path and will
+    be introduced separately. Periodic boundaries currently execute through the
+    JAX backend. Automatic backend selection chooses JAX, while an explicit CUDA
+    backend request raises an unsupported-backend error.
+    """
+
+    axes: BoundaryAxes = "all"
+
+    def __post_init__(self) -> None:
+        axes = self.axes
+        if isinstance(axes, str) and axes.lower() == "all":
+            object.__setattr__(self, "axes", "all")
+            return
+        values = sorted(axes) if isinstance(axes, set) else axes
+        values = values if isinstance(values, (list, tuple)) else (values,)
+        normalized = tuple(str(axis).lower() for axis in values)
+        invalid = set(normalized).difference(_AXES)
+        if invalid:
+            raise ValueError(f"Unsupported periodic axes: {sorted(invalid)}")
+        if not normalized:
+            raise ValueError("Periodic axes cannot be empty.")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("Periodic axes must be unique.")
+        object.__setattr__(self, "axes", normalized)
+
+    def updated_copy(self, **changes):
+        """Return a validated periodic boundary with selected fields replaced.
+
+        Parameters
+        ----------
+        **changes : object
+            Dataclass fields to replace.
+
+        Returns
+        -------
+        Periodic
+            New immutable periodic-boundary specification.
+
+        Raises
+        ------
+        TypeError or ValueError
+            If a field is unknown or a replacement is invalid.
+        """
+        return replace(self, **changes)
+
+
+Boundary = PEC | PML | Absorber | Periodic
+
+
+def active_physical_axes(is_3d: bool, plane_2d: str = "xy") -> tuple[str, ...]:
+    """Return public Cartesian axes represented by a simulation lattice."""
+    if is_3d:
+        return _AXES
+    try:
+        return {
+            "xy": ("x", "y"),
+            "xz": ("x", "z"),
+            "yz": ("y", "z"),
+        }[str(plane_2d).lower()]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported 2D plane {plane_2d!r}.") from exc
+
+
+def periodic_storage_axes(
+    boundaries, *, is_3d: bool, plane_2d: str = "xy"
+) -> frozenset[int]:
+    """Resolve periodic physical axes to canonical array-axis indices."""
+    physical = active_physical_axes(bool(is_3d), plane_2d)
+    requested: set[str] = set()
+    for boundary in normalize_boundaries(boundaries):
+        if not isinstance(boundary, Periodic):
+            continue
+        requested.update(physical if boundary.axes == "all" else boundary.axes)
+    inactive = requested.difference(physical)
+    if inactive:
+        raise ValueError(
+            f"Periodic axes {sorted(inactive)} are not active in a {plane_2d} simulation."
+        )
+    storage = ("z", "y", "x") if is_3d else tuple(reversed(physical))
+    return frozenset(storage.index(axis) for axis in requested)
+
+
+def validate_boundary_compatibility(
+    boundaries, *, is_3d: bool, plane_2d: str = "xy"
+) -> None:
+    """Reject overlapping periodic and wall/absorber ownership before compilation."""
+    normalized = normalize_boundaries(boundaries)
+    periodic = periodic_storage_axes(normalized, is_3d=bool(is_3d), plane_2d=plane_2d)
+    if not periodic:
+        return
+    edge_pairs = (
+        (("front", "back"), ("bottom", "top"), ("left", "right"))
+        if is_3d
+        else (("bottom", "top"), ("left", "right"))
+    )
+    periodic_edges = {edge for axis in periodic for edge in edge_pairs[axis]}
+    conflicts: set[str] = set()
+    for boundary in normalized:
+        if isinstance(boundary, Periodic):
+            continue
+        conflicts.update(
+            periodic_edges.intersection(edges_for_dimension(boundary.edges, is_3d))
+        )
+    if conflicts:
+        raise ValueError(
+            "Periodic axes cannot also use PEC, PML, or Absorber faces; "
+            f"conflicting edges: {sorted(conflicts)}."
+        )
 
 
 def normalize_boundaries(boundaries) -> tuple[Boundary, ...]:
     """Freeze boundary input and preserve Beamz's historical all-PEC default."""
     resolved = tuple(boundaries) if boundaries else (PEC(),)
-    if not all(isinstance(boundary, (PEC, PML, Absorber)) for boundary in resolved):
+    if not all(
+        isinstance(boundary, (PEC, PML, Absorber, Periodic)) for boundary in resolved
+    ):
         raise TypeError(
-            "boundaries must contain only PEC, PML, or Absorber specifications"
+            "boundaries must contain only PEC, PML, Absorber, or Periodic specifications"
         )
     return resolved
 
 
-__all__ = ["Absorber", "Boundary", "PEC", "PML"]
+__all__ = [
+    "Absorber",
+    "Boundary",
+    "PEC",
+    "PML",
+    "Periodic",
+    "active_physical_axes",
+    "periodic_storage_axes",
+    "validate_boundary_compatibility",
+]

@@ -1,0 +1,21 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=867283503
+rootdir: /home/quentinwach/.t3/worktrees/beamz/t3code-169e833b
+configfile: pytest.ini
+plugins: hypothesis-6.168.1, randomly-5.0.0, cov-7.1.0
+collected 218 items
+
+tests/kernels/test_yee_boundary_updates.py ..............                [  6%]
+tests/validation/analytical/test_dispersive_media.py ...........         [ 11%]
+tests/contracts/test_public_api_freeze.py .                              [ 11%]
+tests/unit/raster/test_material_ownership.py ........................... [ 24%]
+.                                                                        [ 24%]
+tests/contracts/test_simulation_architecture_contracts.py .............. [ 31%]
+.....................................................                    [ 55%]
+tests/unit/test_gaussian_beam_profile.py .............                   [ 61%]
+tests/contracts/test_public_contract_inventory.py ...................... [ 71%]
+....................................................                     [ 95%]
+tests/integration/test_gaussian_beam_source.py ..........                [100%]
+
+======================== 218 passed in 60.95s (0:01:00) ========================

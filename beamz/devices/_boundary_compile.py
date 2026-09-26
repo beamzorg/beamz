@@ -16,8 +16,10 @@ from beamz.devices.boundaries import (
     PEC,
     PML,
     Absorber,
+    Periodic,
     edges_for_dimension,
     normalize_boundaries,
+    periodic_storage_axes,
 )
 from beamz.lattice import component_axis_offsets_3d
 
@@ -71,6 +73,7 @@ class BoundaryData:
     profiles: Mapping[str, Any] | None
     masks: Mapping[str, Any]
     metallic_edges: frozenset[str]
+    periodic_axes: frozenset[int]
 
 
 class _ComponentSupport:
@@ -107,6 +110,8 @@ def resolve_metallic_edges(boundaries, is_3d: bool) -> frozenset[str]:
     """Apply boundary precedence and return walls that remain metallic."""
     metallic: set[str] = set()
     for boundary in normalize_boundaries(boundaries):
+        if isinstance(boundary, Periodic):
+            continue
         edges = edges_for_dimension(boundary.edges, bool(is_3d))
         if isinstance(boundary, PEC):
             metallic.update(edges)
@@ -837,6 +842,7 @@ def lower_boundaries(
     dt: float,
     *,
     polarization_2d: str = "tm",
+    plane_2d: str = "xy",
 ) -> BoundaryData:
     """Lower the complete boundary tuple once for Simulation compilation."""
     boundaries = normalize_boundaries(boundaries)
@@ -870,4 +876,9 @@ def lower_boundaries(
             polarization_2d=polarization_2d,
         ),
         resolve_metallic_edges(boundaries, len(material_grid.shape) == 3),
+        periodic_storage_axes(
+            boundaries,
+            is_3d=len(material_grid.shape) == 3,
+            plane_2d=plane_2d,
+        ),
     )

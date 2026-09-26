@@ -1,0 +1,17 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=2994782143
+rootdir: /home/quentinwach/.t3/worktrees/beamz/t3code-169e833b
+configfile: pytest.ini
+plugins: hypothesis-6.168.1, randomly-5.0.0, cov-7.1.0, anyio-4.15.1
+collected 97 items
+
+tests/integration/test_simulation_plotting.py ...............            [ 15%]
+tests/contracts/test_yee_coordinates.py ..............                   [ 29%]
+tests/contracts/test_simulation_public_api_contracts.py .........        [ 39%]
+tests/unit/test_automatic_grid.py .......................                [ 62%]
+tests/validation/analytical/test_rectilinear_plane_wave.py ............  [ 75%]
+tests/validation/analytical/test_dispersive_media.py ..............      [ 89%]
+tests/integration/test_gaussian_beam_source.py ..........                [100%]
+
+============================= 97 passed in 49.35s ==============================

@@ -1,0 +1,20 @@
+Simulation runtime: 4.83 s
+GCUPS: 0.021
+Simulation runtime: 5.29 s
+GCUPS: 0.019
+{'material': 'aluminum', 'dx_nm': 5.0, 'R_max_abs_error': 0.010041633260516436, 'T_max_abs_error': 1.3141881723502169e-05, 'min_absorption': 0.20370672762059774, 'seconds': 16.20131294699968}
+Simulation runtime: 9.77 s
+GCUPS: 0.042
+Simulation runtime: 10.43 s
+GCUPS: 0.039
+{'material': 'aluminum', 'dx_nm': 2.5, 'R_max_abs_error': 0.003202481547702307, 'T_max_abs_error': 3.4896167440887625e-06, 'min_absorption': 0.2003574345112186, 'seconds': 26.363035129004857}
+Simulation runtime: 4.62 s
+GCUPS: 0.022
+Simulation runtime: 5.45 s
+GCUPS: 0.019
+{'material': 'silicon', 'dx_nm': 5.0, 'R_max_abs_error': 0.008284312903269031, 'T_max_abs_error': 0.0005793469163911588, 'min_absorption': 0.3723512052707184, 'seconds': 14.532388329011155}
+Simulation runtime: 9.41 s
+GCUPS: 0.044
+Simulation runtime: 10.57 s
+GCUPS: 0.039
+{'material': 'silicon', 'dx_nm': 2.5, 'R_max_abs_error': 0.002225877351337502, 'T_max_abs_error': 0.0005313099223575868, 'min_absorption': 0.3708979009427943, 'seconds': 24.48982017999515}

@@ -423,18 +423,32 @@ def compile_yee_plane_quadrature_3d(
             grid=grid,
         )
     if grid is None:
-        sample_area = plane_sample_area(coordinates, float(resolution))
+        # These samples are cell centers inside the requested aperture, not
+        # endpoint samples. An N/(N-1) endpoint correction overcounts its area.
+        axis0, axis1 = plane_axes_3d(normal_axis)
+        positions = {"x": 0, "y": 1, "z": 2}
+        count = int(coordinates[0].size * coordinates[1].size)
+        sample_area = float(size[positions[axis0]] * size[positions[axis1]]) / max(
+            count, 1
+        )
         integration_weights = np.empty((0,), dtype=np.float64)
     else:
         axis0, axis1 = plane_axes_3d(normal_axis)
         interval0 = region.axis_interval(axis0)
         interval1 = region.axis_interval(axis1)
-        widths0 = np.asarray(grid.cell_widths(axis0))[
-            int(interval0.start) : int(interval0.stop)
-        ]
-        widths1 = np.asarray(grid.cell_widths(axis1))[
-            int(interval1.start) : int(interval1.stop)
-        ]
+
+        def clipped_widths(axis, interval):
+            edges = np.asarray(grid.axis_edges(axis))
+            i = {"x": 0, "y": 1, "z": 2}[axis]
+            lower = float(center[i]) - float(size[i]) / 2
+            upper = float(center[i]) + float(size[i]) / 2
+            widths = np.maximum(
+                0.0, np.minimum(edges[1:], upper) - np.maximum(edges[:-1], lower)
+            )
+            return widths[int(interval.start) : int(interval.stop)]
+
+        widths0 = clipped_widths(axis0, interval0)
+        widths1 = clipped_widths(axis1, interval1)
         integration_weights = (widths0[:, None] * widths1[None, :]).reshape(-1)
         sample_area = float(np.mean(integration_weights))
     return YeePlaneQuadrature(
@@ -521,7 +535,12 @@ def metric_adjacent_difference(array, axis, inverse_distance):
 
 
 def _pad_with_boundary_ghosts(
-    array, axis, metallic_edges, *, logical_size: int | None = None
+    array,
+    axis,
+    metallic_edges,
+    *,
+    logical_size: int | None = None,
+    periodic: bool = False,
 ):
     logical_size = int(array.shape[axis]) if logical_size is None else int(logical_size)
     if logical_size <= 0 or logical_size > int(array.shape[axis]):
@@ -540,19 +559,31 @@ def _pad_with_boundary_ghosts(
     low_edge, high_edge = (("front", "back"), ("bottom", "top"), ("left", "right"))[
         axis
     ]
-    low = (
-        zero if low_edge in metallic_edges else jnp.take(physical, jnp.array([0]), axis)
-    )
-    high = (
-        zero
-        if high_edge in metallic_edges
-        else jnp.take(physical, jnp.array([logical_size - 1]), axis)
-    )
+    if periodic:
+        low = jnp.take(physical, jnp.array([logical_size - 1]), axis)
+        high = jnp.take(physical, jnp.array([0]), axis)
+    else:
+        low = (
+            zero
+            if low_edge in metallic_edges
+            else jnp.take(physical, jnp.array([0]), axis)
+        )
+        high = (
+            zero
+            if high_edge in metallic_edges
+            else jnp.take(physical, jnp.array([logical_size - 1]), axis)
+        )
     return jnp.concatenate((low, physical, high, storage_padding), axis=axis)
 
 
 def build_h_boundary_views_for_e_3d(
-    hx, hy, hz, metallic_edges=frozenset(), *, logical_shapes=None
+    hx,
+    hy,
+    hz,
+    metallic_edges=frozenset(),
+    *,
+    logical_shapes=None,
+    periodic_axes=frozenset(),
 ):
     """Create the six ghost-padded H views consumed by the 3D E curl."""
     return {
@@ -563,6 +594,7 @@ def build_h_boundary_views_for_e_3d(
             logical_size=(
                 None if logical_shapes is None else logical_shapes[component][axis]
             ),
+            periodic=axis in periodic_axes,
         )
         for name, component, field, axis in (
             ("hz_y", "Hz", hz, 1),

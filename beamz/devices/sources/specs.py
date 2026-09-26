@@ -497,3 +497,22 @@ class CustomSource:
         """Keep grid-indexed injections unchanged by coordinate normalization."""
         del offset
         return self
+
+
+@dataclass(frozen=True, slots=True)
+class PlaneWaveSource(GaussianBeamSource):
+    """Uniform normally incident plane wave over a finite source aperture.
+
+    Uses the same staggered Huygens injection and power normalization as
+    GaussianBeamSource, with an exactly uniform transverse envelope. For a
+    periodic cell, set size to cover the whole cell. Angled Bloch incidence is
+    intentionally unsupported. ``power`` is total power through the aperture.
+    """
+
+    def __post_init__(self):
+        GaussianBeamSource.__post_init__(self)
+        if self.angle_theta != 0 or self.waist_distance != 0:
+            raise ValueError(
+                "PlaneWaveSource currently requires normal incidence and zero waist_distance."
+            )
+        object.__setattr__(self, "waist_radius", float("inf"))

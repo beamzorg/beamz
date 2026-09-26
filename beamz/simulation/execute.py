@@ -504,6 +504,16 @@ def forward_step(
         "pre_e",
         dense_single_slab=cfg.source_single_slab_dense,
     )
+    if ctx.boundary.periodic_axes:
+        ex, ey, ez = update_runtime.apply_post_source_boundaries(
+            (state.ex, state.ey, state.ez),
+            (metallic.ex_mask, metallic.ey_mask, metallic.ez_mask),
+            components=("Ex", "Ey", "Ez"),
+            periodic_axes=ctx.boundary.periodic_axes,
+            material_shape=ctx.boundary.material_shape,
+            logical_shapes=ctx.boundary.logical_component_shapes,
+        )
+        state = state._replace(ex=ex, ey=ey, ez=ez)
     state = update_kernel.update_h(state, ctx, coeffs)
 
     # 2. H-phase sources may overwrite constrained cells, so reapply the compiled masks
@@ -524,10 +534,15 @@ def forward_step(
         hx, hy, hz = update_runtime.apply_post_source_boundaries(
             (state.hx, state.hy, state.hz),
             (metallic.hx_mask, metallic.hy_mask, metallic.hz_mask),
+            components=("Hx", "Hy", "Hz"),
+            periodic_axes=ctx.boundary.periodic_axes,
+            material_shape=ctx.boundary.material_shape,
+            logical_shapes=ctx.boundary.logical_component_shapes,
         )
         state = state._replace(hx=hx, hy=hy, hz=hz)
 
     # 3. Advance E, inject its sources, and restore its masks before observation.
+    old_e_state = state
     state = update_kernel.update_e(state, ctx, coeffs)
     state = apply_source_phase(
         state,
@@ -536,10 +551,18 @@ def forward_step(
         "e",
         dense_single_slab=cfg.source_single_slab_dense,
     )
+    from beamz.simulation.dispersion import update_dispersion
+
+    if program.dispersion is not None:
+        state = update_dispersion(old_e_state, state, program.dispersion)
     if not cuda_owns_pec:
         ex, ey, ez = update_runtime.apply_post_source_boundaries(
             (state.ex, state.ey, state.ez),
             (metallic.ex_mask, metallic.ey_mask, metallic.ez_mask),
+            components=("Ex", "Ey", "Ez"),
+            periodic_axes=ctx.boundary.periodic_axes,
+            material_shape=ctx.boundary.material_shape,
+            logical_shapes=ctx.boundary.logical_component_shapes,
         )
         state = state._replace(ex=ex, ey=ey, ez=ez)
 
@@ -949,7 +972,12 @@ def initial_program_state(
         monitor_values = {
             name: getattr(continuation, name) for name in monitor_runtime.MONITOR_FIELDS
         }
+    from beamz.simulation.dispersion import initial_polarization
+
     return SimulationState(
+        polarization=initial_polarization(program.dispersion, continuation)
+        if program.dispersion is not None
+        else (),
         ex=field("Ex"),
         ey=field("Ey"),
         ez=field("Ez"),
@@ -1261,6 +1289,7 @@ def run_simulation_program(
         simulation,
         runtime_fields=program.grid,
         monitor_results=_decode_monitor_results(simulation, program, state),
+        completed_steps=int(state.current_step),
         store_full_materials=store_full_materials,
         source_launch_powers=_compiled_source_launch_powers(
             program, len(simulation.sources)
@@ -1357,6 +1386,7 @@ def run_simulation_with_progress(
         simulation,
         runtime_fields=program.grid,
         monitor_results=_decode_monitor_results(simulation, program, state),
+        completed_steps=int(state.current_step),
         store_full_materials=store_full_materials,
         source_launch_powers=_compiled_source_launch_powers(
             program, len(simulation.sources)
@@ -1388,6 +1418,10 @@ def run_until_terminated(
         backend=backend,
         progress=progress,
     )
+    if first_program.grid.material_grid.dispersion:
+        raise ValueError(
+            "Automatic energy termination does not yet include dispersive material energy. Use a fixed run_time and check spectral convergence with advance()."
+        )
     monitor_names = _selected_monitor_names(first_program, policy)
     monitor_tolerance = (
         None if policy.monitor_change is None else float(policy.monitor_change)
