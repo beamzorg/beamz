@@ -44,6 +44,21 @@ def main():
     parser.add_argument("--max-wall-seconds", type=float, default=3600)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
+        "--stepping-only",
+        action="store_true",
+        help="Keep five stepping samples and finite-state checks; omit public API timing",
+    )
+    parser.add_argument(
+        "--trace-largest",
+        action="store_true",
+        help="With stepping-only, trace the largest eight-GPU CUDA weak case after timing",
+    )
+    parser.add_argument(
+        "--profile-public",
+        action="store_true",
+        help="Profile one eight-GPU CUDA public call after stepping",
+    )
+    parser.add_argument(
         "--host-setup",
         action="store_true",
         help="Avoid constructing the complete global grid on GPU 0",
@@ -111,7 +126,15 @@ def main():
             output = args.output / f"{name}.json"
             command = [
                 sys.executable,
-                str(ROOT / "scripts/benchmark_h100_backends.py"),
+                str(
+                    ROOT
+                    / "scripts"
+                    / (
+                        "benchmark_modal_stepping.py"
+                        if args.stepping_only
+                        else "benchmark_h100_backends.py"
+                    )
+                ),
                 "--worker",
                 "--workload",
                 "modal_cpml12",
@@ -134,6 +157,31 @@ def main():
             ]
             if args.host_setup:
                 command.append("--host-setup")
+            if (
+                args.stepping_only
+                and args.trace_largest
+                and count == 8
+                and backend == "cuda_streamed"
+                and suite == "weak"
+                and shape[0] == max(args.local_sizes)
+            ):
+                command.extend(
+                    ["--trace", str((args.output / "largest-cuda-trace").resolve())]
+                )
+            if (
+                args.stepping_only
+                and args.profile_public
+                and count == 8
+                and backend == "cuda_streamed"
+                and suite == "weak"
+                and shape[0] == min(args.local_sizes)
+            ):
+                command.extend(
+                    [
+                        "--profile-public",
+                        str((args.output / "public-api.profile").resolve()),
+                    ]
+                )
             record = dict(
                 name=name,
                 suite=suite,
