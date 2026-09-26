@@ -1,5 +1,53 @@
 # Eight-H100 CUDA capacity and throughput study
 
+## Results
+
+Increasing the balanced domain from 1.074 to 4.607 billion physical cells raises
+warm streamed-CUDA throughput from **146.10 to 157.66 GCUPS**: 4.29× the cells
+for 7.9% more throughput. The final three successful volume increases add
+33.1%, 29.8%, and 27.1% cells but only 0.96%, 1.32%, and 0.92% throughput.
+This meets the study's empirical plateau criterion. Simply enlarging these
+domains does not provide evidence for reaching 250 GCUPS, which would require
+another 58.6% throughput improvement over the best measured rate.
+
+| Case | Global `(z,y,x)` | Billion cells | GCUPS | Peak live GiB, max GPU | Retained-output live GiB, max GPU |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Balanced, 80 nm | 512 × 512 × 4096 | 1.074 | 146.10 | 13.84 | 9.62 |
+| Balanced, 80 nm | 640 × 640 × 5120 | 2.097 | 152.71 | 26.98 | 18.62 |
+| Balanced, 80 nm | 704 × 704 × 5632 | 2.791 | 154.18 | 35.84 | 24.68 |
+| Balanced, 80 nm | 768 × 768 × 6144 | 3.624 | 156.23 | 46.40 | 31.82 |
+| Balanced, 80 nm | 832 × 832 × 6656 | 4.607 | **157.66** | 58.82 | 40.24 |
+| Balanced, 80 nm | 896 × 896 × 7168 | 5.755 | **Setup OOM** | unavailable | unavailable |
+| Planar, 80 nm | 128 × 1024 × 8192 | 1.074 | 134.66 | 14.10 | 10.13 |
+| Refined, 64 nm | 640 × 640 × 5120 | 2.097 | 152.23† | 26.98 | 18.62 |
+
+† The 64 nm propagated raw-field comparison failed its existing pointwise gate;
+this is timing evidence, not an accepted accuracy result. Both flux spectra
+passed. See numerical validation below. The larger planar probe remains running.
+
+![Capacity and throughput curves](h100-capacity-20260926/capacity.png)
+
+The balanced 832 case takes **29.22 ms per complete timestep**, or 7.48 s per
+256-step sample. Its physical domain is 66.56 × 66.56 × 532.48 µm at 80 nm.
+Five samples have 0.089% coefficient of variation. These repeat timings of one
+initialized process; they do not establish fresh-process capacity reliability.
+
+At the next size, GPU 0 failed to allocate another 2.69 GiB in
+`sharding.place_tree(program, program.coefficients)`, before compilation/timing.
+Sampled GPU-0 residency reached 76.64 GiB. This brackets the observed setup
+capacity boundary between the two tested sizes; it is not a binary-searched
+maximum or proof that eight GPUs' stepping arrays fill all available memory.
+At 832, maximum live allocation is 58.82 GiB while the allocator reserves
+75.22 GiB and sampled device residency reaches 77.60 GiB. Physical memory is
+79.65 GiB per GPU. The cumulative peak is dominated by preparation on GPU 0;
+the retained-output snapshot is only 40.24 GiB per GPU.
+
+The immediate capacity follow-up is to trace coefficient placement and remove
+the GPU-0 allocation peak, then measure a separately labelled donating-state
+path. For throughput, use a host that permits hardware counters to measure
+HBM traffic, occupancy, and communication stalls before selecting another
+kernel change. No hardware-bandwidth saturation claim follows from this sweep.
+
 ## Question and protocol
 
 Does increasing cell count beyond the previous 2.097-billion-cell benchmark
@@ -53,10 +101,20 @@ RunPod pod `d5yvneey683trr`, AP-IN-1, created 2026-09-26 17:29:52.756 UTC at
 $27.92/hour. Additional spending authorization: $50. Measurement cutoff 19:00 UTC;
 independent MCP deletion guard 19:09 UTC. All-pair NV18 topology verified.
 
-The initial baseline measurements are 146.10 GCUPS at 512³ cells/GPU and
-152.71 GCUPS at 640³ cells/GPU. The latter is within 0.8% of the accepted
-151.57 GCUPS result. Further measurements are in progress; no capacity or
-saturation conclusion is claimed yet.
+The 640 baseline reproduces the previous accepted 151.57 GCUPS result within
+0.8%; the planar baseline reproduces 135.50 GCUPS within 0.7%. The balanced
+896 probe failed by allocation, not timeout. A recorded controller held the
+runner while this probe completed, then ran propagated numerical checks and
+selected planar-192 from remaining time using measured setup cost, not observed
+throughput. More refinement points and planar-224 were not run within this
+budget. Primary measurement deadline was 19:00 UTC, adaptive tail 19:05 UTC,
+with an independent deletion guard at 19:09 UTC.
+
+An interrupted original runner left the balanced-640 NVML sampler running
+beyond that case. The original log is preserved. `telemetry-windows.json`
+records its start and remote result-file modification time; the summarizer
+clips that telemetry to the case interval. Allocator statistics and timing
+samples come directly from the completed worker and are unaffected.
 
 Nsight Compute is installed, but an isolated CUDA-kernel probe returned
 `ERR_NVGPUCTRPERM`. The host restricts hardware counters and the container lacks
@@ -65,14 +123,26 @@ are unavailable on this run. Sampled NVML activity must not be substituted for
 those metrics. The probe ran between benchmark processes with all GPUs idle;
 its log and the idle check are retained.
 
-## Interim larger-domain result
+## Numerical validation
 
-At 704³ cells/GPU (2,791,309,312 physical cells total), the measured rate is
-154.18 GCUPS with 0.11% sample coefficient of variation. That is a 0.96%
-increase over 640³/GPU for 33.1% more cells. Peak live allocation is 35.84 GiB
-on GPU 0 and was already reached during preparation. The live allocation with
-the final timed output retained is 24.68 GiB; the 64 GiB allocator pool on GPU 0
-is not the same quantity. Larger-domain results remain pending.
+Every successful throughput case has finite final state and both 101-frequency
+monitors have weight 256 at every frequency. Separate small propagated cases
+compare eight-GPU CUDA with one-GPU JAX using the unchanged pointwise gate
+`rtol=3e-5`, `atol=max(1e-12, 2e-6*max(abs(reference array)))`.
+
+- **80 nm, 64 × 96 × 256, 2,048 steps: passes** real/imaginary DFT arrays,
+  weights, and both nonzero flux spectra. Maximum DFT relative L2 error is
+  6.18e-7; maximum flux relative L2 error is 3.94e-7.
+- **64 nm, 80 × 120 × 320, 2,560 steps: fails** the raw DFT gate. Real and
+  imaginary relative L2 errors are 5.53e-6 and 5.71e-6. Respectively 393 and
+  376 of 441,168 entries exceed their pointwise tolerances, by at most 2.88×
+  and 2.64×. Weights and both flux spectra pass; flux relative L2 error is
+  at most 6.09e-7. Tolerances were not relaxed. The cause remains under
+  investigation, and the refinement result must not be treated as validated.
+
+These checks exercise pulse propagation but do not establish spatial or temporal
+convergence, or validate complete optical results on the billion-cell domains.
+No pure-JAX capacity/throughput sweep was performed in this additional run.
 
 ## Environment controls
 

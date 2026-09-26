@@ -3,6 +3,7 @@
 
 import argparse
 import csv
+import datetime as dt
 import json
 import statistics
 from contextlib import suppress
@@ -17,6 +18,8 @@ import numpy as np
 
 def summarize(source):
     rows = []
+    windows_path = source / "telemetry-windows.json"
+    windows = json.loads(windows_path.read_text()) if windows_path.exists() else {}
     for item in json.loads((source / "summary.json").read_text()):
         if item["status"] != "ok":
             continue
@@ -28,9 +31,20 @@ def summarize(source):
         device = [x["stats"] for x in d["device_memory"]]
         timed = [x["stats"] for x in d.get("timed_memory", d["device_memory"])]
         telemetry = []
+        window = windows.get(name)
         with (source / f"{name}.nvml.csv").open() as f:
             for line in csv.DictReader(f, skipinitialspace=True):
                 with suppress(KeyError, ValueError):
+                    if window:
+                        stamp = dt.datetime.strptime(
+                            line["timestamp"], "%Y/%m/%d %H:%M:%S.%f"
+                        ).replace(tzinfo=dt.timezone.utc)
+                        if not (
+                            dt.datetime.fromisoformat(window["start_utc"])
+                            <= stamp
+                            <= dt.datetime.fromisoformat(window["end_utc"])
+                        ):
+                            continue
                     telemetry.append(float(line["memory.used [MiB]"]))
         rows.append(
             dict(
@@ -71,7 +85,7 @@ def main():
     if not rows:
         raise SystemExit("No successful cases")
     with (a.output / "capacity.csv").open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w = csv.DictWriter(f, fieldnames=list(rows[0]), lineterminator="\n")
         w.writeheader()
         w.writerows(rows)
     (a.output / "capacity.json").write_text(json.dumps(rows, indent=2) + "\n")
@@ -79,7 +93,7 @@ def main():
     labels = dict(
         balanced="Domain growth: cubic shards",
         planar="Domain growth: planar",
-        refined="Resolution refinement",
+        refined="Resolution refinement (timing only)",
     )
     colors = dict(balanced="#1769aa", planar="#d55e00", refined="#009e73")
     for series in labels:

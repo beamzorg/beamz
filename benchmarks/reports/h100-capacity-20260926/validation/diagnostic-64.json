@@ -1,0 +1,52 @@
+{
+  "dft_vec_re": {
+    "shape": [
+      441168
+    ],
+    "failed_entries": 393,
+    "total_entries": 441168,
+    "max_error_over_tolerance": 2.873086145732727,
+    "max_absolute_reference": 540659584.0,
+    "max_normalized_absolute_error": 6.924874932023771e-06
+  },
+  "dft_vec_im": {
+    "shape": [
+      441168
+    ],
+    "failed_entries": 376,
+    "total_entries": 441168,
+    "max_error_over_tolerance": 2.633282516871238,
+    "max_absolute_reference": 543203968.0,
+    "max_normalized_absolute_error": 6.59788994766695e-06
+  },
+  "dft_weight_sum": {
+    "shape": [
+      202
+    ],
+    "failed_entries": 0,
+    "total_entries": 202,
+    "max_error_over_tolerance": 0.0,
+    "max_absolute_reference": 2560.0,
+    "max_normalized_absolute_error": 0.0
+  },
+  "flux_0": {
+    "shape": [
+      101
+    ],
+    "failed_entries": 0,
+    "total_entries": 101,
+    "max_error_over_tolerance": 0.05009583494925737,
+    "max_absolute_reference": 0.9845872100903117,
+    "max_normalized_absolute_error": 1.5766435795376549e-06
+  },
+  "flux_1": {
+    "shape": [
+      101
+    ],
+    "failed_entries": 0,
+    "total_entries": 101,
+    "max_error_over_tolerance": 0.054876723228424046,
+    "max_absolute_reference": 0.9874551549643741,
+    "max_normalized_absolute_error": 1.7390364124599445e-06
+  }
+}

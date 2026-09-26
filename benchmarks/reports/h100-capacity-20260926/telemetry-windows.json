@@ -1,0 +1,7 @@
+{
+  "balanced-640": {
+    "start_utc": "2026-09-26T17:36:50.249577+00:00",
+    "end_utc": "2026-09-26T17:43:25.439485+00:00",
+    "reason": "Original runner interrupted after completed worker; orphan NVML sampler continued beyond the case. Clip by recorded start and remote result file modification time."
+  }
+}
