@@ -2,8 +2,10 @@
 
 This draft is stacked on PR #287 (`bench/h100-backend-comparison`, initially
 `e97fe05`). It records the diagnosis, memory budget, and implementation gates.
-It does not implement a placement fix, change field precision, or claim a new
-GPU measurement. No additional RunPod resources were created.
+The follow-up now implements direct host-to-shard placement, local field
+padding, removal of redundant CUDA material grids, and donating capacity probes.
+See [implementation and measured results](H100_MEMORY_CAPACITY.md). Field and
+CPML precision remain FP32; shard-local material rasterization remains future work.
 
 ## What actually failed
 
@@ -140,7 +142,7 @@ problems, but change the formulation and must be evaluated separately.
 
 ## Review and validation status
 
-The memory arithmetic was checked from the recorded device capacity and existing
-allocation evidence. This PR changes documentation and a budget artifact only;
-there is no new runtime test or GPU performance result. OpenAI Codex authored
-this analysis. Human review remains pending; the PR is intentionally a draft.
+The original memory arithmetic uses the recorded device capacity. Implementation,
+targeted tests, H100 capacity evidence, and remaining limitations are recorded in
+[H100_MEMORY_CAPACITY.md](H100_MEMORY_CAPACITY.md). OpenAI Codex authored the
+analysis and implementation. Human review remains pending; the PR is a draft.
