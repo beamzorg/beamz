@@ -52,7 +52,7 @@ def wrap_program_call(original, axes):
             | (padded[:, 3] << 24)
         ).astype(jnp.int32)
 
-    def call(state, ctx, coeffs, groups, monitors, nsteps):
+    def call(state, ctx, coeffs, groups, monitors, nsteps, **clock):
         if axes == (0, 1, 2):
             return original(state, ctx, coeffs, groups, monitors, nsteps)
         if not (
@@ -202,7 +202,13 @@ def wrap_program_call(original, axes):
                 *monitors[4:],
             )
         result = original(
-            new_state, new_ctx, new_coeffs, tuple(new_groups), new_monitors, nsteps
+            new_state,
+            new_ctx,
+            new_coeffs,
+            tuple(new_groups),
+            new_monitors,
+            nsteps,
+            **clock,
         )
         return result._replace(
             **permute_fields(result, inverse_components, inverse_axes),

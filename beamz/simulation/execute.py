@@ -776,6 +776,8 @@ def build_scan(program, *, donate_state: bool = False):
                         graph_source_groups,
                         packed_graph_monitors,
                         chunk_steps,
+                        observation_origin=state.t,
+                        observation_step_offset=elapsed_steps,
                     )
                     if program.monitors
                     else run_source_group_steps(

@@ -882,7 +882,15 @@ def _pair_publication_mask(state, packed_monitors):
 
 
 def run_program_steps(
-    state, ctx, coeffs, groups, packed_monitors, nsteps: int
+    state,
+    ctx,
+    coeffs,
+    groups,
+    packed_monitors,
+    nsteps: int,
+    *,
+    observation_origin=None,
+    observation_step_offset=0,
 ) -> SimulationState:
     """Advance arbitrary slab sources and packed vector DFTs in one CUDA graph."""
     if nsteps < 1:
@@ -954,8 +962,9 @@ def run_program_steps(
         phase_sin,
         phase_cos,
         phase_window,
-        state.t,
+        state.t if observation_origin is None else observation_origin,
         state.current_step,
+        jnp.asarray(observation_step_offset, dtype=jnp.int32),
         *(
             (_pair_publication_mask(state, packed_monitors),)
             if plan.temporal_steps == 2

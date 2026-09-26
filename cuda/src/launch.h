@@ -91,8 +91,10 @@ struct BeamzDftGroupLaunch {
   BeamzBuffer phase_window;
   // Paired monitor samples: [monitor, component, point, substep].
   BeamzBuffer pair_samples{};
+  // Immutable invocation origin and integer offset of this native chunk.
   BeamzBuffer time;
   BeamzBuffer current_step;
+  BeamzBuffer elapsed_steps;
   int32_t monitor_count;
 };
 

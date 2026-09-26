@@ -880,6 +880,10 @@ def test_streamed_cuda_bounded_graph_replay_preserves_native_result(
     actual = build_scan(program)(_copy_state(state), program.coefficients)
 
     _assert_state_close(reference, actual)
+    if monitor:
+        # Graph boundaries must not introduce a second float32 clock rounding.
+        np.testing.assert_array_equal(actual.dft_vec_re, reference.dft_vec_re)
+        np.testing.assert_array_equal(actual.dft_vec_im, reference.dft_vec_im)
 
 
 @pytest.mark.parametrize("metric_kind", ["axis_uniform", "rectilinear"])

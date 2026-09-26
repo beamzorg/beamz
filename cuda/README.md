@@ -70,8 +70,9 @@ result = simulation.advance(
 This path has native C++ arithmetic and CPU FFI coverage, but has **not yet been
 validated on multiple CUDA GPUs**. `auto` continues selecting JAX for sharded
 requests. Rebuild the optional CUDA extension: this path requires component
-**0.20.0 / ABI 20**, including `beamz_cuda_sharded`. ABI 20 passes separate neighbor faces to sharded
-phases, avoiding full-field halo concatenations. Rebuild the native wheel when
+**0.21.0 / ABI 21**, including `beamz_cuda_sharded`. ABI 20 passes separate neighbor faces to sharded
+phases, avoiding full-field halo concatenations. ABI 21 adds an integer DFT
+chunk offset so every graph uses the same invocation time origin. Rebuild the native wheel when
 updating Python code across this ABI boundary.
 
 All six components share partition interfaces along the selected x, y, or z

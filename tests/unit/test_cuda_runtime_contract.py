@@ -378,7 +378,7 @@ def test_cuda_scan_routes_monitors_to_general_program_graph(
     calls = []
 
     def fake_run_program_steps(
-        chunk_state, _context, _coefficients, groups, monitors, nsteps
+        chunk_state, _context, _coefficients, groups, monitors, nsteps, **clock
     ):
         calls.append((groups, monitors, nsteps))
         return chunk_state
@@ -694,7 +694,8 @@ def test_cuda_program_graph_packs_monitor_batch_and_aliases_accumulators(monkeyp
     target, results, options, arguments, attributes = captured[0]
     assert target == abi.CUDA_PROGRAM_TARGET
     assert len(results) == 24
-    assert len(arguments) == 116
+    assert len(arguments) == 117
+    assert int(arguments[-1]) == 0
     assert packed[0].shape[:2] == (1, 6)
     assert options["input_output_aliases"][108] == 18
     assert options["input_output_aliases"][109] == 19
@@ -754,7 +755,8 @@ def test_cuda_program_graph_uses_temporal_cpml_field_banks(monkeypatch):
     target, results, options, arguments, attributes = captured[0]
     assert target == abi.CUDA_PROGRAM_TARGET
     assert len(results) == 42
-    assert len(arguments) == 134
+    assert len(arguments) == 135
+    assert int(arguments[-1]) == 0
     assert arguments[133] is state.current_step
     assert options["input_output_aliases"] == {
         **{index: index for index in range(6)},
@@ -850,7 +852,9 @@ def test_long_scan_observation_clock_uses_run_origin(monkeypatch, loop_kind):
 
     monkeypatch.setattr(
         "beamz.simulation.execute.update_runtime.select_update_kernel",
-        lambda _: SimpleNamespace(update_h=identity, update_e=identity),
+        lambda _: SimpleNamespace(
+            kind="identity", update_h=identity, update_e=identity
+        ),
     )
     # Exercise forward_step's actual observation dispatch at every iteration.
     # Store the phase itself, so correcting only the returned clock cannot pass.

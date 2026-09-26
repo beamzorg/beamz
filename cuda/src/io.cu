@@ -346,6 +346,16 @@ cudaError_t LaunchSourceGroup(cudaStream_t stream, const BeamzLaunch& launch,
   return cudaPeekAtLastError();
 }
 
+// Match the JAX invocation clock without rounding a new origin at each graph
+// boundary. Source indices still use current_step; only DFT time uses this offset.
+__device__ __forceinline__ float ObservationTime(
+    const DftFields& fields, const BeamzDftGroupLaunch& monitors, int step_offset) {
+  const int64_t step = static_cast<const int32_t*>(monitors.elapsed_steps.data)[0]
+                      + static_cast<int64_t>(step_offset) + 1;
+  return __fmaf_rn(static_cast<float>(step), fields.dt,
+                  static_cast<const float*>(monitors.time.data)[0]);
+}
+
 __global__ void PrepareDftPhases(DftFields fields, BeamzDftGroupLaunch monitors,
                                  int step_offset) {
   const int frequency = blockIdx.x * blockDim.x + threadIdx.x;
@@ -376,8 +386,7 @@ __global__ void PrepareDftPhases(DftFields fields, BeamzDftGroupLaunch monitors,
         static_cast<int64_t>(
             static_cast<const int32_t *>(monitors.current_step.data)[0]) +
         step_offset;
-    const float time = static_cast<const float *>(monitors.time.data)[0] +
-                       static_cast<float>(step_offset + 1) * fields.dt;
+    const float time = ObservationTime(fields, monitors, step_offset);
     const auto *windows = static_cast<const float *>(monitors.windows.data);
     const float start = windows[3 * monitor];
     const float end = windows[3 * monitor + 1];
@@ -458,8 +467,7 @@ __global__ void AccumulateDftGroups(DftFields fields,
         static_cast<int64_t>(
             static_cast<const int32_t*>(monitors.current_step.data)[0]) +
         step_offset;
-    const float time = static_cast<const float*>(monitors.time.data)[0] +
-                       static_cast<float>(step_offset + 1) * fields.dt;
+    const float time = ObservationTime(fields, monitors, step_offset);
     const float start = windows[3 * monitor];
     const float end = windows[3 * monitor + 1];
     if (absolute_step % interval == 0 && time >= start && time <= end) {

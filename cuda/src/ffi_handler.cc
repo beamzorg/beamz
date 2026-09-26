@@ -235,6 +235,7 @@ BeamzDftGroupLaunch InitializeDftGroups(
   monitors.phase_window = phase_window;
   monitors.time = inputs[offset + kMonitorTimeInput];
   monitors.current_step = inputs[offset + kMonitorCurrentStepInput];
+  monitors.elapsed_steps = inputs[offset + kMonitorElapsedStepsInput];
   monitors.monitor_count = monitor_count;
   return monitors;
 }
