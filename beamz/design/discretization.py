@@ -86,6 +86,7 @@ class MaterialGrid:
     polarization: Literal["tm", "te"] | None = None
     yee_tensors: Mapping[str, npt.ArrayLike] = field(default_factory=dict)
     grid: RectilinearGrid | None = None
+    dispersion: tuple = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "permittivity", readonly_array(self.permittivity))
@@ -120,7 +121,37 @@ class MaterialGrid:
                 for key, value in dict(getattr(self, name)).items()
             }
             object.__setattr__(self, name, MappingProxyType(values))
+        from beamz.design.dispersion import PoleResidue
+
+        dispersion = []
+        for medium, supports in self.dispersion:
+            if not isinstance(medium, PoleResidue):
+                raise TypeError(
+                    "Dispersive grid entries require PoleResidue materials."
+                )
+            from beamz.lattice import component_shapes
+
+            shapes = component_shapes(self.shape, self.polarization or "tm")
+            weights = {}
+            for name, value in supports.items():
+                value = np.asarray(value)
+                if (
+                    name not in {"Ex", "Ey", "Ez"}
+                    or value.shape != shapes[name]
+                    or not np.isfinite(value).all()
+                    or np.any((value < 0) | (value > 1))
+                ):
+                    raise ValueError(
+                        "Dispersive weights must be finite Yee-support fractions in [0,1]."
+                    )
+                weights[name] = readonly_array(value)
+            dispersion.append((medium, MappingProxyType(weights)))
+        object.__setattr__(self, "dispersion", tuple(dispersion))
         smoothing = str(self.smoothing).strip().lower()
+        if self.dispersion and smoothing != "volume":
+            raise ValueError(
+                "Dispersive material grids require volume-averaged coefficients."
+            )
         if smoothing not in {"volume", "farjadpour_diagonal", "farjadpour_full"}:
             raise ValueError("Unknown material-grid smoothing mode.")
         object.__setattr__(self, "smoothing", smoothing)
@@ -526,6 +557,7 @@ class MaterialGrid:
             self.smoothing,
             self.polarization,
             self.yee_tensors,
+            tuple((m.cache_spec(), weights) for m, weights in self.dispersion),
         )
 
     def __eq__(self, other):

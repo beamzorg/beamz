@@ -23,6 +23,8 @@ EXPECTED_EXPORTS = {
         "µm",
         "μm",
         "Material",
+        "PoleResidue",
+        "fit_nk",
         "design",
         "optimization",
         "Design",
@@ -38,6 +40,7 @@ EXPECTED_EXPORTS = {
         "ModeData",
         "GaussianSource",
         "GaussianBeamSource",
+        "PlaneWaveSource",
         "CustomSource",
         "FieldMonitor",
         "FieldRecorder",
@@ -65,6 +68,7 @@ EXPECTED_EXPORTS = {
         "PML",
         "PEC",
         "Absorber",
+        "Periodic",
         "display_status",
         "create_plain_progress",
         "get_si_scale_and_label",
@@ -88,6 +92,8 @@ EXPECTED_EXPORTS = {
     ),
     "beamz.design": (
         "Material",
+        "PoleResidue",
+        "fit_nk",
         "Design",
         "MaterialGrid",
         "build_material_grid",
@@ -134,6 +140,7 @@ EXPECTED_EXPORTS = {
         "SampledSignal",
         "GaussianSource",
         "GaussianBeamSource",
+        "PlaneWaveSource",
         "CustomSource",
     ),
     "beamz.optimization": (
@@ -163,6 +170,7 @@ EXPECTED_EXPORTS = {
         "PML",
         "PEC",
         "Absorber",
+        "Periodic",
     ),
 }
 

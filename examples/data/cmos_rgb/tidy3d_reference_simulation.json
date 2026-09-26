@@ -1,0 +1,2759 @@
+{
+  "attrs": {},
+  "type": "Simulation",
+  "center": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "size": [
+    3.0,
+    3.0,
+    7.109496020553517
+  ],
+  "medium": {
+    "attrs": {},
+    "name": null,
+    "frequency_range": null,
+    "allow_gain": false,
+    "nonlinear_spec": null,
+    "modulation_spec": null,
+    "viz_spec": null,
+    "heat_spec": null,
+    "type": "Medium",
+    "permittivity": 1.0,
+    "conductivity": 0.0
+  },
+  "structures": [
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Sphere",
+        "radius": 1.0,
+        "center": [
+          0.75,
+          0.75,
+          1.0547480102767586
+        ]
+      },
+      "name": "len blue",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "SiO2_Palik_LowLoss",
+        "frequency_range": [
+          59958491600000.0,
+          1998616386666666.8
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.5385442336875639,
+        "poles": [
+          [
+            {
+              "real": -11504139.374277674,
+              "imag": -1.595196740783775e+16
+            },
+            {
+              "real": 7507685.43042605,
+              "imag": 4535416182817100.0
+            }
+          ],
+          [
+            {
+              "real": -249390.3565044153,
+              "imag": -172280738540723.53
+            },
+            {
+              "real": 46272.506981344035,
+              "imag": 99704543223121.88
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Sphere",
+        "radius": 1.0,
+        "center": [
+          -0.75,
+          -0.75,
+          1.0547480102767586
+        ]
+      },
+      "name": "len red",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "SiO2_Palik_LowLoss",
+        "frequency_range": [
+          59958491600000.0,
+          1998616386666666.8
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.5385442336875639,
+        "poles": [
+          [
+            {
+              "real": -11504139.374277674,
+              "imag": -1.595196740783775e+16
+            },
+            {
+              "real": 7507685.43042605,
+              "imag": 4535416182817100.0
+            }
+          ],
+          [
+            {
+              "real": -249390.3565044153,
+              "imag": -172280738540723.53
+            },
+            {
+              "real": 46272.506981344035,
+              "imag": 99704543223121.88
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Sphere",
+        "radius": 1.0,
+        "center": [
+          -0.75,
+          0.75,
+          1.0547480102767586
+        ]
+      },
+      "name": "len green1",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "SiO2_Palik_LowLoss",
+        "frequency_range": [
+          59958491600000.0,
+          1998616386666666.8
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.5385442336875639,
+        "poles": [
+          [
+            {
+              "real": -11504139.374277674,
+              "imag": -1.595196740783775e+16
+            },
+            {
+              "real": 7507685.43042605,
+              "imag": 4535416182817100.0
+            }
+          ],
+          [
+            {
+              "real": -249390.3565044153,
+              "imag": -172280738540723.53
+            },
+            {
+              "real": 46272.506981344035,
+              "imag": 99704543223121.88
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Sphere",
+        "radius": 1.0,
+        "center": [
+          0.75,
+          -0.75,
+          1.0547480102767586
+        ]
+      },
+      "name": "len green2",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "SiO2_Palik_LowLoss",
+        "frequency_range": [
+          59958491600000.0,
+          1998616386666666.8
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.5385442336875639,
+        "poles": [
+          [
+            {
+              "real": -11504139.374277674,
+              "imag": -1.595196740783775e+16
+            },
+            {
+              "real": 7507685.43042605,
+              "imag": 4535416182817100.0
+            }
+          ],
+          [
+            {
+              "real": -249390.3565044153,
+              "imag": -172280738540723.53
+            },
+            {
+              "real": 46272.506981344035,
+              "imag": 99704543223121.88
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          0.0,
+          0.0,
+          0.08071891388307384
+        ],
+        "size": [
+          "Infinity",
+          "Infinity",
+          3.2709338483196646
+        ]
+      },
+      "name": "silica layer",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "SiO2_Palik_LowLoss",
+        "frequency_range": [
+          59958491600000.0,
+          1998616386666666.8
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.5385442336875639,
+        "poles": [
+          [
+            {
+              "real": -11504139.374277674,
+              "imag": -1.595196740783775e+16
+            },
+            {
+              "real": 7507685.43042605,
+              "imag": 4535416182817100.0
+            }
+          ],
+          [
+            {
+              "real": -249390.3565044153,
+              "imag": -172280738540723.53
+            },
+            {
+              "real": 46272.506981344035,
+              "imag": 99704543223121.88
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          50.0,
+          50.0,
+          1.0161858380429063
+        ],
+        "size": [
+          100.0,
+          100.0,
+          1.0
+        ]
+      },
+      "name": "blue filter",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": null,
+        "frequency_range": null,
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.0,
+        "poles": [
+          [
+            {
+              "real": -2.283236045021537e+17,
+              "imag": 0.0
+            },
+            {
+              "real": 2.908286082474064e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -5377115912628.752,
+              "imag": 0.0
+            },
+            {
+              "real": 3644044603140186.0,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -415912508283129.06,
+              "imag": -2016900474038842.5
+            },
+            {
+              "real": -1609697143665493.0,
+              "imag": 27737066685421.598
+            }
+          ],
+          [
+            {
+              "real": -1324329874304115.5,
+              "imag": -2783403918375372.0
+            },
+            {
+              "real": -974193887175047.0,
+              "imag": 606129103688215.1
+            }
+          ],
+          [
+            {
+              "real": -955297539593753.8,
+              "imag": -4357070760141199.0
+            },
+            {
+              "real": -362876826480968.25,
+              "imag": 171688772733706.6
+            }
+          ],
+          [
+            {
+              "real": -322596586735738.75,
+              "imag": -3964733053976568.0
+            },
+            {
+              "real": -276762868864751.7,
+              "imag": -23321047879973.477
+            }
+          ],
+          [
+            {
+              "real": -73128919975244.55,
+              "imag": -3758563223699435.0
+            },
+            {
+              "real": 7208908437666.4,
+              "imag": 8618152014534.106
+            }
+          ],
+          [
+            {
+              "real": -66344281578450.266,
+              "imag": -3987206476034161.5
+            },
+            {
+              "real": -8398027487211.592,
+              "imag": -8673448724267.434
+            }
+          ],
+          [
+            {
+              "real": -92112434255081.28,
+              "imag": -3913759827048914.0
+            },
+            {
+              "real": -33787740125159.184,
+              "imag": -44515813038528.08
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          -50.0,
+          -50.0,
+          1.0161858380429063
+        ],
+        "size": [
+          100.0,
+          100.0,
+          1.0
+        ]
+      },
+      "name": "red filter",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": null,
+        "frequency_range": null,
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.0,
+        "poles": [
+          [
+            {
+              "real": -2.7096420867960876e+16,
+              "imag": 0.0
+            },
+            {
+              "real": -3505115526104034.0,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -1626382117636751.0,
+              "imag": 0.0
+            },
+            {
+              "real": 5359684321569141.0,
+              "imag": -0.0
+            }
+          ],
+          [
+            {
+              "real": -462914075020168.94,
+              "imag": -3666097010359936.0
+            },
+            {
+              "real": -30632855748994.195,
+              "imag": -23883962812418.855
+            }
+          ],
+          [
+            {
+              "real": -399991783388326.56,
+              "imag": -2375891968408090.5
+            },
+            {
+              "real": -1173013149614208.2,
+              "imag": -653174315987005.2
+            }
+          ],
+          [
+            {
+              "real": -148103889787793.62,
+              "imag": -2865884531822429.0
+            },
+            {
+              "real": -8777166411169.331,
+              "imag": -12338948026477.816
+            }
+          ],
+          [
+            {
+              "real": -91353210920540.61,
+              "imag": -3024641121866867.0
+            },
+            {
+              "real": 64812552356650.195,
+              "imag": 71114102038644.38
+            }
+          ],
+          [
+            {
+              "real": -68004226009349.055,
+              "imag": -3035696552127979.0
+            },
+            {
+              "real": 24058452894771.266,
+              "imag": -86862528443993.58
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          -50.0,
+          50.0,
+          1.0161858380429063
+        ],
+        "size": [
+          100.0,
+          100.0,
+          1.0
+        ]
+      },
+      "name": "green1 filter",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": null,
+        "frequency_range": null,
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.0,
+        "poles": [
+          [
+            {
+              "real": -8457443415587459.0,
+              "imag": 0.0
+            },
+            {
+              "real": 1463282749923554.0,
+              "imag": -0.0
+            }
+          ],
+          [
+            {
+              "real": -1668778626081444.2,
+              "imag": 0.0
+            },
+            {
+              "real": 2815338212742992.5,
+              "imag": -0.0
+            }
+          ],
+          [
+            {
+              "real": -494589695261851.9,
+              "imag": -3478486648715518.5
+            },
+            {
+              "real": 321643122054342.56,
+              "imag": -412344894020465.5
+            }
+          ],
+          [
+            {
+              "real": -108690481397399.34,
+              "imag": -3862518461230876.5
+            },
+            {
+              "real": 113750608842730.02,
+              "imag": 24090900863205.242
+            }
+          ],
+          [
+            {
+              "real": -80136694855641.08,
+              "imag": -3873752749611420.5
+            },
+            {
+              "real": -8100201760594.127,
+              "imag": -35243115719204.336
+            }
+          ],
+          [
+            {
+              "real": -309168084558834.4,
+              "imag": -3717508559541122.0
+            },
+            {
+              "real": -67010027249747.95,
+              "imag": -105851766240151.2
+            }
+          ],
+          [
+            {
+              "real": -83399226230022.08,
+              "imag": -3059988639393101.5
+            },
+            {
+              "real": -64768126228492.72,
+              "imag": 7520434283084.999
+            }
+          ],
+          [
+            {
+              "real": -258342113279550.8,
+              "imag": -3184434101776696.5
+            },
+            {
+              "real": -37019700042233.0,
+              "imag": 13232387833510.059
+            }
+          ],
+          [
+            {
+              "real": -74559182535283.2,
+              "imag": -3086134873888536.5
+            },
+            {
+              "real": -17508309160240.828,
+              "imag": -15402581800019.557
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          50.0,
+          -50.0,
+          1.0161858380429063
+        ],
+        "size": [
+          100.0,
+          100.0,
+          1.0
+        ]
+      },
+      "name": "green2 filter",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": null,
+        "frequency_range": null,
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.0,
+        "poles": [
+          [
+            {
+              "real": -8457443415587459.0,
+              "imag": 0.0
+            },
+            {
+              "real": 1463282749923554.0,
+              "imag": -0.0
+            }
+          ],
+          [
+            {
+              "real": -1668778626081444.2,
+              "imag": 0.0
+            },
+            {
+              "real": 2815338212742992.5,
+              "imag": -0.0
+            }
+          ],
+          [
+            {
+              "real": -494589695261851.9,
+              "imag": -3478486648715518.5
+            },
+            {
+              "real": 321643122054342.56,
+              "imag": -412344894020465.5
+            }
+          ],
+          [
+            {
+              "real": -108690481397399.34,
+              "imag": -3862518461230876.5
+            },
+            {
+              "real": 113750608842730.02,
+              "imag": 24090900863205.242
+            }
+          ],
+          [
+            {
+              "real": -80136694855641.08,
+              "imag": -3873752749611420.5
+            },
+            {
+              "real": -8100201760594.127,
+              "imag": -35243115719204.336
+            }
+          ],
+          [
+            {
+              "real": -309168084558834.4,
+              "imag": -3717508559541122.0
+            },
+            {
+              "real": -67010027249747.95,
+              "imag": -105851766240151.2
+            }
+          ],
+          [
+            {
+              "real": -83399226230022.08,
+              "imag": -3059988639393101.5
+            },
+            {
+              "real": -64768126228492.72,
+              "imag": 7520434283084.999
+            }
+          ],
+          [
+            {
+              "real": -258342113279550.8,
+              "imag": -3184434101776696.5
+            },
+            {
+              "real": -37019700042233.0,
+              "imag": 13232387833510.059
+            }
+          ],
+          [
+            {
+              "real": -74559182535283.2,
+              "imag": -3086134873888536.5
+            },
+            {
+              "real": -17508309160240.828,
+              "imag": -15402581800019.557
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          0.0,
+          0.0,
+          -0.033814161957093705
+        ],
+        "size": [
+          "Infinity",
+          "Infinity",
+          0.1
+        ]
+      },
+      "name": "metal shield",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "Al_Rakic1995",
+        "frequency_range": [
+          151926744799612.75,
+          1.5192674479961274e+16
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.0,
+        "poles": [
+          [
+            {
+              "real": -176076476399307.25,
+              "imag": 0.0
+            },
+            {
+              "real": -2.0497198166085053e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -55958309702844.36,
+              "imag": 0.0
+            },
+            {
+              "real": -1.9328759376610138e+18,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -32886941985772.406,
+              "imag": 0.0
+            },
+            {
+              "real": 2.985600009810314e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -836904963.7321033,
+              "imag": 0.0
+            },
+            {
+              "real": 1.9664479588602982e+18,
+              "imag": 0.0
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Cylinder",
+        "axis": 2,
+        "sidewall_angle": 0.0,
+        "reference_plane": "middle",
+        "radius": 1.4249999999999998,
+        "center": [
+          0.0,
+          0.0,
+          -0.033814161957093705
+        ],
+        "length": 0.1
+      },
+      "name": "metal shield hole",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "SiO2_Palik_LowLoss",
+        "frequency_range": [
+          59958491600000.0,
+          1998616386666666.8
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.5385442336875639,
+        "poles": [
+          [
+            {
+              "real": -11504139.374277674,
+              "imag": -1.595196740783775e+16
+            },
+            {
+              "real": 7507685.43042605,
+              "imag": 4535416182817100.0
+            }
+          ],
+          [
+            {
+              "real": -249390.3565044153,
+              "imag": -172280738540723.53
+            },
+            {
+              "real": 46272.506981344035,
+              "imag": 99704543223121.88
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          1.35,
+          0.0,
+          -0.9338141619570938
+        ],
+        "size": [
+          0.15,
+          "Infinity",
+          0.1
+        ]
+      },
+      "name": "interconnect 0",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "Al_Rakic1995",
+        "frequency_range": [
+          151926744799612.75,
+          1.5192674479961274e+16
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.0,
+        "poles": [
+          [
+            {
+              "real": -176076476399307.25,
+              "imag": 0.0
+            },
+            {
+              "real": -2.0497198166085053e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -55958309702844.36,
+              "imag": 0.0
+            },
+            {
+              "real": -1.9328759376610138e+18,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -32886941985772.406,
+              "imag": 0.0
+            },
+            {
+              "real": 2.985600009810314e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -836904963.7321033,
+              "imag": 0.0
+            },
+            {
+              "real": 1.9664479588602982e+18,
+              "imag": 0.0
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          0.0,
+          1.35,
+          -0.6338141619570937
+        ],
+        "size": [
+          "Infinity",
+          0.15,
+          0.1
+        ]
+      },
+      "name": "interconnect 1",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "Al_Rakic1995",
+        "frequency_range": [
+          151926744799612.75,
+          1.5192674479961274e+16
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.0,
+        "poles": [
+          [
+            {
+              "real": -176076476399307.25,
+              "imag": 0.0
+            },
+            {
+              "real": -2.0497198166085053e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -55958309702844.36,
+              "imag": 0.0
+            },
+            {
+              "real": -1.9328759376610138e+18,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -32886941985772.406,
+              "imag": 0.0
+            },
+            {
+              "real": 2.985600009810314e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -836904963.7321033,
+              "imag": 0.0
+            },
+            {
+              "real": 1.9664479588602982e+18,
+              "imag": 0.0
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          -1.35,
+          0.0,
+          -0.9338141619570938
+        ],
+        "size": [
+          0.15,
+          "Infinity",
+          0.1
+        ]
+      },
+      "name": "interconnect 2",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "Al_Rakic1995",
+        "frequency_range": [
+          151926744799612.75,
+          1.5192674479961274e+16
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.0,
+        "poles": [
+          [
+            {
+              "real": -176076476399307.25,
+              "imag": 0.0
+            },
+            {
+              "real": -2.0497198166085053e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -55958309702844.36,
+              "imag": 0.0
+            },
+            {
+              "real": -1.9328759376610138e+18,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -32886941985772.406,
+              "imag": 0.0
+            },
+            {
+              "real": 2.985600009810314e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -836904963.7321033,
+              "imag": 0.0
+            },
+            {
+              "real": 1.9664479588602982e+18,
+              "imag": 0.0
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          0.0,
+          -1.35,
+          -0.6338141619570937
+        ],
+        "size": [
+          "Infinity",
+          0.15,
+          0.1
+        ]
+      },
+      "name": "interconnect 3",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "Al_Rakic1995",
+        "frequency_range": [
+          151926744799612.75,
+          1.5192674479961274e+16
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.0,
+        "poles": [
+          [
+            {
+              "real": -176076476399307.25,
+              "imag": 0.0
+            },
+            {
+              "real": -2.0497198166085053e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -55958309702844.36,
+              "imag": 0.0
+            },
+            {
+              "real": -1.9328759376610138e+18,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -32886941985772.406,
+              "imag": 0.0
+            },
+            {
+              "real": 2.985600009810314e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -836904963.7321033,
+              "imag": 0.0
+            },
+            {
+              "real": 1.9664479588602982e+18,
+              "imag": 0.0
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          0.0,
+          0.0,
+          -0.9338141619570938
+        ],
+        "size": [
+          0.3,
+          "Infinity",
+          0.1
+        ]
+      },
+      "name": "interconnect_ground 0",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "Al_Rakic1995",
+        "frequency_range": [
+          151926744799612.75,
+          1.5192674479961274e+16
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.0,
+        "poles": [
+          [
+            {
+              "real": -176076476399307.25,
+              "imag": 0.0
+            },
+            {
+              "real": -2.0497198166085053e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -55958309702844.36,
+              "imag": 0.0
+            },
+            {
+              "real": -1.9328759376610138e+18,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -32886941985772.406,
+              "imag": 0.0
+            },
+            {
+              "real": 2.985600009810314e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -836904963.7321033,
+              "imag": 0.0
+            },
+            {
+              "real": 1.9664479588602982e+18,
+              "imag": 0.0
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          0.0,
+          0.0,
+          -0.6338141619570937
+        ],
+        "size": [
+          "Infinity",
+          0.3,
+          0.1
+        ]
+      },
+      "name": "interconnect_ground 1",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "Al_Rakic1995",
+        "frequency_range": [
+          151926744799612.75,
+          1.5192674479961274e+16
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 1.0,
+        "poles": [
+          [
+            {
+              "real": -176076476399307.25,
+              "imag": 0.0
+            },
+            {
+              "real": -2.0497198166085053e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -55958309702844.36,
+              "imag": 0.0
+            },
+            {
+              "real": -1.9328759376610138e+18,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -32886941985772.406,
+              "imag": 0.0
+            },
+            {
+              "real": 2.985600009810314e+17,
+              "imag": 0.0
+            }
+          ],
+          [
+            {
+              "real": -836904963.7321033,
+              "imag": 0.0
+            },
+            {
+              "real": 1.9664479588602982e+18,
+              "imag": 0.0
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          0.0,
+          0.0,
+          -1.519281086116926
+        ],
+        "size": [
+          "Infinity",
+          "Infinity",
+          0.07093384831966464
+        ]
+      },
+      "name": "anti-reflection",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "SiN_Horiba",
+        "frequency_range": [
+          145079354536315.6,
+          1450793545363156.0
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 2.32,
+        "poles": [
+          [
+            {
+              "real": -302334222151229.3,
+              "imag": -9863009385232968.0
+            },
+            {
+              "real": 0.0,
+              "imag": 6244215164693547.0
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "attrs": {},
+      "geometry": {
+        "attrs": {},
+        "type": "Box",
+        "center": [
+          0.0,
+          0.0,
+          -103.55474801027675
+        ],
+        "size": [
+          "Infinity",
+          "Infinity",
+          204.0
+        ]
+      },
+      "name": "silicon layer",
+      "background_permittivity": null,
+      "background_medium": null,
+      "priority": null,
+      "type": "Structure",
+      "medium": {
+        "attrs": {},
+        "name": "aSi_Horiba",
+        "frequency_range": [
+          362698386340789.0,
+          1450793545363156.0
+        ],
+        "allow_gain": false,
+        "nonlinear_spec": null,
+        "modulation_spec": null,
+        "viz_spec": null,
+        "heat_spec": null,
+        "type": "PoleResidue",
+        "eps_inf": 3.109,
+        "poles": [
+          [
+            {
+              "real": -1458496750076282.0,
+              "imag": -5789844327200831.0
+            },
+            {
+              "real": 0.0,
+              "imag": 4.485863370051096e+16
+            }
+          ]
+        ]
+      }
+    }
+  ],
+  "symmetry": [
+    0,
+    0,
+    0
+  ],
+  "sources": [
+    {
+      "attrs": {},
+      "name": "planewave",
+      "type": "PlaneWave",
+      "center": [
+        0.0,
+        0.0,
+        2.8047480102767586
+      ],
+      "size": [
+        "Infinity",
+        "Infinity",
+        0.0
+      ],
+      "source_time": {
+        "attrs": {},
+        "amplitude": 1.0,
+        "phase": 0.0,
+        "type": "GaussianPulse",
+        "freq0": 588878042500000.0,
+        "fwidth": 196292680833333.34,
+        "offset": 5.0,
+        "remove_dc_component": true
+      },
+      "num_freqs": 3,
+      "broadband_method": "chebyshev",
+      "use_colocated_integration": true,
+      "direction": "-",
+      "angle_theta": 0.0,
+      "angle_phi": 0.0,
+      "pol_angle": 0.0,
+      "angular_spec": {
+        "attrs": {},
+        "type": "FixedInPlaneKSpec"
+      }
+    }
+  ],
+  "boundary_spec": {
+    "attrs": {},
+    "x": {
+      "attrs": {},
+      "plus": {
+        "attrs": {},
+        "name": null,
+        "type": "Periodic"
+      },
+      "minus": {
+        "attrs": {},
+        "name": null,
+        "type": "Periodic"
+      },
+      "type": "Boundary"
+    },
+    "y": {
+      "attrs": {},
+      "plus": {
+        "attrs": {},
+        "name": null,
+        "type": "Periodic"
+      },
+      "minus": {
+        "attrs": {},
+        "name": null,
+        "type": "Periodic"
+      },
+      "type": "Boundary"
+    },
+    "z": {
+      "attrs": {},
+      "plus": {
+        "attrs": {},
+        "name": null,
+        "type": "Absorber",
+        "num_layers": 40,
+        "parameters": {
+          "attrs": {},
+          "sigma_order": 3,
+          "sigma_min": 0.0,
+          "sigma_max": 6.4,
+          "type": "AbsorberParams"
+        },
+        "extrude_structures": false
+      },
+      "minus": {
+        "attrs": {},
+        "name": null,
+        "type": "Absorber",
+        "num_layers": 40,
+        "parameters": {
+          "attrs": {},
+          "sigma_order": 3,
+          "sigma_min": 0.0,
+          "sigma_max": 6.4,
+          "type": "AbsorberParams"
+        },
+        "extrude_structures": false
+      },
+      "type": "Boundary"
+    },
+    "type": "BoundarySpec"
+  },
+  "monitors": [
+    {
+      "attrs": {},
+      "type": "FieldMonitor",
+      "center": [
+        0.0,
+        0.0,
+        -1.5557480102767585
+      ],
+      "size": [
+        "Infinity",
+        "Infinity",
+        0.0
+      ],
+      "name": "field_xy_silicon",
+      "interval_space": [
+        1,
+        1,
+        1
+      ],
+      "colocate": true,
+      "use_colocated_integration": true,
+      "freqs": [
+        461219166153846.1,
+        545077196363636.3,
+        666205462222222.2
+      ],
+      "apodization": {
+        "attrs": {},
+        "start": null,
+        "end": null,
+        "width": null,
+        "type": "ApodizationSpec"
+      },
+      "fields": [
+        "Ex",
+        "Ey",
+        "Ez",
+        "Hx",
+        "Hy",
+        "Hz"
+      ]
+    },
+    {
+      "attrs": {},
+      "type": "FieldMonitor",
+      "center": [
+        0.75,
+        0.0,
+        0.0
+      ],
+      "size": [
+        0.0,
+        "Infinity",
+        "Infinity"
+      ],
+      "name": "field_yz_BG",
+      "interval_space": [
+        1,
+        1,
+        1
+      ],
+      "colocate": true,
+      "use_colocated_integration": true,
+      "freqs": [
+        461219166153846.1,
+        545077196363636.3,
+        666205462222222.2
+      ],
+      "apodization": {
+        "attrs": {},
+        "start": null,
+        "end": null,
+        "width": null,
+        "type": "ApodizationSpec"
+      },
+      "fields": [
+        "Ex",
+        "Ey",
+        "Ez",
+        "Hx",
+        "Hy",
+        "Hz"
+      ]
+    },
+    {
+      "attrs": {},
+      "type": "FieldMonitor",
+      "center": [
+        -0.75,
+        0.0,
+        0.0
+      ],
+      "size": [
+        0.0,
+        "Infinity",
+        "Infinity"
+      ],
+      "name": "field_yz_GR",
+      "interval_space": [
+        1,
+        1,
+        1
+      ],
+      "colocate": true,
+      "use_colocated_integration": true,
+      "freqs": [
+        461219166153846.1,
+        545077196363636.3,
+        666205462222222.2
+      ],
+      "apodization": {
+        "attrs": {},
+        "start": null,
+        "end": null,
+        "width": null,
+        "type": "ApodizationSpec"
+      },
+      "fields": [
+        "Ex",
+        "Ey",
+        "Ez",
+        "Hx",
+        "Hy",
+        "Hz"
+      ]
+    },
+    {
+      "attrs": {},
+      "type": "FluxMonitor",
+      "center": [
+        0.75,
+        0.75,
+        -1.5547480102767586
+      ],
+      "size": [
+        1.0499999999999998,
+        1.0499999999999998,
+        0.0
+      ],
+      "name": "flux_si_blue",
+      "interval_space": [
+        1,
+        1,
+        1
+      ],
+      "colocate": true,
+      "use_colocated_integration": true,
+      "freqs": [
+        428274940000000.0,
+        429889041532663.3,
+        431503143065326.6,
+        433117244597989.94,
+        434731346130653.25,
+        436345447663316.56,
+        437959549195979.9,
+        439573650728643.2,
+        441187752261306.56,
+        442801853793969.9,
+        444415955326633.2,
+        446030056859296.5,
+        447644158391959.8,
+        449258259924623.1,
+        450872361457286.44,
+        452486462989949.75,
+        454100564522613.06,
+        455714666055276.4,
+        457328767587939.7,
+        458942869120603.0,
+        460556970653266.3,
+        462171072185929.6,
+        463785173718593.0,
+        465399275251256.25,
+        467013376783919.6,
+        468627478316582.94,
+        470241579849246.25,
+        471855681381909.56,
+        473469782914572.9,
+        475083884447236.2,
+        476697985979899.5,
+        478312087512562.8,
+        479926189045226.1,
+        481540290577889.44,
+        483154392110552.75,
+        484768493643216.06,
+        486382595175879.4,
+        487996696708542.75,
+        489610798241206.0,
+        491224899773869.4,
+        492839001306532.7,
+        494453102839196.0,
+        496067204371859.3,
+        497681305904522.6,
+        499295407437185.94,
+        500909508969849.25,
+        502523610502512.56,
+        504137712035175.9,
+        505751813567839.2,
+        507365915100502.5,
+        508980016633165.8,
+        510594118165829.1,
+        512208219698492.5,
+        513822321231155.75,
+        515436422763819.1,
+        517050524296482.44,
+        518664625829145.75,
+        520278727361809.06,
+        521892828894472.4,
+        523506930427135.7,
+        525121031959799.0,
+        526735133492462.3,
+        528349235025125.6,
+        529963336557788.94,
+        531577438090452.25,
+        533191539623115.56,
+        534805641155778.9,
+        536419742688442.25,
+        538033844221105.5,
+        539647945753768.9,
+        541262047286432.2,
+        542876148819095.5,
+        544490250351758.8,
+        546104351884422.1,
+        547718453417085.44,
+        549332554949748.75,
+        550946656482412.06,
+        552560758015075.4,
+        554174859547738.7,
+        555788961080402.0,
+        557403062613065.3,
+        559017164145728.6,
+        560631265678392.0,
+        562245367211055.25,
+        563859468743718.6,
+        565473570276381.9,
+        567087671809045.2,
+        568701773341708.5,
+        570315874874371.9,
+        571929976407035.2,
+        573544077939698.5,
+        575158179472361.8,
+        576772281005025.1,
+        578386382537688.5,
+        580000484070351.8,
+        581614585603015.1,
+        583228687135678.4,
+        584842788668341.8,
+        586456890201005.0,
+        588070991733668.4,
+        589685093266331.6,
+        591299194798995.0,
+        592913296331658.2,
+        594527397864321.6,
+        596141499396985.0,
+        597755600929648.2,
+        599369702462311.5,
+        600983803994974.9,
+        602597905527638.2,
+        604212007060301.5,
+        605826108592964.9,
+        607440210125628.1,
+        609054311658291.5,
+        610668413190954.8,
+        612282514723618.1,
+        613896616256281.4,
+        615510717788944.8,
+        617124819321608.0,
+        618738920854271.4,
+        620353022386934.8,
+        621967123919598.0,
+        623581225452261.2,
+        625195326984924.6,
+        626809428517588.0,
+        628423530050251.2,
+        630037631582914.6,
+        631651733115577.9,
+        633265834648241.2,
+        634879936180904.5,
+        636494037713567.9,
+        638108139246231.1,
+        639722240778894.5,
+        641336342311557.8,
+        642950443844221.1,
+        644564545376884.5,
+        646178646909547.8,
+        647792748442211.0,
+        649406849974874.4,
+        651020951507537.8,
+        652635053040201.0,
+        654249154572864.4,
+        655863256105527.6,
+        657477357638191.0,
+        659091459170854.2,
+        660705560703517.6,
+        662319662236180.9,
+        663933763768844.2,
+        665547865301507.5,
+        667161966834170.9,
+        668776068366834.2,
+        670390169899497.5,
+        672004271432160.8,
+        673618372964824.1,
+        675232474497487.5,
+        676846576030150.8,
+        678460677562814.1,
+        680074779095477.4,
+        681688880628140.8,
+        683302982160804.0,
+        684917083693467.4,
+        686531185226130.6,
+        688145286758794.0,
+        689759388291457.2,
+        691373489824120.6,
+        692987591356784.0,
+        694601692889447.2,
+        696215794422110.5,
+        697829895954773.9,
+        699443997487437.2,
+        701058099020100.5,
+        702672200552763.9,
+        704286302085427.1,
+        705900403618090.5,
+        707514505150753.8,
+        709128606683417.1,
+        710742708216080.5,
+        712356809748743.8,
+        713970911281407.0,
+        715585012814070.4,
+        717199114346733.8,
+        718813215879397.0,
+        720427317412060.2,
+        722041418944723.6,
+        723655520477387.0,
+        725269622010050.2,
+        726883723542713.5,
+        728497825075376.9,
+        730111926608040.2,
+        731726028140703.5,
+        733340129673366.9,
+        734954231206030.2,
+        736568332738693.5,
+        738182434271356.8,
+        739796535804020.1,
+        741410637336683.5,
+        743024738869346.8,
+        744638840402010.0,
+        746252941934673.4,
+        747867043467336.8,
+        749481145000000.0
+      ],
+      "apodization": {
+        "attrs": {},
+        "start": null,
+        "end": null,
+        "width": null,
+        "type": "ApodizationSpec"
+      },
+      "normal_dir": "+",
+      "exclude_surfaces": null,
+      "enable_adjoint": false
+    },
+    {
+      "attrs": {},
+      "type": "FluxMonitor",
+      "center": [
+        -0.75,
+        -0.75,
+        -1.5547480102767586
+      ],
+      "size": [
+        1.0499999999999998,
+        1.0499999999999998,
+        0.0
+      ],
+      "name": "flux_si_red",
+      "interval_space": [
+        1,
+        1,
+        1
+      ],
+      "colocate": true,
+      "use_colocated_integration": true,
+      "freqs": [
+        428274940000000.0,
+        429889041532663.3,
+        431503143065326.6,
+        433117244597989.94,
+        434731346130653.25,
+        436345447663316.56,
+        437959549195979.9,
+        439573650728643.2,
+        441187752261306.56,
+        442801853793969.9,
+        444415955326633.2,
+        446030056859296.5,
+        447644158391959.8,
+        449258259924623.1,
+        450872361457286.44,
+        452486462989949.75,
+        454100564522613.06,
+        455714666055276.4,
+        457328767587939.7,
+        458942869120603.0,
+        460556970653266.3,
+        462171072185929.6,
+        463785173718593.0,
+        465399275251256.25,
+        467013376783919.6,
+        468627478316582.94,
+        470241579849246.25,
+        471855681381909.56,
+        473469782914572.9,
+        475083884447236.2,
+        476697985979899.5,
+        478312087512562.8,
+        479926189045226.1,
+        481540290577889.44,
+        483154392110552.75,
+        484768493643216.06,
+        486382595175879.4,
+        487996696708542.75,
+        489610798241206.0,
+        491224899773869.4,
+        492839001306532.7,
+        494453102839196.0,
+        496067204371859.3,
+        497681305904522.6,
+        499295407437185.94,
+        500909508969849.25,
+        502523610502512.56,
+        504137712035175.9,
+        505751813567839.2,
+        507365915100502.5,
+        508980016633165.8,
+        510594118165829.1,
+        512208219698492.5,
+        513822321231155.75,
+        515436422763819.1,
+        517050524296482.44,
+        518664625829145.75,
+        520278727361809.06,
+        521892828894472.4,
+        523506930427135.7,
+        525121031959799.0,
+        526735133492462.3,
+        528349235025125.6,
+        529963336557788.94,
+        531577438090452.25,
+        533191539623115.56,
+        534805641155778.9,
+        536419742688442.25,
+        538033844221105.5,
+        539647945753768.9,
+        541262047286432.2,
+        542876148819095.5,
+        544490250351758.8,
+        546104351884422.1,
+        547718453417085.44,
+        549332554949748.75,
+        550946656482412.06,
+        552560758015075.4,
+        554174859547738.7,
+        555788961080402.0,
+        557403062613065.3,
+        559017164145728.6,
+        560631265678392.0,
+        562245367211055.25,
+        563859468743718.6,
+        565473570276381.9,
+        567087671809045.2,
+        568701773341708.5,
+        570315874874371.9,
+        571929976407035.2,
+        573544077939698.5,
+        575158179472361.8,
+        576772281005025.1,
+        578386382537688.5,
+        580000484070351.8,
+        581614585603015.1,
+        583228687135678.4,
+        584842788668341.8,
+        586456890201005.0,
+        588070991733668.4,
+        589685093266331.6,
+        591299194798995.0,
+        592913296331658.2,
+        594527397864321.6,
+        596141499396985.0,
+        597755600929648.2,
+        599369702462311.5,
+        600983803994974.9,
+        602597905527638.2,
+        604212007060301.5,
+        605826108592964.9,
+        607440210125628.1,
+        609054311658291.5,
+        610668413190954.8,
+        612282514723618.1,
+        613896616256281.4,
+        615510717788944.8,
+        617124819321608.0,
+        618738920854271.4,
+        620353022386934.8,
+        621967123919598.0,
+        623581225452261.2,
+        625195326984924.6,
+        626809428517588.0,
+        628423530050251.2,
+        630037631582914.6,
+        631651733115577.9,
+        633265834648241.2,
+        634879936180904.5,
+        636494037713567.9,
+        638108139246231.1,
+        639722240778894.5,
+        641336342311557.8,
+        642950443844221.1,
+        644564545376884.5,
+        646178646909547.8,
+        647792748442211.0,
+        649406849974874.4,
+        651020951507537.8,
+        652635053040201.0,
+        654249154572864.4,
+        655863256105527.6,
+        657477357638191.0,
+        659091459170854.2,
+        660705560703517.6,
+        662319662236180.9,
+        663933763768844.2,
+        665547865301507.5,
+        667161966834170.9,
+        668776068366834.2,
+        670390169899497.5,
+        672004271432160.8,
+        673618372964824.1,
+        675232474497487.5,
+        676846576030150.8,
+        678460677562814.1,
+        680074779095477.4,
+        681688880628140.8,
+        683302982160804.0,
+        684917083693467.4,
+        686531185226130.6,
+        688145286758794.0,
+        689759388291457.2,
+        691373489824120.6,
+        692987591356784.0,
+        694601692889447.2,
+        696215794422110.5,
+        697829895954773.9,
+        699443997487437.2,
+        701058099020100.5,
+        702672200552763.9,
+        704286302085427.1,
+        705900403618090.5,
+        707514505150753.8,
+        709128606683417.1,
+        710742708216080.5,
+        712356809748743.8,
+        713970911281407.0,
+        715585012814070.4,
+        717199114346733.8,
+        718813215879397.0,
+        720427317412060.2,
+        722041418944723.6,
+        723655520477387.0,
+        725269622010050.2,
+        726883723542713.5,
+        728497825075376.9,
+        730111926608040.2,
+        731726028140703.5,
+        733340129673366.9,
+        734954231206030.2,
+        736568332738693.5,
+        738182434271356.8,
+        739796535804020.1,
+        741410637336683.5,
+        743024738869346.8,
+        744638840402010.0,
+        746252941934673.4,
+        747867043467336.8,
+        749481145000000.0
+      ],
+      "apodization": {
+        "attrs": {},
+        "start": null,
+        "end": null,
+        "width": null,
+        "type": "ApodizationSpec"
+      },
+      "normal_dir": "+",
+      "exclude_surfaces": null,
+      "enable_adjoint": false
+    },
+    {
+      "attrs": {},
+      "type": "FluxMonitor",
+      "center": [
+        -0.75,
+        0.75,
+        -1.5547480102767586
+      ],
+      "size": [
+        1.0499999999999998,
+        1.0499999999999998,
+        0.0
+      ],
+      "name": "flux_si_green1",
+      "interval_space": [
+        1,
+        1,
+        1
+      ],
+      "colocate": true,
+      "use_colocated_integration": true,
+      "freqs": [
+        428274940000000.0,
+        429889041532663.3,
+        431503143065326.6,
+        433117244597989.94,
+        434731346130653.25,
+        436345447663316.56,
+        437959549195979.9,
+        439573650728643.2,
+        441187752261306.56,
+        442801853793969.9,
+        444415955326633.2,
+        446030056859296.5,
+        447644158391959.8,
+        449258259924623.1,
+        450872361457286.44,
+        452486462989949.75,
+        454100564522613.06,
+        455714666055276.4,
+        457328767587939.7,
+        458942869120603.0,
+        460556970653266.3,
+        462171072185929.6,
+        463785173718593.0,
+        465399275251256.25,
+        467013376783919.6,
+        468627478316582.94,
+        470241579849246.25,
+        471855681381909.56,
+        473469782914572.9,
+        475083884447236.2,
+        476697985979899.5,
+        478312087512562.8,
+        479926189045226.1,
+        481540290577889.44,
+        483154392110552.75,
+        484768493643216.06,
+        486382595175879.4,
+        487996696708542.75,
+        489610798241206.0,
+        491224899773869.4,
+        492839001306532.7,
+        494453102839196.0,
+        496067204371859.3,
+        497681305904522.6,
+        499295407437185.94,
+        500909508969849.25,
+        502523610502512.56,
+        504137712035175.9,
+        505751813567839.2,
+        507365915100502.5,
+        508980016633165.8,
+        510594118165829.1,
+        512208219698492.5,
+        513822321231155.75,
+        515436422763819.1,
+        517050524296482.44,
+        518664625829145.75,
+        520278727361809.06,
+        521892828894472.4,
+        523506930427135.7,
+        525121031959799.0,
+        526735133492462.3,
+        528349235025125.6,
+        529963336557788.94,
+        531577438090452.25,
+        533191539623115.56,
+        534805641155778.9,
+        536419742688442.25,
+        538033844221105.5,
+        539647945753768.9,
+        541262047286432.2,
+        542876148819095.5,
+        544490250351758.8,
+        546104351884422.1,
+        547718453417085.44,
+        549332554949748.75,
+        550946656482412.06,
+        552560758015075.4,
+        554174859547738.7,
+        555788961080402.0,
+        557403062613065.3,
+        559017164145728.6,
+        560631265678392.0,
+        562245367211055.25,
+        563859468743718.6,
+        565473570276381.9,
+        567087671809045.2,
+        568701773341708.5,
+        570315874874371.9,
+        571929976407035.2,
+        573544077939698.5,
+        575158179472361.8,
+        576772281005025.1,
+        578386382537688.5,
+        580000484070351.8,
+        581614585603015.1,
+        583228687135678.4,
+        584842788668341.8,
+        586456890201005.0,
+        588070991733668.4,
+        589685093266331.6,
+        591299194798995.0,
+        592913296331658.2,
+        594527397864321.6,
+        596141499396985.0,
+        597755600929648.2,
+        599369702462311.5,
+        600983803994974.9,
+        602597905527638.2,
+        604212007060301.5,
+        605826108592964.9,
+        607440210125628.1,
+        609054311658291.5,
+        610668413190954.8,
+        612282514723618.1,
+        613896616256281.4,
+        615510717788944.8,
+        617124819321608.0,
+        618738920854271.4,
+        620353022386934.8,
+        621967123919598.0,
+        623581225452261.2,
+        625195326984924.6,
+        626809428517588.0,
+        628423530050251.2,
+        630037631582914.6,
+        631651733115577.9,
+        633265834648241.2,
+        634879936180904.5,
+        636494037713567.9,
+        638108139246231.1,
+        639722240778894.5,
+        641336342311557.8,
+        642950443844221.1,
+        644564545376884.5,
+        646178646909547.8,
+        647792748442211.0,
+        649406849974874.4,
+        651020951507537.8,
+        652635053040201.0,
+        654249154572864.4,
+        655863256105527.6,
+        657477357638191.0,
+        659091459170854.2,
+        660705560703517.6,
+        662319662236180.9,
+        663933763768844.2,
+        665547865301507.5,
+        667161966834170.9,
+        668776068366834.2,
+        670390169899497.5,
+        672004271432160.8,
+        673618372964824.1,
+        675232474497487.5,
+        676846576030150.8,
+        678460677562814.1,
+        680074779095477.4,
+        681688880628140.8,
+        683302982160804.0,
+        684917083693467.4,
+        686531185226130.6,
+        688145286758794.0,
+        689759388291457.2,
+        691373489824120.6,
+        692987591356784.0,
+        694601692889447.2,
+        696215794422110.5,
+        697829895954773.9,
+        699443997487437.2,
+        701058099020100.5,
+        702672200552763.9,
+        704286302085427.1,
+        705900403618090.5,
+        707514505150753.8,
+        709128606683417.1,
+        710742708216080.5,
+        712356809748743.8,
+        713970911281407.0,
+        715585012814070.4,
+        717199114346733.8,
+        718813215879397.0,
+        720427317412060.2,
+        722041418944723.6,
+        723655520477387.0,
+        725269622010050.2,
+        726883723542713.5,
+        728497825075376.9,
+        730111926608040.2,
+        731726028140703.5,
+        733340129673366.9,
+        734954231206030.2,
+        736568332738693.5,
+        738182434271356.8,
+        739796535804020.1,
+        741410637336683.5,
+        743024738869346.8,
+        744638840402010.0,
+        746252941934673.4,
+        747867043467336.8,
+        749481145000000.0
+      ],
+      "apodization": {
+        "attrs": {},
+        "start": null,
+        "end": null,
+        "width": null,
+        "type": "ApodizationSpec"
+      },
+      "normal_dir": "+",
+      "exclude_surfaces": null,
+      "enable_adjoint": false
+    },
+    {
+      "attrs": {},
+      "type": "FluxMonitor",
+      "center": [
+        0.75,
+        -0.75,
+        -1.5547480102767586
+      ],
+      "size": [
+        1.0499999999999998,
+        1.0499999999999998,
+        0.0
+      ],
+      "name": "flux_si_green2",
+      "interval_space": [
+        1,
+        1,
+        1
+      ],
+      "colocate": true,
+      "use_colocated_integration": true,
+      "freqs": [
+        428274940000000.0,
+        429889041532663.3,
+        431503143065326.6,
+        433117244597989.94,
+        434731346130653.25,
+        436345447663316.56,
+        437959549195979.9,
+        439573650728643.2,
+        441187752261306.56,
+        442801853793969.9,
+        444415955326633.2,
+        446030056859296.5,
+        447644158391959.8,
+        449258259924623.1,
+        450872361457286.44,
+        452486462989949.75,
+        454100564522613.06,
+        455714666055276.4,
+        457328767587939.7,
+        458942869120603.0,
+        460556970653266.3,
+        462171072185929.6,
+        463785173718593.0,
+        465399275251256.25,
+        467013376783919.6,
+        468627478316582.94,
+        470241579849246.25,
+        471855681381909.56,
+        473469782914572.9,
+        475083884447236.2,
+        476697985979899.5,
+        478312087512562.8,
+        479926189045226.1,
+        481540290577889.44,
+        483154392110552.75,
+        484768493643216.06,
+        486382595175879.4,
+        487996696708542.75,
+        489610798241206.0,
+        491224899773869.4,
+        492839001306532.7,
+        494453102839196.0,
+        496067204371859.3,
+        497681305904522.6,
+        499295407437185.94,
+        500909508969849.25,
+        502523610502512.56,
+        504137712035175.9,
+        505751813567839.2,
+        507365915100502.5,
+        508980016633165.8,
+        510594118165829.1,
+        512208219698492.5,
+        513822321231155.75,
+        515436422763819.1,
+        517050524296482.44,
+        518664625829145.75,
+        520278727361809.06,
+        521892828894472.4,
+        523506930427135.7,
+        525121031959799.0,
+        526735133492462.3,
+        528349235025125.6,
+        529963336557788.94,
+        531577438090452.25,
+        533191539623115.56,
+        534805641155778.9,
+        536419742688442.25,
+        538033844221105.5,
+        539647945753768.9,
+        541262047286432.2,
+        542876148819095.5,
+        544490250351758.8,
+        546104351884422.1,
+        547718453417085.44,
+        549332554949748.75,
+        550946656482412.06,
+        552560758015075.4,
+        554174859547738.7,
+        555788961080402.0,
+        557403062613065.3,
+        559017164145728.6,
+        560631265678392.0,
+        562245367211055.25,
+        563859468743718.6,
+        565473570276381.9,
+        567087671809045.2,
+        568701773341708.5,
+        570315874874371.9,
+        571929976407035.2,
+        573544077939698.5,
+        575158179472361.8,
+        576772281005025.1,
+        578386382537688.5,
+        580000484070351.8,
+        581614585603015.1,
+        583228687135678.4,
+        584842788668341.8,
+        586456890201005.0,
+        588070991733668.4,
+        589685093266331.6,
+        591299194798995.0,
+        592913296331658.2,
+        594527397864321.6,
+        596141499396985.0,
+        597755600929648.2,
+        599369702462311.5,
+        600983803994974.9,
+        602597905527638.2,
+        604212007060301.5,
+        605826108592964.9,
+        607440210125628.1,
+        609054311658291.5,
+        610668413190954.8,
+        612282514723618.1,
+        613896616256281.4,
+        615510717788944.8,
+        617124819321608.0,
+        618738920854271.4,
+        620353022386934.8,
+        621967123919598.0,
+        623581225452261.2,
+        625195326984924.6,
+        626809428517588.0,
+        628423530050251.2,
+        630037631582914.6,
+        631651733115577.9,
+        633265834648241.2,
+        634879936180904.5,
+        636494037713567.9,
+        638108139246231.1,
+        639722240778894.5,
+        641336342311557.8,
+        642950443844221.1,
+        644564545376884.5,
+        646178646909547.8,
+        647792748442211.0,
+        649406849974874.4,
+        651020951507537.8,
+        652635053040201.0,
+        654249154572864.4,
+        655863256105527.6,
+        657477357638191.0,
+        659091459170854.2,
+        660705560703517.6,
+        662319662236180.9,
+        663933763768844.2,
+        665547865301507.5,
+        667161966834170.9,
+        668776068366834.2,
+        670390169899497.5,
+        672004271432160.8,
+        673618372964824.1,
+        675232474497487.5,
+        676846576030150.8,
+        678460677562814.1,
+        680074779095477.4,
+        681688880628140.8,
+        683302982160804.0,
+        684917083693467.4,
+        686531185226130.6,
+        688145286758794.0,
+        689759388291457.2,
+        691373489824120.6,
+        692987591356784.0,
+        694601692889447.2,
+        696215794422110.5,
+        697829895954773.9,
+        699443997487437.2,
+        701058099020100.5,
+        702672200552763.9,
+        704286302085427.1,
+        705900403618090.5,
+        707514505150753.8,
+        709128606683417.1,
+        710742708216080.5,
+        712356809748743.8,
+        713970911281407.0,
+        715585012814070.4,
+        717199114346733.8,
+        718813215879397.0,
+        720427317412060.2,
+        722041418944723.6,
+        723655520477387.0,
+        725269622010050.2,
+        726883723542713.5,
+        728497825075376.9,
+        730111926608040.2,
+        731726028140703.5,
+        733340129673366.9,
+        734954231206030.2,
+        736568332738693.5,
+        738182434271356.8,
+        739796535804020.1,
+        741410637336683.5,
+        743024738869346.8,
+        744638840402010.0,
+        746252941934673.4,
+        747867043467336.8,
+        749481145000000.0
+      ],
+      "apodization": {
+        "attrs": {},
+        "start": null,
+        "end": null,
+        "width": null,
+        "type": "ApodizationSpec"
+      },
+      "normal_dir": "+",
+      "exclude_surfaces": null,
+      "enable_adjoint": false
+    }
+  ],
+  "grid_spec": {
+    "attrs": {},
+    "grid_x": {
+      "attrs": {},
+      "type": "AutoGrid",
+      "max_scale": 1.4,
+      "mesher": {
+        "attrs": {},
+        "type": "GradedMesher"
+      },
+      "dl_min": 0.0,
+      "min_steps_per_wvl": 10.0,
+      "min_steps_per_sim_size": 10.0
+    },
+    "grid_y": {
+      "attrs": {},
+      "type": "AutoGrid",
+      "max_scale": 1.4,
+      "mesher": {
+        "attrs": {},
+        "type": "GradedMesher"
+      },
+      "dl_min": 0.0,
+      "min_steps_per_wvl": 10.0,
+      "min_steps_per_sim_size": 10.0
+    },
+    "grid_z": {
+      "attrs": {},
+      "type": "AutoGrid",
+      "max_scale": 1.4,
+      "mesher": {
+        "attrs": {},
+        "type": "GradedMesher"
+      },
+      "dl_min": 0.0,
+      "min_steps_per_wvl": 10.0,
+      "min_steps_per_sim_size": 10.0
+    },
+    "wavelength": 0.55,
+    "override_structures": [],
+    "snapping_points": [],
+    "layer_refinement_specs": [],
+    "type": "GridSpec"
+  },
+  "version": "2.12.0.dev3",
+  "plot_length_units": "\u03bcm",
+  "structure_priority_mode": "equal",
+  "lumped_elements": [],
+  "subpixel": {
+    "attrs": {},
+    "dielectric": {
+      "attrs": {},
+      "type": "PolarizedAveraging"
+    },
+    "metal": {
+      "attrs": {},
+      "type": "Staircasing"
+    },
+    "pec": {
+      "attrs": {},
+      "type": "PECConformal",
+      "timestep_reduction": 0.3,
+      "edge_singularity_correction": true
+    },
+    "pmc": {
+      "attrs": {},
+      "type": "Staircasing"
+    },
+    "lossy_metal": {
+      "attrs": {},
+      "type": "SurfaceImpedance",
+      "timestep_reduction": 0.0,
+      "edge_singularity_correction": true
+    },
+    "type": "SubpixelSpec"
+  },
+  "simulation_type": "tidy3d",
+  "post_norm": 1.0,
+  "internal_absorbers": [],
+  "courant": 0.99,
+  "relax_courant": false,
+  "precision": "hybrid",
+  "normalize_index": 0,
+  "shutoff": 1e-05,
+  "run_time": 5.094433453935412e-13,
+  "low_freq_smoothing": null
+}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -146,6 +147,11 @@ def _rasterize_design(
         cache_directory = None
 
     polarization = normalize_polarization_2d(polarization)
+    from beamz.design.dispersion import PoleResidue
+
+    has_dispersion = any(isinstance(m, PoleResidue) for m in scene.materials)
+    if has_dispersion:
+        smoothing = "volume"
     result = rasterize(
         scene,
         native_grid,
@@ -156,9 +162,28 @@ def _rasterize_design(
         ),
         cache_directory=cache_directory,
     )
-    return MaterialGrid.from_raster_result(
+    material_grid = MaterialGrid.from_raster_result(
         result,
         dimensions=3 if kind == "3d" else 2,
         polarization=polarization,
         resolution=representative_resolution,
     )
+
+    if has_dispersion:
+        from .dispersion import rasterize_dispersion
+
+        if material_grid.uses_full_permittivity:
+            raise ValueError(
+                "Dispersive media currently require scalar/diagonal background materials."
+            )
+        regions = rasterize_dispersion(
+            scene,
+            native_grid,
+            kind=kind,
+            polarization=polarization,
+            quality=quality,
+            resolution=representative_resolution,
+            cache_directory=cache_directory,
+        )
+        material_grid = replace(material_grid, dispersion=regions)
+    return material_grid

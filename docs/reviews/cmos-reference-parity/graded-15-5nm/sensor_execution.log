@@ -1,0 +1,38 @@
+{'device': '[CudaDevice(id=0)]', 'dx_nm': 15.0, 'runtime_fs': 300, 'grid': [202, 202, 509], 'steps': 40590, 'dt': 7.391150855487095e-18, 'reference': False, 'graded': True, 'metal_nm': 5, 'absorber_nm': 400, 'material_checksums': {'materials.json': '179dd5944332856225b639d369e1f3a50f086b27f8d49b74b2e65d601f09716f', 'filters.json': '3c0845ca3f8fb5d82dcd948373d7fc42df06b58539d1a8b30f95ca7397ef9749'}}
+Compiling/rasterizing
+Setup finished {'device': '[CudaDevice(id=0)]', 'dx_nm': 15.0, 'runtime_fs': 300, 'grid': [202, 202, 509], 'steps': 40590, 'dt': 7.391150855487095e-18, 'reference': False, 'graded': True, 'metal_nm': 5, 'absorber_nm': 400, 'material_checksums': {'materials.json': '179dd5944332856225b639d369e1f3a50f086b27f8d49b74b2e65d601f09716f', 'filters.json': '3c0845ca3f8fb5d82dcd948373d7fc42df06b58539d1a8b30f95ca7397ef9749'}, 'setup_seconds': 90.73385740601225, 'polarization_bytes': np.int64(1989875832)}
+First half finished 621.8331399660092
+{
+  "device": "[CudaDevice(id=0)]",
+  "dx_nm": 15.0,
+  "runtime_fs": 300,
+  "grid": [
+    202,
+    202,
+    509
+  ],
+  "steps": 40590,
+  "dt": 7.391150855487095e-18,
+  "reference": false,
+  "graded": true,
+  "metal_nm": 5,
+  "absorber_nm": 400,
+  "material_checksums": {
+    "materials.json": "179dd5944332856225b639d369e1f3a50f086b27f8d49b74b2e65d601f09716f",
+    "filters.json": "3c0845ca3f8fb5d82dcd948373d7fc42df06b58539d1a8b30f95ca7397ef9749"
+  },
+  "setup_seconds": 90.73385740601225,
+  "polarization_bytes": 1989875832,
+  "first_half_seconds": 621.8331399660092,
+  "second_half_seconds": 620.0534565980197,
+  "finite_fields": true,
+  "finite_polarization": true,
+  "temporal_max_absolute_change": {
+    "blue": 0.0009412267757379356,
+    "red": 0.0015191585205065333,
+    "green1": 0.001375255606926279,
+    "green2": 0.0014147031790448517
+  },
+  "launched_power": 1.0,
+  "peak_field": 13392.302734375
+}

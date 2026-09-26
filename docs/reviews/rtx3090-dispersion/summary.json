@@ -1,0 +1,125 @@
+{
+  "runs": {
+    "50": {
+      "device": "[CudaDevice(id=0)]",
+      "dx_nm": 50.0,
+      "runtime_fs": 300,
+      "grid": [
+        60,
+        60,
+        143
+      ],
+      "steps": 4452,
+      "dt": 6.740416205412599e-17,
+      "reference": false,
+      "setup_seconds": 5.649644993012771,
+      "polarization_bytes": 70965936,
+      "first_half_seconds": 6.814450793986907,
+      "second_half_seconds": 5.7701265970245,
+      "finite_fields": true,
+      "finite_polarization": true,
+      "temporal_max_absolute_change": {
+        "blue": 6.849952992892504e-05,
+        "red": 0.00010014056849631109,
+        "green1": 3.170319718385703e-05,
+        "green2": 4.0021404982238176e-05
+      },
+      "launched_power": 1.0,
+      "peak_field": 488666.46875,
+      "calibration_incident_minmax": [
+        0.9385225382138355,
+        0.9830473847813537
+      ],
+      "peak_efficiency": {
+        "red": 0.030388917081414023,
+        "green": 0.020423729774957412,
+        "blue": 0.006567461085566815
+      }
+    },
+    "25": {
+      "device": "[CudaDevice(id=0)]",
+      "dx_nm": 25.0,
+      "runtime_fs": 300,
+      "grid": [
+        120,
+        120,
+        285
+      ],
+      "steps": 8903,
+      "dt": 3.370208102706291e-17,
+      "reference": false,
+      "setup_seconds": 18.873450579005294,
+      "polarization_bytes": 549480360,
+      "first_half_seconds": 41.119958302006125,
+      "second_half_seconds": 39.719570020009996,
+      "finite_fields": true,
+      "finite_polarization": true,
+      "temporal_max_absolute_change": {
+        "blue": 2.343736618537484e-05,
+        "red": 8.708534273181578e-05,
+        "green1": 2.7091946267272793e-05,
+        "green2": 3.65318454360504e-05
+      },
+      "launched_power": 1.0,
+      "peak_field": 820287.1875,
+      "calibration_incident_minmax": [
+        0.9951090225374828,
+        1.0050446887973814
+      ],
+      "peak_efficiency": {
+        "red": 0.047255159113010606,
+        "green": 0.05778136931180905,
+        "blue": 0.03486485373094447
+      }
+    },
+    "20": {
+      "device": "[CudaDevice(id=0)]",
+      "dx_nm": 20.0,
+      "runtime_fs": 300,
+      "grid": [
+        150,
+        150,
+        356
+      ],
+      "steps": 11128,
+      "dt": 2.6961664821650324e-17,
+      "reference": false,
+      "setup_seconds": 29.484941756003536,
+      "polarization_bytes": 1066055168,
+      "first_half_seconds": 92.64817465899978,
+      "second_half_seconds": 90.01357144900248,
+      "finite_fields": true,
+      "finite_polarization": true,
+      "temporal_max_absolute_change": {
+        "blue": 1.942021007502251e-05,
+        "red": 7.312714391793235e-05,
+        "green1": 3.212461827314765e-05,
+        "green2": 2.2043859791685133e-05
+      },
+      "launched_power": 1.0,
+      "peak_field": 1021047.125,
+      "calibration_incident_minmax": [
+        1.0040319234615407,
+        1.0069228334146891
+      ],
+      "peak_efficiency": {
+        "red": 0.04771125692801018,
+        "green": 0.05854584875290745,
+        "blue": 0.042791321556430895
+      }
+    }
+  },
+  "max_absolute_efficiency_changes": {
+    "50_to_25_nm": {
+      "red": 0.02087881658901003,
+      "green": 0.03908839893734173,
+      "blue": 0.02885229443934506
+    },
+    "25_to_20_nm": {
+      "red": 0.0004560978149995773,
+      "green": 0.0017757001784386023,
+      "blue": 0.007926467825486422
+    }
+  },
+  "interpretation": "Temporal convergence and slab validation do not establish spatial convergence of the full sensor. These mesh comparisons quantify the remaining dependence on resolution."
+}

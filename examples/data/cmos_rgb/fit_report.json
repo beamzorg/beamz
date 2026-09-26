@@ -1,0 +1,20 @@
+{
+  "red": {
+    "source": "exact embedded reference model",
+    "rms_n": 0.13029116870100652,
+    "rms_k": 0.02268894838068441,
+    "passband_k_max": 0.01725834232204546
+  },
+  "green": {
+    "source": "exact embedded reference model",
+    "rms_n": 0.220119762262007,
+    "rms_k": 0.048474227606404414,
+    "passband_k_max": 0.018968099608604592
+  },
+  "blue": {
+    "source": "exact embedded reference model",
+    "rms_n": 0.10519668020411528,
+    "rms_k": 0.021071004616318414,
+    "passband_k_max": 0.013622135414223293
+  }
+}

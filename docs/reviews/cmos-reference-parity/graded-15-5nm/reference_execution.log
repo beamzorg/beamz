@@ -1,0 +1,38 @@
+{'device': '[CudaDevice(id=0)]', 'dx_nm': 15.0, 'runtime_fs': 300, 'grid': [202, 202, 509], 'steps': 40590, 'dt': 7.391150855487095e-18, 'reference': True, 'graded': True, 'metal_nm': 5, 'absorber_nm': 400, 'material_checksums': {'materials.json': '179dd5944332856225b639d369e1f3a50f086b27f8d49b74b2e65d601f09716f', 'filters.json': '3c0845ca3f8fb5d82dcd948373d7fc42df06b58539d1a8b30f95ca7397ef9749'}}
+Compiling/rasterizing
+Setup finished {'device': '[CudaDevice(id=0)]', 'dx_nm': 15.0, 'runtime_fs': 300, 'grid': [202, 202, 509], 'steps': 40590, 'dt': 7.391150855487095e-18, 'reference': True, 'graded': True, 'metal_nm': 5, 'absorber_nm': 400, 'material_checksums': {'materials.json': '179dd5944332856225b639d369e1f3a50f086b27f8d49b74b2e65d601f09716f', 'filters.json': '3c0845ca3f8fb5d82dcd948373d7fc42df06b58539d1a8b30f95ca7397ef9749'}, 'setup_seconds': 4.417367276997538, 'polarization_bytes': 0}
+First half finished 169.80400810600258
+{
+  "device": "[CudaDevice(id=0)]",
+  "dx_nm": 15.0,
+  "runtime_fs": 300,
+  "grid": [
+    202,
+    202,
+    509
+  ],
+  "steps": 40590,
+  "dt": 7.391150855487095e-18,
+  "reference": true,
+  "graded": true,
+  "metal_nm": 5,
+  "absorber_nm": 400,
+  "material_checksums": {
+    "materials.json": "179dd5944332856225b639d369e1f3a50f086b27f8d49b74b2e65d601f09716f",
+    "filters.json": "3c0845ca3f8fb5d82dcd948373d7fc42df06b58539d1a8b30f95ca7397ef9749"
+  },
+  "setup_seconds": 4.417367276997538,
+  "polarization_bytes": 0,
+  "first_half_seconds": 169.80400810600258,
+  "second_half_seconds": 167.36284809798235,
+  "finite_fields": true,
+  "finite_polarization": true,
+  "temporal_max_absolute_change": {
+    "blue": 2.9322525812280897e-05,
+    "red": 2.9322525812308653e-05,
+    "green1": 2.9322525812308653e-05,
+    "green2": 2.9322525812294775e-05
+  },
+  "launched_power": 1.0,
+  "peak_field": 693.689453125
+}

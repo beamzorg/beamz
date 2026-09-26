@@ -1,0 +1,13 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=2646830215
+rootdir: /home/quentinwach/.t3/worktrees/beamz/t3code-169e833b
+configfile: pytest.ini
+plugins: hypothesis-6.168.1, randomly-5.0.0, cov-7.1.0
+collected 52 items
+
+tests/contracts/test_simulation_api.py ................................. [ 63%]
+....                                                                     [ 71%]
+tests/integration/test_simulation_plotting.py ...............            [100%]
+
+============================== 52 passed in 5.06s ==============================

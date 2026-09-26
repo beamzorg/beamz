@@ -1,0 +1,27 @@
+{
+  "device": "[CudaDevice(id=0)]",
+  "dx_nm": 25.0,
+  "runtime_fs": 300,
+  "grid": [
+    120,
+    120,
+    285
+  ],
+  "steps": 8903,
+  "dt": 3.370208102706291e-17,
+  "reference": true,
+  "setup_seconds": 3.5135327489988413,
+  "polarization_bytes": 0,
+  "first_half_seconds": 10.513502920977771,
+  "second_half_seconds": 10.204917463008314,
+  "finite_fields": true,
+  "finite_polarization": true,
+  "temporal_max_absolute_change": {
+    "blue": 2.868369284977912e-05,
+    "red": 2.868369284977912e-05,
+    "green1": 2.868369284977912e-05,
+    "green2": 2.868369284977912e-05
+  },
+  "launched_power": 1.0,
+  "peak_field": 692.1964111328125
+}

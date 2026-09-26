@@ -1,0 +1,11 @@
+{
+  "notebook": "examples/notebooks/cmos_rgb_sensor.ipynb",
+  "backend": "jax-cuda",
+  "material_checksums": {
+    "materials.json": "179dd5944332856225b639d369e1f3a50f086b27f8d49b74b2e65d601f09716f",
+    "filters.json": "3c0845ca3f8fb5d82dcd948373d7fc42df06b58539d1a8b30f95ca7397ef9749"
+  },
+  "seconds": 305.91298611997627,
+  "code_cells_executed": 6,
+  "errors": 0
+}
