@@ -21,7 +21,9 @@ The balanced domain-growth series uses `(z,y,x)=(n,n,8n)` at 80 nm spacing.
 The planar series uses `(n,8n,64n)` at 80 nm. The fixed-physical-domain series
 uses `(n,n,8n)` with spacing `80*512/n` nm, retaining a physical domain of
 40.96 × 40.96 × 327.68 µm. Nominal core dimensions remain 320 × 480 nm,
-rounded to whole cells. The source envelope has fixed physical time scale.
+with each half-width rounded to whole cells, so realized interface positions
+change with discretization. This is a nominal fixed geometry, not an exact
+subpixel-preserving rasterization. The source envelope has fixed physical time scale.
 Source/monitor apertures are fixed in physical units; their sampled size grows
 with refinement. Twelve CPML cells have varying physical thickness in that
 series. These timing tests do not establish spatial convergence or comparable
@@ -51,4 +53,14 @@ RunPod pod `d5yvneey683trr`, AP-IN-1, created 2026-09-26 17:29:52.756 UTC at
 $27.92/hour. Additional spending authorization: $50. Measurement cutoff 19:00 UTC;
 independent MCP deletion guard 19:09 UTC. All-pair NV18 topology verified.
 
-Results pending. No capacity or saturation conclusion is claimed yet.
+The initial baseline measurements are 146.10 GCUPS at 512³ cells/GPU and
+152.71 GCUPS at 640³ cells/GPU. The latter is within 0.8% of the accepted
+151.57 GCUPS result. Further measurements are in progress; no capacity or
+saturation conclusion is claimed yet.
+
+Nsight Compute is installed, but an isolated CUDA-kernel probe returned
+`ERR_NVGPUCTRPERM`. The host restricts hardware counters and the container lacks
+the required permission. Hardware bandwidth, occupancy, and stall metrics
+are unavailable on this run. Sampled NVML activity must not be substituted for
+those metrics. The probe ran between benchmark processes with all GPUs idle;
+its log and the idle check are retained.
