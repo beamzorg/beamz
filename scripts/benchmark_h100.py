@@ -187,10 +187,16 @@ def run_benchmark(
         if sample == args.samples - 1 and final_state_callback is not None:
             final_state_callback(result)
         del result
-    memory_fallback = sim.memory_estimate(
-        num_steps=workload.timesteps,
-        sharding=sharding,
-    )["total_bytes"]
+    peak_memory = _peak_memory_bytes(execution_devices, 0)
+    if not peak_memory:
+        # H100 allocator statistics are authoritative. Building a second default
+        # backend plan just for an unused fallback can allocate the global grid
+        # on GPU 0 and OOM after every timed sample already succeeded.
+        with setup_device:
+            peak_memory = sim.memory_estimate(
+                num_steps=workload.timesteps,
+                sharding=sharding,
+            )["total_bytes"]
     features = workload.feature_labels
     cuda_component_version = None
     cuda_abi_version = None
@@ -220,7 +226,7 @@ def run_benchmark(
         compile_s=compile_s,
         warm_runtime_samples_s=kernel_samples,
         warm_end_to_end_samples_s=tuple(end_to_end_samples),
-        peak_memory_bytes=_peak_memory_bytes(execution_devices, memory_fallback),
+        peak_memory_bytes=peak_memory,
         cpml_psi_precision=cpml_psi_precision,
         cuda_component_version=cuda_component_version,
         cuda_abi_version=cuda_abi_version,
