@@ -73,3 +73,13 @@ increase over 640³/GPU for 33.1% more cells. Peak live allocation is 35.84 GiB
 on GPU 0 and was already reached during preparation. The live allocation with
 the final timed output retained is 24.68 GiB; the 64 GiB allocator pool on GPU 0
 is not the same quantity. Larger-domain results remain pending.
+
+## Environment controls
+
+The eight physical GPU UUIDs match the prior study. JAX, jaxlib, the CUDA12
+plugins, NVIDIA CUDA12 libraries, and NCCL versions match. NumPy is 2.5.3
+(previously 2.4.1) and SciPy is 1.18.1 (previously 1.17.0); other CPU-side
+package differences are recorded in `dependency-differences.json`. Thus this is
+a calibrated reproduction of the previous rates, not a byte-identical Python
+environment. All points within the new sweep share the same environment.
+Cold setup times should not be compared directly across the two studies.
