@@ -17,8 +17,8 @@ TILE_BYTES = 16 * 1024 * 1024
 def tiles(shape, dtype, budget=None):
     """Yield rectangular tiles, bounding all dimensions (including large planes)."""
     budget = TILE_BYTES if budget is None else budget
-    if budget <= 0:
-        raise ValueError("Tile budget must be positive")
+    if budget < np.dtype(dtype).itemsize:
+        raise ValueError("Tile budget must fit at least one element")
     if not all(shape):
         return
     extent = list(shape)

@@ -171,3 +171,9 @@ posted records; this is an estimate, not a claim of zero charges.
 Local verification after the run: **14 tests passed**, including the rectangular
 two-rank capacity fixture, memory-policy tests, and the existing local JAX
 DFT/continuation contract on two, four and eight CPU devices.
+
+## Public preparation follow-up
+
+The subsequent compiler changes and local memory measurements are documented in
+[Public preparation](PUBLIC_PREPARATION.md). They reduce local preparation RSS
+but have not yet repeated the full public 15B H100 acceptance test.
