@@ -191,6 +191,42 @@ def prepare(args, device):
                 value = value.at[tuple(patch_slice)].set(1e-3)
         return value
 
+    if layout.enabled:
+        # A global scatter can still all-gather its operand inside GSPMD, even
+        # with partitioned output constraints. Seed using local coordinates.
+        def local_seed(value):
+            rank = jax.lax.axis_index("fdtd")
+            extent = value.shape[layout.axis]
+            coords = []
+            for axis, size in enumerate(value.shape):
+                shape = [1] * value.ndim
+                shape[axis] = size
+                coordinate = jnp.arange(size).reshape(shape)
+                if axis == layout.axis:
+                    coordinate = coordinate + rank * extent
+                coords.append(coordinate)
+            original = jnp.asarray(True)
+            transverse = jnp.asarray(True)
+            for axis, coordinate in enumerate(coords):
+                inside = (coordinate >= 14) & (coordinate < 18)
+                original = original & inside
+                if axis != layout.axis:
+                    transverse = transverse & inside
+            coordinate = coords[layout.axis] - rank * extent
+            interfaces = ((rank > 0) & (coordinate < 2)) | (
+                (rank < count - 1) & (coordinate >= extent - 2)
+            )
+            return jnp.where(
+                original | (transverse & interfaces), np.float32(1e-3), value
+            )
+
+        seeded = jax.shard_map(
+            local_seed,
+            mesh=plan.mesh,
+            in_specs=state.ex.sharding.spec,
+            out_specs=state.ex.sharding.spec,
+        )
+
     seed = jax.jit(
         seeded,
         in_shardings=state.ex.sharding,
