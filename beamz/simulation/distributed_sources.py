@@ -91,9 +91,34 @@ def apply_batched_slabs(value, abs_step, group, plan):
             target = list(start)
             target[axis] = local_start
             target = tuple(jnp.asarray(index, dtype=jnp.int32) for index in target)
-            previous = jax.lax.dynamic_slice(local, target, tuple(patch_shape))
-            local = jax.lax.dynamic_update_slice(
-                local, previous + addition.astype(local.dtype), target
+            if local.size > 2**31 - 1:
+                # Keep multidimensional indexing when a flat FP32-mode JAX
+                # index would overflow its default signed 32-bit integer.
+                previous = jax.lax.dynamic_slice(local, target, tuple(patch_shape))
+                local = jax.lax.dynamic_update_slice(
+                    local, previous + addition.astype(local.dtype), target
+                )
+                continue
+            # A multidimensional read/modify/write slice can make XLA transpose
+            # entire field shards to favor a thin source plane. Native stepping
+            # then needs the original layout too. Linear indices keep the patch
+            # update in the field's existing row-major storage without those
+            # full-volume layout buffers.
+            flat_indices = 0
+            stride = 1
+            for dim in reversed(range(local.ndim)):
+                index_shape = [1] * local.ndim
+                index_shape[dim] = patch_shape[dim]
+                flat_indices = flat_indices + (
+                    target[dim]
+                    + jnp.arange(patch_shape[dim], dtype=jnp.int32).reshape(index_shape)
+                ) * stride
+                stride *= local.shape[dim]
+            local = (
+                local.reshape(-1)
+                .at[flat_indices.reshape(-1)]
+                .add(addition.astype(local.dtype).reshape(-1), unique_indices=True)
+                .reshape(local.shape)
             )
         return local
 
