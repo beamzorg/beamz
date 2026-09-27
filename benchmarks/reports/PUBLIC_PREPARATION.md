@@ -1,9 +1,12 @@
 # Public preparation: bounded material generation
 
-Status: **implemented and locally validated for the partitioned FP32 3D path;
-H100 acceptance is pending.** The previous 15-billion-cell public run still has
-no completed preparation/compilation/stepping result. These changes do not turn
-that timeout into a pass.
+Status: **public 15B CUDA preparation and executable compilation now pass on
+eight H100s; full execution is not yet accepted.** The new run completes public
+preparation in 984.69 s with 113.02 GiB host peak, then fails at its first execution
+because mode-source layout conversion needs 14.026 GiB of extra workspace per
+rank. A subsequent source-layout fix passes smaller eight-H100 numerical tests
+and removes that extra workspace in an isolated probe; its full 15B rerun remains
+outstanding. See [the new hardware report](h100-prep40/README.md).
 
 ## Changes
 
@@ -91,13 +94,16 @@ or real cross-GPU communication validation.
 
 ## Outstanding work and acceptance
 
-1. Run one-/two-H100 numerical and continuation gates, including native CUDA
-   placement and paired baseline/fixed throughput wherever baseline fits.
-2. Run `(10000,1250,1200)` through the **same public modal pipeline**, record
-   phase-level RSS and every GPU allocator peak, compile, and execute repeated
-   donating segments. Keep CUDA and JAX capacity conclusions separate.
-3. Require under 5% warm-stepping slowdown using repeated paired runs; local
-   preparation wall times above do not test that requirement.
+1. Preparation revision `b673256` passes 30 one-/two-/eight-H100 numerical tests,
+   propagated CUDA/JAX spectra, and all 18 paired baseline/fixed performance
+   comparisons (worst slowdown 0.549%).
+2. Public `(10000,1250,1200)` CUDA preparation and executable compilation pass,
+   with balanced 64.607 GiB live data per GPU. The first execution fails on an
+   additional 14.026 GiB workspace allocation. Keep this distinct from the earlier
+   prepared fixture, which had no mode source or monitor.
+3. Rerun full 15B CUDA execution and final-source-change spectra/performance after
+   `8d1529d`. The new local source patch path passes eight-H100 continuation/parity
+   and bounded-workspace probes, but those do not establish full-size execution.
 4. Geometry rasterization still constructs a dense `MaterialGrid` before this
    compiler path. Bounded native rasterization into owned immutable material
    storage is a subsequent stage, requiring independent smoothing/overlap/seam
@@ -107,5 +113,5 @@ or real cross-GPU communication validation.
    dimension is divisible by the device count remain separate capacity limits.
    The 15B acceptance shape has divisible logical dimensions.
 
-No new RunPod resource was provisioned for these local changes. Additional
-hardware budget has been requested before resuming H100 acceptance.
+The new hardware session uses the separately approved $40 allowance. Its final
+resource lifecycle and accounting are recorded in the linked hardware report.
