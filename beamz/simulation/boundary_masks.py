@@ -6,6 +6,7 @@ from dataclasses import dataclass, fields, replace
 
 import numpy as np
 
+from beamz._region_array import SeparableMask
 from beamz.simulation.model import BoundaryPlan
 
 
@@ -20,6 +21,14 @@ def compact_mask(mask):
     """Use short profiles only when they reproduce every mask entry exactly."""
     if mask is None:
         return None
+    if isinstance(mask, SeparableMask):
+        profiles = []
+        for axis, profile in enumerate(mask.profiles):
+            if np.any(profile):
+                shape = [1] * mask.ndim
+                shape[axis] = profile.size
+                profiles.append(profile.reshape(shape))
+        return AxisMask(tuple(profiles)) if profiles else None
     values = np.asarray(mask, dtype=bool)
     if not np.any(values):
         return None

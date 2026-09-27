@@ -1027,6 +1027,20 @@ def initial_program_state(
         psi_dtype = jnp.bfloat16
 
     def field(name):
+        if continuation is None and layout.enabled:
+            value = getattr(program.grid, name)
+            if isinstance(value, np.ndarray) and all(
+                stride == 0 for stride in value.strides
+            ):
+                shape = layout.padded_shapes[name]
+                target = sharding_runtime._array_sharding(
+                    program,
+                    jax.ShapeDtypeStruct(shape, value.dtype),
+                    program.sharding.mesh,
+                )
+                return jax.jit(
+                    lambda: jnp.zeros(shape, dtype=value.dtype), out_shardings=target
+                )()
         # Fresh runs use the compiled lattice; continuations supply evolved canonical
         # arrays without reconstructing a mutable field container.
         return (
@@ -1044,7 +1058,7 @@ def initial_program_state(
     def zeros(shape, dtype):
         shape = tuple(int(value) for value in shape)
         return (
-            np.zeros(shape, dtype=np.dtype(dtype))
+            np.broadcast_to(np.zeros((), dtype=np.dtype(dtype)), shape)
             if layout.enabled
             else jnp.zeros(shape, dtype=dtype)
         )

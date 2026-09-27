@@ -1185,4 +1185,4 @@ def material_for_component(materials, component: str):
 def component_material_at(fields, component: str, index):
     materials = getattr(fields, "materials", fields)
     material = material_for_component(materials, component)
-    return material if jnp.asarray(material).ndim == 0 else material[index]
+    return material if material.ndim == 0 else material[index]
