@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import pathlib
 import platform
@@ -650,6 +651,7 @@ def build_scan(program, *, donate_state: bool = False):
         dt_scalar=dt_scalar,
         is_3d=is_3d,
         sharding_plan=program.sharding,
+        low_memory=donate_state,
     )
     update_kernel = update_runtime.select_update_kernel(step_context)
     from beamz.simulation import distributed_monitors, jax_sharding
@@ -873,6 +875,22 @@ def build_scan(program, *, donate_state: bool = False):
     # preserves its input state; callers may opt into the lower-memory variant when
     # they no longer need that continuation value.
     donate_argnums = (0,) if donate_state else ()
+    # Native CUDA already owns the expensive stencil kernels. XLA's empirical
+    # fusion autotuner only benchmarks the surrounding copies/gathers, allocating
+    # full-sized trial inputs/outputs on GPU 0 *during compilation*. Those buffers
+    # are absent from executable.memory_analysis() and can prevent a fitting run
+    # from compiling. Use the default emitters for this small orchestration layer.
+    if (
+        cfg.backend == "cuda_streamed"
+        and "compiler_options" in inspect.signature(jax.jit).parameters
+    ):
+        return jax.jit(
+            run_scan,
+            donate_argnums=donate_argnums,
+            compiler_options={"xla_gpu_autotune_level": 0},
+        )
+    # Older supported JAX releases lack per-executable options. Preserve their
+    # existing behavior without changing process-wide XLA_FLAGS after startup.
     return jax.jit(run_scan, donate_argnums=donate_argnums)
 
 

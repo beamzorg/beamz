@@ -1,0 +1,176 @@
+{
+  "args": {
+    "side": 864,
+    "workload": "prepared",
+    "axis": "none",
+    "steps": 32,
+    "samples": 3,
+    "frequencies": 3,
+    "output": "benchmarks/reports/rtx3090-compile-memory/fixed-prepared-864-native-preallocated.json",
+    "digests": false
+  },
+  "device": "NVIDIA GeForce RTX 3090",
+  "jax": "0.9.0",
+  "root": "/home/quentinwach/beamz/beamz-capacity-fix",
+  "commit": "d6cd7f3fb0eb86a4151c6f6e8f35bb860b9e1306",
+  "extension_sha256": "85fe6a66a093b5a8cd2f14b0342102de41ad680415d681fcdb33588f6c5d1f3c",
+  "environment": {
+    "BEAMZ_CUDA_AUTOTUNE": "off",
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "true",
+    "XLA_PYTHON_CLIENT_MEM_FRACTION": ".97"
+  },
+  "stages": [
+    {
+      "stage": "prepare",
+      "seconds": 2.6699522839626297,
+      "max_rss_bytes": 2000580608,
+      "gpu": {
+        "num_allocs": 101,
+        "bytes_in_use": 24124784384,
+        "peak_bytes_in_use": 24124786176,
+        "largest_alloc_size": 2585865728,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "lower",
+      "seconds": 0.02257780102081597,
+      "max_rss_bytes": 2135191552,
+      "gpu": {
+        "num_allocs": 103,
+        "bytes_in_use": 24124784384,
+        "peak_bytes_in_use": 24124786176,
+        "largest_alloc_size": 2585865728,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "compile",
+      "seconds": 0.024094271997455508,
+      "max_rss_bytes": 2136502272,
+      "gpu": {
+        "num_allocs": 103,
+        "bytes_in_use": 24124784384,
+        "peak_bytes_in_use": 24124786176,
+        "largest_alloc_size": 2585865728,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "run_0",
+      "seconds": 2.6597934759920463,
+      "max_rss_bytes": 2240999424,
+      "gpu": {
+        "num_allocs": 105,
+        "bytes_in_use": 24124784384,
+        "peak_bytes_in_use": 24124786176,
+        "largest_alloc_size": 2585865728,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "run_1",
+      "seconds": 2.636077998962719,
+      "max_rss_bytes": 2240999424,
+      "gpu": {
+        "num_allocs": 107,
+        "bytes_in_use": 24124784384,
+        "peak_bytes_in_use": 24124786176,
+        "largest_alloc_size": 2585865728,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "run_2",
+      "seconds": 2.636401005962398,
+      "max_rss_bytes": 2240999424,
+      "gpu": {
+        "num_allocs": 109,
+        "bytes_in_use": 24124784384,
+        "peak_bytes_in_use": 24124786176,
+        "largest_alloc_size": 2585865728,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "validate",
+      "seconds": 1.3371744159958325,
+      "max_rss_bytes": 2296500224,
+      "gpu": {
+        "num_allocs": 24556,
+        "bytes_in_use": 24124784384,
+        "peak_bytes_in_use": 24151718400,
+        "largest_alloc_size": 2585865728,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    }
+  ],
+  "status": "ok",
+  "input_bytes": 24124780844,
+  "cells": 644972544,
+  "executable_bytes": {
+    "argument_size_in_bytes": 24124780844,
+    "output_size_in_bytes": 16367184248,
+    "alias_size_in_bytes": 16367184008,
+    "temp_size_in_bytes": 512
+  },
+  "final_step": 96,
+  "maxima": [
+    0.00045174406841397285,
+    0.0003683141549117863,
+    0.0003683141549117863,
+    1.443995341051177e-13,
+    1.0524153282176485e-07,
+    1.0524153282176485e-07,
+    24.46088218688965,
+    24.46088218688965,
+    46.92922592163086,
+    21.345056533813477,
+    21.345056533813477,
+    46.92922592163086,
+    0.08847913891077042,
+    0.08847913891077042,
+    2.3674465410294943e-07,
+    0.18022418022155762,
+    0.18022418022155762,
+    2.3674465410294943e-07,
+    1.4050878990585873e-14,
+    96.0
+  ],
+  "digests": []
+}

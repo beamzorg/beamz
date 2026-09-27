@@ -1080,6 +1080,7 @@ class Simulation:
         donate_state : bool, default=False
             Allow JAX to recycle buffers owned by ``state``. After a donating call,
             the input state must not be read or reused.
+            CUDA uses its capacity-oriented in-place schedule for donating calls.
         backend : {"auto", "jax", "cuda", "cuda_streamed"}, default="auto"
             Execution policy. ``auto`` uses the optional CUDA extension when it is
             compatible and otherwise retains the JAX implementation.
@@ -1375,6 +1376,8 @@ class Simulation:
         donate_state : bool, default=False
             Transfer ownership of the input state's device buffers to JAX. This can
             reduce peak memory, but the input state must never be used afterward.
+            CUDA also avoids temporal field banks and automatic shard transposes;
+            this prioritizes capacity and may reduce throughput on some shapes.
         backend : {"auto", "jax", "cuda", "cuda_streamed"}, default="auto"
             Execution policy. ``auto`` preserves JAX as the fallback when the
             optional CUDA runtime is not installed.

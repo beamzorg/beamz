@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=1262591221
+rootdir: /home/quentinwach/beamz/beamz-capacity-fix
+configfile: pytest.ini
+plugins: hypothesis-6.168.0, cov-7.1.0, randomly-5.0.0
+collected 6 items
+
+tests/hardware/test_cuda_capacity.py ......                              [100%]
+
+============================== 6 passed in 22.43s ==============================

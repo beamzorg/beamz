@@ -6,6 +6,11 @@ $40 total, including a replacement allocation. **The 15B stepping target is not
 achieved:** preparation fits, but compilation/loading fails. The largest new
 stepped case is 5.75B. Both owned allocations are deleted and verified absent.
 
+The subsequent [local RTX 3090 investigation](RTX3090_COMPILE_MEMORY.md)
+reproduces a compiler-autotuning OOM, removes compilation trial buffers and
+donating execution workspaces, and demonstrates a 868³ prepared simulation at
+the dense-buffer capacity limit. It does not rerun or upgrade the H100 results.
+
 ## Implementation
 
 - NumPy and single-device CPU JAX arrays are sliced on the host and transferred

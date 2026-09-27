@@ -43,7 +43,8 @@ def _phase(state, ctx, coeffs, *, phase):
     axis, count = plan.layout.axis, plan.layout.num_devices
     phase_call = runtime._ffi_phase
     if (
-        axis == 2
+        not ctx.low_memory
+        and axis == 2
         and ctx.config.metric_kind == "isotropic_uniform"
         and runtime._uniform_cpml_thickness(ctx) > 0
         and not coeffs.e_inverse_offdiagonal.size

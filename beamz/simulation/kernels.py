@@ -1609,6 +1609,8 @@ class CompiledStepContext:
     dt_scalar: jnp.ndarray
     is_3d: bool
     sharding_plan: Any = None
+    # Donating execution prioritizes capacity over extra temporal field banks.
+    low_memory: bool = False
 
 
 @dataclass(frozen=True)

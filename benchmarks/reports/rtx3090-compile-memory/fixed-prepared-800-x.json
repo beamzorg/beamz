@@ -1,0 +1,105 @@
+{
+  "args": {
+    "side": 800,
+    "workload": "prepared",
+    "axis": "x",
+    "steps": 32,
+    "samples": 3,
+    "frequencies": 3,
+    "output": "/home/quentinwach/beamz/beamz-capacity-fix/benchmarks/reports/rtx3090-compile-memory/fixed-prepared-800-x.json",
+    "digests": false
+  },
+  "device": "NVIDIA GeForce RTX 3090",
+  "solver_source_sha256": "fbbe538327533ba22efa0de2f3b3bff74172daceb21e3358a96bc1ff892a3e30",
+  "harness_sha256": "69b19918c9175c4e73669541051e68fe20e20924e416d46e516b7583618332d0",
+  "jax": "0.9.0",
+  "root": "/home/quentinwach/beamz/beamz-capacity-fix",
+  "commit": "d6cd7f3fb0eb86a4151c6f6e8f35bb860b9e1306",
+  "extension_sha256": "85fe6a66a093b5a8cd2f14b0342102de41ad680415d681fcdb33588f6c5d1f3c",
+  "environment": {
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "true",
+    "XLA_PYTHON_CLIENT_MEM_FRACTION": ".97",
+    "BEAMZ_CUDA_AUTOTUNE": "off"
+  },
+  "stages": [
+    {
+      "stage": "prepare",
+      "seconds": 2.544152030022815,
+      "max_rss_bytes": 1990549504,
+      "gpu": {
+        "num_allocs": 101,
+        "bytes_in_use": 19219192064,
+        "peak_bytes_in_use": 19219193856,
+        "largest_alloc_size": 2055689728,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "lower",
+      "seconds": 0.0940086500486359,
+      "max_rss_bytes": 2127257600,
+      "gpu": {
+        "num_allocs": 103,
+        "bytes_in_use": 19219192064,
+        "peak_bytes_in_use": 19219193856,
+        "largest_alloc_size": 2055689728,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "compile",
+      "seconds": 0.1808321620337665,
+      "max_rss_bytes": 2139635712,
+      "gpu": {
+        "num_allocs": 103,
+        "bytes_in_use": 19219192064,
+        "peak_bytes_in_use": 19219193856,
+        "largest_alloc_size": 2055689728,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "run_0_failed",
+      "seconds": 0.08400841901311651,
+      "max_rss_bytes": 2377994240,
+      "gpu": {
+        "num_allocs": 105,
+        "bytes_in_use": 19239784448,
+        "peak_bytes_in_use": 19239784704,
+        "largest_alloc_size": 2055689728,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    }
+  ],
+  "status": "failed",
+  "input_bytes": 19219187636,
+  "cells": 512000000,
+  "executable_bytes": {
+    "argument_size_in_bytes": 19219187636,
+    "output_size_in_bytes": 13057251836,
+    "alias_size_in_bytes": 13057251596,
+    "temp_size_in_bytes": 20592132
+  },
+  "failure_stage": "run_0",
+  "error": "JaxRuntimeError(\"INTERNAL: NCCL operation ncclCommInitRankConfig(&comm, clique_key.num_devices(), nccl_unique_id, ranks[i].rank.value(), &comm_config) failed: unhandled cuda error (run with NCCL_DEBUG=INFO for details). Last NCCL warning(error) log entry (may be unrelated) 'Failed to CUDA calloc async 24 bytes'.\")"
+}

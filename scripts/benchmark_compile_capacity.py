@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+"""RTX 3090 compilation/capacity probe; run each case in a fresh process.
+
+``modal`` measures public material/source/monitor preparation. ``prepared`` loads
+an already discretized, dense-coefficient fixture directly into GPU buffers to
+isolate compiler and execution capacity from the host material compiler. It has
+six FP32 Yee fields, three dense FP32 electric coefficients, 12-cell FP32 CPML,
+and a localized initial electric pulse; it is not an optical completion test.
+
+An optional one-rank mesh exercises the real sharded FFI/transpose lowering on
+one physical GPU. This is explicitly NOT multi-GPU communication evidence.
+For near-capacity loads use XLA_PYTHON_CLIENT_PREALLOCATE=true and
+XLA_PYTHON_CLIENT_MEM_FRACTION=.97 on an otherwise idle device.
+Use PYTHONPATH to select the checkout under test; this script works on PR #288.
+"""
+
+from __future__ import annotations
+
+import argparse
+import gc
+import hashlib
+import json
+import os
+import resource
+import subprocess
+import time
+from dataclasses import replace
+from pathlib import Path
+from unittest.mock import patch
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+
+from beamz.const import EPS_0
+from beamz.lattice import component_shapes
+from beamz.simulation import observe, sharding
+from beamz.simulation.execute import build_scan, initial_program_state
+
+
+def prepare(args, device):
+    from benchmark_h100_backends import ModalWorkload
+
+    from tests.performance.h100_workloads import H100Workload
+
+    cfg = (
+        None
+        if args.axis == "none"
+        else dict(axis=args.axis, num_devices=1, backend="gpu")
+    )
+    # Production intentionally collapses one-device meshes. Override only device
+    # discovery to exercise exactly the multi-device local kernel on one 3090.
+    with (
+        jax.default_device(jax.devices("cpu")[0]),
+        patch.object(sharding, "_jax_devices_for_config", lambda _: (device,)),
+    ):
+        if args.workload == "modal":
+            sim = ModalWorkload(
+                shape_zyx=(args.side,) * 3,
+                timesteps=args.steps,
+                frequencies=args.frequencies,
+            ).build()
+        else:
+            sim = H100Workload(
+                name="capacity",
+                shape_zyx=(36,) * 3,
+                timesteps=args.steps,
+                resolution=80e-9,
+                pml_cells=12,
+                heterogeneous=False,
+                cpml=True,
+                source=False,
+                monitor=False,
+            ).build()
+        program = sim.compile(
+            num_steps=args.steps, backend="cuda_streamed", sharding=cfg
+        )
+        state = initial_program_state(
+            program, t=0, current_step=0, monitor_steps=args.steps
+        )
+    if args.workload == "modal":
+        state = sharding.prepare_state(
+            program,
+            state,
+            replicated_fields=(*observe.MONITOR_FIELDS, "t", "current_step"),
+        )
+        # A CPU setup context is useful also without a mesh; explicitly place it.
+        state = jax.device_put(state, device)
+        coeffs = jax.device_put(program.coefficients, device)
+        return program, state, coeffs
+
+    logical = dict(component_shapes((args.side,) * 3))
+    padded = dict(logical)
+    layout = program.sharding.layout
+    if layout.enabled:
+        extent = max(shape[layout.axis] for shape in logical.values())
+        padded = {
+            name: tuple(extent if i == layout.axis else n for i, n in enumerate(shape))
+            for name, shape in logical.items()
+        }
+    layout = replace(layout, logical_shapes=logical, padded_shapes=padded)
+    plan = replace(program.sharding, layout=layout)
+    fields = {
+        name: jax.ShapeDtypeStruct(shape, np.float32) for name, shape in logical.items()
+    }
+    grid = replace(program.grid, component_shapes=logical, **fields)
+
+    def resize_term(term):
+        shape = list(padded[term.component])
+        shape[term.axis] = term.slab.low + term.slab.high
+        return replace(
+            term,
+            slab=term.slab._replace(
+                shape=tuple(shape), logical_stop=logical[term.component][term.axis]
+            ),
+        )
+
+    cpml = replace(
+        program.boundary.cpml,
+        h_terms=tuple(map(resize_term, program.boundary.cpml.h_terms)),
+        e_terms=tuple(map(resize_term, program.boundary.cpml.e_terms)),
+    )
+    # CPML native kernels own physical edge constraints; no source can undo them.
+    metallic = replace(
+        program.boundary.metallic,
+        **{name: None for name in program.boundary.metallic.__dataclass_fields__},
+    )
+    program = replace(
+        program,
+        grid=grid,
+        sharding=plan,
+        boundary=replace(
+            program.boundary,
+            cpml=cpml,
+            metallic=metallic,
+            logical_component_shapes=logical,
+        ),
+    )
+    # Independent allocations, never a shared zero buffer aliased across fields.
+    updates = {}
+    for name, shape in padded.items():
+        updates[name.lower()] = jnp.zeros(shape, dtype=jnp.float32).block_until_ready()
+    for phase in ("h", "e"):
+        updates[f"cpml_psi_{phase}_terms"] = tuple(
+            jnp.zeros(term.slab.shape, dtype=jnp.float32).block_until_ready()
+            for term in getattr(cpml, f"{phase}_terms")
+        )
+    state = jax.device_put(state, device)._replace(**updates)
+    seed = jax.jit(
+        lambda value: value.at[14:18, 14:18, 14:18].set(1e-3),
+        donate_argnums=(0,),
+        compiler_options={"xla_gpu_autotune_level": 0},
+    )
+    state = state._replace(ex=seed(state.ex))
+    coeffs = jax.device_put(program.coefficients, device)
+    # Load dense discretized coefficients without a second full host volume.
+    # Exact homogeneous dielectric, deliberately kept dense like sharded inputs.
+    values = {}
+    for axis, component in zip("xyz", ("Ex", "Ey", "Ez"), strict=True):
+        values[f"e_decay_{axis}"] = jnp.asarray(1, dtype=jnp.float32)
+        values[f"e_source_{axis}"] = jnp.full(
+            padded[component],
+            np.float32(program.config.dt / (EPS_0 * 2.25)),
+            dtype=jnp.float32,
+        ).block_until_ready()
+    coeffs = coeffs._replace(**values)
+    return program, state, coeffs
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--side", type=int, required=True)
+    parser.add_argument("--workload", choices=("prepared", "modal"), default="prepared")
+    parser.add_argument("--axis", choices=("none", "x", "z"), default="none")
+    parser.add_argument("--steps", type=int, default=32)
+    parser.add_argument("--samples", type=int, default=3)
+    parser.add_argument("--frequencies", type=int, default=3)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--digests", action="store_true", help="Only for small parity runs"
+    )
+    args = parser.parse_args()
+    if args.side <= 24 or args.steps < 1 or args.samples < 1:
+        parser.error("side > 24, positive steps and samples required")
+    device = jax.devices("gpu")[0]
+    import beamz._cuda as extension
+
+    import beamz
+
+    root = Path(beamz.__file__).resolve().parents[1]
+    source_hash = hashlib.sha256()
+    for path in sorted((root / "beamz").rglob("*.py")):
+        source_hash.update(str(path.relative_to(root)).encode())
+        source_hash.update(path.read_bytes())
+    data = dict(
+        args={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
+        device=device.device_kind,
+        solver_source_sha256=source_hash.hexdigest(),
+        harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        jax=jax.__version__,
+        root=str(root),
+        commit=subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=root, text=True
+        ).strip(),
+        extension_sha256=hashlib.sha256(
+            Path(extension.__file__).read_bytes()
+        ).hexdigest(),
+        environment={
+            k: v for k, v in os.environ.items() if k.startswith(("XLA_", "BEAMZ_"))
+        },
+        stages=[],
+        status="running",
+    )
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+
+    def snapshot(stage, started):
+        row = dict(
+            stage=stage,
+            seconds=time.perf_counter() - started,
+            max_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024,
+            gpu=device.memory_stats(),
+        )
+        data["stages"].append(row)
+        args.output.write_text(json.dumps(data, indent=2) + "\n")
+        print(json.dumps(row), flush=True)
+
+    stage = "prepare"
+    tick = time.perf_counter()
+    try:
+        program, state, coeffs = prepare(args, device)
+        jax.block_until_ready((state, coeffs))
+        gc.collect()
+        data["input_bytes"] = sum(
+            x.size * x.dtype.itemsize for x in jax.tree.leaves((state, coeffs))
+        )
+        data["cells"] = args.side**3
+        snapshot(stage, tick)
+        stage = "lower"
+        tick = time.perf_counter()
+        lowered = build_scan(program, donate_state=True).lower(state, coeffs)
+        snapshot(stage, tick)
+        args.output.with_suffix(".mlir").write_text(
+            lowered.compiler_ir().operation.get_asm(
+                large_elements_limit=8, large_resource_limit=8
+            )
+        )
+        stage = "compile"
+        tick = time.perf_counter()
+        exe = lowered.compile()
+        analysis = exe.memory_analysis()
+        data["executable_bytes"] = {
+            name: getattr(analysis, name)
+            for name in (
+                "argument_size_in_bytes",
+                "output_size_in_bytes",
+                "alias_size_in_bytes",
+                "temp_size_in_bytes",
+            )
+        }
+        snapshot(stage, tick)
+        for sample in range(args.samples):
+            stage = f"run_{sample}"
+            tick = time.perf_counter()
+            state = exe(state, coeffs)
+            jax.block_until_ready(state)
+            snapshot(stage, tick)
+        # All timed continuations retained the coefficients. Release them only
+        # after stepping, so validation has scratch even at the allocator limit.
+        del coeffs
+        gc.collect()
+        stage = "validate"
+        tick = time.perf_counter()
+        # Bound validation to z slabs: a whole-field reduction can itself require
+        # compile-time tuning or enormous scratch, contaminating capacity evidence.
+        check = jax.jit(
+            lambda x: (jnp.all(jnp.isfinite(x)), jnp.max(jnp.abs(x))),
+            compiler_options={"xla_gpu_autotune_level": 0},
+        )
+        maxima = []
+        digests = []
+        for value in jax.tree.leaves(state):
+            if value.size == 0:
+                continue
+            maximum = 0.0
+            slabs = (
+                (value[start : start + 4] for start in range(0, value.shape[0], 4))
+                if value.ndim >= 3
+                else (value,)
+            )
+            digest = hashlib.sha256()
+            for slab in slabs:
+                finite, peak = jax.device_get(check(slab))
+                if not finite:
+                    raise RuntimeError("Non-finite state")
+                maximum = max(maximum, float(peak))
+                if args.digests:
+                    digest.update(np.asarray(slab).tobytes())
+            maxima.append(maximum)
+            if args.digests:
+                digests.append(digest.hexdigest())
+        data.update(final_step=int(state.current_step), maxima=maxima, digests=digests)
+        if int(state.current_step) != args.steps * args.samples or not any(maxima[:6]):
+            raise RuntimeError("Invalid continuation or zero fields")
+        data["status"] = "ok"
+        snapshot(stage, tick)
+    except Exception as error:
+        data.update(status="failed", failure_stage=stage, error=repr(error))
+        snapshot(stage + "_failed", tick)
+        raise
+
+
+if __name__ == "__main__":
+    main()
