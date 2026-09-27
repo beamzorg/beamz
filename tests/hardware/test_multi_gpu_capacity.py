@@ -1,4 +1,4 @@
-"""Real two-GPU continuation and boundary/source/monitor parity gates."""
+"""Real multi-GPU continuation and boundary/source/monitor parity gates."""
 
 from argparse import Namespace
 
@@ -14,13 +14,15 @@ from tests.hardware.test_cuda_backends import _assert_state_close, _copy_state
 @pytest.mark.parametrize("axis", ["x", "z"])
 @pytest.mark.parametrize("backend", ["jax", "cuda_streamed"])
 @pytest.mark.parametrize("policy", ["auto", "capacity"])
-def test_two_gpu_continuation_matches_unsharded_jax(axis, backend, policy, monkeypatch):
-    if not cuda_backend_status().available or len(jax.devices()) != 2:
-        pytest.skip("requires exactly two visible CUDA GPUs")
+def test_multi_gpu_continuation_matches_unsharded_jax(axis, backend, policy, monkeypatch):
+    count = len(jax.devices())
+    if not cuda_backend_status().available or count not in (2, 8):
+        pytest.skip("requires two or eight visible CUDA GPUs")
     monkeypatch.setenv("BEAMZ_CUDA_MEMORY_POLICY", policy)
     sim = build_simulation(
         Namespace(
-            shape=(37, 41, 49),
+            # Keep the boundary slab narrower than each local partition.
+            shape=(37, 41, 49) if count == 2 else (137, 41, 145),
             steps=48,
             pml=12,
             monitors=2,
@@ -41,7 +43,7 @@ def test_two_gpu_continuation_matches_unsharded_jax(axis, backend, policy, monke
     reference = sim.advance(
         state=_copy_state(state), num_steps=48, backend="jax", performance=False
     ).state
-    cfg = dict(axis=axis, num_devices=2, backend="gpu")
+    cfg = dict(axis=axis, num_devices=count, backend="gpu")
     first = sim.advance(
         state=_copy_state(state),
         num_steps=17,
@@ -62,4 +64,5 @@ def test_two_gpu_continuation_matches_unsharded_jax(axis, backend, policy, monke
     _assert_state_close(reference, actual)
     assert int(actual.current_step) == 48
     assert np.all(np.asarray(actual.dft_weight_sum) == 48)
-    assert len(actual.ex.sharding.device_set) == 2
+    assert len(actual.ex.sharding.device_set) == count
+    assert not actual.ex.sharding.is_fully_replicated
