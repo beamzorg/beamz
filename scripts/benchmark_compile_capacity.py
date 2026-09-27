@@ -381,6 +381,7 @@ def main():
         stage = "compile"
         tick = time.perf_counter()
         exe = lowered.compile()
+        args.output.with_suffix(".optimized.hlo").write_text(exe.as_text())
         analysis = exe.memory_analysis()
         data["executable_bytes"] = {
             name: getattr(analysis, name)
