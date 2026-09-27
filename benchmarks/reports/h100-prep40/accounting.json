@@ -16,5 +16,7 @@
     "total_amount": 9.168468768708408,
     "note": "Partial provider billing at deletion; not the final cost."
   },
-  "additional_budget_approved": false
+  "additional_budget_approved": false,
+  "approval_snapshot_at": "2026-09-27T14:29:38.295Z",
+  "later_budget_approval": "A separate $15 follow-up was subsequently approved; see ../h100-source15/accounting.json."
 }

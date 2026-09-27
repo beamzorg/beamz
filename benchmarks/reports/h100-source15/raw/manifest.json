@@ -1,0 +1,40 @@
+{
+  "fixed_commit": "a2750b79e20b192b0b56b74d44fbc33963c40090",
+  "source_fix_commit": "8d1529d",
+  "budget_usd": 15,
+  "compute_usd_hour": 27.92,
+  "native_sha256": "6753641e1a682751ad00c10abda53bd4cd33fd3569ccf048baea018bb94be00d",
+  "files": {
+    "setup.sh": "9510c2c41ac06cfa59dadc95c96d24cd91d35c6c260e6a4c7c3933e1d6658de7",
+    "host-monitor.py": "67c3eafd9b9c79955989aaca7485e9a4ffb2070f3b603bb3422f3760b5445afe",
+    "health8.py": "258bcd9c3bad068dfbfea1956c67471941b1c1e7830212fb5b45a8ad6f5b8d01",
+    "_native.abi3.so": "3ddf02ca3245e26c0266e094967b1d3089116197699995e68a1702af023f893d",
+    "beamz_cuda_component-0.21.0-cp312-cp312-linux_x86_64.whl": "bdbeec3c85225cedded69b00c6cafa165863e7de99766a3a20e754675814ca75",
+    "fixed.tar.gz": "3e78589c150a0e0453da2646ebe9f2a307ab664f1efde3d2d1f013a8aa244fe7"
+  },
+  "workload": {
+    "shape_zyx": [
+      10000,
+      1250,
+      1200
+    ],
+    "resolution_nm": 80,
+    "cpml_cells": 12,
+    "source": "TE ModeSource",
+    "mode_monitors": 2,
+    "monitor_frequencies": 101,
+    "steps_per_segment": 1024,
+    "segments": 5,
+    "require_monitor_signal": true
+  },
+  "pod_id": "2hd25htbjwodh4",
+  "created_at": "2026-09-27T14:33:32.780Z",
+  "work_deadline": "2026-09-27T15:03:32.780+00:00",
+  "deletion_deadline": "2026-09-27T15:04:32.780Z",
+  "data_center": "CA-MTL-1",
+  "additional_validation": {
+    "reference": "h100-prep40/raw/propagated-1-z-jax",
+    "source_workspace_test": "tests/hardware/test_source_workspace.py",
+    "scheduled_after_capacity_only": true
+  }
+}

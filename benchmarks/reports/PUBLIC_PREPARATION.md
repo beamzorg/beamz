@@ -1,12 +1,12 @@
 # Public preparation: bounded material generation
 
-Status: **public 15B CUDA preparation and executable compilation now pass on
-eight H100s; full execution is not yet accepted.** The new run completes public
-preparation in 984.69 s with 113.02 GiB host peak, then fails at its first execution
-because mode-source layout conversion needs 14.026 GiB of extra workspace per
-rank. A subsequent source-layout fix passes smaller eight-H100 numerical tests
-and removes that extra workspace in an isolated probe; its full 15B rerun remains
-outstanding. See [the new hardware report](h100-prep40/README.md).
+Status: **full public 15B CUDA preparation, compilation and 5,120-step execution
+now pass on eight H100s at 155.56 GCUPS**, with finite state and signal at both
+mode monitors. Host peak is 113.02 GiB; every GPU peaks at 64.67 GiB. The first
+hardware attempt exposed a further source-layout workspace issue; `8d1529d`
+removed it, and the [follow-up report](h100-source15/README.md) records the successful
+full-size rerun. Pure JAX 15B execution and final-source-change paired performance
+remain separate outstanding checks.
 
 ## Changes
 
@@ -97,13 +97,14 @@ or real cross-GPU communication validation.
 1. Preparation revision `b673256` passes 30 one-/two-/eight-H100 numerical tests,
    propagated CUDA/JAX spectra, and all 18 paired baseline/fixed performance
    comparisons (worst slowdown 0.549%).
-2. Public `(10000,1250,1200)` CUDA preparation and executable compilation pass,
-   with balanced 64.607 GiB live data per GPU. The first execution fails on an
-   additional 14.026 GiB workspace allocation. Keep this distinct from the earlier
-   prepared fixture, which had no mode source or monitor.
-3. Rerun full 15B CUDA execution and final-source-change spectra/performance after
-   `8d1529d`. The new local source patch path passes eight-H100 continuation/parity
-   and bounded-workspace probes, but those do not establish full-size execution.
+2. The initial full public 15B execution failed on 14.026 GiB/rank of source-layout
+   workspace. `8d1529d` fixes that allocation; the full rerun passes 5,120 steps
+   at 155.56 GCUPS with 40.15 MiB/rank compiled workspace and signal at both monitors.
+3. The final source change passes eight-H100 continuation/parity, six local source
+   tests and a real eight-H100 workspace regression. Fresh propagated-reference
+   spectra and matched small-domain throughput for that final change remain
+   outstanding. The separate JAX 15B attempt stopped during placement at its
+   budget deadline; it has no full execution result.
 4. Geometry rasterization still constructs a dense `MaterialGrid` before this
    compiler path. Bounded native rasterization into owned immutable material
    storage is a subsequent stage, requiring independent smoothing/overlap/seam
@@ -113,5 +114,6 @@ or real cross-GPU communication validation.
    dimension is divisible by the device count remain separate capacity limits.
    The 15B acceptance shape has divisible logical dimensions.
 
-The new hardware session uses the separately approved $40 allowance. Its final
-resource lifecycle and accounting are recorded in the linked hardware report.
+The two hardware sessions used separately approved $40 and $15 allowances. Both
+pods are deleted; conservative combined spend is $52.52 of $55, with provider
+billing pending. Exact lifecycle and accounting are in the linked reports.

@@ -1,5 +1,9 @@
 # H100 public-preparation acceptance — 2026-09-27
 
+**Subsequent result:** the [separately approved follow-up](../h100-source15/README.md)
+passes the full public 15B CUDA workload at 155.56 GCUPS with signal at both
+monitors. This report preserves the preceding failure and diagnosis.
+
 This report records a new $40-capped hardware session after the public preparation
 fixes. Public 15B CUDA preparation and executable compilation succeeded, but
 execution failed on source-related workspace. JAX preparation was stopped at
@@ -187,9 +191,11 @@ charges gives a conservative **$38.03 of the newly approved $40**. The provider
 billing query currently reports only $9.1685 and is incomplete. This estimate is
 separate from the prior $25 allowance; see `accounting.json`.
 
-The requested additional $15 has not been approved or spent. The next run should
+The requested additional $15 was approved after this pod was deleted and funded
+the linked successful follow-up. At the close of this session, the next run was to
 use `8d1529d` and execute the public 15B CUDA modal case for 1,024×5 continuing
 steps with `--require-monitor-signal`, then verify final-source-change spectra
 and matched throughput. JAX's remaining workspace/capacity must still be tested
-separately. Neither the new source fix nor the preparation fix establishes 15B
-realistic execution until that full-size rerun succeeds.
+separately. The subsequent full-size CUDA rerun now succeeds; final-source-change
+reference spectra, paired small-domain throughput and full-size JAX execution
+remain separate checks.

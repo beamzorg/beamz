@@ -1,0 +1,1357 @@
+{
+  "args": {
+    "side": null,
+    "shape": [
+      10000,
+      1250,
+      1200
+    ],
+    "devices": 8,
+    "backend": "cuda_streamed",
+    "workload": "modal",
+    "axis": "z",
+    "steps": 1024,
+    "samples": 5,
+    "frequencies": 101,
+    "output": "/workspace/evidence/public-eight-z-15b-cuda_streamed-propagated.json",
+    "digests": false,
+    "require_monitor_signal": true
+  },
+  "device": "NVIDIA H100 80GB HBM3",
+  "device_count": 8,
+  "shape": [
+    10000,
+    1250,
+    1200
+  ],
+  "solver_source_sha256": "46554b1a5d117686a7e329ded692dee297db26a007a8e01fec8f7a693c830a97",
+  "harness_sha256": "17c43500373656e6ec8ade8c7e1a4981862cddea849bf519fd4faf86f81142e9",
+  "jax": "0.9.0",
+  "root": "/workspace/fixed",
+  "commit": "885e992b4a5bce4f646fac3f44177719f742f517",
+  "extension_sha256": "6753641e1a682751ad00c10abda53bd4cd33fd3569ccf048baea018bb94be00d",
+  "environment": {
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "true",
+    "XLA_PYTHON_CLIENT_MEM_FRACTION": ".90",
+    "BEAMZ_CUDA_CPML_PSI_PRECISION": "fp32",
+    "BEAMZ_CUDA_AUTOTUNE": "off",
+    "BEAMZ_TRACE_PREPARATION": "/workspace/evidence/public-eight-z-15b-cuda_streamed-propagated-phases.jsonl"
+  },
+  "stages": [
+    {
+      "stage": "prepare",
+      "seconds": 969.1961611919105,
+      "max_rss_bytes": 121355161600,
+      "gpu": {
+        "num_allocs": 6206,
+        "bytes_in_use": 69371151104,
+        "peak_bytes_in_use": 69441513984,
+        "largest_alloc_size": 7518264832,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      },
+      "gpus": [
+        {
+          "id": 0,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 1,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 2,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 3,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 4,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 5,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 6,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 7,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        }
+      ]
+    },
+    {
+      "stage": "lower",
+      "seconds": 0.8797841593623161,
+      "max_rss_bytes": 121355161600,
+      "gpu": {
+        "num_allocs": 6256,
+        "bytes_in_use": 69371151104,
+        "peak_bytes_in_use": 69441513984,
+        "largest_alloc_size": 7518264832,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      },
+      "gpus": [
+        {
+          "id": 0,
+          "stats": {
+            "num_allocs": 6256,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 1,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 2,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 3,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 4,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 5,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 6,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 7,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        }
+      ]
+    },
+    {
+      "stage": "compile",
+      "seconds": 3.138514831662178,
+      "max_rss_bytes": 121355161600,
+      "gpu": {
+        "num_allocs": 6256,
+        "bytes_in_use": 69371151104,
+        "peak_bytes_in_use": 69441513984,
+        "largest_alloc_size": 7518264832,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      },
+      "gpus": [
+        {
+          "id": 0,
+          "stats": {
+            "num_allocs": 6256,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 1,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 2,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 3,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 4,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 5,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 6,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 7,
+          "stats": {
+            "num_allocs": 6206,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        }
+      ]
+    },
+    {
+      "stage": "run_0",
+      "seconds": 100.0022744499147,
+      "max_rss_bytes": 121355161600,
+      "gpu": {
+        "num_allocs": 6258,
+        "bytes_in_use": 69371151104,
+        "peak_bytes_in_use": 69441513984,
+        "largest_alloc_size": 7518264832,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      },
+      "gpus": [
+        {
+          "id": 0,
+          "stats": {
+            "num_allocs": 6258,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 1,
+          "stats": {
+            "num_allocs": 6208,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 2,
+          "stats": {
+            "num_allocs": 6208,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 3,
+          "stats": {
+            "num_allocs": 6208,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 4,
+          "stats": {
+            "num_allocs": 6208,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 5,
+          "stats": {
+            "num_allocs": 6208,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 6,
+          "stats": {
+            "num_allocs": 6208,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 7,
+          "stats": {
+            "num_allocs": 6208,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        }
+      ]
+    },
+    {
+      "stage": "run_1",
+      "seconds": 98.73543000593781,
+      "max_rss_bytes": 121355161600,
+      "gpu": {
+        "num_allocs": 6260,
+        "bytes_in_use": 69371151104,
+        "peak_bytes_in_use": 69441513984,
+        "largest_alloc_size": 7518264832,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      },
+      "gpus": [
+        {
+          "id": 0,
+          "stats": {
+            "num_allocs": 6260,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 1,
+          "stats": {
+            "num_allocs": 6210,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 2,
+          "stats": {
+            "num_allocs": 6210,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 3,
+          "stats": {
+            "num_allocs": 6210,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 4,
+          "stats": {
+            "num_allocs": 6210,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 5,
+          "stats": {
+            "num_allocs": 6210,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 6,
+          "stats": {
+            "num_allocs": 6210,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 7,
+          "stats": {
+            "num_allocs": 6210,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        }
+      ]
+    },
+    {
+      "stage": "run_2",
+      "seconds": 98.74234084039927,
+      "max_rss_bytes": 121355161600,
+      "gpu": {
+        "num_allocs": 6262,
+        "bytes_in_use": 69371151104,
+        "peak_bytes_in_use": 69441513984,
+        "largest_alloc_size": 7518264832,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      },
+      "gpus": [
+        {
+          "id": 0,
+          "stats": {
+            "num_allocs": 6262,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 1,
+          "stats": {
+            "num_allocs": 6212,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 2,
+          "stats": {
+            "num_allocs": 6212,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 3,
+          "stats": {
+            "num_allocs": 6212,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 4,
+          "stats": {
+            "num_allocs": 6212,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 5,
+          "stats": {
+            "num_allocs": 6212,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 6,
+          "stats": {
+            "num_allocs": 6212,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 7,
+          "stats": {
+            "num_allocs": 6212,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        }
+      ]
+    },
+    {
+      "stage": "run_3",
+      "seconds": 98.74207678064704,
+      "max_rss_bytes": 121355161600,
+      "gpu": {
+        "num_allocs": 6264,
+        "bytes_in_use": 69371151104,
+        "peak_bytes_in_use": 69441513984,
+        "largest_alloc_size": 7518264832,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      },
+      "gpus": [
+        {
+          "id": 0,
+          "stats": {
+            "num_allocs": 6264,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 1,
+          "stats": {
+            "num_allocs": 6214,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 2,
+          "stats": {
+            "num_allocs": 6214,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 3,
+          "stats": {
+            "num_allocs": 6214,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 4,
+          "stats": {
+            "num_allocs": 6214,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 5,
+          "stats": {
+            "num_allocs": 6214,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 6,
+          "stats": {
+            "num_allocs": 6214,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 7,
+          "stats": {
+            "num_allocs": 6214,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        }
+      ]
+    },
+    {
+      "stage": "run_4",
+      "seconds": 98.74225248768926,
+      "max_rss_bytes": 121355161600,
+      "gpu": {
+        "num_allocs": 6266,
+        "bytes_in_use": 69371151104,
+        "peak_bytes_in_use": 69441513984,
+        "largest_alloc_size": 7518264832,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      },
+      "gpus": [
+        {
+          "id": 0,
+          "stats": {
+            "num_allocs": 6266,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 1,
+          "stats": {
+            "num_allocs": 6216,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 2,
+          "stats": {
+            "num_allocs": 6216,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 3,
+          "stats": {
+            "num_allocs": 6216,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 4,
+          "stats": {
+            "num_allocs": 6216,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 5,
+          "stats": {
+            "num_allocs": 6216,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 6,
+          "stats": {
+            "num_allocs": 6216,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 7,
+          "stats": {
+            "num_allocs": 6216,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        }
+      ]
+    },
+    {
+      "stage": "validate",
+      "seconds": 152.44881100207567,
+      "max_rss_bytes": 121355161600,
+      "gpu": {
+        "num_allocs": 41554,
+        "bytes_in_use": 69371151104,
+        "peak_bytes_in_use": 69441513984,
+        "largest_alloc_size": 7518264832,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      },
+      "gpus": [
+        {
+          "id": 0,
+          "stats": {
+            "num_allocs": 41554,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 1,
+          "stats": {
+            "num_allocs": 41464,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 2,
+          "stats": {
+            "num_allocs": 41464,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 3,
+          "stats": {
+            "num_allocs": 41464,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 4,
+          "stats": {
+            "num_allocs": 41464,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 5,
+          "stats": {
+            "num_allocs": 41464,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 6,
+          "stats": {
+            "num_allocs": 41464,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        },
+        {
+          "id": 7,
+          "stats": {
+            "num_allocs": 41464,
+            "bytes_in_use": 69371151104,
+            "peak_bytes_in_use": 69441513984,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76525533204,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76525533184,
+            "peak_pool_bytes": 76525533184
+          }
+        }
+      ]
+    }
+  ],
+  "status": "ok",
+  "input_bytes": 550920255244,
+  "cells": 15000000000,
+  "cuda_schedule": {
+    "policy": "auto",
+    "capacity": true,
+    "estimated_fast_workspace_bytes": 46826675988
+  },
+  "executable_bytes": {
+    "argument_size_in_bytes": 69371143900,
+    "output_size_in_bytes": 46828619500,
+    "alias_size_in_bytes": 46828619260,
+    "temp_size_in_bytes": 42100552
+  },
+  "monitor_signal": [
+    {
+      "index": 0,
+      "frequencies": 101,
+      "points": 200,
+      "peak_dft": 404856384.0,
+      "positive_weights": true
+    },
+    {
+      "index": 1,
+      "frequencies": 101,
+      "points": 200,
+      "peak_dft": 418185120.0,
+      "positive_weights": true
+    }
+  ],
+  "final_step": 5120,
+  "maxima": [
+    65772272.0,
+    76497072.0,
+    47012228.0,
+    1506194.5,
+    781230.875,
+    2316545.75,
+    1524159744.0,
+    0.0,
+    0.0,
+    662488678400.0,
+    1329888624640.0,
+    3471654400.0,
+    17521282.0,
+    0.0,
+    0.0,
+    9291595776.0,
+    3183423488.0,
+    28042152.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    418185120.0,
+    418034528.0,
+    5120.0,
+    7.493802128312466e-13,
+    5120.0
+  ],
+  "digests": []
+}
