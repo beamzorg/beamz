@@ -61,7 +61,25 @@ def test_multi_gpu_continuation_matches_unsharded_jax(axis, backend, policy, mon
         performance=False,
     ).state
     jax.block_until_ready(actual)
-    _assert_state_close(reference, actual)
+    # Use the existing prepared-fixture bound for cancellation in CPML
+    # derivatives, while keeping the original bound for every other leaf.
+    for name in reference._fields:
+        _assert_state_close(
+            getattr(reference, name),
+            getattr(actual, name),
+            dynamic_atol_scale=3e-6 if name.startswith("cpml_psi_") else 1e-6,
+        )
+    # As in test_prepared_capacity_fixture_matches_jax, physical fields must
+    # also satisfy the stricter triplet bound without an absolute 3e-6 floor.
+    for names in (("ex", "ey", "ez"), ("hx", "hy", "hz")):
+        scale = max(float(np.max(np.abs(getattr(reference, name)))) for name in names)
+        for name in names:
+            np.testing.assert_allclose(
+                np.asarray(getattr(actual, name)),
+                np.asarray(getattr(reference, name)),
+                rtol=0,
+                atol=2e-6 * scale,
+            )
     assert int(actual.current_step) == 48
     assert np.all(np.asarray(actual.dft_weight_sum) == 48)
     assert len(actual.ex.sharding.device_set) == count
