@@ -26,6 +26,9 @@ for axis in ('x', 'z'):
         p, state, coefficients = prepare(args, jax.devices()[0])
         assert p.sharding.layout.num_devices == 2
         assert len(state.ex.addressable_shards) == 2
+        assert not state.ex.sharding.is_fully_replicated
+        assert all(s.data.shape[p.sharding.layout.axis] * 2 == state.ex.shape[p.sharding.layout.axis]
+                   for s in state.ex.addressable_shards)
         assert all(np.max(np.abs(s.data)) > 0 for s in state.ex.addressable_shards)
         reference = build_scan(p)(state, coefficients)
         args.backend = 'cuda_streamed'

@@ -193,6 +193,8 @@ def prepare(args, device):
 
     seed = jax.jit(
         seeded,
+        in_shardings=state.ex.sharding,
+        out_shardings=state.ex.sharding,
         donate_argnums=(0,),
         compiler_options={"xla_gpu_autotune_level": 0},
     )
