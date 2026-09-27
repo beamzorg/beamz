@@ -92,6 +92,20 @@ def main():
     coeffs = sharding.place_tree(program, program.coefficients)
     jax.block_until_ready((state, coeffs))
     prepared_memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
+    cuda_schedule = None
+    if a.backend == "cuda_streamed" and hasattr(program.config, "cuda_memory_policy"):
+        from beamz.simulation.memory import (
+            cuda_capacity_schedule,
+            cuda_workspace_estimate,
+        )
+
+        cuda_schedule = dict(
+            policy=program.config.cuda_memory_policy,
+            capacity=cuda_capacity_schedule(program, donate_state=a.donate_state),
+            estimated_fast_workspace_bytes=cuda_workspace_estimate(
+                program, donate_state=a.donate_state
+            ),
+        )
     setup_s = time.perf_counter() - started
     print(json.dumps(dict(stage="prepared", setup_s=setup_s)), flush=True)
     tick = time.perf_counter()
@@ -211,6 +225,7 @@ def main():
             else "five_synchronized_warm_stepping_samples"
         ),
         donate_state=a.donate_state,
+        cuda_schedule=cuda_schedule,
         compiled_memory=compiled_memory,
         final_current_step=final_current_step,
         warm_memory=warm_memory,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RTX 3090 compilation/capacity probe; run each case in a fresh process.
+"""GPU compilation/capacity probe; run each case in a fresh process.
 
 ``modal`` measures public material/source/monitor preparation. ``prepared`` loads
 an already discretized, dense-coefficient fixture directly into GPU buffers to
@@ -7,10 +7,11 @@ isolate compiler and execution capacity from the host material compiler. It has
 six FP32 Yee fields, three dense FP32 electric coefficients, 12-cell FP32 CPML,
 and a localized initial electric pulse; it is not an optical completion test.
 
-An optional one-rank mesh exercises the real sharded FFI/transpose lowering on
-one physical GPU. This is explicitly NOT multi-GPU communication evidence.
+An optional one-rank mesh isolates sharded lowering. --devices > 1 uses real
+GPU meshes; --shape selects rectangular domains. Prepared fixtures are not
+substitutes for full public modal preparation.
 For near-capacity loads use XLA_PYTHON_CLIENT_PREALLOCATE=true and
-XLA_PYTHON_CLIENT_MEM_FRACTION=.97 on an otherwise idle device.
+XLA_PYTHON_CLIENT_MEM_FRACTION=.90, leaving headroom for NCCL and CUDA contexts.
 Use PYTHONPATH to select the checkout under test; this script works on PR #288.
 """
 
@@ -20,10 +21,13 @@ import argparse
 import gc
 import hashlib
 import json
+import math
 import os
 import resource
 import subprocess
+import sys
 import time
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
@@ -42,20 +46,26 @@ def prepare(args, device):
     from scripts.benchmark_h100_backends import ModalWorkload
     from tests.performance.h100_workloads import H100Workload
 
+    count = getattr(args, "devices", 1)
+    shape_zyx = tuple(getattr(args, "shape", None) or (args.side,) * 3)
     cfg = (
         None
         if args.axis == "none"
-        else dict(axis=args.axis, num_devices=1, backend="gpu")
+        else dict(axis=args.axis, num_devices=count, backend=device.platform)
     )
     # Production intentionally collapses one-device meshes. Override only device
     # discovery to exercise exactly the multi-device local kernel on one 3090.
     with (
         jax.default_device(jax.devices("cpu")[0]),
-        patch.object(sharding, "_jax_devices_for_config", lambda _: (device,)),
+        (
+            patch.object(sharding, "_jax_devices_for_config", lambda _: (device,))
+            if count == 1
+            else nullcontext()
+        ),
     ):
         if args.workload == "modal":
             sim = ModalWorkload(
-                shape_zyx=(args.side,) * 3,
+                shape_zyx=shape_zyx,
                 timesteps=args.steps,
                 frequencies=args.frequencies,
             ).build()
@@ -82,15 +92,18 @@ def prepare(args, device):
             replicated_fields=(*observe.MONITOR_FIELDS, "t", "current_step"),
         )
         # A CPU setup context is useful also without a mesh; explicitly place it.
-        state = jax.device_put(state, device)
-        coeffs = jax.device_put(program.coefficients, device)
+        if not program.sharding.layout.enabled:
+            state = jax.device_put(state, device)
+        coeffs = sharding.place_tree(program, program.coefficients)
         return program, state, coeffs
 
-    logical = dict(component_shapes((args.side,) * 3))
+    logical = dict(component_shapes(shape_zyx))
     padded = dict(logical)
     layout = program.sharding.layout
     if layout.enabled:
-        extent = max(shape[layout.axis] for shape in logical.values())
+        extent = (
+            (max(shape[layout.axis] for shape in logical.values()) + count - 1) // count
+        ) * count
         padded = {
             name: tuple(extent if i == layout.axis else n for i, n in enumerate(shape))
             for name, shape in logical.items()
@@ -133,23 +146,58 @@ def prepare(args, device):
             logical_component_shapes=logical,
         ),
     )
+
+    # Construct directly on destination GPUs without a global host/device-0 bank.
+    def allocate(shape, value=0, *, replicated=False):
+        if layout.enabled:
+            spec = [None] * len(shape)
+            if not replicated:
+                spec[layout.axis] = "fdtd"
+            target = jax.sharding.NamedSharding(
+                plan.mesh, jax.sharding.PartitionSpec(*spec)
+            )
+        else:
+            target = jax.sharding.SingleDeviceSharding(device)
+        return jax.jit(
+            lambda: jnp.full(shape, np.float32(value), dtype=jnp.float32),
+            out_shardings=target,
+            compiler_options={"xla_gpu_autotune_level": 0},
+        )().block_until_ready()
+
     # Independent allocations, never a shared zero buffer aliased across fields.
     updates = {}
     for name, shape in padded.items():
-        updates[name.lower()] = jnp.zeros(shape, dtype=jnp.float32).block_until_ready()
+        updates[name.lower()] = allocate(shape)
     for phase in ("h", "e"):
         updates[f"cpml_psi_{phase}_terms"] = tuple(
-            jnp.zeros(term.slab.shape, dtype=jnp.float32).block_until_ready()
+            allocate(
+                term.slab.shape, replicated=layout.enabled and term.axis == layout.axis
+            )
             for term in getattr(cpml, f"{phase}_terms")
         )
-    state = jax.device_put(state, device)._replace(**updates)
+    state = state._replace(**updates)
+    state = sharding.prepare_state(
+        program, state, replicated_fields=(*observe.MONITOR_FIELDS, "t", "current_step")
+    )
+
+    def seeded(value):
+        value = value.at[14:18, 14:18, 14:18].set(1e-3)
+        # Exercise every real interface, not only all-zero halo traffic.
+        if layout.enabled and count > 1:
+            extent = padded["Ex"][layout.axis] // count
+            for rank in range(1, count):
+                patch_slice = [slice(14, 18)] * 3
+                patch_slice[layout.axis] = slice(rank * extent - 2, rank * extent + 2)
+                value = value.at[tuple(patch_slice)].set(1e-3)
+        return value
+
     seed = jax.jit(
-        lambda value: value.at[14:18, 14:18, 14:18].set(1e-3),
+        seeded,
         donate_argnums=(0,),
         compiler_options={"xla_gpu_autotune_level": 0},
     )
     state = state._replace(ex=seed(state.ex))
-    coeffs = jax.device_put(program.coefficients, device)
+    coeffs = sharding.place_tree(program, program.coefficients)
     # Load dense discretized coefficients without a second full host volume.
     # Exact homogeneous dielectric, deliberately kept dense like sharded inputs.
     values = {}
@@ -162,18 +210,25 @@ def prepare(args, device):
             if args.backend == "cuda_streamed"
             else 2.25
         )
-        values[f"{name}_{axis}"] = jnp.full(
-            padded[component],
-            np.float32(value),
-            dtype=jnp.float32,
-        ).block_until_ready()
+        values[f"{name}_{axis}"] = allocate(padded[component], value)
     coeffs = coeffs._replace(**values)
+    # Scheduling must see the resized dense buffers, without keeping another
+    # owning reference that would prevent releasing coefficients for validation.
+    program = replace(
+        program,
+        coefficients=jax.tree.map(
+            lambda x: jax.ShapeDtypeStruct(x.shape, x.dtype), coeffs
+        ),
+    )
     return program, state, coeffs
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--side", type=int, required=True)
+    geometry = parser.add_mutually_exclusive_group(required=True)
+    geometry.add_argument("--side", type=int)
+    geometry.add_argument("--shape", type=int, nargs=3)
+    parser.add_argument("--devices", type=int, default=1)
     parser.add_argument(
         "--backend", choices=("jax", "cuda_streamed"), default="cuda_streamed"
     )
@@ -187,9 +242,13 @@ def main():
         "--digests", action="store_true", help="Only for small parity runs"
     )
     args = parser.parse_args()
-    if args.side <= 24 or args.steps < 1 or args.samples < 1:
-        parser.error("side > 24, positive steps and samples required")
-    device = jax.devices("gpu")[0]
+    shape = tuple(args.shape or (args.side,) * 3)
+    if min(shape) <= 24 or args.steps < 1 or args.samples < 1 or args.devices < 1:
+        parser.error("dimensions > 24, positive steps, samples and devices required")
+    devices = jax.devices("gpu")
+    if len(devices) != args.devices or (args.devices > 1 and args.axis == "none"):
+        parser.error("visible GPU count must match --devices; multi-GPU needs x/z axis")
+    device = devices[0]
     extension = None
     if args.backend == "cuda_streamed":
         import beamz._cuda as extension
@@ -204,6 +263,8 @@ def main():
     data = dict(
         args={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
         device=device.device_kind,
+        device_count=len(devices),
+        shape=shape,
         solver_source_sha256=source_hash.hexdigest(),
         harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         jax=jax.__version__,
@@ -228,8 +289,10 @@ def main():
         row = dict(
             stage=stage,
             seconds=time.perf_counter() - started,
-            max_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024,
+            max_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            * (1 if sys.platform == "darwin" else 1024),
             gpu=device.memory_stats(),
+            gpus=[dict(id=d.id, stats=d.memory_stats()) for d in devices],
         )
         data["stages"].append(row)
         args.output.write_text(json.dumps(data, indent=2) + "\n")
@@ -244,7 +307,7 @@ def main():
         data["input_bytes"] = sum(
             x.size * x.dtype.itemsize for x in jax.tree.leaves((state, coeffs))
         )
-        data["cells"] = args.side**3
+        data["cells"] = math.prod(shape)
         snapshot(stage, tick)
         if args.backend == "cuda_streamed" and hasattr(
             program.config, "cuda_memory_policy"
@@ -308,10 +371,17 @@ def main():
             if value.size == 0:
                 continue
             maximum = 0.0
+            # Validate local buffers directly, without global slice resharding.
             slabs = (
-                (value[start : start + 4] for start in range(0, value.shape[0], 4))
+                (
+                    shard.data[start : start + 4]
+                    for shard in value.addressable_shards
+                    for start in (
+                        range(0, shard.data.shape[0], 4) if value.ndim >= 3 else (0,)
+                    )
+                )
                 if value.ndim >= 3
-                else (value,)
+                else (value.addressable_shards[0].data,)
             )
             digest = hashlib.sha256()
             for slab in slabs:
