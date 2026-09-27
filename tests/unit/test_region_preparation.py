@@ -106,6 +106,10 @@ with native_cpu_backend():
             cfg = dict(axis=axis, num_devices=2, backend="cpu")
             with patch.object(RegionArray, "__array__", side_effect=AssertionError("global materialization")):
                 program = sim.compile(num_steps=6, backend=backend, sharding=cfg)
+                other = sim.compile(num_steps=5, backend=backend, sharding=cfg)
+                assert other.coefficients is program.coefficients
+                assert other.grid is program.grid
+                assert other.config.num_steps == 5
                 assert isinstance(program.grid.eps_x, RegionArray)
                 assert isinstance(program.boundary.metallic.ex_mask, SeparableMask)
                 initial = initial_program_state(program, t=0, current_step=0)

@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -86,7 +87,13 @@ class _BoundaryGrid:
 
     def __init__(self, material_grid, component_shapes, *, region_setup=False) -> None:
         self.region_setup = region_setup
-        array = np.asarray if region_setup else jnp.asarray
+
+        def array(value):
+            if not region_setup:
+                return jnp.asarray(value)
+            source = np.asarray(value)
+            return np.asarray(source, dtype=jax.dtypes.canonicalize_dtype(source.dtype))
+
         self.permittivity = array(material_grid.permittivity)
         self.conductivity = array(material_grid.conductivity)
         self.permeability = array(material_grid.permeability)

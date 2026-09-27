@@ -118,6 +118,20 @@ class CompiledProgramKey:
         )
 
 
+def _preparation_key(key: CompiledProgramKey):
+    # Horizon and observation/source plans do not change constitutive arrays.
+    # Keep dt, materials, boundaries, layout, backend and numerical flags intact.
+    return replace(
+        key,
+        num_steps=0,
+        total_steps=0,
+        t0=0,
+        sources=(),
+        monitors=(),
+        cuda_tuning_policy=(),
+    )
+
+
 _MAX_COMPILED_PROGRAMS = 4
 _PROGRAM_CACHE: OrderedDict[CompiledProgramKey, CompiledProgram] = OrderedDict()
 
@@ -609,6 +623,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     )
     region_setup = (
         early_sharding.layout.enabled
+        and not jax.config.x64_enabled
         and request.domain.is_3d
         and not request.materials.uses_full_permittivity
         and all(getattr(b, "formulation", "cpml") == "cpml" for b in request.boundaries)
@@ -1050,7 +1065,32 @@ def compile_program(
     setup_context_factory = setup_context_factory or _resolved_setup_device_context
     compile_factory = compile_factory or compile_simulation
     with setup_context_factory(simulation.setup_device_resolved):
-        program = compile_factory(request)
+        reusable = None
+        if compile_factory is compile_simulation:
+            preparation_key = _preparation_key(signature)
+            reusable = next(
+                (
+                    old_program
+                    for old_key, old_program in reversed(_PROGRAM_CACHE.items())
+                    if isinstance(old_program.grid.eps_x, RegionArray)
+                    and _preparation_key(old_key) == preparation_key
+                ),
+                None,
+            )
+        if reusable is None:
+            program = compile_factory(request)
+        else:
+            # Reuse existing ownership; changing a continuation segment's length
+            # must not allocate a second near-capacity coefficient bank.
+            with preparation_phase("reuse_material_preparation"):
+                setup = _prepare_compilation(request, reusable.grid)
+                program = replace(
+                    reusable,
+                    config=setup.config,
+                    sources=setup.source_specs,
+                    monitors=setup.monitor_specs,
+                )
+
     if tuning_policy is not None:
         from .cuda.tuning import select_program
 
