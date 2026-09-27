@@ -1,0 +1,14 @@
+{
+  "path": "benchmarks/results/h100-memory-20260927/h100-memory-20260927.tar.gz",
+  "size_bytes": 6446206,
+  "sha256": "ea381b8917607595c872e4d1ecfa2d50abda4adbab3ecbb024ed047d5c9c275c",
+  "remote_files_sha_verified": {
+    "first_pod": 36,
+    "second_pod": 27
+  },
+  "notes": [
+    "Raw evidence is retained locally, not uploaded to the PR.",
+    "lowered-small-cpu.mlir is a later local diagnostic with literal payloads elided, not the failed 15B GPU lowering.",
+    "Committed manifests give individual remote file hashes."
+  ]
+}

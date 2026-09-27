@@ -6,6 +6,9 @@ The follow-up now implements direct host-to-shard placement, local field
 padding, removal of redundant CUDA material grids, and donating capacity probes.
 See [implementation and measured results](H100_MEMORY_CAPACITY.md). Field and
 CPML precision remain FP32; shard-local material rasterization remains future work.
+The 15B attempt prepares at 64.72 GiB per GPU but fails during compilation/loading;
+5.75B is the largest new stepped case. A later local fix preserves wide global
+monitor indices, while native local buffers still have an int32 size limit.
 
 ## What actually failed
 

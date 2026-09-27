@@ -1,0 +1,16 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=2368163621
+rootdir: /Users/quentinwach/Code/beamz-capacity
+configfile: pytest.ini
+plugins: randomly-5.0.0, cov-7.1.0, hypothesis-6.168.0
+collected 49 items
+
+tests/unit/test_dft_active_components.py ...                             [  6%]
+tests/integration/test_compiled_engine.py ...........................    [ 61%]
+tests/unit/test_large_monitor_indices.py ..                              [ 65%]
+tests/unit/test_dft_phase.py ..                                          [ 69%]
+tests/unit/test_jax_local_sharding.py .......                            [ 83%]
+tests/unit/test_cuda_sharded_features.py ........                        [100%]
+
+======================== 49 passed in 166.60s (0:02:46) ========================
