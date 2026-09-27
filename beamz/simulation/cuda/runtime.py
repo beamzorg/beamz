@@ -773,6 +773,12 @@ def pack_dft_monitors(monitors):
     """Pack DFT gather plans with offsets into ragged accumulator arenas."""
     if not monitors:
         raise ValueError("CUDA DFT graph requires at least one monitor")
+    if any(
+        np.any(np.asarray(indices) > np.iinfo(np.int32).max)
+        for monitor in monitors
+        for indices in monitor.dft_flat_idx
+    ):
+        raise ValueError("Native DFT graph indices exceed int32; use a sharded run")
     max_points = max(int(monitor.dft_point_count) for monitor in monitors)
     max_frequencies = max(int(monitor.freq_count) for monitor in monitors)
     max_neighbors = max(

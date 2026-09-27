@@ -16,7 +16,7 @@ from beamz.devices.monitors.compiler import (
 )
 from beamz.devices.monitors.monitors import _line_integral_scale_2d, _line_normal_2d
 from beamz.devices.sources.specs import GaussianBeamSource, GaussianSource, ModeSource
-from beamz.lattice import yee_flux
+from beamz.lattice import sampling_coordinates, yee_flux
 from beamz.simulation.model import SimulationState
 
 
@@ -366,7 +366,7 @@ def _sample_components(fields, indices, weights, *, active_mask=None):
             jnp.zeros(flat_idx.shape[:-1], dtype=field.dtype)
             if active_mask is not None and active_mask[component] == 0
             else jnp.sum(
-                field[jnp.unravel_index(flat_idx, field.shape)] * component_weights,
+                field[sampling_coordinates(flat_idx, field.shape)] * component_weights,
                 axis=-1,
             )
             for component, (field, flat_idx, component_weights) in enumerate(
@@ -638,7 +638,11 @@ def _record_fields(program, state, abs_step, t_phys, fields):
         ):
             value = (
                 jnp.sum(
-                    fields[component].reshape(-1)[flat_idx] * weights, axis=-1
+                    fields[component][
+                        sampling_coordinates(flat_idx, fields[component].shape)
+                    ]
+                    * weights,
+                    axis=-1,
                 ).reshape(shape)
                 if flat_idx.size
                 else fields[component][tuple(slice(0, size) for size in shape)]

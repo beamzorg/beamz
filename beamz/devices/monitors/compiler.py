@@ -30,6 +30,15 @@ from beamz.lattice import (
 )
 
 
+def _sampling_indices(indices):
+    # Keep wide 3D plan metadata on the host when JAX x64 is disabled. Runtime
+    # samplers decode it to small per-axis coordinates before device placement.
+    if indices.dtype == np.int64:
+        indices.setflags(write=False)
+        return indices
+    return jnp.asarray(indices)
+
+
 def _empty_array() -> jnp.ndarray:
     return jnp.empty(0, dtype=jnp.float32)
 
@@ -86,9 +95,9 @@ class CompiledMonitorSpec:
     dft_value_offset: int = 0
     dft_weight_offset: int = 0
     dft_component_mask: jnp.ndarray = field(default_factory=_empty_array)
-    sample_flat_idx: tuple[jnp.ndarray, ...] = ()
+    sample_flat_idx: tuple[jnp.ndarray | np.ndarray, ...] = ()
     sample_weights: tuple[jnp.ndarray, ...] = ()
-    dft_flat_idx: tuple[jnp.ndarray, ...] = ()
+    dft_flat_idx: tuple[jnp.ndarray | np.ndarray, ...] = ()
     dft_weights: tuple[jnp.ndarray, ...] = ()
     integration_weights: jnp.ndarray = field(default_factory=_empty_array)
     recorder_index: int = -1
@@ -97,7 +106,7 @@ class CompiledMonitorSpec:
     component_signs: tuple[float, ...] = ()
     field_buffer_indices: tuple[int, ...] = ()
     field_shapes: tuple[tuple[int, ...], ...] = ()
-    field_interp_flat_idx: tuple[jnp.ndarray, ...] = ()
+    field_interp_flat_idx: tuple[jnp.ndarray | np.ndarray, ...] = ()
     field_interp_weights: tuple[jnp.ndarray, ...] = ()
     sample_region: SnappedRegion | None = None
 
@@ -385,7 +394,7 @@ def compile_monitor_specs(
                 for canonical in canonical_components:
                     flat_idx, weights = quadrature.plan(canonical)
                     shapes.append(output_shape)
-                    interp_indices.append(jnp.asarray(flat_idx))
+                    interp_indices.append(_sampling_indices(flat_idx))
                     interp_weights.append(jnp.asarray(weights))
             buffer_indices = tuple(
                 range(field_buffer_count, field_buffer_count + len(shapes))
@@ -592,7 +601,7 @@ def compile_monitor_specs(
                 needs_dft = bool(dft_component_mask[component_index] > 0.0)
                 if needs_dft:
                     flat_idx, weights = quadrature.plan(name)
-                    plan = (jnp.asarray(flat_idx), jnp.asarray(weights))
+                    plan = (_sampling_indices(flat_idx), jnp.asarray(weights))
                 else:
                     plan = _inactive_sampling_plan(point_count)
                 inactive = _inactive_sampling_plan(point_count)

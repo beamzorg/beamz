@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal, Mapping
@@ -271,6 +272,20 @@ def linear_interpolation_plan(source, target):
     return low.astype(np.int32), high.astype(np.int32), weight_low, weight_high
 
 
+def sampling_coordinates(indices, shape):
+    """Decode static global indices before JAX can narrow them to 32 bits.
+
+    Large sharded domains need wide host flat indices even when each dimension
+    and each local native buffer fits 32-bit addressing. Coordinates stay small.
+    """
+    if isinstance(indices, np.ndarray) or math.prod(shape) > np.iinfo(np.int32).max:
+        return tuple(
+            jnp.asarray(value, dtype=jnp.int32)
+            for value in np.unravel_index(np.asarray(indices), shape)
+        )
+    return jnp.unravel_index(indices, shape)
+
+
 def _component_plane_plan_3d(
     component: str,
     *,
@@ -334,7 +349,7 @@ def _component_plane_plan_3d(
             (index_map["z"], index_map["y"], index_map["x"]),
             dims=field_shape,
         ),
-        dtype=np.int32,
+        dtype=np.int64 if math.prod(field_shape) > np.iinfo(np.int32).max else np.int32,
     )
     combined_weights = np.prod(np.stack(weights), axis=0).astype(np.float32)
     nonzero = np.abs(combined_weights) > 4.0 * np.finfo(np.float32).eps

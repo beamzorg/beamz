@@ -7,6 +7,8 @@ import jax.numpy as jnp
 import numpy as np
 from jax.sharding import PartitionSpec as P
 
+from beamz.lattice import sampling_coordinates
+
 _AXIS = "fdtd"
 
 
@@ -89,7 +91,7 @@ def accumulate_dft(program, mon, carry, fields, time, dt):
             if np.asarray(mon.dft_component_mask)[component] == 0:
                 vectors.append(jnp.zeros(indices.shape[:-1], dtype=field.dtype))
                 continue
-            coordinates = list(jnp.unravel_index(indices, shape))
+            coordinates = list(sampling_coordinates(indices, shape))
             local_coordinate = (
                 coordinates[axis] - jax.lax.axis_index(_AXIS) * field.shape[axis]
             )
