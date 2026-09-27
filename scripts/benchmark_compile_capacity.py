@@ -39,8 +39,7 @@ from beamz.simulation.execute import build_scan, initial_program_state
 
 
 def prepare(args, device):
-    from benchmark_h100_backends import ModalWorkload
-
+    from scripts.benchmark_h100_backends import ModalWorkload
     from tests.performance.h100_workloads import H100Workload
 
     cfg = (
@@ -72,9 +71,7 @@ def prepare(args, device):
                 source=False,
                 monitor=False,
             ).build()
-        program = sim.compile(
-            num_steps=args.steps, backend="cuda_streamed", sharding=cfg
-        )
+        program = sim.compile(num_steps=args.steps, backend=args.backend, sharding=cfg)
         state = initial_program_state(
             program, t=0, current_step=0, monitor_steps=args.steps
         )
@@ -120,7 +117,7 @@ def prepare(args, device):
         h_terms=tuple(map(resize_term, program.boundary.cpml.h_terms)),
         e_terms=tuple(map(resize_term, program.boundary.cpml.e_terms)),
     )
-    # CPML native kernels own physical edge constraints; no source can undo them.
+    # This fixture has CPML on every face and no PEC/PMC masks or sources.
     metallic = replace(
         program.boundary.metallic,
         **{name: None for name in program.boundary.metallic.__dataclass_fields__},
@@ -157,10 +154,17 @@ def prepare(args, device):
     # Exact homogeneous dielectric, deliberately kept dense like sharded inputs.
     values = {}
     for axis, component in zip("xyz", ("Ex", "Ey", "Ez"), strict=True):
-        values[f"e_decay_{axis}"] = jnp.asarray(1, dtype=jnp.float32)
-        values[f"e_source_{axis}"] = jnp.full(
+        if args.backend == "cuda_streamed":
+            values[f"e_decay_{axis}"] = jnp.asarray(1, dtype=jnp.float32)
+        name = "e_source" if args.backend == "cuda_streamed" else "e_permittivity"
+        value = (
+            program.config.dt / (EPS_0 * 2.25)
+            if args.backend == "cuda_streamed"
+            else 2.25
+        )
+        values[f"{name}_{axis}"] = jnp.full(
             padded[component],
-            np.float32(program.config.dt / (EPS_0 * 2.25)),
+            np.float32(value),
             dtype=jnp.float32,
         ).block_until_ready()
     coeffs = coeffs._replace(**values)
@@ -170,6 +174,9 @@ def prepare(args, device):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--side", type=int, required=True)
+    parser.add_argument(
+        "--backend", choices=("jax", "cuda_streamed"), default="cuda_streamed"
+    )
     parser.add_argument("--workload", choices=("prepared", "modal"), default="prepared")
     parser.add_argument("--axis", choices=("none", "x", "z"), default="none")
     parser.add_argument("--steps", type=int, default=32)
@@ -183,7 +190,9 @@ def main():
     if args.side <= 24 or args.steps < 1 or args.samples < 1:
         parser.error("side > 24, positive steps and samples required")
     device = jax.devices("gpu")[0]
-    import beamz._cuda as extension
+    extension = None
+    if args.backend == "cuda_streamed":
+        import beamz._cuda as extension
 
     import beamz
 
@@ -202,9 +211,11 @@ def main():
         commit=subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=root, text=True
         ).strip(),
-        extension_sha256=hashlib.sha256(
-            Path(extension.__file__).read_bytes()
-        ).hexdigest(),
+        extension_sha256=(
+            hashlib.sha256(Path(extension.__file__).read_bytes()).hexdigest()
+            if extension
+            else None
+        ),
         environment={
             k: v for k, v in os.environ.items() if k.startswith(("XLA_", "BEAMZ_"))
         },
@@ -235,6 +246,21 @@ def main():
         )
         data["cells"] = args.side**3
         snapshot(stage, tick)
+        if args.backend == "cuda_streamed" and hasattr(
+            program.config, "cuda_memory_policy"
+        ):
+            from beamz.simulation.memory import (
+                cuda_capacity_schedule,
+                cuda_workspace_estimate,
+            )
+
+            data["cuda_schedule"] = dict(
+                policy=program.config.cuda_memory_policy,
+                capacity=cuda_capacity_schedule(program, donate_state=True),
+                estimated_fast_workspace_bytes=cuda_workspace_estimate(
+                    program, donate_state=True
+                ),
+            )
         stage = "lower"
         tick = time.perf_counter()
         lowered = build_scan(program, donate_state=True).lower(state, coeffs)

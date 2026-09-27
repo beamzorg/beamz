@@ -48,7 +48,12 @@ def tuning_policy_from_env():
             (key, value)
             for key, value in os.environ.items()
             if key.startswith("BEAMZ_CUDA_")
-            and key not in {"BEAMZ_CUDA_AUTOTUNE", "BEAMZ_CUDA_TUNING_CACHE"}
+            and key
+            not in {
+                "BEAMZ_CUDA_AUTOTUNE",
+                "BEAMZ_CUDA_TUNING_CACHE",
+                "BEAMZ_CUDA_MEMORY_POLICY",
+            }
         )
     )
     return mode, os.environ.get("BEAMZ_CUDA_TUNING_CACHE", ""), overrides

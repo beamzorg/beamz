@@ -15,6 +15,7 @@ from time import perf_counter
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax.core import Tracer
 
 from beamz._helpers import (
     _finish_inline_progress,
@@ -40,6 +41,7 @@ from beamz.simulation.model import (
 from . import kernels as update_runtime
 from . import observe as monitor_runtime
 from . import sharding as sharding_runtime
+from .memory import cuda_capacity_schedule
 from .results import (
     MonitorResults,
     RunTermination,
@@ -617,6 +619,29 @@ def forward_step(
     )
 
 
+class _BoundedCompileScan:
+    """Apply compiler options only when this scan owns the compilation.
+
+    JAX rejects per-jit options inside jit/grad/vmap. Under a transformation,
+    trace the scan body normally and let the enclosing executable own its policy.
+    """
+
+    def __init__(self, body, compiled):
+        self.body = body
+        self.compiled = compiled
+
+    def __call__(self, state, coefficients):
+        if any(
+            isinstance(value, Tracer)
+            for value in jax.tree.leaves((state, coefficients))
+        ):
+            return self.body(state, coefficients)
+        return self.compiled(state, coefficients)
+
+    def __getattr__(self, name):
+        return getattr(self.compiled, name)
+
+
 def build_scan(program, *, donate_state: bool = False):
     """Build the jitted compiled scan for a program."""
 
@@ -651,7 +676,7 @@ def build_scan(program, *, donate_state: bool = False):
         dt_scalar=dt_scalar,
         is_3d=is_3d,
         sharding_plan=program.sharding,
-        low_memory=donate_state,
+        low_memory=cuda_capacity_schedule(program, donate_state=donate_state),
     )
     update_kernel = update_runtime.select_update_kernel(step_context)
     from beamz.simulation import distributed_monitors, jax_sharding
@@ -694,7 +719,7 @@ def build_scan(program, *, donate_state: bool = False):
         and (not program.sources or source_groups_supported)
     )
     native_graph_calls = None
-    if cfg.cuda_storage_axes != (0, 1, 2):
+    if cfg.cuda_storage_axes != (0, 1, 2) and not step_context.low_memory:
         if not (
             cuda_multi_step
             and cfg.is_3d
@@ -875,19 +900,17 @@ def build_scan(program, *, donate_state: bool = False):
     # preserves its input state; callers may opt into the lower-memory variant when
     # they no longer need that continuation value.
     donate_argnums = (0,) if donate_state else ()
-    # Native CUDA already owns the expensive stencil kernels. XLA's empirical
-    # fusion autotuner only benchmarks the surrounding copies/gathers, allocating
-    # full-sized trial inputs/outputs on GPU 0 *during compilation*. Those buffers
-    # are absent from executable.memory_analysis() and can prevent a fitting run
-    # from compiling. Use the default emitters for this small orchestration layer.
-    if (
-        cfg.backend == "cuda_streamed"
-        and "compiler_options" in inspect.signature(jax.jit).parameters
-    ):
-        return jax.jit(
+    # Empirical fusion autotuning allocates full-sized trial inputs/outputs during
+    # compilation, outside executable.memory_analysis(). Use default emitters for
+    # both FDTD backends so an otherwise fitting run can compile near capacity.
+    if "compiler_options" in inspect.signature(jax.jit).parameters:
+        return _BoundedCompileScan(
             run_scan,
-            donate_argnums=donate_argnums,
-            compiler_options={"xla_gpu_autotune_level": 0},
+            jax.jit(
+                run_scan,
+                donate_argnums=donate_argnums,
+                compiler_options={"xla_gpu_autotune_level": 0},
+            ),
         )
     # Older supported JAX releases lack per-executable options. Preserve their
     # existing behavior without changing process-wide XLA_FLAGS after startup.
@@ -1010,6 +1033,12 @@ def initial_program_state(
             else getattr(continuation, name.lower())
         )
 
+    def field_dtype(name):
+        # Query metadata without copying two additional full fields just to
+        # choose the CPML dtype during fresh-state construction.
+        owner = program.grid if continuation is None else continuation
+        return getattr(owner, name if continuation is None else name.lower()).dtype
+
     def zeros(shape, dtype):
         shape = tuple(int(value) for value in shape)
         return (
@@ -1079,8 +1108,8 @@ def initial_program_state(
         hx=field("Hx"),
         hy=field("Hy"),
         hz=field("Hz"),
-        cpml_psi_h_terms=restore_psi(old_h, cpml.h_terms, field("Hx").dtype),
-        cpml_psi_e_terms=restore_psi(old_e, cpml.e_terms, field("Ez").dtype),
+        cpml_psi_h_terms=restore_psi(old_h, cpml.h_terms, field_dtype("Hx")),
+        cpml_psi_e_terms=restore_psi(old_e, cpml.e_terms, field_dtype("Ez")),
         **monitor_values,
         t=jnp.asarray(t, dtype=jnp.float32),
         current_step=jnp.asarray(current_step, dtype=jnp.int32),

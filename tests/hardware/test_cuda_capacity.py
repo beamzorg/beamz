@@ -1,6 +1,7 @@
 """Capacity scheduling must retain full-state and modal CUDA/JAX parity."""
 
 from argparse import Namespace
+from dataclasses import replace
 from unittest.mock import patch
 
 import jax
@@ -21,7 +22,11 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.mark.parametrize("axis", [None, "x", "z"])
 @pytest.mark.parametrize("material", ["binary", "smooth"])
-def test_donating_capacity_schedule_matches_jax(axis, material, monkeypatch):
+@pytest.mark.parametrize("policy", ["auto", "capacity"])
+def test_donating_capacity_schedule_matches_jax(axis, material, policy, monkeypatch):
+    monkeypatch.setenv("BEAMZ_CUDA_MEMORY_POLICY", policy)
+    if axis is None and material == "binary":
+        monkeypatch.setenv("BEAMZ_CUDA_STORAGE_AXES", "201")
     if axis is None and material == "smooth":
         monkeypatch.setenv("BEAMZ_CUDA_FIELD_PADDING", "64x8")
         monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "2")
@@ -83,4 +88,42 @@ def test_donating_capacity_schedule_matches_jax(axis, material, monkeypatch):
             getattr(state, name).nbytes for name in ("ex", "ey", "ez", "hx", "hy", "hz")
         )
         assert memory.alias_size_in_bytes >= field_bytes
-        assert memory.temp_size_in_bytes < 32 * 1024
+        if policy == "capacity":
+            assert memory.temp_size_in_bytes < 32 * 1024
+        else:
+            assert memory.temp_size_in_bytes >= field_bytes
+
+
+@pytest.mark.parametrize("axis", ["none", "x"])
+def test_prepared_capacity_fixture_matches_jax(axis):
+    from scripts.benchmark_compile_capacity import prepare
+
+    args = Namespace(side=48, steps=48, axis=axis, workload="prepared", backend="jax")
+    device = jax.devices("gpu")[0]
+    program, state, coefficients = prepare(args, device)
+    reference = build_scan(program)(state, coefficients)
+    args.backend = "cuda_streamed"
+    program, state, coefficients = prepare(args, device)
+    program = replace(
+        program, config=replace(program.config, cuda_memory_policy="capacity")
+    )
+    input_snapshot = jax.tree.map(np.array, state)
+    actual = build_scan(program)(state, coefficients)
+    for before, after in zip(
+        jax.tree.leaves(input_snapshot), jax.tree.leaves(state), strict=True
+    ):
+        np.testing.assert_array_equal(before, after)
+    # The sharp pulse accumulates cancellation error in CPML derivatives: at
+    # 48 steps the measured FP32 discrepancy is 2.3 ppm of a slab's peak.
+    _assert_state_close(reference, actual, dynamic_atol_scale=3e-6)
+    # Also check physical fields against each triplet's scale, avoiding the
+    # helper's absolute floor for this deliberately small-amplitude fixture.
+    for names in (("ex", "ey", "ez"), ("hx", "hy", "hz")):
+        scale = max(float(np.max(np.abs(getattr(reference, name)))) for name in names)
+        for name in names:
+            np.testing.assert_allclose(
+                getattr(actual, name),
+                getattr(reference, name),
+                rtol=0,
+                atol=2e-6 * scale,
+            )

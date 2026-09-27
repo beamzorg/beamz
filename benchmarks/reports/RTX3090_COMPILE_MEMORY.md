@@ -1,5 +1,11 @@
 # RTX 3090 compilation and capacity follow-up to PR #288
 
+**Historical measurements for the initial fix (`4ce2335`).** The
+[subsequent memory-policy report](RTX3090_MEMORY_POLICY.md) supersedes the
+CUDA-only compiler policy and the unconditional donation/capacity coupling
+described here. It covers both backends, repeated throughput comparisons, and
+automatic capacity selection.
+
 2026-09-27. Baseline: `d6cd7f3` (PR #288). Local branch:
 `fix/rtx3090-compile-memory`. One RTX 3090, 24 GiB, driver 610.43.03,
 JAX/jaxlib 0.9.0, Python 3.11.15. Native ABI 21 rebuilt from the PR's

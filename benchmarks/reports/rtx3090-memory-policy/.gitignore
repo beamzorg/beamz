@@ -1,0 +1,5 @@
+# Every timing and allocator snapshot is retained in the JSON records. The
+# repeated compact IR and stdout logs remain local; representative large-case
+# IR is tracked in this directory instead.
+performance/*.mlir
+performance/*.log

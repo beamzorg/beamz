@@ -46,6 +46,7 @@ from beamz.simulation.model import (
     UpdateCoefficients,
 )
 
+from .memory import cuda_memory_policy_from_env
 from .observe import MONITOR_FIELDS, empty_monitor_values
 from .sharding import (
     build_sharding_plan,
@@ -82,6 +83,7 @@ class CompiledProgramKey:
     monitors: tuple[HashToken, ...]
     boundaries: tuple[HashToken, ...]
     cuda_tuning_policy: tuple = ()
+    cuda_memory_policy: str = "auto"
 
     @classmethod
     def from_request(cls, request: SimulationRequest) -> CompiledProgramKey:
@@ -105,6 +107,7 @@ class CompiledProgramKey:
             tuple(cache_token(source) for source in request.sources),
             tuple(cache_token(monitor) for monitor in request.monitors),
             tuple(cache_token(boundary) for boundary in request.boundaries),
+            cuda_memory_policy=request.run.cuda_memory_policy,
         )
 
 
@@ -420,6 +423,7 @@ def _prepare_compilation(
         cuda_flags=int(request.run.cuda_flags),
         cuda_graph_cache_capacity=int(request.run.cuda_graph_cache_capacity),
         cuda_storage_axes=request.run.cuda_storage_axes,
+        cuda_memory_policy=request.run.cuda_memory_policy,
     )
     return _CompileSetup(
         dt,
@@ -944,6 +948,11 @@ def compile_program(
             cuda_flags=cuda_flags,
             cuda_graph_cache_capacity=cuda_graph_cache_capacity,
             cuda_storage_axes=cuda_storage_axes,
+            cuda_memory_policy=(
+                cuda_memory_policy_from_env()
+                if resolved_backend == "cuda_streamed"
+                else "auto"
+            ),
         ),
     )
     signature = CompiledProgramKey.from_request(request)

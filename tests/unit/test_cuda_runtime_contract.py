@@ -898,7 +898,7 @@ def test_capacity_context_disables_temporal_workspace(cpml):
 
 
 @pytest.mark.parametrize("backend", ["jax", "cuda_streamed"])
-def test_scan_compiler_policy_is_scoped_to_cuda(monkeypatch, backend):
+def test_scan_compiler_policy_covers_both_backends(monkeypatch, backend):
     program, _, _ = _program_and_state(cpml=True)
     program = replace(program, config=replace(program.config, backend=backend))
     calls = []
@@ -909,9 +909,7 @@ def test_scan_compiler_policy_is_scoped_to_cuda(monkeypatch, backend):
 
     monkeypatch.setattr("jax.jit", jit)
     build_scan(program, donate_state=True)
-    assert calls == [
-        ((0,), {"xla_gpu_autotune_level": 0} if backend == "cuda_streamed" else None)
-    ]
+    assert calls == [((0,), {"xla_gpu_autotune_level": 0})]
 
 
 def test_scan_compiler_policy_preserves_older_jax(monkeypatch):

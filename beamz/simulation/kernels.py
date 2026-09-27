@@ -1609,7 +1609,7 @@ class CompiledStepContext:
     dt_scalar: jnp.ndarray
     is_3d: bool
     sharding_plan: Any = None
-    # Donating execution prioritizes capacity over extra temporal field banks.
+    # Capacity scheduling is selected separately from buffer donation.
     low_memory: bool = False
 
 
