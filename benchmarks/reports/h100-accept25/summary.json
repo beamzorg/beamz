@@ -1,5 +1,32 @@
 {
-  "performance": [],
+  "performance": [
+    {
+      "devices": 1,
+      "axis": "x",
+      "backend": "cuda_streamed",
+      "pairs": [
+        {
+          "repetition": 0,
+          "baseline_s": 0.10601606033742428,
+          "fixed_s": 0.10594132542610168,
+          "slowdown_percent": -0.07049395259994817,
+          "baseline_gcups": 20.25621062662641,
+          "fixed_gcups": 20.27050010336104,
+          "baseline_compile_s": 1.527982953004539,
+          "fixed_compile_s": 1.5412776079028845,
+          "baseline_cv": 0.0004340380104591459,
+          "fixed_cv": 0.0003075007800739217,
+          "fixed_capacity": {
+            "policy": "auto",
+            "capacity": false,
+            "estimated_fast_workspace_bytes": 480807936
+          }
+        }
+      ],
+      "median_slowdown_percent": -0.07049395259994817,
+      "all_pairs_under_five_percent": false
+    }
+  ],
   "capacity": [
     {
       "name": "prepared-eight-z-15b-baseline",

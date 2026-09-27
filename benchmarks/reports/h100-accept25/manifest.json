@@ -20,11 +20,24 @@
     "compute_usd_hour": 27.92,
     "host_ram_gb": 2013,
     "data_center": "AP-IN-1",
-    "deletion_deadline": "2026-09-27T10:46:00Z"
+    "deletion_deadline": "2026-09-27T10:46:00Z",
+    "deleted_confirmed_404": "2026-09-27T10:45:11Z"
   },
   "two_gpu_interrupted_at_reallocation": "Remaining spectrum/performance cases were interrupted to secure eight-H100 stock; only complete retrieved records count.",
   "harness_partition_fix_commit": "869fa33",
   "harness_initial_failure": "Pulse seed JIT without explicit output sharding gathered a 55.97 GiB global field; both revisions failed before compilation. Excluded from solver conclusions.",
   "harness_local_seed_commit": "4267525",
-  "harness_partition_fix_limitation": "Output constraints alone retained an internal scatter all-gather. Replaced seeding with explicit shard_map local coordinates."
+  "harness_partition_fix_limitation": "Output constraints alone retained an internal scatter all-gather. Replaced seeding with explicit shard_map local coordinates.",
+  "cost": {
+    "compute_upper_usd": 22.915357450000002,
+    "storage_allowance_usd": 0.05,
+    "total_upper_usd": 22.965357450000003,
+    "billing_records_pending": true,
+    "budget_usd": 25
+  },
+  "evidence": {
+    "remote_hashes_verified": 58,
+    "manifest": "raw/SHA256SUMS"
+  },
+  "final_hardware_test_note": "All eight numerical checks passed after adopting existing 3ppm CPML/2ppm physical-field criteria; each test then failed an overstrict nonreplication assertion. That final assertion is now conditional on a divisible logical axis, as in existing JAX tests; no final H100 rerun."
 }

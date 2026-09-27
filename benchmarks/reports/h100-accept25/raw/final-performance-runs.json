@@ -1,0 +1,60 @@
+[
+  {
+    "name": "paired-0-1-x-cuda_streamed-baseline",
+    "command": [
+      "/workspace/venv/bin/python",
+      "/workspace/fixed/scripts/benchmark_modal_stepping.py",
+      "--shape",
+      "256",
+      "256",
+      "256",
+      "--devices",
+      "1",
+      "--backend",
+      "cuda_streamed",
+      "--timesteps",
+      "128",
+      "--samples",
+      "5",
+      "--frequencies",
+      "101",
+      "--host-setup",
+      "--donate-state",
+      "--output",
+      "/workspace/evidence/paired-0-1-x-cuda_streamed-baseline.json"
+    ],
+    "revision": "baseline",
+    "devices": 1,
+    "seconds": 30.156120538711548,
+    "returncode": 0
+  },
+  {
+    "name": "paired-0-1-x-cuda_streamed-fixed",
+    "command": [
+      "/workspace/venv/bin/python",
+      "/workspace/fixed/scripts/benchmark_modal_stepping.py",
+      "--shape",
+      "256",
+      "256",
+      "256",
+      "--devices",
+      "1",
+      "--backend",
+      "cuda_streamed",
+      "--timesteps",
+      "128",
+      "--samples",
+      "5",
+      "--frequencies",
+      "101",
+      "--host-setup",
+      "--donate-state",
+      "--output",
+      "/workspace/evidence/paired-0-1-x-cuda_streamed-fixed.json"
+    ],
+    "revision": "fixed",
+    "devices": 1,
+    "seconds": 30.456738471984863,
+    "returncode": 0
+  }
+]

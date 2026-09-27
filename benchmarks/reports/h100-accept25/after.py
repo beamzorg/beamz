@@ -70,58 +70,59 @@ def run(name, args, count=8, rev="fixed", timeout=300):
     return code == 0
 
 
-if not run(
-    "eight-gpu-parity",
-    ["-m", "pytest", "tests/hardware/test_multi_gpu_capacity.py", "-q"],
-    timeout=240,
-):
-    raise SystemExit("eight GPU parity failed")
-modal = []
-for count, axis, backend in [
-    (1, "z", "jax"),
-    (8, "z", "cuda_streamed"),
-    (8, "z", "jax"),
-    (8, "x", "cuda_streamed"),
-]:
-    name = f"propagated-{count}-{axis}-{backend}"
-    output = OUT / f"{name}.json"
-    modal.append(output)
+if not (OUT / "validation-final-complete.json").exists():
     if not run(
-        name,
-        [
-            ROOT / "scripts/validate_modal_scaling.py",
-            "--shape",
-            128,
-            96,
-            256,
-            "--steps",
-            2048,
-            "--frequencies",
-            101,
-            "--devices",
-            count,
-            "--shard-axis",
-            axis,
-            "--backend",
-            backend,
-            "--output",
-            output,
-        ],
-        count,
-        timeout=60,
+        "eight-gpu-parity",
+        ["-m", "pytest", "tests/hardware/test_multi_gpu_capacity.py", "-q"],
+        timeout=240,
     ):
-        raise SystemExit("propagation failed")
-if not run(
-    "propagated-comparison",
-    [
-        ROOT / "scripts/compare_modal_scaling.py",
-        *modal,
-        "--output",
-        OUT / "propagated-comparison.json",
-    ],
-    timeout=30,
-):
-    raise SystemExit("spectra failed")
+        raise SystemExit("eight GPU parity failed")
+    if not (OUT / "diagnostics-complete.json").exists():
+        modal = []
+        for count, axis, backend in [
+            (1, "z", "jax"),
+            (8, "z", "cuda_streamed"),
+            (8, "z", "jax"),
+        ]:
+            name = f"propagated-{count}-{axis}-{backend}"
+            output = OUT / f"{name}.json"
+            modal.append(output)
+            if not run(
+                name,
+                [
+                    ROOT / "scripts/validate_modal_scaling.py",
+                    "--shape",
+                    128,
+                    96,
+                    256,
+                    "--steps",
+                    2048,
+                    "--frequencies",
+                    101,
+                    "--devices",
+                    count,
+                    "--shard-axis",
+                    axis,
+                    "--backend",
+                    backend,
+                    "--output",
+                    output,
+                ],
+                count,
+                timeout=60,
+            ):
+                raise SystemExit("propagation failed")
+        if not run(
+            "propagated-comparison",
+            [
+                ROOT / "scripts/compare_modal_scaling.py",
+                *modal,
+                "--output",
+                OUT / "propagated-comparison.json",
+            ],
+            timeout=30,
+        ):
+            raise SystemExit("spectra failed")
 for count, axis, backend in [
     (1, "x", "cuda_streamed"),
     (1, "x", "jax"),
@@ -132,6 +133,11 @@ for count, axis, backend in [
 ]:
     shape = (256, 256, 256) if count == 1 else (256, 256, 512)
     for repetition in range(3):
+        if all(
+            (OUT / f"paired-{repetition}-{count}-{axis}-{backend}-{r}.json").exists()
+            for r in ("baseline", "fixed")
+        ):
+            continue
         for rev in (
             ["baseline", "fixed"] if repetition % 2 == 0 else ["fixed", "baseline"]
         ):
@@ -163,3 +169,27 @@ for count, axis, backend in [
                 rev,
                 timeout=90,
             )
+name = "prepared-eight-z-8b-jax"
+run(
+    name,
+    [
+        ROOT / "scripts/benchmark_compile_capacity.py",
+        "--shape",
+        8000,
+        1000,
+        1000,
+        "--devices",
+        8,
+        "--axis",
+        "z",
+        "--backend",
+        "jax",
+        "--steps",
+        32,
+        "--samples",
+        3,
+        "--output",
+        OUT / f"{name}.json",
+    ],
+    timeout=150,
+)

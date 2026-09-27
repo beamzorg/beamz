@@ -3,3 +3,5 @@ DONE {'name': 'prepared-eight-z-15b-baseline', 'command': ['/workspace/venv/bin/
 START prepared-eight-z-15b-fixed 2026-09-27T10:08:01.979168+00:00
 DONE {'name': 'prepared-eight-z-15b-fixed', 'command': ['/workspace/venv/bin/python', '/workspace/fixed/scripts/benchmark_compile_capacity.py', '--shape', '10000', '1250', '1200', '--devices', '8', '--axis', 'z', '--backend', 'cuda_streamed', '--steps', '32', '--samples', '3', '--output', '/workspace/evidence/prepared-eight-z-15b-fixed.json'], 'revision': 'fixed', 'devices': 8, 'seconds': 71.26547122001648, 'returncode': 0}
 START public-eight-z-15b-fixed 2026-09-27T10:09:13.245776+00:00
+DONE {'name': 'public-eight-z-15b-fixed', 'command': ['/workspace/venv/bin/python', '/workspace/fixed/scripts/benchmark_compile_capacity.py', '--workload', 'modal', '--shape', '10000', '1250', '1200', '--devices', '8', '--axis', 'z', '--backend', 'cuda_streamed', '--frequencies', '101', '--steps', '32', '--samples', '3', '--output', '/workspace/evidence/public-eight-z-15b-fixed.json'], 'revision': 'fixed', 'devices': 8, 'seconds': 2014.5000653266907, 'returncode': 124}
+EIGHT_TARGET_COMPLETE
