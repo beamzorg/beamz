@@ -1,0 +1,111 @@
+[
+  {
+    "name": "one-gpu-parity",
+    "command": [
+      "/workspace/venv/bin/python",
+      "-m",
+      "pytest",
+      "tests/hardware/test_cuda_capacity.py",
+      "-q"
+    ],
+    "revision": "fixed",
+    "devices": 1,
+    "seconds": 128.26289296150208,
+    "returncode": 0
+  },
+  {
+    "name": "two-gpu-parity",
+    "command": [
+      "/workspace/venv/bin/python",
+      "-m",
+      "pytest",
+      "tests/hardware/test_multi_gpu_capacity.py",
+      "-q"
+    ],
+    "revision": "fixed",
+    "devices": 2,
+    "seconds": 106.27508068084717,
+    "returncode": 0
+  },
+  {
+    "name": "propagated-1-x-jax",
+    "command": [
+      "/workspace/venv/bin/python",
+      "/workspace/fixed/scripts/validate_modal_scaling.py",
+      "--shape",
+      "64",
+      "96",
+      "256",
+      "--steps",
+      "2048",
+      "--frequencies",
+      "101",
+      "--devices",
+      "1",
+      "--shard-axis",
+      "x",
+      "--backend",
+      "jax",
+      "--output",
+      "/workspace/evidence/propagated-1-x-jax.json"
+    ],
+    "revision": "fixed",
+    "devices": 1,
+    "seconds": 29.25808310508728,
+    "returncode": 0
+  },
+  {
+    "name": "propagated-1-x-cuda_streamed",
+    "command": [
+      "/workspace/venv/bin/python",
+      "/workspace/fixed/scripts/validate_modal_scaling.py",
+      "--shape",
+      "64",
+      "96",
+      "256",
+      "--steps",
+      "2048",
+      "--frequencies",
+      "101",
+      "--devices",
+      "1",
+      "--shard-axis",
+      "x",
+      "--backend",
+      "cuda_streamed",
+      "--output",
+      "/workspace/evidence/propagated-1-x-cuda_streamed.json"
+    ],
+    "revision": "fixed",
+    "devices": 1,
+    "seconds": 26.75946021080017,
+    "returncode": 0
+  },
+  {
+    "name": "propagated-2-x-jax",
+    "command": [
+      "/workspace/venv/bin/python",
+      "/workspace/fixed/scripts/validate_modal_scaling.py",
+      "--shape",
+      "64",
+      "96",
+      "256",
+      "--steps",
+      "2048",
+      "--frequencies",
+      "101",
+      "--devices",
+      "2",
+      "--shard-axis",
+      "x",
+      "--backend",
+      "jax",
+      "--output",
+      "/workspace/evidence/propagated-2-x-jax.json"
+    ],
+    "revision": "fixed",
+    "devices": 2,
+    "seconds": 36.370189905166626,
+    "returncode": 0
+  }
+]

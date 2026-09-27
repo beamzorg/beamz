@@ -1,0 +1,16 @@
+[
+  {
+    "name": "one-gpu-parity",
+    "command": [
+      "/workspace/venv/bin/python",
+      "-m",
+      "pytest",
+      "tests/hardware/test_cuda_capacity.py",
+      "-q"
+    ],
+    "revision": "fixed",
+    "devices": 1,
+    "seconds": 2.167281150817871,
+    "returncode": 2
+  }
+]

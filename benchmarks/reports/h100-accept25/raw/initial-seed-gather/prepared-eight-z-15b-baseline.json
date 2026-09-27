@@ -1,0 +1,182 @@
+{
+  "args": {
+    "side": null,
+    "shape": [
+      10000,
+      1250,
+      1200
+    ],
+    "devices": 8,
+    "backend": "cuda_streamed",
+    "workload": "prepared",
+    "axis": "z",
+    "steps": 32,
+    "samples": 3,
+    "frequencies": 3,
+    "output": "/workspace/evidence/prepared-eight-z-15b-baseline.json",
+    "digests": false
+  },
+  "device": "NVIDIA H100 80GB HBM3",
+  "device_count": 8,
+  "shape": [
+    10000,
+    1250,
+    1200
+  ],
+  "solver_source_sha256": "f17c4cdeb5bf3fe99fe59f763f0de95581cd760dcbf8a7f93d2f27e3593c15a2",
+  "harness_sha256": "f1439fc675b7eb8337a9b1130f554154f354e58287d891c68912d88ac2cb4737",
+  "jax": "0.9.0",
+  "root": "/workspace/baseline",
+  "commit": "16b784c6d30f91cbe323e53c64736151fff808a8",
+  "extension_sha256": "6753641e1a682751ad00c10abda53bd4cd33fd3569ccf048baea018bb94be00d",
+  "environment": {
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "true",
+    "XLA_PYTHON_CLIENT_MEM_FRACTION": ".90",
+    "BEAMZ_CUDA_CPML_PSI_PRECISION": "fp32",
+    "BEAMZ_CUDA_AUTOTUNE": "off"
+  },
+  "stages": [
+    {
+      "stage": "prepare_failed",
+      "seconds": 24.816026867367327,
+      "max_rss_bytes": 22297165824,
+      "gpu": {
+        "num_allocs": 38,
+        "bytes_in_use": 47403149056,
+        "peak_bytes_in_use": 47475208704,
+        "largest_alloc_size": 7518264832,
+        "bytes_limit": 76515742126,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76515741952,
+        "peak_pool_bytes": 76515741952
+      },
+      "gpus": [
+        {
+          "id": 0,
+          "stats": {
+            "num_allocs": 38,
+            "bytes_in_use": 47403149056,
+            "peak_bytes_in_use": 47475208704,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76515742126,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76515741952,
+            "peak_pool_bytes": 76515741952
+          }
+        },
+        {
+          "id": 1,
+          "stats": {
+            "num_allocs": 38,
+            "bytes_in_use": 47403149056,
+            "peak_bytes_in_use": 47475208704,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76515742126,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76515741952,
+            "peak_pool_bytes": 76515741952
+          }
+        },
+        {
+          "id": 2,
+          "stats": {
+            "num_allocs": 38,
+            "bytes_in_use": 47403149056,
+            "peak_bytes_in_use": 47475208704,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76515742126,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76515741952,
+            "peak_pool_bytes": 76515741952
+          }
+        },
+        {
+          "id": 3,
+          "stats": {
+            "num_allocs": 38,
+            "bytes_in_use": 47403149056,
+            "peak_bytes_in_use": 47475208704,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76515742126,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76515741952,
+            "peak_pool_bytes": 76515741952
+          }
+        },
+        {
+          "id": 4,
+          "stats": {
+            "num_allocs": 38,
+            "bytes_in_use": 47403149056,
+            "peak_bytes_in_use": 47475208704,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76515742126,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76515741952,
+            "peak_pool_bytes": 76515741952
+          }
+        },
+        {
+          "id": 5,
+          "stats": {
+            "num_allocs": 38,
+            "bytes_in_use": 47403149056,
+            "peak_bytes_in_use": 47475208704,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76515742126,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76515741952,
+            "peak_pool_bytes": 76515741952
+          }
+        },
+        {
+          "id": 6,
+          "stats": {
+            "num_allocs": 38,
+            "bytes_in_use": 47403149056,
+            "peak_bytes_in_use": 47475208704,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76515742126,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76515741952,
+            "peak_pool_bytes": 76515741952
+          }
+        },
+        {
+          "id": 7,
+          "stats": {
+            "num_allocs": 38,
+            "bytes_in_use": 47403149056,
+            "peak_bytes_in_use": 47475208704,
+            "largest_alloc_size": 7518264832,
+            "bytes_limit": 76515742126,
+            "bytes_reserved": 0,
+            "peak_bytes_reserved": 0,
+            "largest_free_block_bytes": 0,
+            "pool_bytes": 76515741952,
+            "peak_pool_bytes": 76515741952
+          }
+        }
+      ]
+    }
+  ],
+  "status": "failed",
+  "failure_stage": "prepare",
+  "error": "JaxRuntimeError('RESOURCE_EXHAUSTED: Out of memory while trying to allocate 55.97GiB.: while running replica 0 and partition 0 of a replicated computation (other replicas may have failed as well).')"
+}
