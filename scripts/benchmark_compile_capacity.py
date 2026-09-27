@@ -279,7 +279,14 @@ def main():
     parser.add_argument(
         "--digests", action="store_true", help="Only for small parity runs"
     )
+    parser.add_argument(
+        "--require-monitor-signal",
+        action="store_true",
+        help="For propagated modal runs, require nonzero DFT signal in every monitor",
+    )
     args = parser.parse_args()
+    if args.require_monitor_signal and args.workload != "modal":
+        parser.error("--require-monitor-signal requires the modal workload")
     shape = tuple(args.shape or (args.side,) * 3)
     if min(shape) <= 24 or args.steps < 1 or args.samples < 1 or args.devices < 1:
         parser.error("dimensions > 24, positive steps, samples and devices required")
@@ -432,6 +439,46 @@ def main():
             maxima.append(maximum)
             if args.digests:
                 digests.append(digest.hexdigest())
+        if args.workload == "modal":
+            re, im, weights = (
+                np.asarray(value)
+                for value in (state.dft_vec_re, state.dft_vec_im, state.dft_weight_sum)
+            )
+            monitor_signal = []
+            for index, mon in enumerate(program.monitors):
+                start = int(mon.dft_value_offset)
+                size = 6 * int(mon.freq_count) * int(mon.dft_point_count)
+                weight_start = int(mon.dft_weight_offset)
+                selected_weights = weights[weight_start : weight_start + mon.freq_count]
+                peak = max(
+                    float(np.max(np.abs(re[start : start + size]), initial=0)),
+                    float(np.max(np.abs(im[start : start + size]), initial=0)),
+                )
+                row = dict(
+                    index=index,
+                    frequencies=int(mon.freq_count),
+                    points=int(mon.dft_point_count),
+                    peak_dft=peak,
+                    positive_weights=bool(
+                        selected_weights.size and np.all(selected_weights > 0)
+                    ),
+                )
+                monitor_signal.append(row)
+            data["monitor_signal"] = monitor_signal
+            np.savez_compressed(
+                args.output.with_suffix(".npz"),
+                dft_vec_re=re,
+                dft_vec_im=im,
+                dft_weight_sum=weights,
+            )
+            if args.require_monitor_signal and (
+                not monitor_signal
+                or not all(
+                    row["peak_dft"] > 0 and row["positive_weights"]
+                    for row in monitor_signal
+                )
+            ):
+                raise RuntimeError("Expected propagated signal in every mode monitor")
         data.update(final_step=int(state.current_step), maxima=maxima, digests=digests)
         if int(state.current_step) != args.steps * args.samples or not any(maxima[:6]):
             raise RuntimeError("Invalid continuation or zero fields")
