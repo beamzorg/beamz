@@ -112,6 +112,8 @@ def main():
             axis,
             "--host-setup",
             "--donate-state",
+            "--compile-diagnostics",
+            str(args.output / f"{name}.compile"),
             "--timesteps",
             str(args.timesteps),
             "--samples",

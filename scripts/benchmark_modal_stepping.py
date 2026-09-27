@@ -42,6 +42,7 @@ def main():
     p.add_argument("--worker", action="store_true")
     p.add_argument("--workload", choices=["modal_cpml12"], default="modal_cpml12")
     p.add_argument("--shard-axis", choices=["x", "y", "z"], default="x")
+    p.add_argument("--compile-diagnostics", type=Path)
     p.add_argument("--trace", type=Path)
     p.add_argument("--profile-public", type=Path)
     p.add_argument("--output", type=Path, required=True)
@@ -94,9 +95,43 @@ def main():
     setup_s = time.perf_counter() - started
     print(json.dumps(dict(stage="prepared", setup_s=setup_s)), flush=True)
     tick = time.perf_counter()
-    exe = (
-        build_scan(program, donate_state=a.donate_state).lower(state, coeffs).compile()
-    )
+    if a.compile_diagnostics:
+        a.compile_diagnostics.mkdir(parents=True, exist_ok=True)
+        (a.compile_diagnostics / "prepared.json").write_text(
+            json.dumps(
+                dict(shape=a.shape, setup_s=setup_s, prepared_memory=prepared_memory),
+                indent=2,
+            )
+            + "\n"
+        )
+    try:
+        lowered = build_scan(program, donate_state=a.donate_state).lower(state, coeffs)
+        if a.compile_diagnostics:
+            # Elide literal payloads: a field-sized constant must not produce a
+            # multi-gigabyte text dump while diagnosing near-capacity failures.
+            module = lowered.compiler_ir()
+            (a.compile_diagnostics / "lowered.mlir").write_text(
+                module.operation.get_asm(
+                    large_elements_limit=16, large_resource_limit=16
+                )
+            )
+        exe = lowered.compile()
+    except Exception as error:
+        if a.compile_diagnostics:
+            (a.compile_diagnostics / "failure.json").write_text(
+                json.dumps(
+                    dict(
+                        error=repr(error),
+                        elapsed_s=time.perf_counter() - tick,
+                        device_memory=[
+                            dict(id=d.id, stats=d.memory_stats()) for d in devices
+                        ],
+                    ),
+                    indent=2,
+                )
+                + "\n"
+            )
+        raise
     compile_s = time.perf_counter() - tick
     analysis = exe.memory_analysis()
     compiled_memory = {
