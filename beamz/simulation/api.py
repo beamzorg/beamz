@@ -71,6 +71,7 @@ from beamz.simulation.model import (
     SimulationRequest,
     SimulationState,
 )
+from beamz.simulation.preparation_trace import trace_preparation
 from beamz.simulation.results import MonitorResults as MonitorResults
 from beamz.simulation.results import SimulationResults as SimulationResults
 from beamz.simulation.results import SimulationRun as SimulationRun
@@ -981,6 +982,7 @@ class Simulation:
             object.__setattr__(result, "coordinate_offset", preserved_offset)
         return result
 
+    @trace_preparation("material_grid")
     def _material_grid(self, *, progress: bool = False):
         """Return Design's immutable cell-centered material raster."""
         if self.material_grid is not None:

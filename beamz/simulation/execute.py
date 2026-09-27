@@ -37,6 +37,7 @@ from beamz.simulation.model import (
     UpdateCoefficients,
     _copy_initial_field,
 )
+from beamz.simulation.preparation_trace import trace_preparation
 
 from . import kernels as update_runtime
 from . import observe as monitor_runtime
@@ -1006,6 +1007,7 @@ def clear_execution_cache() -> None:
     _EXECUTION_CACHES.clear()
 
 
+@trace_preparation("initial_state")
 def initial_program_state(
     program: CompiledProgram,
     *,

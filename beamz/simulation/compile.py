@@ -45,6 +45,7 @@ from beamz.simulation.model import (
     SimulationRequest,
     UpdateCoefficients,
 )
+from beamz.simulation.preparation_trace import preparation_phase, trace_preparation
 
 from .memory import cuda_memory_policy_from_env
 from .observe import MONITOR_FIELDS, empty_monitor_values
@@ -257,6 +258,7 @@ def _compile_derivative_metrics(material_grid) -> DerivativeMetricPlan:
     )
 
 
+@trace_preparation("cpml_plan")
 def _compile_cpml_plan(
     fields, *, dt, is_3d, metallic_edges, polarization_2d: str = "tm"
 ) -> CpmlPlan:
@@ -335,6 +337,7 @@ class _CompileSetup:
     config: RunConfig
 
 
+@trace_preparation("sources_monitors_and_layout")
 def _prepare_compilation(
     request: SimulationRequest, logical_fields: CompiledGrid
 ) -> _CompileSetup:
@@ -434,6 +437,7 @@ def _prepare_compilation(
     )
 
 
+@trace_preparation("yee_materials")
 def _compile_grid(
     request: SimulationRequest, boundary_data: BoundaryData
 ) -> CompiledGrid:
@@ -560,17 +564,19 @@ def _compile_boundary(fields, cpml, boundary_data, *, is_3d: bool) -> BoundaryPl
     )
 
 
+@trace_preparation("compile_plan")
 def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     """Build an immutable executable plan from a simulation request."""
     # 1. Lower all boundaries once, then collocate materials on the resulting lattice.
-    boundary_data = lower_boundaries(
-        request.materials,
-        component_shapes(request.materials.shape, request.domain.polarization_2d),
-        request.boundaries,
-        request.domain.size,
-        request.run.dt,
-        polarization_2d=request.domain.polarization_2d,
-    )
+    with preparation_phase("boundaries"):
+        boundary_data = lower_boundaries(
+            request.materials,
+            component_shapes(request.materials.shape, request.domain.polarization_2d),
+            request.boundaries,
+            request.domain.size,
+            request.run.dt,
+            polarization_2d=request.domain.polarization_2d,
+        )
     logical_grid = _compile_grid(request, boundary_data)
     setup = _prepare_compilation(request, logical_grid)
     fields = logical_grid
@@ -844,6 +850,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     )
 
 
+@trace_preparation("public_compile")
 def compile_program(
     simulation,
     *,

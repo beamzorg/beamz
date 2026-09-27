@@ -19,6 +19,7 @@ from beamz.simulation.model import (
     ShardingLayout,
     ShardingPlan,
 )
+from beamz.simulation.preparation_trace import trace_preparation
 
 # Sharding may pad the high side for equal device partitions. Padding is storage-only;
 # logical component shapes remain authoritative for curls, monitors, and result crops.
@@ -434,6 +435,7 @@ def _array_sharding(program, arr, mesh):
     return _replicated_sharding(mesh)
 
 
+@trace_preparation("placement")
 def place_tree(program, tree, *, shard_arrays: bool = True):
     """Place one complete pytree according to the program's backend plan."""
     if not program.sharding.layout.enabled:
