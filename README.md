@@ -85,6 +85,13 @@ For a ready-to-use CUDA and Jupyter development environment, see the
 BeamZ aims to become the FDTD engine of choice for **photonic simulations** in industry and research, including photonic circuits, inverse design, metamaterials, fiber optics, nanophotonics, sensors (planned), active photonic devices (planned), and RF (planned), focusing on **streamlined workflows** and bringing multi-physics GPU-acceleration for **maximum performance in large-scale simulations** to everyone. - [_Detailed roadmap coming soon_.](www.beamz.tech/roadmap)
 
 
+## Contributing
+
+**We appreciate all contributions.** If you are planning to contribute bug-fixes, please do so without any further discussion. If you would like to add new features, please first open an issue and discuss the feature with us. There may be ongoing work that could conflict with your changes, or we may be heading in a different direction and we don't want to waste your time working on something that might be rejected. - You can find [more information here](CONTRIBUTING.md).
+
+The simplest way to support the project of course is by **giving this repo a star.** Thank you!
+
+
 ## Citation
 
 If you use BeamZ in your research, please cite:
@@ -105,13 +112,6 @@ report the version or commit used in your work. Zenodo archiving is planned
 to begin with the next release; its DOI and a DOI badge will be added once
 the archive is published. For reproducible research, use the DOI of the
 specific release you used.
-
-
-## Contributing
-
-**We appreciate all contributions.** If you are planning to contribute bug-fixes, please do so without any further discussion. If you would like to add new features, please first open an issue and discuss the feature with us. There may be ongoing work that could conflict with your changes, or we may be heading in a different direction and we don't want to waste your time working on something that might be rejected. - You can find [more information here](CONTRIBUTING.md).
-
-The simplest way to support the project of course is by **giving this repo a star.** Thank you!
 
 ---
 
