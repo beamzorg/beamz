@@ -41,7 +41,12 @@ def test_15b_plane_plan_and_jitted_sampling_without_large_field_allocation():
             z, y, x = coordinates
             return z.astype(jnp.float32) * 10 + y + x / 1000
 
-    with jax.enable_x64(False):
+    try:
+        from jax import enable_x64
+    except ImportError:
+        from jax.experimental import enable_x64
+
+    with enable_x64(False):
         metadata = _sampling_indices(indices)
         assert isinstance(metadata, np.ndarray)
         assert not metadata.flags.writeable
