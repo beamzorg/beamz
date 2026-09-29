@@ -1,3 +1,0 @@
-START eight-gpu-parity 2026-09-27T10:27:00.120663+00:00
-DONE {'memory_fraction': '.03', 'context': 'During CPU-only public preparation; killed before public lower/compile if needed', 'name': 'eight-gpu-parity', 'command': ['/workspace/venv/bin/python', '-m', 'pytest', 'tests/hardware/test_multi_gpu_capacity.py', '-q'], 'revision': 'fixed', 'devices': 8, 'seconds': 116.60340666770935, 'returncode': 1}
-eight GPU parity failed

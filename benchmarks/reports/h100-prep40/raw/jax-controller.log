@@ -1,2 +1,0 @@
-START public-eight-z-15b-jax 2026-09-27T14:13:10.633565+00:00
-DONE {'name': 'public-eight-z-15b-jax', 'command': ['/workspace/venv/bin/python', '/workspace/fixed/scripts/benchmark_compile_capacity.py', '--workload', 'modal', '--shape', '10000', '1250', '1200', '--devices', '8', '--axis', 'z', '--backend', 'jax', '--frequencies', '101', '--steps', '32', '--samples', '3', '--output', '/workspace/evidence/public-eight-z-15b-jax.json'], 'revision': 'fixed', 'devices': 8, 'started': 1790518390.6335626, 'seconds': 955.0178081989288, 'returncode': 124}

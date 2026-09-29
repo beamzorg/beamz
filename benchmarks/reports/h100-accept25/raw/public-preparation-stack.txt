@@ -1,5 +1,0 @@
-Error: Failed to copy Py_Version symbol
-
-Caused by:
-    0: Permission denied (os error 13)
-    1: Permission denied (os error 13)

@@ -1,4 +1,0 @@
-{'case': 'modal', 'shape': (512, 128, 256), 'compile_s': 4.8268784545362, 'memory': {'argument_size_in_bytes': 101386388, 'output_size_in_bytes': 75627612, 'alias_size_in_bytes': 75627372, 'temp_size_in_bytes': 14601032}}
-{'case': 'no_sources', 'shape': (512, 128, 256), 'compile_s': 3.793444652110338, 'memory': {'argument_size_in_bytes': 101386388, 'output_size_in_bytes': 75627612, 'alias_size_in_bytes': 75627372, 'temp_size_in_bytes': 14601024}}
-{'case': 'no_monitors', 'shape': (512, 128, 256), 'compile_s': 1.7995170652866364, 'memory': {'argument_size_in_bytes': 101386388, 'output_size_in_bytes': 75627612, 'alias_size_in_bytes': 75627372, 'temp_size_in_bytes': 12659480}}
-{'case': 'bare', 'shape': (512, 128, 256), 'compile_s': 1.119832132011652, 'memory': {'argument_size_in_bytes': 101386388, 'output_size_in_bytes': 75627612, 'alias_size_in_bytes': 75627372, 'temp_size_in_bytes': 12659472}}
