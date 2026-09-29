@@ -1,0 +1,62 @@
+{
+  "fixed_commit": "b6732566b5d36709c9ced2d4ab3f18a0151e6ed2",
+  "baseline_commit": "a32227d5bc1564d38581f41279765b445e88067c",
+  "budget_usd": 40,
+  "compute_usd_hour": 27.92,
+  "protocol": "same eight-H100 host; CUDA_VISIBLE_DEVICES subsets for one/two GPU tests",
+  "native_sha256": "6753641e1a682751ad00c10abda53bd4cd33fd3569ccf048baea018bb94be00d",
+  "files": {
+    "fixed.tar.gz": "ce95020029f1826a021771dbe6aec83ed463dcda6995dec2139d5359e0b53d13",
+    "baseline.tar.gz": "93367b1710129df0624dfdd7be35a5a712aff6f03b6c7d02f618753e64f5d2f3"
+  },
+  "pod_id": "gdm1u0x1hohyum",
+  "created_at": "2026-09-27T13:08:01.377Z",
+  "deletion_deadline": "2026-09-27T14:30:00Z",
+  "work_deadline": "2026-09-27T14:29:00+00:00",
+  "data_center": "CA-MTL-1",
+  "ssh_host": "63.141.33.72",
+  "ssh_port": 22018,
+  "ssh_key_updated": true,
+  "capacity_harness_commit": "0482d09",
+  "capacity_harness_sha256": "af242b7bc14bdcc137b932fd999baf88c8f4051c6dec4ac2a78d4aa374edc67a",
+  "public_workload": {
+    "shape_zyx": [
+      10000,
+      1250,
+      1200
+    ],
+    "resolution_nm": 80,
+    "cpml_cells": 12,
+    "monitor_frequencies": 101,
+    "mode_monitors": 2,
+    "source": "TE ModeSource",
+    "material": "binary waveguide"
+  },
+  "performance_protocol": {
+    "process_pairs_per_configuration": 3,
+    "reverse_order_repetition": 1,
+    "warm_samples_per_process": 5,
+    "steps_per_sample": 128,
+    "acceptance": "each pair <5% slowdown",
+    "configurations": [
+      [
+        1,
+        "x"
+      ],
+      [
+        2,
+        "x"
+      ],
+      [
+        2,
+        "z"
+      ]
+    ]
+  },
+  "original_work_deadline": "2026-09-27T14:23:00+00:00",
+  "original_deletion_deadline": "2026-09-27T14:26:01.377Z",
+  "deadline_extension_reason": "Use additional authorized capacity-validation time; total compute to shutdown deadline remains $38.15 of $40.",
+  "followup_source_fix_commit": "8d1529d",
+  "full_capacity_includes_source_fix": false,
+  "source_fix_validation": "Eight eight-H100 parity/continuation tests and six local tests; compile-only ablation. Full-size rerun pending."
+}

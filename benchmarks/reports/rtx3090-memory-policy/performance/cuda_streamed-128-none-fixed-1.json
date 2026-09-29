@@ -1,0 +1,296 @@
+{
+  "args": {
+    "side": 128,
+    "backend": "cuda_streamed",
+    "workload": "modal",
+    "axis": "none",
+    "steps": 128,
+    "samples": 9,
+    "frequencies": 3,
+    "output": "/home/quentinwach/beamz/beamz-capacity-fix/benchmarks/reports/rtx3090-memory-policy/performance/cuda_streamed-128-none-fixed-1.json",
+    "digests": false
+  },
+  "device": "NVIDIA GeForce RTX 3090",
+  "solver_source_sha256": "55e0c7b4391f61a9144b0ade51ca79d46ea02fbb4a7f62c365dd97267c056445",
+  "harness_sha256": "4498ac46e77235874c1fe86f5e7bf785c477291383b5ff878703415cfa1a9a29",
+  "jax": "0.9.0",
+  "root": "/home/quentinwach/beamz/beamz-capacity-fix",
+  "commit": "4ce23358d462c77a8579defbf5f8e11312d6d398",
+  "extension_sha256": "85fe6a66a093b5a8cd2f14b0342102de41ad680415d681fcdb33588f6c5d1f3c",
+  "environment": {
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+    "XLA_PYTHON_CLIENT_MEM_FRACTION": ".90",
+    "BEAMZ_CUDA_AUTOTUNE": "off"
+  },
+  "stages": [
+    {
+      "stage": "prepare",
+      "seconds": 4.706920996017288,
+      "max_rss_bytes": 1809440768,
+      "gpu": {
+        "num_allocs": 54,
+        "bytes_in_use": 101038080,
+        "peak_bytes_in_use": 101038080,
+        "largest_alloc_size": 16777216,
+        "bytes_limit": 22734057688,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 134217728,
+        "peak_pool_bytes": 134217728
+      }
+    },
+    {
+      "stage": "lower",
+      "seconds": 0.41066826798487455,
+      "max_rss_bytes": 1981837312,
+      "gpu": {
+        "num_allocs": 230,
+        "bytes_in_use": 101038080,
+        "peak_bytes_in_use": 101369600,
+        "largest_alloc_size": 16777216,
+        "bytes_limit": 22734057688,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 134217728,
+        "peak_pool_bytes": 134217728
+      }
+    },
+    {
+      "stage": "compile",
+      "seconds": 0.06748044199775904,
+      "max_rss_bytes": 1984479232,
+      "gpu": {
+        "num_allocs": 230,
+        "bytes_in_use": 101038080,
+        "peak_bytes_in_use": 101369600,
+        "largest_alloc_size": 16777216,
+        "bytes_limit": 22734057688,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 134217728,
+        "peak_pool_bytes": 134217728
+      }
+    },
+    {
+      "stage": "run_0",
+      "seconds": 0.06610948400339112,
+      "max_rss_bytes": 2095771648,
+      "gpu": {
+        "num_allocs": 232,
+        "bytes_in_use": 101038080,
+        "peak_bytes_in_use": 235256064,
+        "largest_alloc_size": 134217728,
+        "bytes_limit": 22734057688,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 268435456,
+        "peak_pool_bytes": 268435456
+      }
+    },
+    {
+      "stage": "run_1",
+      "seconds": 0.03883895097533241,
+      "max_rss_bytes": 2095771648,
+      "gpu": {
+        "num_allocs": 234,
+        "bytes_in_use": 101038080,
+        "peak_bytes_in_use": 235256064,
+        "largest_alloc_size": 134217728,
+        "bytes_limit": 22734057688,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 268435456,
+        "peak_pool_bytes": 268435456
+      }
+    },
+    {
+      "stage": "run_2",
+      "seconds": 0.0389375239610672,
+      "max_rss_bytes": 2095771648,
+      "gpu": {
+        "num_allocs": 236,
+        "bytes_in_use": 101038080,
+        "peak_bytes_in_use": 235256064,
+        "largest_alloc_size": 134217728,
+        "bytes_limit": 22734057688,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 268435456,
+        "peak_pool_bytes": 268435456
+      }
+    },
+    {
+      "stage": "run_3",
+      "seconds": 0.038838641019538045,
+      "max_rss_bytes": 2095771648,
+      "gpu": {
+        "num_allocs": 238,
+        "bytes_in_use": 101038080,
+        "peak_bytes_in_use": 235256064,
+        "largest_alloc_size": 134217728,
+        "bytes_limit": 22734057688,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 268435456,
+        "peak_pool_bytes": 268435456
+      }
+    },
+    {
+      "stage": "run_4",
+      "seconds": 0.03845702501712367,
+      "max_rss_bytes": 2095771648,
+      "gpu": {
+        "num_allocs": 240,
+        "bytes_in_use": 101038080,
+        "peak_bytes_in_use": 235256064,
+        "largest_alloc_size": 134217728,
+        "bytes_limit": 22734057688,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 268435456,
+        "peak_pool_bytes": 268435456
+      }
+    },
+    {
+      "stage": "run_5",
+      "seconds": 0.038930620008613914,
+      "max_rss_bytes": 2095771648,
+      "gpu": {
+        "num_allocs": 242,
+        "bytes_in_use": 101038080,
+        "peak_bytes_in_use": 235256064,
+        "largest_alloc_size": 134217728,
+        "bytes_limit": 22734057688,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 268435456,
+        "peak_pool_bytes": 268435456
+      }
+    },
+    {
+      "stage": "run_6",
+      "seconds": 0.03877559397369623,
+      "max_rss_bytes": 2095771648,
+      "gpu": {
+        "num_allocs": 244,
+        "bytes_in_use": 101038080,
+        "peak_bytes_in_use": 235256064,
+        "largest_alloc_size": 134217728,
+        "bytes_limit": 22734057688,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 268435456,
+        "peak_pool_bytes": 268435456
+      }
+    },
+    {
+      "stage": "run_7",
+      "seconds": 0.03887180204037577,
+      "max_rss_bytes": 2095771648,
+      "gpu": {
+        "num_allocs": 246,
+        "bytes_in_use": 101038080,
+        "peak_bytes_in_use": 235256064,
+        "largest_alloc_size": 134217728,
+        "bytes_limit": 22734057688,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 268435456,
+        "peak_pool_bytes": 268435456
+      }
+    },
+    {
+      "stage": "run_8",
+      "seconds": 0.03872809198219329,
+      "max_rss_bytes": 2095771648,
+      "gpu": {
+        "num_allocs": 248,
+        "bytes_in_use": 101038080,
+        "peak_bytes_in_use": 235256064,
+        "largest_alloc_size": 134217728,
+        "bytes_limit": 22734057688,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 268435456,
+        "peak_pool_bytes": 268435456
+      }
+    },
+    {
+      "stage": "validate",
+      "seconds": 0.910054651030805,
+      "max_rss_bytes": 2158850048,
+      "gpu": {
+        "num_allocs": 3857,
+        "bytes_in_use": 94645248,
+        "peak_bytes_in_use": 235256064,
+        "largest_alloc_size": 134217728,
+        "bytes_limit": 22734057688,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 268435456,
+        "peak_pool_bytes": 268435456
+      }
+    }
+  ],
+  "status": "ok",
+  "input_bytes": 76392792,
+  "cells": 2097152,
+  "cuda_schedule": {
+    "policy": "auto",
+    "capacity": false,
+    "estimated_fast_workspace_bytes": 69944832
+  },
+  "executable_bytes": {
+    "argument_size_in_bytes": 76392792,
+    "output_size_in_bytes": 70002824,
+    "alias_size_in_bytes": 70002584,
+    "temp_size_in_bytes": 69948176
+  },
+  "final_step": 1152,
+  "maxima": [
+    25093970.0,
+    27044990.0,
+    17605818.0,
+    371034.84375,
+    192686.8125,
+    587494.5,
+    4831510016.0,
+    5490245632.0,
+    2312342784.0,
+    755205603328.0,
+    4491324686336.0,
+    5890085376.0,
+    62078024.0,
+    56342672.0,
+    57151600.0,
+    58650181632.0,
+    5120432128.0,
+    19760636.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    419561024.0,
+    382179424.0,
+    1152.0,
+    1.686105411107669e-13,
+    1152.0
+  ],
+  "digests": []
+}

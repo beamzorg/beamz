@@ -1,0 +1,24 @@
+{
+  "shape": [
+    384,
+    384,
+    384
+  ],
+  "devices": 2,
+  "axis": "z",
+  "backend": "jax",
+  "platform": "cpu",
+  "pml_cells": 12,
+  "mode_sources": 1,
+  "mode_monitors": 2,
+  "frequencies": 101,
+  "construction_s": 0.025079041020944715,
+  "plan_s": 4.936095500015654,
+  "state_and_placement_s": 0.344729834003374,
+  "total_s": 5.305904375039972,
+  "host_peak_bytes": 2345140224,
+  "device_memory": [
+    null,
+    null
+  ]
+}

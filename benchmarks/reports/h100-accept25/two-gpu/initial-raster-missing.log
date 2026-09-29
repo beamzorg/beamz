@@ -1,0 +1,29 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: /workspace/fixed
+configfile: pytest.ini
+plugins: cov-7.1.0, hypothesis-6.168.2
+collected 0 items / 1 error
+
+==================================== ERRORS ====================================
+____________ ERROR collecting tests/hardware/test_cuda_capacity.py _____________
+ImportError while importing test module '/workspace/fixed/tests/hardware/test_cuda_capacity.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/hardware/test_cuda_capacity.py:15: in <module>
+    from tests.hardware.test_cuda_backends import _assert_state_close, _copy_state
+tests/hardware/test_cuda_backends.py:14: in <module>
+    from beamz.design.raster import Grid, Material, Scene, rasterize
+beamz/design/raster/__init__.py:3: in <module>
+    from .engine import CompiledScene, RasterOptions, compile_scene, rasterize
+beamz/design/raster/engine.py:15: in <module>
+    from . import _native  # type: ignore[attr-defined]
+    ^^^^^^^^^^^^^^^^^^^^^
+E   ImportError: cannot import name '_native' from partially initialized module 'beamz.design.raster' (most likely due to a circular import) (/workspace/fixed/beamz/design/raster/__init__.py)
+=========================== short test summary info ============================
+ERROR tests/hardware/test_cuda_capacity.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+=============================== 1 error in 0.77s ===============================

@@ -1,0 +1,182 @@
+[
+  {
+    "path": "baseline-worker.py",
+    "bytes": 8873,
+    "sha256": "954d9bcb9fa496cd14b669cc0235db02cdaf6147d3b4a568e7d4c360d6c63ea2"
+  },
+  {
+    "path": "capacity/5.75B.json",
+    "bytes": 32747,
+    "sha256": "74b84bd775100a4170b5e78d7cf0f5aa828bab449c0c1d7e3f37f1c72b967ae9"
+  },
+  {
+    "path": "capacity/5.75B.log",
+    "bytes": 20841,
+    "sha256": "93234084354d3af67be1fd7d9e9584bd873d4ee03000b634896c873f9c57cbe9"
+  },
+  {
+    "path": "capacity/5.75B.placement.jsonl",
+    "bytes": 359297,
+    "sha256": "1f9ac056cf812156dd0d3653dae517cb1ad5d633a914d77488836b5247825d1f"
+  },
+  {
+    "path": "capacity/summary.json",
+    "bytes": 260,
+    "sha256": "3eb985759ed19a862679cedda111eb7d7e137e5e4d1c1aaee33cb678c945c85d"
+  },
+  {
+    "path": "capacity-worker.py",
+    "bytes": 8941,
+    "sha256": "4b36e9dc33ce20be738fe77c0c252e091799915f869137f8f3b454e949747ccf"
+  },
+  {
+    "path": "controls.json",
+    "bytes": 463,
+    "sha256": "5eade330805200664e116cb3df422bf92490343bee81bb1c2026b249ed5b76a5"
+  },
+  {
+    "path": "deployment.json",
+    "bytes": 735,
+    "sha256": "3aee11ab491c80f8dd9399ed79d55ef152eeb43ffb5485b88bc4a330d7b673ad"
+  },
+  {
+    "path": "hardware-state.txt",
+    "bytes": 40388,
+    "sha256": "e0b73ac9ce07812b00c5ab9e9c274defa7466c47292150d2d78df34729df82da"
+  },
+  {
+    "path": "ncu-path.txt",
+    "bytes": 217,
+    "sha256": "c5af14ed4dd599f261806094ed59ecdbe0e2617b27917674197ddad0f5852899"
+  },
+  {
+    "path": "nvidia-smi.txt",
+    "bytes": 110247,
+    "sha256": "ce66057091dd12649d06c3eb050c3bb7e5ebdaf178ee1b161bcfc7a95bd1879c"
+  },
+  {
+    "path": "packages.txt",
+    "bytes": 1119,
+    "sha256": "b8d601c0ec492b2f1553511b836785af0068826c9a099b66152770bc4a15485c"
+  },
+  {
+    "path": "post-baseline.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "post-baseline.sh",
+    "bytes": 763,
+    "sha256": "48e65ab424c3d8f710e75330f19fd11f67d639c4c45506fe20ac471079fa2326"
+  },
+  {
+    "path": "retained-512.json",
+    "bytes": 14841,
+    "sha256": "c21611538064ef91fae439caf795bf8bb3708f8064831190621df4754f8a8a83"
+  },
+  {
+    "path": "retained-512.log",
+    "bytes": 8609,
+    "sha256": "3d33fc8c33e792a0c057c3185aea9b182ebe781d16c370e40e88b2a5d69e8eac"
+  },
+  {
+    "path": "run.log",
+    "bytes": 491,
+    "sha256": "be6bfee78ba59769d50e7c3d5f8f07c5489f4b8a2d454e0b41ecd4df02df3970"
+  },
+  {
+    "path": "run.sh",
+    "bytes": 1469,
+    "sha256": "f3e2836c7fd4d33639c8f2b5733f1f75c1f6f0e015a829587ed82109c323a770"
+  },
+  {
+    "path": "telemetry.csv",
+    "bytes": 405743,
+    "sha256": "bfda22e3710ede627a8720be3fa432725e647a60cc73c511bd833f841b1f5145"
+  },
+  {
+    "path": "thermal-fault.txt",
+    "bytes": 40293,
+    "sha256": "a3eb8f94983b2cce813851e7f5b827cac76a557051dcc559c5ada219da1d19cc"
+  },
+  {
+    "path": "topology.txt",
+    "bytes": 2314,
+    "sha256": "59e2eb0065c57cfccbb771fc17a7e0ee008c15c9e78b819cf1297da517b65390"
+  },
+  {
+    "path": "validation/comparison-z.json",
+    "bytes": 965,
+    "sha256": "7afe6c986e0965b9ddc6089b317d1620a51762be45ff7b3b59b5f46ebe6162ac"
+  },
+  {
+    "path": "validation/comparison-z.log",
+    "bytes": 31,
+    "sha256": "f4d9c14c5020fbb0507c3f5a3e09cb2774ce99b91c1219b578744c6807e05249"
+  },
+  {
+    "path": "validation/comparison.json",
+    "bytes": 964,
+    "sha256": "0a3deae7463d6c8026ee86d791e577fd7b23fedc84c3b31b334c390af1211251"
+  },
+  {
+    "path": "validation/comparison.log",
+    "bytes": 31,
+    "sha256": "f4d9c14c5020fbb0507c3f5a3e09cb2774ce99b91c1219b578744c6807e05249"
+  },
+  {
+    "path": "validation/cuda-z.json",
+    "bytes": 5634,
+    "sha256": "99013e8a399da3638aeb49a1ff2bd580a495501cce615b14f3b577e2d64276b8"
+  },
+  {
+    "path": "validation/cuda-z.log",
+    "bytes": 40,
+    "sha256": "040f7c834ae5f99978580bcc3ed8c993809f58cea10392378e0425cc3884e0e6"
+  },
+  {
+    "path": "validation/cuda-z.npz",
+    "bytes": 1539836,
+    "sha256": "97d5f3b5447665f95efd1f77cf7b591bf16dce30982676d389a30c26c3ce278c"
+  },
+  {
+    "path": "validation/cuda.json",
+    "bytes": 5625,
+    "sha256": "2af423f3d3b2f85ce64e775b1dced1ae2d159bcc7b0fe85ca0c278b81612d4c8"
+  },
+  {
+    "path": "validation/cuda.log",
+    "bytes": 40,
+    "sha256": "e689d3a58f6ad5aa32cdb583027c18023530788223e5bb3a3c7bb16f069eaed8"
+  },
+  {
+    "path": "validation/cuda.npz",
+    "bytes": 1534639,
+    "sha256": "bc4c76368cec1b5e77ee221e7d2ebbc4e3d543333abf777e19ffe59ce13b6f37"
+  },
+  {
+    "path": "validation/jax.json",
+    "bytes": 5515,
+    "sha256": "21124a7d3ca22dc1d45df4fb0e299d5d75c2f5bcdcdd1c37ba9cc5510f3f9e46"
+  },
+  {
+    "path": "validation/jax.log",
+    "bytes": 40,
+    "sha256": "d3fd13681a7e272f4eee75955cf5af864066dcff2e4f79f9d2d202baecd30a0d"
+  },
+  {
+    "path": "validation/jax.npz",
+    "bytes": 1036748,
+    "sha256": "062cad5faa63dc5a7eda0ccd44931225bed2c3febcd3ba4133be55a84aba66b3"
+  },
+  {
+    "path": "z-gate.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "z-gate.sh",
+    "bytes": 762,
+    "sha256": "5257c732dc275e8629322a6ed45e5685546a7a2dcc59ccec9970cfbe0fb9cbf8"
+  }
+]

@@ -11,8 +11,10 @@ import hashlib
 import json
 import os
 import pstats
+import resource
 import statistics
 import subprocess
+import sys
 import time
 from contextlib import nullcontext
 from pathlib import Path
@@ -36,13 +38,17 @@ def main():
     p.add_argument("--timesteps", type=int, default=256)
     p.add_argument("--samples", type=int, default=5)
     p.add_argument("--host-setup", action="store_true")
+    p.add_argument("--donate-state", action="store_true")
     p.add_argument("--worker", action="store_true")
     p.add_argument("--workload", choices=["modal_cpml12"], default="modal_cpml12")
-    p.add_argument("--shard-axis", choices=["x"], default="x")
+    p.add_argument("--shard-axis", choices=["x", "y", "z"], default="x")
+    p.add_argument("--compile-diagnostics", type=Path)
     p.add_argument("--trace", type=Path)
     p.add_argument("--profile-public", type=Path)
     p.add_argument("--output", type=Path, required=True)
     a = p.parse_args()
+    if a.donate_state and (a.trace or a.profile_public):
+        p.error("donating capacity runs do not support extra trace/public replays")
     devices = jax.devices()
     if (
         len(devices) != a.devices
@@ -59,7 +65,9 @@ def main():
         )
     started = time.perf_counter()
     cfg = (
-        None if a.devices == 1 else dict(axis="x", num_devices=a.devices, backend="gpu")
+        None
+        if a.devices == 1
+        else dict(axis=a.shard_axis, num_devices=a.devices, backend="gpu")
     )
     context = (
         jax.default_device(jax.devices("cpu")[0]) if a.host_setup else nullcontext()
@@ -84,28 +92,100 @@ def main():
     coeffs = sharding.place_tree(program, program.coefficients)
     jax.block_until_ready((state, coeffs))
     prepared_memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
+    cuda_schedule = None
+    if a.backend == "cuda_streamed" and hasattr(program.config, "cuda_memory_policy"):
+        from beamz.simulation.memory import (
+            cuda_capacity_schedule,
+            cuda_workspace_estimate,
+        )
+
+        cuda_schedule = dict(
+            policy=program.config.cuda_memory_policy,
+            capacity=cuda_capacity_schedule(program, donate_state=a.donate_state),
+            estimated_fast_workspace_bytes=cuda_workspace_estimate(
+                program, donate_state=a.donate_state
+            ),
+        )
     setup_s = time.perf_counter() - started
     print(json.dumps(dict(stage="prepared", setup_s=setup_s)), flush=True)
     tick = time.perf_counter()
-    exe = build_scan(program, donate_state=False).lower(state, coeffs).compile()
+    if a.compile_diagnostics:
+        a.compile_diagnostics.mkdir(parents=True, exist_ok=True)
+        (a.compile_diagnostics / "prepared.json").write_text(
+            json.dumps(
+                dict(shape=a.shape, setup_s=setup_s, prepared_memory=prepared_memory),
+                indent=2,
+            )
+            + "\n"
+        )
+    try:
+        lowered = build_scan(program, donate_state=a.donate_state).lower(state, coeffs)
+        if a.compile_diagnostics:
+            # Elide literal payloads: a field-sized constant must not produce a
+            # multi-gigabyte text dump while diagnosing near-capacity failures.
+            module = lowered.compiler_ir()
+            (a.compile_diagnostics / "lowered.mlir").write_text(
+                module.operation.get_asm(
+                    large_elements_limit=16, large_resource_limit=16
+                )
+            )
+        exe = lowered.compile()
+    except Exception as error:
+        if a.compile_diagnostics:
+            (a.compile_diagnostics / "failure.json").write_text(
+                json.dumps(
+                    dict(
+                        error=repr(error),
+                        elapsed_s=time.perf_counter() - tick,
+                        device_memory=[
+                            dict(id=d.id, stats=d.memory_stats()) for d in devices
+                        ],
+                    ),
+                    indent=2,
+                )
+                + "\n"
+            )
+        raise
     compile_s = time.perf_counter() - tick
+    analysis = exe.memory_analysis()
+    compiled_memory = {
+        key: getattr(analysis, key, None)
+        for key in (
+            "argument_size_in_bytes",
+            "output_size_in_bytes",
+            "alias_size_in_bytes",
+            "temp_size_in_bytes",
+        )
+    }
     print(json.dumps(dict(stage="compiled", compile_s=compile_s)), flush=True)
     warm = exe(state, coeffs)
     jax.block_until_ready(warm)
+    if a.donate_state:
+        state = warm
     del warm
+    warm_memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
     samples = []
+    continuation_memory = []
     for sample in range(a.samples):
         tick = time.perf_counter()
         result = exe(state, coeffs)
         jax.block_until_ready(result)
         samples.append(time.perf_counter() - tick)
+        if a.donate_state:
+            state = result
+            continuation_memory.append(
+                [dict(id=d.id, stats=d.memory_stats()) for d in devices]
+            )
         if sample < a.samples - 1:
             del result
-    finite = all(
-        bool(jax.device_get(jnp.all(jnp.isfinite(x)))) for x in jax.tree.leaves(result)
-    )
+    stepped_memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
+    # Fuse the reduction rather than materializing a field-sized boolean array
+    # merely to validate a near-capacity simulation after timing.
+    all_finite = jax.jit(lambda value: jnp.all(jnp.isfinite(value)))
+    finite = all(bool(jax.device_get(all_finite(x))) for x in jax.tree.leaves(result))
     timed_memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
     weights = np.asarray(jax.device_get(result.dft_weight_sum))
+    final_current_step = int(jax.device_get(result.current_step))
     if (
         len(program.monitors) != 2
         or weights.size != 2 * a.frequencies
@@ -139,9 +219,20 @@ def main():
         del public
     memory = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
     data = dict(
-        protocol="five_synchronized_warm_stepping_samples",
+        protocol=(
+            "five_donating_continuation_samples"
+            if a.donate_state
+            else "five_synchronized_warm_stepping_samples"
+        ),
+        donate_state=a.donate_state,
+        cuda_schedule=cuda_schedule,
+        compiled_memory=compiled_memory,
+        final_current_step=final_current_step,
+        warm_memory=warm_memory,
+        continuation_memory=continuation_memory,
         backend=a.backend,
         devices=a.devices,
+        shard_axis=a.shard_axis,
         shape=a.shape,
         steps=a.timesteps,
         frequencies=a.frequencies,
@@ -150,6 +241,7 @@ def main():
         physical_size_zyx_um=(np.asarray(a.shape) * a.resolution_nm / 1000).tolist(),
         prepared_memory=prepared_memory,
         timed_memory=timed_memory,
+        stepped_memory=stepped_memory,
         runtime_cv=statistics.stdev(samples) / statistics.mean(samples),
         monitor_weight_min=float(weights.min()),
         monitor_weight_max=float(weights.max()),
@@ -169,6 +261,8 @@ def main():
         ),
         device_memory=memory,
         worker_measurement_wall_s=time.perf_counter() - started,
+        host_max_rss_bytes=int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        * (1 if sys.platform == "darwin" else 1024),
         worker_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         commit=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         environment={

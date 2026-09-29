@@ -1,0 +1,154 @@
+{
+  "args": {
+    "side": 868,
+    "workload": "prepared",
+    "axis": "none",
+    "steps": 32,
+    "samples": 3,
+    "frequencies": 3,
+    "output": "benchmarks/reports/rtx3090-compile-memory/fixed-prepared-868-native.json",
+    "digests": false
+  },
+  "device": "NVIDIA GeForce RTX 3090",
+  "jax": "0.9.0",
+  "root": "/home/quentinwach/beamz/beamz-capacity-fix",
+  "commit": "d6cd7f3fb0eb86a4151c6f6e8f35bb860b9e1306",
+  "extension_sha256": "85fe6a66a093b5a8cd2f14b0342102de41ad680415d681fcdb33588f6c5d1f3c",
+  "environment": {
+    "BEAMZ_CUDA_AUTOTUNE": "off",
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "true",
+    "XLA_PYTHON_CLIENT_MEM_FRACTION": ".97"
+  },
+  "stages": [
+    {
+      "stage": "prepare",
+      "seconds": 2.7475180269684643,
+      "max_rss_bytes": 2002096128,
+      "gpu": {
+        "num_allocs": 101,
+        "bytes_in_use": 24502261248,
+        "peak_bytes_in_use": 24502263040,
+        "largest_alloc_size": 2667010304,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "lower",
+      "seconds": 0.022909553023055196,
+      "max_rss_bytes": 2136969216,
+      "gpu": {
+        "num_allocs": 103,
+        "bytes_in_use": 24502261248,
+        "peak_bytes_in_use": 24502263040,
+        "largest_alloc_size": 2667010304,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "compile",
+      "seconds": 0.02468464703997597,
+      "max_rss_bytes": 2138411008,
+      "gpu": {
+        "num_allocs": 103,
+        "bytes_in_use": 24502261248,
+        "peak_bytes_in_use": 24502263040,
+        "largest_alloc_size": 2667010304,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "run_0",
+      "seconds": 2.708829226961825,
+      "max_rss_bytes": 2242838528,
+      "gpu": {
+        "num_allocs": 105,
+        "bytes_in_use": 24502261248,
+        "peak_bytes_in_use": 24502263040,
+        "largest_alloc_size": 2667010304,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "run_1",
+      "seconds": 2.684736442985013,
+      "max_rss_bytes": 2242838528,
+      "gpu": {
+        "num_allocs": 107,
+        "bytes_in_use": 24502261248,
+        "peak_bytes_in_use": 24502263040,
+        "largest_alloc_size": 2667010304,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "run_2",
+      "seconds": 2.684487550985068,
+      "max_rss_bytes": 2242838528,
+      "gpu": {
+        "num_allocs": 109,
+        "bytes_in_use": 24502261248,
+        "peak_bytes_in_use": 24502263040,
+        "largest_alloc_size": 2667010304,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    },
+    {
+      "stage": "validate_failed",
+      "seconds": 10.034282146021724,
+      "max_rss_bytes": 2247688192,
+      "gpu": {
+        "num_allocs": 112,
+        "bytes_in_use": 24502261248,
+        "peak_bytes_in_use": 24502263040,
+        "largest_alloc_size": 2667010304,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    }
+  ],
+  "status": "failed",
+  "input_bytes": 24457163852,
+  "cells": 653972032,
+  "executable_bytes": {
+    "argument_size_in_bytes": 24457163852,
+    "output_size_in_bytes": 16591407080,
+    "alias_size_in_bytes": 16591406840,
+    "temp_size_in_bytes": 512
+  },
+  "failure_stage": "validate",
+  "error": "JaxRuntimeError('RESOURCE_EXHAUSTED: Out of memory while trying to allocate 11.51MiB.')"
+}

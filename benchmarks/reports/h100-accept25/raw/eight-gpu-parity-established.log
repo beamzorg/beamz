@@ -1,0 +1,692 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: /workspace/fixed
+configfile: pytest.ini
+plugins: cov-7.1.0, hypothesis-6.168.2
+collected 8 items
+
+tests/hardware/test_multi_gpu_capacity.py FFFFFFFF                       [100%]
+
+=================================== FAILURES ===================================
+________ test_multi_gpu_continuation_matches_unsharded_jax[auto-jax-x] _________
+
+axis = 'x', backend = 'jax', policy = 'auto'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7c80ab759d00>
+
+    @pytest.mark.parametrize("axis", ["x", "z"])
+    @pytest.mark.parametrize("backend", ["jax", "cuda_streamed"])
+    @pytest.mark.parametrize("policy", ["auto", "capacity"])
+    def test_multi_gpu_continuation_matches_unsharded_jax(axis, backend, policy, monkeypatch):
+        count = len(jax.devices())
+        if not cuda_backend_status().available or count not in (2, 8):
+            pytest.skip("requires two or eight visible CUDA GPUs")
+        monkeypatch.setenv("BEAMZ_CUDA_MEMORY_POLICY", policy)
+        sim = build_simulation(
+            Namespace(
+                # Keep the boundary slab narrower than each local partition.
+                shape=(37, 41, 49) if count == 2 else (137, 41, 145),
+                steps=48,
+                pml=12,
+                monitors=2,
+                frequencies=101,
+                material="binary",
+                source="mode",
+                monitor_type="mode",
+            )
+        )
+        state = sim.initial_state()
+        rng = np.random.default_rng(288)
+        state = state._replace(
+            **{
+                name: rng.normal(0, 1e-5, getattr(state, name).shape).astype(np.float32)
+                for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+            }
+        )
+        reference = sim.advance(
+            state=_copy_state(state), num_steps=48, backend="jax", performance=False
+        ).state
+        cfg = dict(axis=axis, num_devices=count, backend="gpu")
+        first = sim.advance(
+            state=_copy_state(state),
+            num_steps=17,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        actual = sim.advance(
+            state=first,
+            num_steps=31,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        jax.block_until_ready(actual)
+        # Use the existing prepared-fixture bound for cancellation in CPML
+        # derivatives, while keeping the original bound for every other leaf.
+        for name in reference._fields:
+            _assert_state_close(
+                getattr(reference, name),
+                getattr(actual, name),
+                dynamic_atol_scale=3e-6 if name.startswith("cpml_psi_") else 1e-6,
+            )
+        # As in test_prepared_capacity_fixture_matches_jax, physical fields must
+        # also satisfy the stricter triplet bound without an absolute 3e-6 floor.
+        for names in (("ex", "ey", "ez"), ("hx", "hy", "hz")):
+            scale = max(float(np.max(np.abs(getattr(reference, name)))) for name in names)
+            for name in names:
+                np.testing.assert_allclose(
+                    np.asarray(getattr(actual, name)),
+                    np.asarray(getattr(reference, name)),
+                    rtol=0,
+                    atol=2e-6 * scale,
+                )
+        assert int(actual.current_step) == 48
+        assert np.all(np.asarray(actual.dft_weight_sum) == 48)
+        assert len(actual.ex.sharding.device_set) == count
+>       assert not actual.ex.sharding.is_fully_replicated
+E       AssertionError: assert not True
+E        +  where True = NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device).is_fully_replicated
+E        +    where NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) = Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32).sharding
+E        +      where Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32) = SimulationState(ex=Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569...=(), recorded_times=(), recorded_counts=(), t=Array(7.0254395e-15, dtype=float32), current_step=Array(48, dtype=int32)).ex
+
+tests/hardware/test_multi_gpu_capacity.py:86: AssertionError
+________ test_multi_gpu_continuation_matches_unsharded_jax[auto-jax-z] _________
+
+axis = 'z', backend = 'jax', policy = 'auto'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7c80ab759be0>
+
+    @pytest.mark.parametrize("axis", ["x", "z"])
+    @pytest.mark.parametrize("backend", ["jax", "cuda_streamed"])
+    @pytest.mark.parametrize("policy", ["auto", "capacity"])
+    def test_multi_gpu_continuation_matches_unsharded_jax(axis, backend, policy, monkeypatch):
+        count = len(jax.devices())
+        if not cuda_backend_status().available or count not in (2, 8):
+            pytest.skip("requires two or eight visible CUDA GPUs")
+        monkeypatch.setenv("BEAMZ_CUDA_MEMORY_POLICY", policy)
+        sim = build_simulation(
+            Namespace(
+                # Keep the boundary slab narrower than each local partition.
+                shape=(37, 41, 49) if count == 2 else (137, 41, 145),
+                steps=48,
+                pml=12,
+                monitors=2,
+                frequencies=101,
+                material="binary",
+                source="mode",
+                monitor_type="mode",
+            )
+        )
+        state = sim.initial_state()
+        rng = np.random.default_rng(288)
+        state = state._replace(
+            **{
+                name: rng.normal(0, 1e-5, getattr(state, name).shape).astype(np.float32)
+                for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+            }
+        )
+        reference = sim.advance(
+            state=_copy_state(state), num_steps=48, backend="jax", performance=False
+        ).state
+        cfg = dict(axis=axis, num_devices=count, backend="gpu")
+        first = sim.advance(
+            state=_copy_state(state),
+            num_steps=17,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        actual = sim.advance(
+            state=first,
+            num_steps=31,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        jax.block_until_ready(actual)
+        # Use the existing prepared-fixture bound for cancellation in CPML
+        # derivatives, while keeping the original bound for every other leaf.
+        for name in reference._fields:
+            _assert_state_close(
+                getattr(reference, name),
+                getattr(actual, name),
+                dynamic_atol_scale=3e-6 if name.startswith("cpml_psi_") else 1e-6,
+            )
+        # As in test_prepared_capacity_fixture_matches_jax, physical fields must
+        # also satisfy the stricter triplet bound without an absolute 3e-6 floor.
+        for names in (("ex", "ey", "ez"), ("hx", "hy", "hz")):
+            scale = max(float(np.max(np.abs(getattr(reference, name)))) for name in names)
+            for name in names:
+                np.testing.assert_allclose(
+                    np.asarray(getattr(actual, name)),
+                    np.asarray(getattr(reference, name)),
+                    rtol=0,
+                    atol=2e-6 * scale,
+                )
+        assert int(actual.current_step) == 48
+        assert np.all(np.asarray(actual.dft_weight_sum) == 48)
+        assert len(actual.ex.sharding.device_set) == count
+>       assert not actual.ex.sharding.is_fully_replicated
+E       AssertionError: assert not True
+E        +  where True = NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device).is_fully_replicated
+E        +    where NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) = Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32).sharding
+E        +      where Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32) = SimulationState(ex=Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569...=(), recorded_times=(), recorded_counts=(), t=Array(7.0254395e-15, dtype=float32), current_step=Array(48, dtype=int32)).ex
+
+tests/hardware/test_multi_gpu_capacity.py:86: AssertionError
+___ test_multi_gpu_continuation_matches_unsharded_jax[auto-cuda_streamed-x] ____
+
+axis = 'x', backend = 'cuda_streamed', policy = 'auto'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7c7c6859a270>
+
+    @pytest.mark.parametrize("axis", ["x", "z"])
+    @pytest.mark.parametrize("backend", ["jax", "cuda_streamed"])
+    @pytest.mark.parametrize("policy", ["auto", "capacity"])
+    def test_multi_gpu_continuation_matches_unsharded_jax(axis, backend, policy, monkeypatch):
+        count = len(jax.devices())
+        if not cuda_backend_status().available or count not in (2, 8):
+            pytest.skip("requires two or eight visible CUDA GPUs")
+        monkeypatch.setenv("BEAMZ_CUDA_MEMORY_POLICY", policy)
+        sim = build_simulation(
+            Namespace(
+                # Keep the boundary slab narrower than each local partition.
+                shape=(37, 41, 49) if count == 2 else (137, 41, 145),
+                steps=48,
+                pml=12,
+                monitors=2,
+                frequencies=101,
+                material="binary",
+                source="mode",
+                monitor_type="mode",
+            )
+        )
+        state = sim.initial_state()
+        rng = np.random.default_rng(288)
+        state = state._replace(
+            **{
+                name: rng.normal(0, 1e-5, getattr(state, name).shape).astype(np.float32)
+                for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+            }
+        )
+        reference = sim.advance(
+            state=_copy_state(state), num_steps=48, backend="jax", performance=False
+        ).state
+        cfg = dict(axis=axis, num_devices=count, backend="gpu")
+        first = sim.advance(
+            state=_copy_state(state),
+            num_steps=17,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        actual = sim.advance(
+            state=first,
+            num_steps=31,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        jax.block_until_ready(actual)
+        # Use the existing prepared-fixture bound for cancellation in CPML
+        # derivatives, while keeping the original bound for every other leaf.
+        for name in reference._fields:
+            _assert_state_close(
+                getattr(reference, name),
+                getattr(actual, name),
+                dynamic_atol_scale=3e-6 if name.startswith("cpml_psi_") else 1e-6,
+            )
+        # As in test_prepared_capacity_fixture_matches_jax, physical fields must
+        # also satisfy the stricter triplet bound without an absolute 3e-6 floor.
+        for names in (("ex", "ey", "ez"), ("hx", "hy", "hz")):
+            scale = max(float(np.max(np.abs(getattr(reference, name)))) for name in names)
+            for name in names:
+                np.testing.assert_allclose(
+                    np.asarray(getattr(actual, name)),
+                    np.asarray(getattr(reference, name)),
+                    rtol=0,
+                    atol=2e-6 * scale,
+                )
+        assert int(actual.current_step) == 48
+        assert np.all(np.asarray(actual.dft_weight_sum) == 48)
+        assert len(actual.ex.sharding.device_set) == count
+>       assert not actual.ex.sharding.is_fully_replicated
+E       AssertionError: assert not True
+E        +  where True = NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device).is_fully_replicated
+E        +    where NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) = Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32).sharding
+E        +      where Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32) = SimulationState(ex=Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569...=(), recorded_times=(), recorded_counts=(), t=Array(7.0254395e-15, dtype=float32), current_step=Array(48, dtype=int32)).ex
+
+tests/hardware/test_multi_gpu_capacity.py:86: AssertionError
+___ test_multi_gpu_continuation_matches_unsharded_jax[auto-cuda_streamed-z] ____
+
+axis = 'z', backend = 'cuda_streamed', policy = 'auto'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7c80ab7599a0>
+
+    @pytest.mark.parametrize("axis", ["x", "z"])
+    @pytest.mark.parametrize("backend", ["jax", "cuda_streamed"])
+    @pytest.mark.parametrize("policy", ["auto", "capacity"])
+    def test_multi_gpu_continuation_matches_unsharded_jax(axis, backend, policy, monkeypatch):
+        count = len(jax.devices())
+        if not cuda_backend_status().available or count not in (2, 8):
+            pytest.skip("requires two or eight visible CUDA GPUs")
+        monkeypatch.setenv("BEAMZ_CUDA_MEMORY_POLICY", policy)
+        sim = build_simulation(
+            Namespace(
+                # Keep the boundary slab narrower than each local partition.
+                shape=(37, 41, 49) if count == 2 else (137, 41, 145),
+                steps=48,
+                pml=12,
+                monitors=2,
+                frequencies=101,
+                material="binary",
+                source="mode",
+                monitor_type="mode",
+            )
+        )
+        state = sim.initial_state()
+        rng = np.random.default_rng(288)
+        state = state._replace(
+            **{
+                name: rng.normal(0, 1e-5, getattr(state, name).shape).astype(np.float32)
+                for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+            }
+        )
+        reference = sim.advance(
+            state=_copy_state(state), num_steps=48, backend="jax", performance=False
+        ).state
+        cfg = dict(axis=axis, num_devices=count, backend="gpu")
+        first = sim.advance(
+            state=_copy_state(state),
+            num_steps=17,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        actual = sim.advance(
+            state=first,
+            num_steps=31,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        jax.block_until_ready(actual)
+        # Use the existing prepared-fixture bound for cancellation in CPML
+        # derivatives, while keeping the original bound for every other leaf.
+        for name in reference._fields:
+            _assert_state_close(
+                getattr(reference, name),
+                getattr(actual, name),
+                dynamic_atol_scale=3e-6 if name.startswith("cpml_psi_") else 1e-6,
+            )
+        # As in test_prepared_capacity_fixture_matches_jax, physical fields must
+        # also satisfy the stricter triplet bound without an absolute 3e-6 floor.
+        for names in (("ex", "ey", "ez"), ("hx", "hy", "hz")):
+            scale = max(float(np.max(np.abs(getattr(reference, name)))) for name in names)
+            for name in names:
+                np.testing.assert_allclose(
+                    np.asarray(getattr(actual, name)),
+                    np.asarray(getattr(reference, name)),
+                    rtol=0,
+                    atol=2e-6 * scale,
+                )
+        assert int(actual.current_step) == 48
+        assert np.all(np.asarray(actual.dft_weight_sum) == 48)
+        assert len(actual.ex.sharding.device_set) == count
+>       assert not actual.ex.sharding.is_fully_replicated
+E       AssertionError: assert not True
+E        +  where True = NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device).is_fully_replicated
+E        +    where NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) = Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32).sharding
+E        +      where Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32) = SimulationState(ex=Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569...=(), recorded_times=(), recorded_counts=(), t=Array(7.0254395e-15, dtype=float32), current_step=Array(48, dtype=int32)).ex
+
+tests/hardware/test_multi_gpu_capacity.py:86: AssertionError
+______ test_multi_gpu_continuation_matches_unsharded_jax[capacity-jax-x] _______
+
+axis = 'x', backend = 'jax', policy = 'capacity'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7c7d1c1ab170>
+
+    @pytest.mark.parametrize("axis", ["x", "z"])
+    @pytest.mark.parametrize("backend", ["jax", "cuda_streamed"])
+    @pytest.mark.parametrize("policy", ["auto", "capacity"])
+    def test_multi_gpu_continuation_matches_unsharded_jax(axis, backend, policy, monkeypatch):
+        count = len(jax.devices())
+        if not cuda_backend_status().available or count not in (2, 8):
+            pytest.skip("requires two or eight visible CUDA GPUs")
+        monkeypatch.setenv("BEAMZ_CUDA_MEMORY_POLICY", policy)
+        sim = build_simulation(
+            Namespace(
+                # Keep the boundary slab narrower than each local partition.
+                shape=(37, 41, 49) if count == 2 else (137, 41, 145),
+                steps=48,
+                pml=12,
+                monitors=2,
+                frequencies=101,
+                material="binary",
+                source="mode",
+                monitor_type="mode",
+            )
+        )
+        state = sim.initial_state()
+        rng = np.random.default_rng(288)
+        state = state._replace(
+            **{
+                name: rng.normal(0, 1e-5, getattr(state, name).shape).astype(np.float32)
+                for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+            }
+        )
+        reference = sim.advance(
+            state=_copy_state(state), num_steps=48, backend="jax", performance=False
+        ).state
+        cfg = dict(axis=axis, num_devices=count, backend="gpu")
+        first = sim.advance(
+            state=_copy_state(state),
+            num_steps=17,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        actual = sim.advance(
+            state=first,
+            num_steps=31,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        jax.block_until_ready(actual)
+        # Use the existing prepared-fixture bound for cancellation in CPML
+        # derivatives, while keeping the original bound for every other leaf.
+        for name in reference._fields:
+            _assert_state_close(
+                getattr(reference, name),
+                getattr(actual, name),
+                dynamic_atol_scale=3e-6 if name.startswith("cpml_psi_") else 1e-6,
+            )
+        # As in test_prepared_capacity_fixture_matches_jax, physical fields must
+        # also satisfy the stricter triplet bound without an absolute 3e-6 floor.
+        for names in (("ex", "ey", "ez"), ("hx", "hy", "hz")):
+            scale = max(float(np.max(np.abs(getattr(reference, name)))) for name in names)
+            for name in names:
+                np.testing.assert_allclose(
+                    np.asarray(getattr(actual, name)),
+                    np.asarray(getattr(reference, name)),
+                    rtol=0,
+                    atol=2e-6 * scale,
+                )
+        assert int(actual.current_step) == 48
+        assert np.all(np.asarray(actual.dft_weight_sum) == 48)
+        assert len(actual.ex.sharding.device_set) == count
+>       assert not actual.ex.sharding.is_fully_replicated
+E       AssertionError: assert not True
+E        +  where True = NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device).is_fully_replicated
+E        +    where NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) = Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32).sharding
+E        +      where Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32) = SimulationState(ex=Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569...=(), recorded_times=(), recorded_counts=(), t=Array(7.0254395e-15, dtype=float32), current_step=Array(48, dtype=int32)).ex
+
+tests/hardware/test_multi_gpu_capacity.py:86: AssertionError
+______ test_multi_gpu_continuation_matches_unsharded_jax[capacity-jax-z] _______
+
+axis = 'z', backend = 'jax', policy = 'capacity'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7c7c4816b170>
+
+    @pytest.mark.parametrize("axis", ["x", "z"])
+    @pytest.mark.parametrize("backend", ["jax", "cuda_streamed"])
+    @pytest.mark.parametrize("policy", ["auto", "capacity"])
+    def test_multi_gpu_continuation_matches_unsharded_jax(axis, backend, policy, monkeypatch):
+        count = len(jax.devices())
+        if not cuda_backend_status().available or count not in (2, 8):
+            pytest.skip("requires two or eight visible CUDA GPUs")
+        monkeypatch.setenv("BEAMZ_CUDA_MEMORY_POLICY", policy)
+        sim = build_simulation(
+            Namespace(
+                # Keep the boundary slab narrower than each local partition.
+                shape=(37, 41, 49) if count == 2 else (137, 41, 145),
+                steps=48,
+                pml=12,
+                monitors=2,
+                frequencies=101,
+                material="binary",
+                source="mode",
+                monitor_type="mode",
+            )
+        )
+        state = sim.initial_state()
+        rng = np.random.default_rng(288)
+        state = state._replace(
+            **{
+                name: rng.normal(0, 1e-5, getattr(state, name).shape).astype(np.float32)
+                for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+            }
+        )
+        reference = sim.advance(
+            state=_copy_state(state), num_steps=48, backend="jax", performance=False
+        ).state
+        cfg = dict(axis=axis, num_devices=count, backend="gpu")
+        first = sim.advance(
+            state=_copy_state(state),
+            num_steps=17,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        actual = sim.advance(
+            state=first,
+            num_steps=31,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        jax.block_until_ready(actual)
+        # Use the existing prepared-fixture bound for cancellation in CPML
+        # derivatives, while keeping the original bound for every other leaf.
+        for name in reference._fields:
+            _assert_state_close(
+                getattr(reference, name),
+                getattr(actual, name),
+                dynamic_atol_scale=3e-6 if name.startswith("cpml_psi_") else 1e-6,
+            )
+        # As in test_prepared_capacity_fixture_matches_jax, physical fields must
+        # also satisfy the stricter triplet bound without an absolute 3e-6 floor.
+        for names in (("ex", "ey", "ez"), ("hx", "hy", "hz")):
+            scale = max(float(np.max(np.abs(getattr(reference, name)))) for name in names)
+            for name in names:
+                np.testing.assert_allclose(
+                    np.asarray(getattr(actual, name)),
+                    np.asarray(getattr(reference, name)),
+                    rtol=0,
+                    atol=2e-6 * scale,
+                )
+        assert int(actual.current_step) == 48
+        assert np.all(np.asarray(actual.dft_weight_sum) == 48)
+        assert len(actual.ex.sharding.device_set) == count
+>       assert not actual.ex.sharding.is_fully_replicated
+E       AssertionError: assert not True
+E        +  where True = NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device).is_fully_replicated
+E        +    where NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) = Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32).sharding
+E        +      where Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32) = SimulationState(ex=Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569...=(), recorded_times=(), recorded_counts=(), t=Array(7.0254395e-15, dtype=float32), current_step=Array(48, dtype=int32)).ex
+
+tests/hardware/test_multi_gpu_capacity.py:86: AssertionError
+_ test_multi_gpu_continuation_matches_unsharded_jax[capacity-cuda_streamed-x] __
+
+axis = 'x', backend = 'cuda_streamed', policy = 'capacity'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7c7c68712360>
+
+    @pytest.mark.parametrize("axis", ["x", "z"])
+    @pytest.mark.parametrize("backend", ["jax", "cuda_streamed"])
+    @pytest.mark.parametrize("policy", ["auto", "capacity"])
+    def test_multi_gpu_continuation_matches_unsharded_jax(axis, backend, policy, monkeypatch):
+        count = len(jax.devices())
+        if not cuda_backend_status().available or count not in (2, 8):
+            pytest.skip("requires two or eight visible CUDA GPUs")
+        monkeypatch.setenv("BEAMZ_CUDA_MEMORY_POLICY", policy)
+        sim = build_simulation(
+            Namespace(
+                # Keep the boundary slab narrower than each local partition.
+                shape=(37, 41, 49) if count == 2 else (137, 41, 145),
+                steps=48,
+                pml=12,
+                monitors=2,
+                frequencies=101,
+                material="binary",
+                source="mode",
+                monitor_type="mode",
+            )
+        )
+        state = sim.initial_state()
+        rng = np.random.default_rng(288)
+        state = state._replace(
+            **{
+                name: rng.normal(0, 1e-5, getattr(state, name).shape).astype(np.float32)
+                for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+            }
+        )
+        reference = sim.advance(
+            state=_copy_state(state), num_steps=48, backend="jax", performance=False
+        ).state
+        cfg = dict(axis=axis, num_devices=count, backend="gpu")
+        first = sim.advance(
+            state=_copy_state(state),
+            num_steps=17,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        actual = sim.advance(
+            state=first,
+            num_steps=31,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        jax.block_until_ready(actual)
+        # Use the existing prepared-fixture bound for cancellation in CPML
+        # derivatives, while keeping the original bound for every other leaf.
+        for name in reference._fields:
+            _assert_state_close(
+                getattr(reference, name),
+                getattr(actual, name),
+                dynamic_atol_scale=3e-6 if name.startswith("cpml_psi_") else 1e-6,
+            )
+        # As in test_prepared_capacity_fixture_matches_jax, physical fields must
+        # also satisfy the stricter triplet bound without an absolute 3e-6 floor.
+        for names in (("ex", "ey", "ez"), ("hx", "hy", "hz")):
+            scale = max(float(np.max(np.abs(getattr(reference, name)))) for name in names)
+            for name in names:
+                np.testing.assert_allclose(
+                    np.asarray(getattr(actual, name)),
+                    np.asarray(getattr(reference, name)),
+                    rtol=0,
+                    atol=2e-6 * scale,
+                )
+        assert int(actual.current_step) == 48
+        assert np.all(np.asarray(actual.dft_weight_sum) == 48)
+        assert len(actual.ex.sharding.device_set) == count
+>       assert not actual.ex.sharding.is_fully_replicated
+E       AssertionError: assert not True
+E        +  where True = NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device).is_fully_replicated
+E        +    where NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) = Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32).sharding
+E        +      where Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32) = SimulationState(ex=Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569...=(), recorded_times=(), recorded_counts=(), t=Array(7.0254395e-15, dtype=float32), current_step=Array(48, dtype=int32)).ex
+
+tests/hardware/test_multi_gpu_capacity.py:86: AssertionError
+_ test_multi_gpu_continuation_matches_unsharded_jax[capacity-cuda_streamed-z] __
+
+axis = 'z', backend = 'cuda_streamed', policy = 'capacity'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7c7c4823ac90>
+
+    @pytest.mark.parametrize("axis", ["x", "z"])
+    @pytest.mark.parametrize("backend", ["jax", "cuda_streamed"])
+    @pytest.mark.parametrize("policy", ["auto", "capacity"])
+    def test_multi_gpu_continuation_matches_unsharded_jax(axis, backend, policy, monkeypatch):
+        count = len(jax.devices())
+        if not cuda_backend_status().available or count not in (2, 8):
+            pytest.skip("requires two or eight visible CUDA GPUs")
+        monkeypatch.setenv("BEAMZ_CUDA_MEMORY_POLICY", policy)
+        sim = build_simulation(
+            Namespace(
+                # Keep the boundary slab narrower than each local partition.
+                shape=(37, 41, 49) if count == 2 else (137, 41, 145),
+                steps=48,
+                pml=12,
+                monitors=2,
+                frequencies=101,
+                material="binary",
+                source="mode",
+                monitor_type="mode",
+            )
+        )
+        state = sim.initial_state()
+        rng = np.random.default_rng(288)
+        state = state._replace(
+            **{
+                name: rng.normal(0, 1e-5, getattr(state, name).shape).astype(np.float32)
+                for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+            }
+        )
+        reference = sim.advance(
+            state=_copy_state(state), num_steps=48, backend="jax", performance=False
+        ).state
+        cfg = dict(axis=axis, num_devices=count, backend="gpu")
+        first = sim.advance(
+            state=_copy_state(state),
+            num_steps=17,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        actual = sim.advance(
+            state=first,
+            num_steps=31,
+            backend=backend,
+            sharding=cfg,
+            donate_state=True,
+            performance=False,
+        ).state
+        jax.block_until_ready(actual)
+        # Use the existing prepared-fixture bound for cancellation in CPML
+        # derivatives, while keeping the original bound for every other leaf.
+        for name in reference._fields:
+            _assert_state_close(
+                getattr(reference, name),
+                getattr(actual, name),
+                dynamic_atol_scale=3e-6 if name.startswith("cpml_psi_") else 1e-6,
+            )
+        # As in test_prepared_capacity_fixture_matches_jax, physical fields must
+        # also satisfy the stricter triplet bound without an absolute 3e-6 floor.
+        for names in (("ex", "ey", "ez"), ("hx", "hy", "hz")):
+            scale = max(float(np.max(np.abs(getattr(reference, name)))) for name in names)
+            for name in names:
+                np.testing.assert_allclose(
+                    np.asarray(getattr(actual, name)),
+                    np.asarray(getattr(reference, name)),
+                    rtol=0,
+                    atol=2e-6 * scale,
+                )
+        assert int(actual.current_step) == 48
+        assert np.all(np.asarray(actual.dft_weight_sum) == 48)
+        assert len(actual.ex.sharding.device_set) == count
+>       assert not actual.ex.sharding.is_fully_replicated
+E       AssertionError: assert not True
+E        +  where True = NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device).is_fully_replicated
+E        +    where NamedSharding(mesh=Mesh('fdtd': 8, axis_types=(Auto,)), spec=PartitionSpec(), memory_kind=device) = Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32).sharding
+E        +      where Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569816e-06, -9.6782168....34765105e-05,  3.85763815e-06, ...,\n          8.12139206e-06,  5.08284302e-06, -1.07936748e-05]]],      dtype=float32) = SimulationState(ex=Array([[[ 9.11055577e-06,  6.29445185e-06,  4.64620234e-06, ...,\n          4.35123002e-06, -4.24569...=(), recorded_times=(), recorded_counts=(), t=Array(7.0254395e-15, dtype=float32), current_step=Array(48, dtype=int32)).ex
+
+tests/hardware/test_multi_gpu_capacity.py:86: AssertionError
+=========================== short test summary info ============================
+FAILED tests/hardware/test_multi_gpu_capacity.py::test_multi_gpu_continuation_matches_unsharded_jax[auto-jax-x]
+FAILED tests/hardware/test_multi_gpu_capacity.py::test_multi_gpu_continuation_matches_unsharded_jax[auto-jax-z]
+FAILED tests/hardware/test_multi_gpu_capacity.py::test_multi_gpu_continuation_matches_unsharded_jax[auto-cuda_streamed-x]
+FAILED tests/hardware/test_multi_gpu_capacity.py::test_multi_gpu_continuation_matches_unsharded_jax[auto-cuda_streamed-z]
+FAILED tests/hardware/test_multi_gpu_capacity.py::test_multi_gpu_continuation_matches_unsharded_jax[capacity-jax-x]
+FAILED tests/hardware/test_multi_gpu_capacity.py::test_multi_gpu_continuation_matches_unsharded_jax[capacity-jax-z]
+FAILED tests/hardware/test_multi_gpu_capacity.py::test_multi_gpu_continuation_matches_unsharded_jax[capacity-cuda_streamed-x]
+FAILED tests/hardware/test_multi_gpu_capacity.py::test_multi_gpu_continuation_matches_unsharded_jax[capacity-cuda_streamed-z]
+======================== 8 failed in 118.66s (0:01:58) =========================

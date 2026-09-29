@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Mapping
 from dataclasses import replace
 from functools import lru_cache
@@ -10,6 +12,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from beamz._region_array import RegionArray, place_region_array
 from beamz.simulation.model import (
     CpmlPackedSlabSpec,
     DerivativeMetricPlan,
@@ -17,6 +20,7 @@ from beamz.simulation.model import (
     ShardingLayout,
     ShardingPlan,
 )
+from beamz.simulation.preparation_trace import trace_preparation
 
 # Sharding may pad the high side for equal device partitions. Padding is storage-only;
 # logical component shapes remain authoritative for curls, monitors, and result crops.
@@ -231,7 +235,9 @@ def _array_ndim(arr) -> int:
 def _pad_high_to_shape(arr, shape: tuple[int, ...], *, pad_value=0.0):
     # Preserve NumPy setup arrays on the host and use the same crop/pad recipe for JAX.
     target_shape = tuple(int(v) for v in shape)
-    xp = np if isinstance(arr, np.ndarray) else jnp
+    if isinstance(arr, RegionArray):
+        return arr.padded(target_shape, pad_value)
+    xp = np if _is_host_array(arr) else jnp
     arr = xp.asarray(arr)
     if tuple(arr.shape) == target_shape:
         return arr
@@ -432,6 +438,7 @@ def _array_sharding(program, arr, mesh):
     return _replicated_sharding(mesh)
 
 
+@trace_preparation("placement")
 def place_tree(program, tree, *, shard_arrays: bool = True):
     """Place one complete pytree according to the program's backend plan."""
     if not program.sharding.layout.enabled:
@@ -448,6 +455,23 @@ def place_tree(program, tree, *, shard_arrays: bool = True):
             tree,
         )
     mesh = program.sharding.mesh
+    trace_path = os.getenv("BEAMZ_TRACE_PLACEMENT")
+    if trace_path:
+
+        def traced_place(path, value):
+            target = (
+                _array_sharding(program, value, mesh)
+                if shard_arrays
+                else _replicated_sharding(mesh)
+            )
+            return _trace_placement(
+                jax.tree_util.keystr(path),
+                value,
+                target,
+                lambda: _place_array(value, target),
+            )
+
+        return jax.tree_util.tree_map_with_path(traced_place, tree)
     return jax.tree_util.tree_map(
         lambda value: _place_array(
             value,
@@ -459,6 +483,71 @@ def place_tree(program, tree, *, shard_arrays: bool = True):
     )
 
 
+def _trace_placement(path, value, target, operation):
+    trace_path = os.getenv("BEAMZ_TRACE_PLACEMENT")
+    if not trace_path:
+        return operation()
+    devices = sorted(target.addressable_devices, key=lambda d: d.id)
+    before = [dict(id=d.id, stats=d.memory_stats()) for d in devices]
+    placed = operation()
+    placed.block_until_ready()
+    record = dict(
+        path=path,
+        shape=list(getattr(value, "shape", ())),
+        output_shape=list(placed.shape),
+        dtype=str(getattr(value, "dtype", type(value).__name__)),
+        source_devices=[str(d) for d in value.devices()]
+        if isinstance(value, jax.Array)
+        else ["host"],
+        target=str(target),
+        before=before,
+        after=[dict(id=d.id, stats=d.memory_stats()) for d in devices],
+    )
+    with open(trace_path, "a") as stream:
+        stream.write(json.dumps(record) + "\n")
+    return placed
+
+
+def _place_padded_host_array(value, shape, target):
+    """Crop/pad only destination shards, never a full global field copy."""
+    host = np.asarray(value)
+
+    def shard(index):
+        bounds = [part.indices(size) for part, size in zip(index, shape, strict=True)]
+        if any(step != 1 for _, _, step in bounds):
+            raise ValueError("Host padding requires contiguous shard indices")
+        slices = tuple(
+            slice(min(lo, size), min(hi, size))
+            for (lo, hi, _), size in zip(bounds, host.shape, strict=True)
+        )
+        local = host[slices]
+        padding = tuple(
+            (0, hi - lo - size)
+            for (lo, hi, _), size in zip(bounds, local.shape, strict=True)
+        )
+        return np.pad(local, padding) if any(high for _, high in padding) else local
+
+    return jax.make_array_from_callback(shape, target, shard)
+
+
+def _prepare_component(program, component, value):
+    layout = program.sharding.layout
+    if layout.enabled and _is_host_array(value):
+        shape = layout.padded_shapes[component]
+        target = _array_sharding(
+            program,
+            jax.ShapeDtypeStruct(shape, value.dtype),
+            program.sharding.mesh,
+        )
+        return _trace_placement(
+            f"padded.{component}",
+            value,
+            target,
+            lambda: _place_padded_host_array(value, shape, target),
+        )
+    return pad_component(program, component, value)
+
+
 @lru_cache(maxsize=128)
 def _device_reshard(sharding):
     # Eager device_put can assemble a differently partitioned array on the host.
@@ -466,7 +555,18 @@ def _device_reshard(sharding):
     return jax.jit(lambda value: value, out_shardings=sharding)
 
 
+def _is_host_array(value):
+    return isinstance(value, np.ndarray) or (
+        isinstance(value, jax.Array)
+        and value.is_fully_addressable
+        and len(value.devices()) == 1
+        and all(device.platform == "cpu" for device in value.devices())
+    )
+
+
 def _place_array(value, target):
+    if isinstance(value, RegionArray):
+        return place_region_array(value, target)
     if (
         isinstance(value, jax.Array)
         and len(value.sharding.device_set) > 1
@@ -475,6 +575,14 @@ def _place_array(value, target):
         if value.sharding.is_equivalent_to(target, value.ndim):
             return value
         return _device_reshard(target)(value)
+    # A CPU JAX array can be uncommitted. Eager device_put's multi-slice may
+    # execute on the default accelerator after the CPU setup context has ended.
+    # Slice host storage explicitly, so no global array is staged on GPU 0.
+    if _is_host_array(value):
+        host = np.asarray(value)
+        return jax.make_array_from_callback(
+            host.shape, target, lambda index: host[index]
+        )
     return jax.device_put(value, target)
 
 
@@ -521,7 +629,9 @@ def prepare_state(program, state, *, replicated_fields):
     """Pad and place a logical runtime state for execution."""
     state = state._replace(
         **{
-            name.lower(): pad_component(program, name, getattr(state, name.lower()))
+            name.lower(): _prepare_component(
+                program, name, getattr(state, name.lower())
+            )
             for name in _COMPONENT_NAMES
         }
     )

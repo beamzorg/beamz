@@ -1,0 +1,7 @@
+{
+  "reason": "Extend CUDA public preparation beyond the 900-second per-case timeout within the unchanged $40 overall cap.",
+  "parent": 1562,
+  "child": 56036,
+  "paused_at": "2026-09-27T14:09:08.838081+00:00",
+  "resumed_at": "2026-09-27T14:12:00.895393+00:00"
+}

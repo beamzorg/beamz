@@ -1,0 +1,15 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=3041474967
+rootdir: /Users/quentinwach/Code/beamz-capacity
+configfile: pytest.ini
+plugins: randomly-5.0.0, cov-7.1.0, hypothesis-6.168.0
+collected 22 items
+
+tests/unit/test_host_shard_placement.py .                                [  4%]
+tests/unit/test_cuda_sharding.py .....                                   [ 27%]
+tests/unit/test_initial_state_placement.py .                             [ 31%]
+tests/unit/test_jax_local_sharding.py .......                            [ 63%]
+tests/unit/test_cuda_sharded_features.py ........                        [100%]
+
+======================== 22 passed in 180.07s (0:03:00) ========================

@@ -1,0 +1,66 @@
+{"phase": "public_compile", "event": "start", "pid": 13997, "time_ns": 1790515499278240180, "host_peak_bytes": 229535744, "host_rss_bytes": 218271744}
+{"phase": "material_grid", "event": "start", "pid": 13997, "time_ns": 1790515499278700108, "host_peak_bytes": 229535744, "host_rss_bytes": 218271744}
+{"phase": "material_grid", "event": "end", "pid": 13997, "time_ns": 1790515499278839612, "host_peak_bytes": 229535744, "host_rss_bytes": 218271744, "elapsed_s": 0.00015248358249664307}
+{"phase": "material_grid", "event": "start", "pid": 13997, "time_ns": 1790515499278965069, "host_peak_bytes": 229535744, "host_rss_bytes": 218271744}
+{"phase": "material_grid", "event": "end", "pid": 13997, "time_ns": 1790515499279047023, "host_peak_bytes": 229535744, "host_rss_bytes": 218271744, "elapsed_s": 8.466094732284546e-05}
+{"phase": "compile_plan", "event": "start", "pid": 13997, "time_ns": 1790515499306881024, "host_peak_bytes": 229535744, "host_rss_bytes": 218271744}
+{"phase": "boundaries", "event": "start", "pid": 13997, "time_ns": 1790515504308556101, "host_peak_bytes": 1367429120, "host_rss_bytes": 1367429120}
+{"phase": "boundaries", "event": "end", "pid": 13997, "time_ns": 1790515512491785554, "host_peak_bytes": 4125478912, "host_rss_bytes": 4125478912, "elapsed_s": 8.183139640837908}
+{"phase": "yee_materials", "event": "start", "pid": 13997, "time_ns": 1790515512492900453, "host_peak_bytes": 4125478912, "host_rss_bytes": 4125478912}
+{"phase": "yee_materials", "event": "end", "pid": 13997, "time_ns": 1790515512494957960, "host_peak_bytes": 4125478912, "host_rss_bytes": 4125478912, "elapsed_s": 0.002047855406999588}
+{"phase": "sources_monitors_and_layout", "event": "start", "pid": 13997, "time_ns": 1790515512495432079, "host_peak_bytes": 4125478912, "host_rss_bytes": 4125478912}
+{"phase": "sources_monitors_and_layout", "event": "end", "pid": 13997, "time_ns": 1790515522468105334, "host_peak_bytes": 4349927424, "host_rss_bytes": 4349927424, "elapsed_s": 9.97258448600769}
+{"phase": "cpml_plan", "event": "start", "pid": 13997, "time_ns": 1790515522560663841, "host_peak_bytes": 4351762432, "host_rss_bytes": 4351762432}
+{"phase": "cpml_plan", "event": "end", "pid": 13997, "time_ns": 1790515526861181665, "host_peak_bytes": 4454522880, "host_rss_bytes": 4454522880, "elapsed_s": 4.300448130816221}
+{"phase": "coefficient_generation_and_placement", "event": "start", "pid": 13997, "time_ns": 1790515526865127499, "host_peak_bytes": 4454522880, "host_rss_bytes": 4454522880}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515526865646455, "host_peak_bytes": 4454522880, "host_rss_bytes": 4454522880}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515538793695254, "host_peak_bytes": 21241176064, "host_rss_bytes": 21241176064, "elapsed_s": 11.927919916808605}
+{"phase": "coefficient_generation_and_placement", "event": "end", "pid": 13997, "time_ns": 1790515538794726132, "host_peak_bytes": 21241176064, "host_rss_bytes": 21241176064, "elapsed_s": 11.92969724163413}
+{"phase": "compile_plan", "event": "end", "pid": 13997, "time_ns": 1790515538795177976, "host_peak_bytes": 21241176064, "host_rss_bytes": 21241176064, "elapsed_s": 39.488406255841255}
+{"phase": "public_compile", "event": "end", "pid": 13997, "time_ns": 1790515538795595515, "host_peak_bytes": 21241176064, "host_rss_bytes": 21241176064, "elapsed_s": 39.517561469227076}
+{"phase": "initial_state", "event": "start", "pid": 13997, "time_ns": 1790515539285922827, "host_peak_bytes": 21259526144, "host_rss_bytes": 21259526144}
+{"phase": "initial_state", "event": "end", "pid": 13997, "time_ns": 1790515539574684897, "host_peak_bytes": 21266866176, "host_rss_bytes": 21266866176, "elapsed_s": 0.2887674383819103}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515539976331247, "host_peak_bytes": 21276041216, "host_rss_bytes": 21276041216}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515540610456613, "host_peak_bytes": 21287051264, "host_rss_bytes": 21287051264, "elapsed_s": 0.6341256313025951}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515540612153570, "host_peak_bytes": 21287051264, "host_rss_bytes": 21287051264}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545455349050, "host_peak_bytes": 22712868864, "host_rss_bytes": 22582603776, "elapsed_s": 4.843036346137524}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545456256024, "host_peak_bytes": 22712868864, "host_rss_bytes": 22582603776}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545500983257, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.04462677612900734}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545501572507, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545504640913, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.002991989254951477}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545505189988, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545507834038, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.0025706030428409576}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545508538117, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545509425314, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.0008870735764503479}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545509774466, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545510394006, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.0006095245480537415}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545510722641, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545511346492, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.0006125718355178833}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545511664222, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545512234193, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.0005625523626804352}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545512527140, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545513082928, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.00053459033370018}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545513375049, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545514003777, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.0005958490073680878}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545514428252, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545515091105, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.0006418898701667786}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545515445403, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545516173578, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.0007138773798942566}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545516519202, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545517128659, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.0006022751331329346}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545517438525, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545517973305, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.0005277097225189209}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545518270565, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545518516912, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.00024963170289993286}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545518753638, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545518983401, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.00023131072521209717}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545519223379, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545519453486, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.00022774562239646912}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545519683667, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545519907276, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.00022506341338157654}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545520141109, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545520671525, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.0005119778215885162}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545520979783, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545521543919, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.0005591548979282379}
+{"phase": "placement", "event": "start", "pid": 13997, "time_ns": 1790515545522216713, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784}
+{"phase": "placement", "event": "end", "pid": 13997, "time_ns": 1790515545522822329, "host_peak_bytes": 22712868864, "host_rss_bytes": 22584438784, "elapsed_s": 0.0006281957030296326}

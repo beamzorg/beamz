@@ -1,0 +1,230 @@
+{
+  "protocol": "five_donating_continuation_samples",
+  "donate_state": true,
+  "cuda_schedule": null,
+  "compiled_memory": {
+    "argument_size_in_bytes": 685653760,
+    "output_size_in_bytes": 482751448,
+    "alias_size_in_bytes": 482751208,
+    "temp_size_in_bytes": 665032776
+  },
+  "final_current_step": 768,
+  "warm_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 103,
+        "bytes_in_use": 685657856,
+        "peak_bytes_in_use": 1350691072,
+        "largest_alloc_size": 665032960,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    }
+  ],
+  "continuation_memory": [
+    [
+      {
+        "id": 0,
+        "stats": {
+          "num_allocs": 105,
+          "bytes_in_use": 685657856,
+          "peak_bytes_in_use": 1350691072,
+          "largest_alloc_size": 665032960,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "stats": {
+          "num_allocs": 107,
+          "bytes_in_use": 685657856,
+          "peak_bytes_in_use": 1350691072,
+          "largest_alloc_size": 665032960,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "stats": {
+          "num_allocs": 109,
+          "bytes_in_use": 685657856,
+          "peak_bytes_in_use": 1350691072,
+          "largest_alloc_size": 665032960,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "stats": {
+          "num_allocs": 111,
+          "bytes_in_use": 685657856,
+          "peak_bytes_in_use": 1350691072,
+          "largest_alloc_size": 665032960,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "stats": {
+          "num_allocs": 113,
+          "bytes_in_use": 685657856,
+          "peak_bytes_in_use": 1350691072,
+          "largest_alloc_size": 665032960,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      }
+    ]
+  ],
+  "backend": "jax",
+  "devices": 1,
+  "shard_axis": "x",
+  "shape": [
+    256,
+    256,
+    256
+  ],
+  "steps": 128,
+  "frequencies": 101,
+  "cpml_cells": 12,
+  "resolution_nm": 80.0,
+  "physical_size_zyx_um": [
+    20.48,
+    20.48,
+    20.48
+  ],
+  "prepared_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 51,
+        "bytes_in_use": 685657856,
+        "peak_bytes_in_use": 685657856,
+        "largest_alloc_size": 67634176,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    }
+  ],
+  "timed_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 191,
+        "bytes_in_use": 685658112,
+        "peak_bytes_in_use": 1350691072,
+        "largest_alloc_size": 665032960,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    }
+  ],
+  "stepped_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 113,
+        "bytes_in_use": 685657856,
+        "peak_bytes_in_use": 1350691072,
+        "largest_alloc_size": 665032960,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    }
+  ],
+  "runtime_cv": 0.0011806067925810054,
+  "monitor_weight_min": 768.0,
+  "monitor_weight_max": 768.0,
+  "monitor_count": 2,
+  "setup_s": 24.827922325581312,
+  "compile_s": 7.3080644235014915,
+  "warm_runtime_samples_s": [
+    0.2897489406168461,
+    0.2904839366674423,
+    0.29051124677062035,
+    0.2905871793627739,
+    0.29044320806860924
+  ],
+  "kernel_gcups": 7.392779348272622,
+  "final_state_finite": true,
+  "public_api_measured": false,
+  "diagnostic_profiled_public_call_s": null,
+  "peak_memory_bytes": 1350691072,
+  "device_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 191,
+        "bytes_in_use": 685657856,
+        "peak_bytes_in_use": 1350691072,
+        "largest_alloc_size": 665032960,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    }
+  ],
+  "worker_measurement_wall_s": 37.85856546089053,
+  "host_max_rss_bytes": 5510631424,
+  "worker_sha256": "2d19d584c737c8a075f24ca77b3bb755ef8e4fe1b1f73f50f8d27ca66c326156",
+  "commit": "896fb29c2b0457ae10afbdcf0b3676e6ac46b455",
+  "environment": {
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "true",
+    "XLA_PYTHON_CLIENT_MEM_FRACTION": ".90",
+    "BEAMZ_CUDA_CPML_PSI_PRECISION": "fp32",
+    "BEAMZ_CUDA_AUTOTUNE": "off",
+    "NUMPY_MADVISE_HUGEPAGE": "0"
+  }
+}

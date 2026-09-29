@@ -105,6 +105,11 @@ def run_cpu_contract():
                     getattr(program.coefficients, f"e_source_{c}").ndim != 1
                     for c in "xyz"
                 )
+                assert all(
+                    getattr(program.coefficients, f"{kind}_{c}").size == 0
+                    for kind in ("h_sigma_m", "e_conductivity", "e_permittivity")
+                    for c in "xyz"
+                ), "CUDA runtime must not retain redundant constitutive grids"
                 prepared = prepare_state(
                     program,
                     runtime_inputs(program, state, monitor_steps=6),

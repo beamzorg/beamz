@@ -1,0 +1,338 @@
+info: downloading installer
+info: profile set to minimal
+info: default host tuple is x86_64-unknown-linux-gnu
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+info: latest update on 2026-09-03 for version 1.98.1 (48a229cea 2026-09-01)
+info: downloading 3 components
+info: default toolchain set to stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu installed - rustc 1.98.1 (48a229cea 2026-09-01)
+
+
+Rust is installed now. Great!
+
+To get started you may need to restart your current shell.
+This would reload your PATH environment variable to include
+Cargo's bin directory ($HOME/.cargo/bin).
+
+To configure your current shell, you need to source the
+corresponding env file under $HOME/.cargo.
+
+Consider running the right command for your shell (note the leading DOT):
+. "$HOME/.cargo/env" # For sh/ash/dash/pdksh/bash
+cargo:rerun-if-env-changed=CC_x86_64-unknown-linux-gnu
+CC_x86_64-unknown-linux-gnu = None
+cargo:rerun-if-env-changed=CC_x86_64_unknown_linux_gnu
+CC_x86_64_unknown_linux_gnu = None
+cargo:rerun-if-env-changed=HOST_CC
+HOST_CC = None
+cargo:rerun-if-env-changed=CC
+CC = None
+cargo:rerun-if-env-changed=CC_ENABLE_DEBUG_OUTPUT
+cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS
+CRATE_CC_NO_DEFAULTS = None
+cargo:rerun-if-env-changed=CFLAGS
+CFLAGS = None
+cargo:rerun-if-env-changed=HOST_CFLAGS
+HOST_CFLAGS = None
+cargo:rerun-if-env-changed=CFLAGS_x86_64_unknown_linux_gnu
+CFLAGS_x86_64_unknown_linux_gnu = None
+cargo:rerun-if-env-changed=CFLAGS_x86_64-unknown-linux-gnu
+CFLAGS_x86_64-unknown-linux-gnu = None
+Using Python 3.12.3 environment at: /workspace/venv
+Resolved 1 package in 236ms
+Downloading maturin (10.1MiB)
+ Downloaded maturin
+Prepared 1 package in 177ms
+Installed 1 package in 13ms
+ + maturin==1.15.0
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded approx v0.5.1
+  Downloaded autocfg v1.5.1
+  Downloaded allocator-api2 v0.2.21
+  Downloaded bit-set v0.8.0
+  Downloaded cpufeatures v0.3.0
+  Downloaded equivalent v1.0.2
+  Downloaded errno v0.3.14
+  Downloaded cfg-if v1.0.4
+  Downloaded downcast-rs v2.0.2
+  Downloaded bit-vec v0.8.0
+  Downloaded byteorder v1.5.0
+  Downloaded either v1.17.0
+  Downloaded constant_time_eq v0.4.2
+  Downloaded crossbeam-deque v0.8.7
+  Downloaded fastrand v2.5.0
+  Downloaded arrayvec v0.7.8
+  Downloaded crossbeam-epoch v0.9.20
+  Downloaded crossbeam-utils v0.8.22
+  Downloaded ena v0.14.4
+  Downloaded bitflags v2.13.1
+  Downloaded bytemuck v1.25.2
+  Downloaded getrandom v0.4.3
+  Downloaded cc v1.4.0
+  Downloaded thiserror-impl v2.0.20
+  Downloaded stable_deref_trait v1.2.1
+  Downloaded blake3 v1.8.7
+  Downloaded slab v0.4.12
+  Downloaded robust v1.2.0
+  Downloaded target-lexicon v0.13.5
+  Downloaded rand_pcg v0.10.2
+  Downloaded earcut v0.4.5
+  Downloaded fnv v1.0.7
+  Downloaded ppv-lite86 v0.2.21
+  Downloaded rand_xorshift v0.4.0
+  Downloaded serde v1.0.229
+  Downloaded serde_core v1.0.229
+  Downloaded unarray v0.1.4
+  Downloaded itoa v1.0.18
+  Downloaded once_cell v1.21.4
+  Downloaded proc-macro2 v1.0.107
+  Downloaded i_key_sort v0.10.3
+  Downloaded r-efi v5.3.0
+  Downloaded rstar v0.12.2
+  Downloaded smallvec v1.15.2
+  Downloaded getrandom v0.3.4
+  Downloaded i_overlay v4.5.2
+  Downloaded matrixmultiply v0.3.11
+  Downloaded num-derive v0.4.2
+  Downloaded geo-types v0.7.19
+  Downloaded num-traits v0.2.19
+  Downloaded pyo3-macros v0.29.2
+  Downloaded quick-error v1.2.3
+  Downloaded rand_core v0.9.5
+  Downloaded foldhash v0.2.0
+  Downloaded rawpointer v0.2.1
+  Downloaded i_float v1.16.0
+  Downloaded rand_core v0.10.1
+  Downloaded sif-itree v0.4.1
+  Downloaded num-complex v0.4.6
+  Downloaded heck v0.5.0
+  Downloaded rustc-hash v2.1.3
+  Downloaded windows-link v0.2.1
+  Downloaded rand_chacha v0.9.0
+  Downloaded rusty-fork v0.3.1
+  Downloaded shlex v2.0.1
+  Downloaded find-msvc-tools v0.1.9
+  Downloaded float_next_after v2.0.0
+  Downloaded glamx v0.3.0
+  Downloaded hash32 v0.3.1
+  Downloaded i_shape v1.18.0
+  Downloaded i_tree v0.18.0
+  Downloaded num-integer v0.1.46
+  Downloaded ordered-float v5.3.0
+  Downloaded quote v1.0.47
+  Downloaded rstar v0.13.0
+  Downloaded tempfile v3.27.0
+  Downloaded thiserror v2.0.20
+  Downloaded wait-timeout v0.2.1
+  Downloaded geographiclib-rs v0.2.7
+  Downloaded log v0.4.33
+  Downloaded pyo3-build-config v0.29.2
+  Downloaded pyo3-ffi v0.29.2
+  Downloaded r-efi v6.0.0
+  Downloaded serde_derive v1.0.229
+  Downloaded simba v0.10.2
+  Downloaded heapless v0.8.0
+  Downloaded rayon-core v1.13.0
+  Downloaded memchr v2.8.3
+  Downloaded numpy v0.29.0
+  Downloaded portable-atomic-util v0.2.7
+  Downloaded pyo3-macros-backend v0.29.2
+  Downloaded safe_arch v1.1.0
+  Downloaded rand v0.9.5
+  Downloaded rand v0.10.2
+  Downloaded wasip2 v1.0.4+wasi-0.2.12
+  Downloaded zmij v1.0.23
+  Downloaded rayon v1.12.0
+  Downloaded serde_json v1.0.151
+  Downloaded hashbrown v0.16.1
+  Downloaded hashbrown v0.17.1
+  Downloaded ndarray v0.17.2
+  Downloaded libm v0.2.16
+  Downloaded portable-atomic v1.14.0
+  Downloaded proptest v1.11.0
+  Downloaded regex-syntax v0.8.11
+  Downloaded unicode-ident v1.0.24
+  Downloaded geo v0.33.1
+  Downloaded rustix v1.1.4
+  Downloaded spade v2.15.1
+  Downloaded libc v0.2.189
+  Downloaded glam v0.33.2
+  Downloaded wit-bindgen v0.57.1
+  Downloaded pyo3 v0.29.2
+  Downloaded windows-sys v0.61.2
+  Downloaded linux-raw-sys v0.12.1
+  Downloaded zerocopy-derive v0.8.55
+  Downloaded wide v1.5.0
+  Downloaded syn v3.0.3
+  Downloaded syn v2.0.119
+  Downloaded zerocopy v0.8.55
+  Downloaded parry3d-f64 v0.30.2
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.12 at /workspace/venv/bin/python
+🔗 Found pyo3 bindings with abi3-py3.10 support
+📡 Using build options features from pyproject.toml
+Ignoring ipykernel: markers 'extra == "dev"' don't match your environment
+Ignoring maturin: markers 'extra == "dev"' don't match your environment
+Ignoring meshio: markers 'extra == "dev"' don't match your environment
+Ignoring nbconvert: markers 'extra == "dev"' don't match your environment
+Ignoring trimesh: markers 'extra == "dev"' don't match your environment
+Ignoring pytest: markers 'extra == "dev"' don't match your environment
+Ignoring pytest-cov: markers 'extra == "dev"' don't match your environment
+Ignoring myst-parser: markers 'extra == "dev"' don't match your environment
+Ignoring mkdocs: markers 'extra == "dev"' don't match your environment
+Ignoring mkdocs-material: markers 'extra == "dev"' don't match your environment
+Ignoring pyright: markers 'extra == "dev"' don't match your environment
+Ignoring ruff: markers 'extra == "dev"' don't match your environment
+Ignoring vulture: markers 'extra == "dev"' don't match your environment
+Ignoring gdsfactory: markers 'python_full_version < "3.14" and extra == "gds"' don't match your environment
+Ignoring gdsfactory: markers 'python_full_version >= "3.14" and extra == "gds"' don't match your environment
+Ignoring gdsfactory: markers 'python_full_version < "3.14" and extra == "gdsfactory"' don't match your environment
+Ignoring gdsfactory: markers 'python_full_version >= "3.14" and extra == "gdsfactory"' don't match your environment
+Ignoring pyright: markers 'extra == "lint"' don't match your environment
+Ignoring ruff: markers 'extra == "lint"' don't match your environment
+Ignoring vulture: markers 'extra == "lint"' don't match your environment
+Ignoring meshio: markers 'extra == "mesh"' don't match your environment
+Ignoring trimesh: markers 'extra == "mesh"' don't match your environment
+Ignoring pytest: markers 'extra == "test"' don't match your environment
+Ignoring pytest-cov: markers 'extra == "test"' don't match your environment
+Ignoring pytest-randomly: markers 'extra == "test"' don't match your environment
+Ignoring hypothesis: markers 'extra == "test"' don't match your environment
+Ignoring diff-cover: markers 'extra == "test"' don't match your environment
+Ignoring gdsfactory: markers 'python_full_version < "3.14" and extra == "ubc"' don't match your environment
+Ignoring gdsfactory: markers 'python_full_version >= "3.14" and extra == "ubc"' don't match your environment
+Ignoring ubcpdk: markers 'python_full_version < "3.14" and extra == "ubc"' don't match your environment
+Requirement already satisfied: numpy>=1.24.4 in /workspace/venv/lib/python3.12/site-packages (2.5.3)
+Requirement already satisfied: scipy>=1.10.1 in /workspace/venv/lib/python3.12/site-packages (1.18.1)
+Requirement already satisfied: shapely>=2.0.6 in /workspace/venv/lib/python3.12/site-packages (2.1.2)
+Requirement already satisfied: jax>=0.4.0 in /workspace/venv/lib/python3.12/site-packages (0.9.0)
+Requirement already satisfied: optax>=0.1.0 in /workspace/venv/lib/python3.12/site-packages (0.2.8)
+Requirement already satisfied: matplotlib>=3.8.0 in /workspace/venv/lib/python3.12/site-packages (3.11.2)
+Requirement already satisfied: scikit-image>=0.21.0 in /workspace/venv/lib/python3.12/site-packages (0.26.0)
+Requirement already satisfied: xarray>=2024.0.0 in /workspace/venv/lib/python3.12/site-packages (2026.7.0)
+Requirement already satisfied: jaxlib<=0.9.0,>=0.9.0 in /workspace/venv/lib/python3.12/site-packages (from jax>=0.4.0) (0.9.0)
+Requirement already satisfied: ml_dtypes>=0.5.0 in /workspace/venv/lib/python3.12/site-packages (from jax>=0.4.0) (0.6.0)
+Requirement already satisfied: opt_einsum in /workspace/venv/lib/python3.12/site-packages (from jax>=0.4.0) (3.4.0)
+Requirement already satisfied: absl-py>=0.7.1 in /workspace/venv/lib/python3.12/site-packages (from optax>=0.1.0) (2.5.0)
+Requirement already satisfied: contourpy>=1.0.1 in /workspace/venv/lib/python3.12/site-packages (from matplotlib>=3.8.0) (1.4.0)
+Requirement already satisfied: cycler>=0.10 in /workspace/venv/lib/python3.12/site-packages (from matplotlib>=3.8.0) (0.12.1)
+Requirement already satisfied: fonttools>=4.28.2 in /workspace/venv/lib/python3.12/site-packages (from matplotlib>=3.8.0) (4.66.0)
+Requirement already satisfied: kiwisolver>=1.3.1 in /workspace/venv/lib/python3.12/site-packages (from matplotlib>=3.8.0) (1.5.1)
+Requirement already satisfied: packaging>=20.0 in /workspace/venv/lib/python3.12/site-packages (from matplotlib>=3.8.0) (26.3)
+Requirement already satisfied: pillow>=9 in /workspace/venv/lib/python3.12/site-packages (from matplotlib>=3.8.0) (12.3.0)
+Requirement already satisfied: pyparsing>=3 in /workspace/venv/lib/python3.12/site-packages (from matplotlib>=3.8.0) (3.3.3)
+Requirement already satisfied: python-dateutil>=2.7 in /workspace/venv/lib/python3.12/site-packages (from matplotlib>=3.8.0) (2.9.0.post0)
+Requirement already satisfied: networkx>=3.0 in /workspace/venv/lib/python3.12/site-packages (from scikit-image>=0.21.0) (3.7)
+Requirement already satisfied: imageio!=2.35.0,>=2.33 in /workspace/venv/lib/python3.12/site-packages (from scikit-image>=0.21.0) (2.37.4)
+Requirement already satisfied: tifffile>=2022.8.12 in /workspace/venv/lib/python3.12/site-packages (from scikit-image>=0.21.0) (2026.9.20)
+Requirement already satisfied: lazy-loader>=0.4 in /workspace/venv/lib/python3.12/site-packages (from scikit-image>=0.21.0) (0.6)
+Requirement already satisfied: pandas>=2.2 in /workspace/venv/lib/python3.12/site-packages (from xarray>=2024.0.0) (3.0.6)
+Requirement already satisfied: six>=1.5 in /workspace/venv/lib/python3.12/site-packages (from python-dateutil>=2.7->matplotlib>=3.8.0) (1.17.0)
+   Compiling libm v0.2.16
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling target-lexicon v0.13.5
+   Compiling crossbeam-utils v0.8.22
+   Compiling crossbeam-epoch v0.9.20
+   Compiling crossbeam-deque v0.8.7
+   Compiling byteorder v1.5.0
+   Compiling rayon-core v1.13.0
+   Compiling heapless v0.8.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling foldhash v0.2.0
+   Compiling smallvec v1.15.2
+   Compiling either v1.17.0
+   Compiling bytemuck v1.25.2
+   Compiling allocator-api2 v0.2.21
+   Compiling equivalent v1.0.2
+   Compiling robust v1.2.0
+   Compiling libc v0.2.189
+   Compiling find-msvc-tools v0.1.9
+   Compiling serde_core v1.0.229
+   Compiling shlex v2.0.1
+   Compiling heck v0.5.0
+   Compiling thiserror v2.0.20
+   Compiling zmij v1.0.23
+   Compiling log v0.4.33
+   Compiling rand_core v0.10.1
+   Compiling arrayvec v0.7.8
+   Compiling serde v1.0.229
+   Compiling rawpointer v0.2.1
+   Compiling i_tree v0.18.0
+   Compiling serde_json v1.0.151
+   Compiling sif-itree v0.4.1
+   Compiling bitflags v2.13.1
+   Compiling cfg-if v1.0.4
+   Compiling once_cell v1.21.4
+   Compiling slab v0.4.12
+   Compiling cpufeatures v0.3.0
+   Compiling downcast-rs v2.0.2
+   Compiling itoa v1.0.18
+   Compiling float_next_after v2.0.0
+   Compiling constant_time_eq v0.4.2
+   Compiling memchr v2.8.3
+   Compiling rustc-hash v2.1.3
+   Compiling hashbrown v0.17.1
+   Compiling hash32 v0.3.1
+   Compiling safe_arch v1.1.0
+   Compiling rand_pcg v0.10.2
+   Compiling rand v0.10.2
+   Compiling ena v0.14.4
+   Compiling cc v1.4.0
+   Compiling num-traits v0.2.19
+   Compiling matrixmultiply v0.3.11
+   Compiling hashbrown v0.16.1
+   Compiling pyo3-build-config v0.29.2
+   Compiling wide v1.5.0
+   Compiling syn v2.0.119
+   Compiling syn v3.0.3
+   Compiling i_float v1.16.0
+   Compiling geographiclib-rs v0.2.7
+   Compiling blake3 v1.8.7
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+   Compiling numpy v0.29.0
+   Compiling i_shape v1.18.0
+   Compiling rayon v1.12.0
+   Compiling approx v0.5.1
+   Compiling num-complex v0.4.6
+   Compiling spade v2.15.1
+   Compiling rstar v0.12.2
+   Compiling earcut v0.4.5
+   Compiling ordered-float v5.3.0
+   Compiling rstar v0.13.0
+   Compiling num-integer v0.1.46
+   Compiling glam v0.33.2
+   Compiling ndarray v0.17.2
+   Compiling thiserror-impl v2.0.20
+   Compiling serde_derive v1.0.229
+   Compiling pyo3-macros-backend v0.29.2
+   Compiling i_key_sort v0.10.3
+   Compiling geo-types v0.7.19
+   Compiling simba v0.10.2
+   Compiling num-derive v0.4.2
+   Compiling i_overlay v4.5.2
+   Compiling geo v0.33.1
+   Compiling pyo3-macros v0.29.2
+   Compiling glamx v0.3.0
+   Compiling parry3d-f64 v0.30.2
+   Compiling fdtd-raster-core v0.5.1 (/workspace/fixed/rust/fdtd-raster-core)
+   Compiling fdtd-raster-py v0.5.1 (/workspace/fixed/rust/fdtd-raster-py)
+    Finished `release` profile [optimized] target(s) in 12.12s
+📦 Built wheel for abi3 Python ≥ 3.10 to /tmp/.tmpG7AbrO/beamz-0.5.1-cp310-abi3-linux_x86_64.whl
+✏️ Setting installed package as editable
+🛠 Installed beamz-0.5.1
+START one-gpu-parity 2026-09-27T09:53:42.010626+00:00
+DONE {'name': 'one-gpu-parity', 'command': ['/workspace/venv/bin/python', '-m', 'pytest', 'tests/hardware/test_cuda_capacity.py', '-q'], 'revision': 'fixed', 'devices': 1, 'seconds': 128.26289296150208, 'returncode': 0}
+START two-gpu-parity 2026-09-27T09:55:50.274260+00:00
+DONE {'name': 'two-gpu-parity', 'command': ['/workspace/venv/bin/python', '-m', 'pytest', 'tests/hardware/test_multi_gpu_capacity.py', '-q'], 'revision': 'fixed', 'devices': 2, 'seconds': 106.27508068084717, 'returncode': 0}
+START propagated-1-x-jax 2026-09-27T09:57:36.550514+00:00
+DONE {'name': 'propagated-1-x-jax', 'command': ['/workspace/venv/bin/python', '/workspace/fixed/scripts/validate_modal_scaling.py', '--shape', '64', '96', '256', '--steps', '2048', '--frequencies', '101', '--devices', '1', '--shard-axis', 'x', '--backend', 'jax', '--output', '/workspace/evidence/propagated-1-x-jax.json'], 'revision': 'fixed', 'devices': 1, 'seconds': 29.25808310508728, 'returncode': 0}
+START propagated-1-x-cuda_streamed 2026-09-27T09:58:05.809773+00:00
+DONE {'name': 'propagated-1-x-cuda_streamed', 'command': ['/workspace/venv/bin/python', '/workspace/fixed/scripts/validate_modal_scaling.py', '--shape', '64', '96', '256', '--steps', '2048', '--frequencies', '101', '--devices', '1', '--shard-axis', 'x', '--backend', 'cuda_streamed', '--output', '/workspace/evidence/propagated-1-x-cuda_streamed.json'], 'revision': 'fixed', 'devices': 1, 'seconds': 26.75946021080017, 'returncode': 0}
+START propagated-2-x-jax 2026-09-27T09:58:32.570501+00:00
+DONE {'name': 'propagated-2-x-jax', 'command': ['/workspace/venv/bin/python', '/workspace/fixed/scripts/validate_modal_scaling.py', '--shape', '64', '96', '256', '--steps', '2048', '--frequencies', '101', '--devices', '2', '--shard-axis', 'x', '--backend', 'jax', '--output', '/workspace/evidence/propagated-2-x-jax.json'], 'revision': 'fixed', 'devices': 2, 'seconds': 36.370189905166626, 'returncode': 0}
+START propagated-2-x-cuda_streamed 2026-09-27T09:59:08.941393+00:00

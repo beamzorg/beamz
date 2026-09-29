@@ -1,0 +1,18 @@
+[
+  {
+    "memory_fraction": ".03",
+    "context": "During CPU-only public preparation; killed before public lower/compile if needed",
+    "name": "eight-gpu-parity-established",
+    "command": [
+      "/workspace/venv/bin/python",
+      "-m",
+      "pytest",
+      "tests/hardware/test_multi_gpu_capacity.py",
+      "-q"
+    ],
+    "revision": "fixed",
+    "devices": 8,
+    "seconds": 122.81846117973328,
+    "returncode": 1
+  }
+]
