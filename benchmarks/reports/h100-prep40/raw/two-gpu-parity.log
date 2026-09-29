@@ -1,0 +1,10 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: /workspace/fixed
+configfile: pytest.ini
+plugins: cov-7.1.0, hypothesis-6.168.2
+collected 8 items
+
+tests/hardware/test_multi_gpu_capacity.py ........                       [100%]
+
+======================== 8 passed in 174.34s (0:02:54) =========================

@@ -608,7 +608,8 @@ def _combined_cpml_core_supported(state, ctx, coeffs) -> bool:
 def _temporal_cpml_fields_supported(ctx, coeffs, nsteps: int) -> bool:
     """Prove that a second field bank can preserve the CPML timestep order."""
     if (
-        nsteps < 2
+        getattr(ctx, "low_memory", False)
+        or nsteps < 2
         or not ctx.boundary.cpml.enabled
         or ctx.config.metric_kind != "isotropic_uniform"
         or _uniform_cpml_thickness(ctx) <= 0
@@ -632,7 +633,11 @@ def _temporal_cpml_fields_supported(ctx, coeffs, nsteps: int) -> bool:
 
 def _temporal_yee_supported(ctx, coeffs, nsteps: int) -> bool:
     """Prove that the frozen-field Yee kernel supports this material layout."""
-    if nsteps < 4 or _metallic_edge_mask(ctx.boundary.cpml.metallic_edges) != 63:
+    if (
+        getattr(ctx, "low_memory", False)
+        or nsteps < 4
+        or _metallic_edge_mask(ctx.boundary.cpml.metallic_edges) != 63
+    ):
         return False
     values = (
         coeffs.h_decay_x,
@@ -896,7 +901,7 @@ def run_program_steps(
     nsteps: int,
     *,
     observation_origin=None,
-    observation_step_offset=0,
+    observation_step_offset: int | jax.Array = 0,
 ) -> SimulationState:
     """Advance arbitrary slab sources and packed vector DFTs in one CUDA graph."""
     if nsteps < 1:

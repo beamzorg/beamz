@@ -1,0 +1,44 @@
+{
+  "args": {
+    "side": 864,
+    "workload": "prepared",
+    "axis": "none",
+    "steps": 32,
+    "samples": 3,
+    "frequencies": 3,
+    "output": "benchmarks/reports/rtx3090-compile-memory/fixed-prepared-864-native.json",
+    "digests": false
+  },
+  "device": "NVIDIA GeForce RTX 3090",
+  "jax": "0.9.0",
+  "root": "/home/quentinwach/beamz/beamz-capacity-fix",
+  "commit": "d6cd7f3fb0eb86a4151c6f6e8f35bb860b9e1306",
+  "extension_sha256": "85fe6a66a093b5a8cd2f14b0342102de41ad680415d681fcdb33588f6c5d1f3c",
+  "environment": {
+    "BEAMZ_CUDA_AUTOTUNE": "off",
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+    "XLA_PYTHON_CLIENT_MEM_FRACTION": ".97"
+  },
+  "stages": [
+    {
+      "stage": "prepare_failed",
+      "seconds": 12.652091771014966,
+      "max_rss_bytes": 2000343040,
+      "gpu": {
+        "num_allocs": 95,
+        "bytes_in_use": 19002158848,
+        "peak_bytes_in_use": 19002159104,
+        "largest_alloc_size": 2585865728,
+        "bytes_limit": 24502263547,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 24502263296,
+        "peak_pool_bytes": 24502263296
+      }
+    }
+  ],
+  "status": "failed",
+  "failure_stage": "prepare",
+  "error": "ValueError('RESOURCE_EXHAUSTED: Out of memory while trying to allocate 2.41GiB.')"
+}

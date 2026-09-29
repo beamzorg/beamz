@@ -1,0 +1,6 @@
+Downloading py-spy (2.8MiB)
+ Downloading py-spy
+Installed 1 package in 27ms
+Permission Denied
+
+It looks like you are running in a docker container. Please make sure you started your container with the SYS_PTRACE capability. See https://github.com/benfred/py-spy#how-do-i-run-py-spy-in-docker for more details

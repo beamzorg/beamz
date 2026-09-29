@@ -871,3 +871,56 @@ def test_long_scan_observation_clock_uses_run_origin(monkeypatch, loop_kind):
     np.testing.assert_allclose(result.t, expected_t, rtol=1e-7, atol=0)
     np.testing.assert_allclose(result.ex, np.sin(omega * expected_t), rtol=0, atol=3e-4)
     assert int(result.current_step) == 91 + steps
+
+
+@pytest.mark.parametrize("cpml", [False, True])
+def test_capacity_context_disables_temporal_workspace(cpml):
+    from beamz.const import EPS_0, MU_0
+    from beamz.simulation.model import UpdateCoefficients
+
+    _, state, context = _program_and_state(cpml=cpml)
+    coefficients = UpdateCoefficients(
+        *(
+            jnp.asarray(context.dt / (MU_0 if name.startswith("h_") else EPS_0))
+            if "source" in name
+            else jnp.asarray(1.0)
+            for name in UpdateCoefficients._fields
+        )
+    )
+    regular = cuda_runtime._native_schedule_plan(
+        state, context, coefficients, 4, kind="steps"
+    )
+    capacity = cuda_runtime._native_schedule_plan(
+        state, replace(context, low_memory=True), coefficients, 4, kind="steps"
+    )
+    assert regular.uses_temporal_fields
+    assert not capacity.uses_temporal_fields
+
+
+@pytest.mark.parametrize("backend", ["jax", "cuda_streamed"])
+def test_scan_compiler_policy_covers_both_backends(monkeypatch, backend):
+    program, _, _ = _program_and_state(cpml=True)
+    program = replace(program, config=replace(program.config, backend=backend))
+    calls = []
+
+    def jit(function, *, donate_argnums=(), compiler_options=None):
+        calls.append((donate_argnums, compiler_options))
+        return function
+
+    monkeypatch.setattr("jax.jit", jit)
+    build_scan(program, donate_state=True)
+    assert calls == [((0,), {"xla_gpu_autotune_level": 0})]
+
+
+def test_scan_compiler_policy_preserves_older_jax(monkeypatch):
+    program, _, _ = _program_and_state(cpml=True)
+    program = replace(program, config=replace(program.config, backend="cuda_streamed"))
+    calls = []
+
+    def jit(function, *, donate_argnums=()):
+        calls.append(donate_argnums)
+        return function
+
+    monkeypatch.setattr("jax.jit", jit)
+    build_scan(program, donate_state=True)
+    assert calls == [(0,)]

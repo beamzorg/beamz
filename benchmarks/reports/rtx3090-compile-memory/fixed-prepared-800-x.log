@@ -1,0 +1,30 @@
+{"stage": "prepare", "seconds": 2.544152030022815, "max_rss_bytes": 1990549504, "gpu": {"num_allocs": 101, "bytes_in_use": 19219192064, "peak_bytes_in_use": 19219193856, "largest_alloc_size": 2055689728, "bytes_limit": 24502263547, "bytes_reserved": 0, "peak_bytes_reserved": 0, "largest_free_block_bytes": 0, "pool_bytes": 24502263296, "peak_pool_bytes": 24502263296}}
+{"stage": "lower", "seconds": 0.0940086500486359, "max_rss_bytes": 2127257600, "gpu": {"num_allocs": 103, "bytes_in_use": 19219192064, "peak_bytes_in_use": 19219193856, "largest_alloc_size": 2055689728, "bytes_limit": 24502263547, "bytes_reserved": 0, "peak_bytes_reserved": 0, "largest_free_block_bytes": 0, "pool_bytes": 24502263296, "peak_pool_bytes": 24502263296}}
+{"stage": "compile", "seconds": 0.1808321620337665, "max_rss_bytes": 2139635712, "gpu": {"num_allocs": 103, "bytes_in_use": 19219192064, "peak_bytes_in_use": 19219193856, "largest_alloc_size": 2055689728, "bytes_limit": 24502263547, "bytes_reserved": 0, "peak_bytes_reserved": 0, "largest_free_block_bytes": 0, "pool_bytes": 24502263296, "peak_pool_bytes": 24502263296}}
+E0927 09:10:34.869267  879372 pjrt_stream_executor_client.cc:2111] Execution of replica 0 failed: INTERNAL: NCCL operation ncclCommInitRankConfig(&comm, clique_key.num_devices(), nccl_unique_id, ranks[i].rank.value(), &comm_config) failed: unhandled cuda error (run with NCCL_DEBUG=INFO for details). Last NCCL warning(error) log entry (may be unrelated) 'Failed to CUDA calloc async 24 bytes'.
+{"stage": "run_0_failed", "seconds": 0.08400841901311651, "max_rss_bytes": 2377994240, "gpu": {"num_allocs": 105, "bytes_in_use": 19239784448, "peak_bytes_in_use": 19239784704, "largest_alloc_size": 2055689728, "bytes_limit": 24502263547, "bytes_reserved": 0, "peak_bytes_reserved": 0, "largest_free_block_bytes": 0, "pool_bytes": 24502263296, "peak_pool_bytes": 24502263296}}
+Traceback (most recent call last):
+  File "/home/quentinwach/beamz/beamz-capacity-fix/scripts/benchmark_compile_capacity.py", line 313, in <module>
+    main()
+  File "/home/quentinwach/beamz/beamz-capacity-fix/scripts/benchmark_compile_capacity.py", line 264, in main
+    state = exe(state, coeffs)
+            ^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/stages.py", line 892, in __call__
+    return self._call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/interpreters/pxla.py", line 3260, in aot_cache_miss
+    outs, out_flat, args_flat = stages.Compiled.call(params, *args, **kwargs)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/stages.py", line 869, in call
+    lo_outs = params.executable.call(*params.const_args, *args_flat)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/interpreters/pxla.py", line 3249, in call
+    return self.unsafe_call(*args)  # pylint: disable=not-callable
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/profiler.py", line 359, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/interpreters/pxla.py", line 1363, in __call__
+    results = self.xla_executable.execute_sharded(input_bufs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+jax.errors.JaxRuntimeError: INTERNAL: NCCL operation ncclCommInitRankConfig(&comm, clique_key.num_devices(), nccl_unique_id, ranks[i].rank.value(), &comm_config) failed: unhandled cuda error (run with NCCL_DEBUG=INFO for details). Last NCCL warning(error) log entry (may be unrelated) 'Failed to CUDA calloc async 24 bytes'.

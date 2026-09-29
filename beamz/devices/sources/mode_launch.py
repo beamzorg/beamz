@@ -8,6 +8,7 @@ from typing import Any, Literal, cast
 
 import numpy as np
 
+from beamz._region_array import tiles
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.devices._immutable import readonly_array
 from beamz.devices._placement import (
@@ -71,6 +72,27 @@ _STORAGE_AXES_3D = ("z", "y", "x")
 _PUBLIC_AXIS_POSITION = {"x": 0, "y": 1, "z": 2}
 
 
+def _material_mirror_symmetric(material, axis):
+    """Preserve the full-volume symmetry criterion with bounded float64 scratch."""
+    scale = 1.0
+    for tile in tiles(material.shape, np.float64):
+        values = np.asarray(material[tile], dtype=float)
+        if not np.all(np.isfinite(values)):
+            return False
+        scale = max(scale, float(np.max(np.abs(values), initial=0)))
+    for tile in tiles(material.shape, np.float64):
+        reflected = list(tile)
+        region = tile[axis]
+        reflected[axis] = slice(
+            material.shape[axis] - region.stop, material.shape[axis] - region.start
+        )
+        left = np.asarray(material[tile], dtype=float)
+        right = np.flip(np.asarray(material[tuple(reflected)], dtype=float), axis=axis)
+        if not np.allclose(left, right, rtol=1e-7, atol=1e-7 * scale):
+            return False
+    return True
+
+
 def _centered_transverse_symmetry_axes(source, fields, grid, resolution):
     """Return transverse storage axes that are physically mirror symmetric."""
     permittivity = np.asarray(fields.permittivity)
@@ -103,14 +125,7 @@ def _centered_transverse_symmetry_axes(source, fields, grid, resolution):
             atol=tolerance,
         ):
             continue
-        material = np.asarray(permittivity, dtype=float)
-        material_scale = max(float(np.max(np.abs(material))), 1.0)
-        if not np.allclose(
-            material,
-            np.flip(material, axis=storage_position),
-            rtol=1e-7,
-            atol=1e-7 * material_scale,
-        ):
+        if not _material_mirror_symmetric(permittivity, storage_position):
             continue
         symmetric.append(storage_position)
     return tuple(symmetric)

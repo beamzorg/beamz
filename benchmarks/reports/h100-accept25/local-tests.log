@@ -1,0 +1,13 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=1099426158
+rootdir: /Users/quentinwach/Code/beamz-compile-memory
+configfile: pytest.ini
+plugins: randomly-5.0.0, cov-7.1.0, hypothesis-6.168.0
+collected 14 items
+
+tests/unit/test_compile_capacity_fixture.py .                            [  7%]
+tests/unit/test_jax_local_sharding.py .                                  [ 14%]
+tests/unit/test_memory_policy.py ............                            [100%]
+
+============================= 14 passed in 37.93s ==============================

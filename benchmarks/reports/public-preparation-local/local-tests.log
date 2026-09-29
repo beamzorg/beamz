@@ -1,0 +1,17 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=41027451
+rootdir: /Users/quentinwach/Code/beamz-compile-memory
+configfile: pytest.ini
+plugins: randomly-5.0.0, cov-7.1.0, hypothesis-6.168.0
+collected 163 items
+
+tests/integration/test_native_design_rasterization.py .................. [ 11%]
+...........................................................              [ 47%]
+tests/integration/test_mode_launch_planner.py .......................... [ 63%]
+.................                                                        [ 73%]
+tests/unit/test_region_preparation.py ...............                    [ 82%]
+tests/integration/test_compiled_engine.py ...........................    [ 99%]
+tests/unit/test_preparation_trace.py .                                   [100%]
+
+======================== 163 passed in 80.68s (0:01:20) ========================

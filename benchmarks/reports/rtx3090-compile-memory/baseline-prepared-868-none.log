@@ -1,0 +1,36 @@
+{"stage": "prepare", "seconds": 2.7067471420159563, "max_rss_bytes": 2000232448, "gpu": {"num_allocs": 101, "bytes_in_use": 24502261248, "peak_bytes_in_use": 24502263040, "largest_alloc_size": 2667010304, "bytes_limit": 24502263547, "bytes_reserved": 0, "peak_bytes_reserved": 0, "largest_free_block_bytes": 0, "pool_bytes": 24502263296, "peak_pool_bytes": 24502263296}}
+{"stage": "lower", "seconds": 0.025351667020004243, "max_rss_bytes": 2135236608, "gpu": {"num_allocs": 103, "bytes_in_use": 24502261248, "peak_bytes_in_use": 24502263040, "largest_alloc_size": 2667010304, "bytes_limit": 24502263547, "bytes_reserved": 0, "peak_bytes_reserved": 0, "largest_free_block_bytes": 0, "pool_bytes": 24502263296, "peak_pool_bytes": 24502263296}}
+W0927 09:10:38.676971  879519 hlo_rematerialization.cc:3204] Can't reduce memory use below 15.49GiB (16634251562 bytes) by rematerialization; only reduced to 46.36GiB (49774222688 bytes), down from 46.36GiB (49774222880 bytes) originally
+{"stage": "compile", "seconds": 0.06381411198526621, "max_rss_bytes": 2137858048, "gpu": {"num_allocs": 103, "bytes_in_use": 24502261248, "peak_bytes_in_use": 24502263040, "largest_alloc_size": 2667010304, "bytes_limit": 24502263547, "bytes_reserved": 0, "peak_bytes_reserved": 0, "largest_free_block_bytes": 0, "pool_bytes": 24502263296, "peak_pool_bytes": 24502263296}}
+W0927 09:10:48.730007  879519 bfc_allocator.cc:502] Allocator (GPU_0_bfc) ran out of memory trying to allocate 15.45GiB (rounded to 16591411968)requested by op 
+If the cause is memory fragmentation maybe the environment variable 'TF_GPU_ALLOCATOR=cuda_malloc_async' will improve the situation. 
+Current allocation summary follows.
+Current allocation summary follows.
+W0927 09:10:48.730100  879519 bfc_allocator.cc:513] ****************************************************************************************************
+E0927 09:10:48.730114  879519 pjrt_stream_executor_client.cc:2111] Execution of replica 0 failed: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 15.45GiB. [tf-allocator-allocation-error='']
+{"stage": "run_0_failed", "seconds": 10.00096312200185, "max_rss_bytes": 2137858048, "gpu": {"num_allocs": 104, "bytes_in_use": 24502261504, "peak_bytes_in_use": 24502263040, "largest_alloc_size": 2667010304, "bytes_limit": 24502263547, "bytes_reserved": 0, "peak_bytes_reserved": 0, "largest_free_block_bytes": 0, "pool_bytes": 24502263296, "peak_pool_bytes": 24502263296}}
+Traceback (most recent call last):
+  File "/home/quentinwach/beamz/beamz-capacity-fix/scripts/benchmark_compile_capacity.py", line 313, in <module>
+    main()
+  File "/home/quentinwach/beamz/beamz-capacity-fix/scripts/benchmark_compile_capacity.py", line 264, in main
+    state = exe(state, coeffs)
+            ^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/stages.py", line 892, in __call__
+    return self._call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/interpreters/pxla.py", line 3260, in aot_cache_miss
+    outs, out_flat, args_flat = stages.Compiled.call(params, *args, **kwargs)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/stages.py", line 869, in call
+    lo_outs = params.executable.call(*params.const_args, *args_flat)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/interpreters/pxla.py", line 3249, in call
+    return self.unsafe_call(*args)  # pylint: disable=not-callable
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/profiler.py", line 359, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/interpreters/pxla.py", line 1363, in __call__
+    results = self.xla_executable.execute_sharded(input_bufs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+jax.errors.JaxRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 15.45GiB.

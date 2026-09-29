@@ -1,0 +1,386 @@
+{
+  "protocol": "five_donating_continuation_samples",
+  "donate_state": true,
+  "cuda_schedule": {
+    "policy": "auto",
+    "capacity": false,
+    "estimated_fast_workspace_bytes": 1648258210
+  },
+  "compiled_memory": {
+    "argument_size_in_bytes": 686807188,
+    "output_size_in_bytes": 483640668,
+    "alias_size_in_bytes": 483640428,
+    "temp_size_in_bytes": 477302600
+  },
+  "final_current_step": 768,
+  "warm_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 238,
+        "bytes_in_use": 686813184,
+        "peak_bytes_in_use": 1164116224,
+        "largest_alloc_size": 477302784,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    },
+    {
+      "id": 1,
+      "stats": {
+        "num_allocs": 160,
+        "bytes_in_use": 686813184,
+        "peak_bytes_in_use": 1164116224,
+        "largest_alloc_size": 477302784,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    }
+  ],
+  "continuation_memory": [
+    [
+      {
+        "id": 0,
+        "stats": {
+          "num_allocs": 240,
+          "bytes_in_use": 686813184,
+          "peak_bytes_in_use": 1164116224,
+          "largest_alloc_size": 477302784,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      },
+      {
+        "id": 1,
+        "stats": {
+          "num_allocs": 162,
+          "bytes_in_use": 686813184,
+          "peak_bytes_in_use": 1164116224,
+          "largest_alloc_size": 477302784,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "stats": {
+          "num_allocs": 242,
+          "bytes_in_use": 686813184,
+          "peak_bytes_in_use": 1164116224,
+          "largest_alloc_size": 477302784,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      },
+      {
+        "id": 1,
+        "stats": {
+          "num_allocs": 164,
+          "bytes_in_use": 686813184,
+          "peak_bytes_in_use": 1164116224,
+          "largest_alloc_size": 477302784,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "stats": {
+          "num_allocs": 244,
+          "bytes_in_use": 686813184,
+          "peak_bytes_in_use": 1164116224,
+          "largest_alloc_size": 477302784,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      },
+      {
+        "id": 1,
+        "stats": {
+          "num_allocs": 166,
+          "bytes_in_use": 686813184,
+          "peak_bytes_in_use": 1164116224,
+          "largest_alloc_size": 477302784,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "stats": {
+          "num_allocs": 246,
+          "bytes_in_use": 686813184,
+          "peak_bytes_in_use": 1164116224,
+          "largest_alloc_size": 477302784,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      },
+      {
+        "id": 1,
+        "stats": {
+          "num_allocs": 168,
+          "bytes_in_use": 686813184,
+          "peak_bytes_in_use": 1164116224,
+          "largest_alloc_size": 477302784,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "stats": {
+          "num_allocs": 248,
+          "bytes_in_use": 686813184,
+          "peak_bytes_in_use": 1164116224,
+          "largest_alloc_size": 477302784,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      },
+      {
+        "id": 1,
+        "stats": {
+          "num_allocs": 170,
+          "bytes_in_use": 686813184,
+          "peak_bytes_in_use": 1164116224,
+          "largest_alloc_size": 477302784,
+          "bytes_limit": 76525533204,
+          "bytes_reserved": 0,
+          "peak_bytes_reserved": 0,
+          "largest_free_block_bytes": 0,
+          "pool_bytes": 76525533184,
+          "peak_pool_bytes": 76525533184
+        }
+      }
+    ]
+  ],
+  "backend": "cuda_streamed",
+  "devices": 2,
+  "shard_axis": "x",
+  "shape": [
+    256,
+    256,
+    512
+  ],
+  "steps": 128,
+  "frequencies": 101,
+  "cpml_cells": 12,
+  "resolution_nm": 80.0,
+  "physical_size_zyx_um": [
+    20.48,
+    20.48,
+    40.96
+  ],
+  "prepared_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 186,
+        "bytes_in_use": 686813184,
+        "peak_bytes_in_use": 716222464,
+        "largest_alloc_size": 67898624,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    },
+    {
+      "id": 1,
+      "stats": {
+        "num_allocs": 158,
+        "bytes_in_use": 686813184,
+        "peak_bytes_in_use": 705761536,
+        "largest_alloc_size": 67898624,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    }
+  ],
+  "timed_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 340,
+        "bytes_in_use": 686813184,
+        "peak_bytes_in_use": 1164116224,
+        "largest_alloc_size": 477302784,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    },
+    {
+      "id": 1,
+      "stats": {
+        "num_allocs": 218,
+        "bytes_in_use": 686813184,
+        "peak_bytes_in_use": 1164116224,
+        "largest_alloc_size": 477302784,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    }
+  ],
+  "stepped_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 248,
+        "bytes_in_use": 686813184,
+        "peak_bytes_in_use": 1164116224,
+        "largest_alloc_size": 477302784,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    },
+    {
+      "id": 1,
+      "stats": {
+        "num_allocs": 170,
+        "bytes_in_use": 686813184,
+        "peak_bytes_in_use": 1164116224,
+        "largest_alloc_size": 477302784,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    }
+  ],
+  "runtime_cv": 0.0007278002661074997,
+  "monitor_weight_min": 768.0,
+  "monitor_weight_max": 768.0,
+  "monitor_count": 2,
+  "setup_s": 33.98435313999653,
+  "compile_s": 7.031971577554941,
+  "warm_runtime_samples_s": [
+    0.168112114071846,
+    0.16830099746584892,
+    0.16838256642222404,
+    0.1683814749121666,
+    0.1684136614203453
+  ],
+  "kernel_gcups": 25.507362364181677,
+  "final_state_finite": true,
+  "public_api_measured": false,
+  "diagnostic_profiled_public_call_s": null,
+  "peak_memory_bytes": 2328232448,
+  "device_memory": [
+    {
+      "id": 0,
+      "stats": {
+        "num_allocs": 340,
+        "bytes_in_use": 686813184,
+        "peak_bytes_in_use": 1164116224,
+        "largest_alloc_size": 477302784,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    },
+    {
+      "id": 1,
+      "stats": {
+        "num_allocs": 218,
+        "bytes_in_use": 686813184,
+        "peak_bytes_in_use": 1164116224,
+        "largest_alloc_size": 477302784,
+        "bytes_limit": 76525533204,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 76525533184,
+        "peak_pool_bytes": 76525533184
+      }
+    }
+  ],
+  "worker_measurement_wall_s": 46.1184490583837,
+  "host_max_rss_bytes": 7413882880,
+  "worker_sha256": "2d19d584c737c8a075f24ca77b3bb755ef8e4fe1b1f73f50f8d27ca66c326156",
+  "commit": "896fb29c2b0457ae10afbdcf0b3676e6ac46b455",
+  "environment": {
+    "XLA_PYTHON_CLIENT_PREALLOCATE": "true",
+    "XLA_PYTHON_CLIENT_MEM_FRACTION": ".90",
+    "BEAMZ_CUDA_CPML_PSI_PRECISION": "fp32",
+    "BEAMZ_CUDA_AUTOTUNE": "off",
+    "NUMPY_MADVISE_HUGEPAGE": "0"
+  },
+  "native_sha256": "6753641e1a682751ad00c10abda53bd4cd33fd3569ccf048baea018bb94be00d",
+  "cuda_flags": 128
+}

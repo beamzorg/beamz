@@ -1,0 +1,23 @@
+{
+  "controller.log": "aeaceb697210fc22e0d1cdbc83eb21123a5ea7cec437ccb1f4e25c2ac0c10907",
+  "followup-controller.log": "bd0519ecef5e87abd047ada0379851ac9c1e4f29515600812f0e3aa10302060f",
+  "health.log": "f2960261eca98857b5b4b5b76a140c8ca8f8b002aa07e87a9da5fd4e63efc0ba",
+  "host-telemetry.jsonl": "214a714e27e2edba2ba2aaa3a7a7e8cba9f4c31eabc2119e3c136b62bb577625",
+  "manifest.json": "3502cecbacb6a989e8731e698465c97dfd20a512113ea872134767c82c0ca7cf",
+  "nvidia-smi.txt": "769c173296dcd60c7eeb1034ae5228e18e51cc98cf11885db410432b14b3c995",
+  "packages.txt": "0ec46930a47b83f476c79764395b5add83e4d19dab93d9139b6c0a098bf5077d",
+  "public-eight-z-15b-cuda_streamed-propagated-phases.jsonl": "930e8f118a436ee5fddae9d81438616cf1499c2c9e63b6c2fa3df0e55a3c4faf",
+  "public-eight-z-15b-cuda_streamed-propagated.json": "320ceee3addb162d6015bf51fecd702d5723564c268e14d63558ac532000e1a1",
+  "public-eight-z-15b-cuda_streamed-propagated.log": "d38df13a73770c50d0ff621653e1524c3fe2631f1c6f628b4dca7cdf4bb3cfa2",
+  "public-eight-z-15b-cuda_streamed-propagated.mlir": "56f6e0ac69f610ae86870c4cbb0b61bf9a62f4c3b4fb1d7148cd2ca912bdfec4",
+  "public-eight-z-15b-cuda_streamed-propagated.npz": "308cb629306cf8418d6b37e123f8c86c3a58183ea539c53444c4a17ffcce0274",
+  "public-eight-z-15b-cuda_streamed-propagated.optimized.hlo": "9bf811a2cc4ed25453e0b527214cbd392c7272aab4b661277676a4784b153d99",
+  "reference-one-jax.json": "c886a43436ff66bac807e6d49d8aa74b43cbd27b9c18df4ce8ae5e8c58af689a",
+  "reference-one-jax.npz": "3adce27a96df2e455618f12dc1759eebd3e8ab012855ce2ff94159c0a098fa56",
+  "runs.json": "67a27598110513da0fa5297d75355d7ea2df6743ae127a480398657b41e066c2",
+  "source-workspace-regression.log": "b7103822c23579fb4546a68943ea1c589ff3719e7ccaec07ef6875bf10534bc7",
+  "telemetry.csv": "3908ba59a306011f183ceb6c9d3e0053815a139e1c7098eac437071354d63e2f",
+  "test_source_workspace.py": "9fa5a10335fb7de797955f31348792d79ec3611d03fbdaca175d6babb404491b",
+  "topology.txt": "061864f172659c5fd05a9fd2e9bde8f535fb83a9a5c07f94fe26cb6c91d4ca76",
+  "workspace-test-run.json": "70e55f45d27a17590f30ce5d16e47a6bc602084876210b7577569c059aebfd3d"
+}

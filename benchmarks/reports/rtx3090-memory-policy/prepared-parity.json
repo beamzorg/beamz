@@ -1,0 +1,437 @@
+[
+  {
+    "steps": 2,
+    "errors": [
+      {
+        "field": "ex",
+        "leaf": 0,
+        "peak": 0.0009642466902732849,
+        "max_abs_error": 5.820766091346741e-11,
+        "relative_to_peak": 6.03659431768133e-08
+      },
+      {
+        "field": "ey",
+        "leaf": 0,
+        "peak": 0.0003296044305898249,
+        "max_abs_error": 2.9103830456733704e-11,
+        "relative_to_peak": 8.829926953546283e-08
+      },
+      {
+        "field": "ez",
+        "leaf": 0,
+        "peak": 0.0003296044305898249,
+        "max_abs_error": 2.9103830456733704e-11,
+        "relative_to_peak": 8.829926953546283e-08
+      },
+      {
+        "field": "hx",
+        "leaf": 0,
+        "peak": 0.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "hy",
+        "leaf": 0,
+        "peak": 2.5224867385986727e-06,
+        "max_abs_error": 2.2737367544323206e-13,
+        "relative_to_peak": 9.013870002327381e-08
+      },
+      {
+        "field": "hz",
+        "leaf": 0,
+        "peak": 2.5224867385986727e-06,
+        "max_abs_error": 2.2737367544323206e-13,
+        "relative_to_peak": 9.013870002327381e-08
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 0,
+        "peak": 0.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 1,
+        "peak": 0.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 2,
+        "peak": 0.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 3,
+        "peak": 0.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 4,
+        "peak": 0.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 5,
+        "peak": 0.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 0,
+        "peak": 0.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 1,
+        "peak": 0.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 2,
+        "peak": 0.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 3,
+        "peak": 0.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 4,
+        "peak": 0.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 5,
+        "peak": 0.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "t",
+        "leaf": 0,
+        "peak": 2.927266456372057e-16,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "current_step",
+        "leaf": 0,
+        "peak": 2.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      }
+    ]
+  },
+  {
+    "steps": 16,
+    "errors": [
+      {
+        "field": "ex",
+        "leaf": 0,
+        "peak": 0.0005124043673276901,
+        "max_abs_error": 1.1641532182693481e-10,
+        "relative_to_peak": 2.2719424198913103e-07
+      },
+      {
+        "field": "ey",
+        "leaf": 0,
+        "peak": 0.00027851140475831926,
+        "max_abs_error": 8.731149137020111e-11,
+        "relative_to_peak": 3.1349341491407304e-07
+      },
+      {
+        "field": "ez",
+        "leaf": 0,
+        "peak": 0.00027851140475831926,
+        "max_abs_error": 8.731149137020111e-11,
+        "relative_to_peak": 3.1349341491407304e-07
+      },
+      {
+        "field": "hx",
+        "leaf": 0,
+        "peak": 9.863600414954446e-14,
+        "max_abs_error": 2.9857382842155e-13,
+        "relative_to_peak": 3.0270268042171997
+      },
+      {
+        "field": "hy",
+        "leaf": 0,
+        "peak": 9.310099358117441e-07,
+        "max_abs_error": 4.547473508864641e-13,
+        "relative_to_peak": 4.884452178160393e-07
+      },
+      {
+        "field": "hz",
+        "leaf": 0,
+        "peak": 9.310099358117441e-07,
+        "max_abs_error": 4.547473508864641e-13,
+        "relative_to_peak": 4.884452178160393e-07
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 0,
+        "peak": 9.702404975891113,
+        "max_abs_error": 7.62939453125e-06,
+        "relative_to_peak": 7.863405568215092e-07
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 1,
+        "peak": 9.702404975891113,
+        "max_abs_error": 7.62939453125e-06,
+        "relative_to_peak": 7.863405568215092e-07
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 2,
+        "peak": 131.3704376220703,
+        "max_abs_error": 2.288818359375e-05,
+        "relative_to_peak": 1.7422628719252108e-07
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 3,
+        "peak": 24.305171966552734,
+        "max_abs_error": 2.86102294921875e-06,
+        "relative_to_peak": 1.1771251621489911e-07
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 4,
+        "peak": 24.305171966552734,
+        "max_abs_error": 2.86102294921875e-06,
+        "relative_to_peak": 1.1771251621489911e-07
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 5,
+        "peak": 131.3704376220703,
+        "max_abs_error": 2.288818359375e-05,
+        "relative_to_peak": 1.7422628719252108e-07
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 0,
+        "peak": 0.5880312919616699,
+        "max_abs_error": 1.1920928955078125e-07,
+        "relative_to_peak": 2.0272609839027368e-07
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 1,
+        "peak": 0.5880312919616699,
+        "max_abs_error": 1.1920928955078125e-07,
+        "relative_to_peak": 2.0272609839027368e-07
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 2,
+        "peak": 2.5842346929039195e-08,
+        "max_abs_error": 2.5452358443089906e-08,
+        "relative_to_peak": 0.9849089369854772
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 3,
+        "peak": 0.10325653105974197,
+        "max_abs_error": 1.4901161193847656e-08,
+        "relative_to_peak": 1.4431204535843036e-07
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 4,
+        "peak": 0.10325653105974197,
+        "max_abs_error": 1.4901161193847656e-08,
+        "relative_to_peak": 1.4431204535843036e-07
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 5,
+        "peak": 2.5842346929039195e-08,
+        "max_abs_error": 2.5452358443089906e-08,
+        "relative_to_peak": 0.9849089369854772
+      },
+      {
+        "field": "t",
+        "leaf": 0,
+        "peak": 2.3418131650976455e-15,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "current_step",
+        "leaf": 0,
+        "peak": 16.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      }
+    ]
+  },
+  {
+    "steps": 48,
+    "errors": [
+      {
+        "field": "ex",
+        "leaf": 0,
+        "peak": 0.00045181013410910964,
+        "max_abs_error": 1.4551915228366852e-10,
+        "relative_to_peak": 3.2208031935938483e-07
+      },
+      {
+        "field": "ey",
+        "leaf": 0,
+        "peak": 0.00036415597423911095,
+        "max_abs_error": 1.3096723705530167e-10,
+        "relative_to_peak": 3.5964599325591834e-07
+      },
+      {
+        "field": "ez",
+        "leaf": 0,
+        "peak": 0.00036415597423911095,
+        "max_abs_error": 1.3096723705530167e-10,
+        "relative_to_peak": 3.5964599325591834e-07
+      },
+      {
+        "field": "hx",
+        "leaf": 0,
+        "peak": 1.2262855119370142e-13,
+        "max_abs_error": 1.4174303549462086e-13,
+        "relative_to_peak": 1.155873033766228
+      },
+      {
+        "field": "hy",
+        "leaf": 0,
+        "peak": 2.281065860643139e-07,
+        "max_abs_error": 3.730349362740526e-13,
+        "relative_to_peak": 1.6353536419543653e-06
+      },
+      {
+        "field": "hz",
+        "leaf": 0,
+        "peak": 2.281065860643139e-07,
+        "max_abs_error": 3.730349362740526e-13,
+        "relative_to_peak": 1.6353536419543653e-06
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 0,
+        "peak": 44.343040466308594,
+        "max_abs_error": 0.00010162591934204102,
+        "relative_to_peak": 2.2918121597741e-06
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 1,
+        "peak": 44.343040466308594,
+        "max_abs_error": 0.00010162591934204102,
+        "relative_to_peak": 2.2918121597741e-06
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 2,
+        "peak": 122.55819702148438,
+        "max_abs_error": 0.000118255615234375,
+        "relative_to_peak": 9.648935616574457e-07
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 3,
+        "peak": 51.910430908203125,
+        "max_abs_error": 7.009506225585938e-05,
+        "relative_to_peak": 1.3503078481435343e-06
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 4,
+        "peak": 51.910430908203125,
+        "max_abs_error": 7.009506225585938e-05,
+        "relative_to_peak": 1.3503078481435343e-06
+      },
+      {
+        "field": "cpml_psi_h_terms",
+        "leaf": 5,
+        "peak": 122.55819702148438,
+        "max_abs_error": 0.000118255615234375,
+        "relative_to_peak": 9.648935616574457e-07
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 0,
+        "peak": 0.386707067489624,
+        "max_abs_error": 4.3213367462158203e-07,
+        "relative_to_peak": 1.1174703307773832e-06
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 1,
+        "peak": 0.386707067489624,
+        "max_abs_error": 4.3213367462158203e-07,
+        "relative_to_peak": 1.1174703307773832e-06
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 2,
+        "peak": 2.90242581968414e-07,
+        "max_abs_error": 3.684273224280332e-07,
+        "relative_to_peak": 1.2693772220787636
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 3,
+        "peak": 0.34763747453689575,
+        "max_abs_error": 2.5331974029541016e-07,
+        "relative_to_peak": 7.286893929743027e-07
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 4,
+        "peak": 0.34763747453689575,
+        "max_abs_error": 2.5331974029541016e-07,
+        "relative_to_peak": 7.286893929743027e-07
+      },
+      {
+        "field": "cpml_psi_e_terms",
+        "leaf": 5,
+        "peak": 2.90242581968414e-07,
+        "max_abs_error": 3.684273224280332e-07,
+        "relative_to_peak": 1.2693772220787636
+      },
+      {
+        "field": "t",
+        "leaf": 0,
+        "peak": 7.0254394952929365e-15,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      },
+      {
+        "field": "current_step",
+        "leaf": 0,
+        "peak": 48.0,
+        "max_abs_error": 0.0,
+        "relative_to_peak": 0.0
+      }
+    ]
+  }
+]

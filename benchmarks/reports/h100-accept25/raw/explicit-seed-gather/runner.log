@@ -1,0 +1,5 @@
+START prepared-eight-z-15b-baseline 2026-09-27T10:04:37.375912+00:00
+DONE {'name': 'prepared-eight-z-15b-baseline', 'command': ['/workspace/venv/bin/python', '/workspace/fixed/scripts/benchmark_compile_capacity.py', '--shape', '10000', '1250', '1200', '--devices', '8', '--axis', 'z', '--backend', 'cuda_streamed', '--steps', '32', '--samples', '3', '--output', '/workspace/evidence/prepared-eight-z-15b-baseline.json'], 'revision': 'baseline', 'devices': 8, 'seconds': 33.41187834739685, 'returncode': 1}
+START prepared-eight-z-15b-fixed 2026-09-27T10:05:10.789044+00:00
+DONE {'name': 'prepared-eight-z-15b-fixed', 'command': ['/workspace/venv/bin/python', '/workspace/fixed/scripts/benchmark_compile_capacity.py', '--shape', '10000', '1250', '1200', '--devices', '8', '--axis', 'z', '--backend', 'cuda_streamed', '--steps', '32', '--samples', '3', '--output', '/workspace/evidence/prepared-eight-z-15b-fixed.json'], 'revision': 'fixed', 'devices': 8, 'seconds': 31.957318782806396, 'returncode': 1}
+fixed 15B prepared failed

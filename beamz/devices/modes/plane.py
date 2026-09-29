@@ -622,7 +622,7 @@ def _local_component_materials(
     eps_grid = np.asarray(permittivity)
     mu_grid = np.asarray(permeability)
     if mu_grid.ndim == 0:
-        mu_grid = np.full(eps_grid.shape, mu_grid.item(), dtype=mu_grid.dtype)
+        mu_grid = np.broadcast_to(mu_grid, eps_grid.shape)
     else:
         mu_grid = np.broadcast_to(mu_grid, eps_grid.shape)
     eps_local = eps_grid[region]

@@ -71,6 +71,7 @@ from beamz.simulation.model import (
     SimulationRequest,
     SimulationState,
 )
+from beamz.simulation.preparation_trace import trace_preparation
 from beamz.simulation.results import MonitorResults as MonitorResults
 from beamz.simulation.results import SimulationResults as SimulationResults
 from beamz.simulation.results import SimulationRun as SimulationRun
@@ -981,6 +982,7 @@ class Simulation:
             object.__setattr__(result, "coordinate_offset", preserved_offset)
         return result
 
+    @trace_preparation("material_grid")
     def _material_grid(self, *, progress: bool = False):
         """Return Design's immutable cell-centered material raster."""
         if self.material_grid is not None:
@@ -1080,6 +1082,7 @@ class Simulation:
         donate_state : bool, default=False
             Allow JAX to recycle buffers owned by ``state``. After a donating call,
             the input state must not be read or reused.
+            CUDA selects its execution schedule separately from buffer ownership.
         backend : {"auto", "jax", "cuda", "cuda_streamed"}, default="auto"
             Execution policy. ``auto`` uses the optional CUDA extension when it is
             compatible and otherwise retains the JAX implementation.
@@ -1375,6 +1378,9 @@ class Simulation:
         donate_state : bool, default=False
             Transfer ownership of the input state's device buffers to JAX. This can
             reduce peak memory, but the input state must never be used afterward.
+            CUDA keeps its fast schedule when estimated workspace fits; otherwise
+            it selects in-place execution. Set BEAMZ_CUDA_MEMORY_POLICY to
+            ``speed`` or ``capacity`` to override the default ``auto`` policy.
         backend : {"auto", "jax", "cuda", "cuda_streamed"}, default="auto"
             Execution policy. ``auto`` preserves JAX as the fallback when the
             optional CUDA runtime is not installed.

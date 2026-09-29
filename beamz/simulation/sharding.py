@@ -12,6 +12,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from beamz._region_array import RegionArray, place_region_array
 from beamz.simulation.model import (
     CpmlPackedSlabSpec,
     DerivativeMetricPlan,
@@ -19,6 +20,7 @@ from beamz.simulation.model import (
     ShardingLayout,
     ShardingPlan,
 )
+from beamz.simulation.preparation_trace import trace_preparation
 
 # Sharding may pad the high side for equal device partitions. Padding is storage-only;
 # logical component shapes remain authoritative for curls, monitors, and result crops.
@@ -233,6 +235,8 @@ def _array_ndim(arr) -> int:
 def _pad_high_to_shape(arr, shape: tuple[int, ...], *, pad_value=0.0):
     # Preserve NumPy setup arrays on the host and use the same crop/pad recipe for JAX.
     target_shape = tuple(int(v) for v in shape)
+    if isinstance(arr, RegionArray):
+        return arr.padded(target_shape, pad_value)
     xp = np if _is_host_array(arr) else jnp
     arr = xp.asarray(arr)
     if tuple(arr.shape) == target_shape:
@@ -434,6 +438,7 @@ def _array_sharding(program, arr, mesh):
     return _replicated_sharding(mesh)
 
 
+@trace_preparation("placement")
 def place_tree(program, tree, *, shard_arrays: bool = True):
     """Place one complete pytree according to the program's backend plan."""
     if not program.sharding.layout.enabled:
@@ -560,6 +565,8 @@ def _is_host_array(value):
 
 
 def _place_array(value, target):
+    if isinstance(value, RegionArray):
+        return place_region_array(value, target)
     if (
         isinstance(value, jax.Array)
         and len(value.sharding.device_set) > 1

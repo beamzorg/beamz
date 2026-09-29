@@ -1,0 +1,52 @@
+{"stage": "prepare", "seconds": 2.6483796929824166, "max_rss_bytes": 1935962112, "gpu": {"num_allocs": 101, "bytes_in_use": 19219192064, "peak_bytes_in_use": 19219193856, "largest_alloc_size": 2055689728, "bytes_limit": 22734057688, "bytes_reserved": 0, "peak_bytes_reserved": 0, "largest_free_block_bytes": 0, "pool_bytes": 22734057472, "peak_pool_bytes": 22734057472}}
+{"stage": "lower", "seconds": 0.12816910701803863, "max_rss_bytes": 2072932352, "gpu": {"num_allocs": 103, "bytes_in_use": 19219192064, "peak_bytes_in_use": 19219193856, "largest_alloc_size": 2055689728, "bytes_limit": 22734057688, "bytes_reserved": 0, "peak_bytes_reserved": 0, "largest_free_block_bytes": 0, "pool_bytes": 22734057472, "peak_pool_bytes": 22734057472}}
+W0927 09:12:13.113135  882213 bfc_allocator.cc:502] Allocator (GPU_0_bfc) ran out of memory trying to allocate 1.91GiB (rounded to 2053123328)requested by op 
+If the cause is memory fragmentation maybe the environment variable 'TF_GPU_ALLOCATOR=cuda_malloc_async' will improve the situation. 
+Current allocation summary follows.
+Current allocation summary follows.
+W0927 09:12:13.113218  882213 bfc_allocator.cc:513] **********************************************************************************************______
+W0927 09:12:13.113236  882213 autotuner.cc:531] No reference output found even though buffer checking was requested while autotuning
+W0927 09:12:23.113265  882213 bfc_allocator.cc:502] Allocator (GPU_0_bfc) ran out of memory trying to allocate 1.91GiB (rounded to 2053123328)requested by op 
+If the cause is memory fragmentation maybe the environment variable 'TF_GPU_ALLOCATOR=cuda_malloc_async' will improve the situation. 
+Current allocation summary follows.
+Current allocation summary follows.
+W0927 09:12:23.113332  882213 bfc_allocator.cc:513] **********************************************************************************************______
+W0927 09:12:33.136867  882213 bfc_allocator.cc:502] Allocator (GPU_0_bfc) ran out of memory trying to allocate 1.91GiB (rounded to 2053123328)requested by op 
+If the cause is memory fragmentation maybe the environment variable 'TF_GPU_ALLOCATOR=cuda_malloc_async' will improve the situation. 
+Current allocation summary follows.
+Current allocation summary follows.
+W0927 09:12:33.136955  882213 bfc_allocator.cc:513] **********************************************************************************************______
+{"stage": "compile_failed", "seconds": 30.15906795603223, "max_rss_bytes": 2095771648, "gpu": {"num_allocs": 104, "bytes_in_use": 19219192064, "peak_bytes_in_use": 21289092608, "largest_alloc_size": 2069900544, "bytes_limit": 22734057688, "bytes_reserved": 0, "peak_bytes_reserved": 0, "largest_free_block_bytes": 0, "pool_bytes": 22734057472, "peak_pool_bytes": 22734057472}}
+Traceback (most recent call last):
+  File "/home/quentinwach/beamz/beamz-capacity-fix/scripts/benchmark_compile_capacity.py", line 313, in <module>
+    main()
+  File "/home/quentinwach/beamz/beamz-capacity-fix/scripts/benchmark_compile_capacity.py", line 249, in main
+    exe = lowered.compile()
+          ^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/stages.py", line 599, in compile
+    self._lowering.compile(**kw),  # pytype: disable=wrong-keyword-args
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/interpreters/pxla.py", line 2510, in compile
+    executable = UnloadedMeshExecutable.from_hlo(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/interpreters/pxla.py", line 3056, in from_hlo
+    xla_executable = _cached_compilation(
+                     ^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/interpreters/pxla.py", line 2837, in _cached_compilation
+    xla_executable = compiler.compile_or_get_cached(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/compiler.py", line 478, in compile_or_get_cached
+    return _compile_and_write_cache(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/compiler.py", line 746, in _compile_and_write_cache
+    executable = backend_compile_and_load(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/profiler.py", line 359, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/compiler.py", line 372, in backend_compile_and_load
+    raise e
+  File "/home/quentinwach/beamz/beamz-h100-dev/.venv/lib/python3.11/site-packages/jax/_src/compiler.py", line 362, in backend_compile_and_load
+    return backend.compile_and_load(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+jax.errors.JaxRuntimeError: INTERNAL: Autotuning failed for HLO: %input_transpose_fusion.11 = f32[800,801,801]{2,1,0} fusion(%get-tuple-element.475.0), kind=kInput, calls=%fused_transpose.11 with error: NOT_FOUND: No valid config found!
