@@ -1,5 +1,6 @@
 import gc
 import weakref
+from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import FrozenInstanceError, dataclass, is_dataclass, replace
 from inspect import signature
@@ -560,6 +561,10 @@ def test_setup_device_policy_is_immutable_and_replaceable():
 
 
 def test_compile_uses_resolved_setup_device_context(monkeypatch):
+    from beamz.simulation import compile as compile_module
+
+    # Restore the real cache after testing with an opaque fake compiler product.
+    monkeypatch.setattr(compile_module, "_PROGRAM_CACHE", OrderedDict())
     sim = _simulation(setup_device="cpu")
     active = {"value": False}
     program = object()

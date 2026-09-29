@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import importlib
 import inspect
+from collections import OrderedDict
 from contextlib import nullcontext
 from dataclasses import FrozenInstanceError, is_dataclass
 
@@ -449,9 +450,11 @@ def _program_key(sim, *, num_steps=2):
     )
 
 
-def test_compiled_program_cache_is_bounded_and_uses_lru_order():
+def test_compiled_program_cache_is_bounded_and_uses_lru_order(monkeypatch):
     from beamz.simulation import compile as compile_module
 
+    # Fake compiler products must never leak into subsequent real compilations.
+    monkeypatch.setattr(compile_module, "_PROGRAM_CACHE", OrderedDict())
     sim, _ = _make_2d_sim(plane_2d="xy", steps=6)
     sim.clear_compiled_cache()
     built = []
