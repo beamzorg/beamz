@@ -610,7 +610,7 @@ def crop_component(program, component: str, value):
         )
         for axis in axes:
             if shape[axis] > 0 and shape[axis] % layout.num_devices == 0:
-                spec = [None] * len(shape)
+                spec: list[str | None] = [None] * len(shape)
                 spec[axis] = _MESH_AXIS
                 sharding = jax.sharding.NamedSharding(
                     program.sharding.mesh, jax.sharding.PartitionSpec(*spec)

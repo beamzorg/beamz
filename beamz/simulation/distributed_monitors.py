@@ -1,6 +1,7 @@
 """Accumulate linear DFT contributions locally; reduce at the scan boundary."""
 
 from functools import partial
+from typing import cast
 
 import jax
 import jax.numpy as jnp
@@ -47,7 +48,9 @@ def scan_local_dft(state, program, *, assemble=False):
     """
 
     def distribute(value):
-        return jnp.where(jax.lax.axis_index(_AXIS) == 0, value, 0)[None, :]
+        return cast(jax.Array, jnp.where(jax.lax.axis_index(_AXIS) == 0, value, 0))[
+            None, :
+        ]
 
     def collect(value):
         return jax.lax.psum(value[0], _AXIS)

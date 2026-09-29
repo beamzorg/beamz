@@ -131,7 +131,7 @@ def compile_metallic_masks(
     *,
     polarization_2d: str = "tm",
     region_setup=False,
-) -> dict[str, jnp.ndarray]:
+) -> dict[str, jnp.ndarray | SeparableMask]:
     """Compile boundary specifications into component-aligned PEC masks."""
     masks = (
         {}

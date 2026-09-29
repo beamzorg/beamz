@@ -44,7 +44,9 @@ def test_sharded_mode_source_workspace_is_smaller_than_one_field(monkeypatch):
     workspace = []
     for candidate in (program, replace(program, sources=())):
         executable = (
-            build_scan(candidate, donate_state=True).lower(state, coefficients).compile()
+            build_scan(candidate, donate_state=True)
+            .lower(state, coefficients)
+            .compile()
         )
         workspace.append(executable.memory_analysis().temp_size_in_bytes)
     # The failing 15B lowering introduced two complete local field buffers.

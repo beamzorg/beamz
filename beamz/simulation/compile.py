@@ -623,7 +623,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     )
     region_setup = (
         early_sharding.layout.enabled
-        and not jax.config.x64_enabled
+        and not jax.config.read("jax_enable_x64")
         and request.domain.is_3d
         and not request.materials.uses_full_permittivity
         and all(getattr(b, "formulation", "cpml") == "cpml" for b in request.boundaries)

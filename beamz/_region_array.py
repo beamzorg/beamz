@@ -105,7 +105,7 @@ class RegionArray:
 
         return jnp.asarray(np.asarray(self))
 
-    def padded(self, shape, fill=0):
+    def padded(self, shape, fill: float = 0):
         shape = tuple(shape)
         if shape == self.shape:
             return self
@@ -168,6 +168,8 @@ def place_region_array(value, target):
 class SeparableMask(RegionArray):
     """Boolean wall masks stored as short axis profiles, including padding."""
 
+    profiles: tuple[np.ndarray, ...]
+
     def __init__(self, profiles):
         profiles = tuple(np.asarray(p, dtype=bool) for p in profiles)
         shape = tuple(p.size for p in profiles)
@@ -182,7 +184,7 @@ class SeparableMask(RegionArray):
                 result |= profile[part].reshape(view)
             return result
 
-        super().__init__(shape, np.bool_, read)
+        super().__init__(shape, np.dtype(bool), read)
         object.__setattr__(self, "profiles", profiles)
 
     def padded(self, shape, fill=False):

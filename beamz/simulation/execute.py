@@ -600,16 +600,19 @@ def forward_step(
     if cfg.backend == "jax" and cfg.is_3d and not cfg.sharding.enabled:
         # Keep a common field layout across scan iterations. Recent JAX can
         # otherwise choose conflicting stencil/monitor layouts and insert copies.
-        # Older supported JAX releases retain their automatic layout selection.
+        # JAX < 0.7 names the device-local type DeviceLocalLayout; its Layout
+        # pairs a device-local layout with sharding instead.
         try:
-            from jax.experimental.layout import Layout, with_layout_constraint
+            from jax.experimental import layout
+            from jax.experimental.layout import with_layout_constraint
         except ImportError:
             pass
         else:
+            layout_type = getattr(layout, "DeviceLocalLayout", layout.Layout)
             state = state._replace(
                 **{
                     name: with_layout_constraint(
-                        getattr(state, name), Layout((0, 1, 2))
+                        getattr(state, name), layout_type((0, 1, 2))
                     )
                     for name in ("ex", "ey", "ez", "hx", "hy", "hz")
                 }

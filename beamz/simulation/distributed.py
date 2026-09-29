@@ -64,7 +64,7 @@ def _owned_psi(value, term, *, axis, origin, extent, logical_shape):
         shape = [1, 1, 1]
         shape[d] = size
         mask = mask & valid.reshape(shape)
-    return jnp.where(mask, value, jnp.zeros_like(value))
+    return cast(jax.Array, jnp.where(mask, value, jnp.zeros_like(value)))
 
 
 def scan_local_cpml(state, program, *, assemble=False):

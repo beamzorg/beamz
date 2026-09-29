@@ -4,6 +4,7 @@ import json
 from argparse import Namespace
 
 import numpy as np
+import pytest
 
 from scripts import benchmark_cosine_h100 as benchmark
 
@@ -71,12 +72,13 @@ def test_refinement_preserves_physical_workload_and_lifts_grid_budget():
         )
 
 
-def test_trial_refuses_stale_results(tmp_path):
-    import pytest
-
-    target = tmp_path / "throughput-cuda_streamed-36nm.json"
+@pytest.mark.parametrize("devices, suffix", [(1, ""), (8, "-8gpu-z")])
+def test_trial_refuses_stale_results(tmp_path, devices, suffix):
+    target = tmp_path / f"throughput-cuda_streamed-36nm{suffix}.json"
     target.write_text('{"status": "ok", "gcups": 999}')
-    args = Namespace(output_dir=tmp_path, backend="cuda_streamed")
+    args = Namespace(
+        output_dir=tmp_path, backend="cuda_streamed", devices=devices, shard_axis="z"
+    )
     with pytest.raises(FileExistsError, match="fresh output directory"):
         benchmark.trial(args, 36)
     assert json.loads(target.read_text())["gcups"] == 999

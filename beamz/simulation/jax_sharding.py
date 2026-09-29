@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import cast
 
 import jax
 import jax.numpy as jnp
@@ -125,14 +126,17 @@ def _phase(state, ctx, coeffs, *, phase):
                     derivative_axis
                 ]
                 if phase == 0:
-                    derivative = jnp.where(coordinate + 1 < source_stop, derivative, 0)
+                    derivative = cast(
+                        jax.Array,
+                        jnp.where(coordinate + 1 < source_stop, derivative, 0),
+                    )
                 else:
                     allowed = (coordinate > 0) & (coordinate < source_stop)
                     if _EDGES[derivative_axis][0] in edges:
                         allowed = allowed | (coordinate == 0)
                     if _EDGES[derivative_axis][1] in edges:
                         allowed = allowed | (coordinate == source_stop)
-                    derivative = jnp.where(allowed, derivative, 0)
+                    derivative = cast(jax.Array, jnp.where(allowed, derivative, 0))
                 term_index = 2 * component + which
                 term = terms[term_index]
                 memory = (
@@ -141,10 +145,13 @@ def _phase(state, ctx, coeffs, *, phase):
                     else memories[term_index]
                 )
                 packed = jnp.arange(term.slab.low + term.slab.high)
-                global_positions = jnp.where(
-                    packed < term.slab.low,
-                    packed,
-                    physical[term.axis] - term.slab.high + packed - term.slab.low,
+                global_positions = cast(
+                    jax.Array,
+                    jnp.where(
+                        packed < term.slab.low,
+                        packed,
+                        physical[term.axis] - term.slab.high + packed - term.slab.low,
+                    ),
                 )
                 indices = global_positions - (origin if term.axis == axis else 0)
                 owned = (indices >= 0) & (indices < shape[term.axis])
@@ -152,14 +159,15 @@ def _phase(state, ctx, coeffs, *, phase):
                 reshape[term.axis] = len(packed)
                 selected = jnp.take(derivative, indices, axis=term.axis, mode="clip")
                 a, b, inv_kappa = profiles[3 * term_index : 3 * term_index + 3]
-                next_memory = jnp.where(
-                    owned.reshape(reshape), b * memory + a * selected, 0
+                next_memory = cast(
+                    jax.Array,
+                    jnp.where(owned.reshape(reshape), b * memory + a * selected, 0),
                 ).astype(memory.dtype)
                 correction = selected * (inv_kappa - 1) + next_memory
                 # Positive out-of-range indices are dropped; negative indices must
                 # never wrap around and modify the opposite physical boundary.
-                indices = jnp.where(owned, indices, shape[term.axis])
-                index = [slice(None)] * 3
+                indices = cast(jax.Array, jnp.where(owned, indices, shape[term.axis]))
+                index: list[slice | jax.Array] = [slice(None)] * 3
                 index[term.axis] = indices
                 derivative = derivative.at[tuple(index)].add(correction, mode="drop")
                 curl = curl + term.sign * derivative

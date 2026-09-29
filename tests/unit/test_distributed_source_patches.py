@@ -7,7 +7,7 @@ import textwrap
 
 
 def test_local_source_patches_match_global_updates_on_every_axis():
-    code = r'''
+    code = r"""
 from types import SimpleNamespace
 import jax
 import jax.numpy as jnp
@@ -44,7 +44,7 @@ for axis in range(3):
         result = inject(jax.device_put(original, target), jnp.int32(step))
         np.testing.assert_array_equal(result, expected)
         assert len(result.sharding.device_set) == 2
-'''
+"""
     subprocess.run(
         [sys.executable, "-c", textwrap.dedent(code)],
         env={

@@ -316,7 +316,7 @@ def compile_monitor_specs(
                 signs.append(float(sign))
 
             shapes: list[tuple[int, ...]] = []
-            interp_indices: list[jnp.ndarray] = []
+            interp_indices: list[jnp.ndarray | np.ndarray] = []
             interp_weights: list[jnp.ndarray] = []
             sample_region = None
             if monitor.region == "domain":

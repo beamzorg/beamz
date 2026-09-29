@@ -11,6 +11,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from beamz._region_array import RegionArray
 from beamz.design.discretization import MaterialGrid
 from beamz.design.grid import RectilinearGrid
 from beamz.devices._immutable import immutable_snapshot
@@ -274,31 +275,31 @@ class SimulationState(NamedTuple):
 # The compiler plans below are values in the same lifecycle as SimulationRequest and
 # SimulationState. Keeping them here removes the former second, compiled-only type model.
 class UpdateCoefficients(NamedTuple):
-    h_decay_x: jnp.ndarray
-    h_source_x: jnp.ndarray
-    h_sigma_m_x: jnp.ndarray
-    h_decay_y: jnp.ndarray
-    h_source_y: jnp.ndarray
-    h_sigma_m_y: jnp.ndarray
-    h_decay_z: jnp.ndarray
-    h_source_z: jnp.ndarray
-    h_sigma_m_z: jnp.ndarray
-    e_decay_x: jnp.ndarray
-    e_source_x: jnp.ndarray
-    e_conductivity_x: jnp.ndarray
-    e_permittivity_x: jnp.ndarray
-    e_inverse_diagonal_x: jnp.ndarray
-    e_decay_y: jnp.ndarray
-    e_source_y: jnp.ndarray
-    e_conductivity_y: jnp.ndarray
-    e_permittivity_y: jnp.ndarray
-    e_inverse_diagonal_y: jnp.ndarray
-    e_decay_z: jnp.ndarray
-    e_source_z: jnp.ndarray
-    e_conductivity_z: jnp.ndarray
-    e_permittivity_z: jnp.ndarray
-    e_inverse_diagonal_z: jnp.ndarray
-    e_inverse_offdiagonal: jnp.ndarray
+    h_decay_x: jax.Array | np.ndarray | RegionArray
+    h_source_x: jax.Array | np.ndarray | RegionArray
+    h_sigma_m_x: jax.Array | np.ndarray | RegionArray
+    h_decay_y: jax.Array | np.ndarray | RegionArray
+    h_source_y: jax.Array | np.ndarray | RegionArray
+    h_sigma_m_y: jax.Array | np.ndarray | RegionArray
+    h_decay_z: jax.Array | np.ndarray | RegionArray
+    h_source_z: jax.Array | np.ndarray | RegionArray
+    h_sigma_m_z: jax.Array | np.ndarray | RegionArray
+    e_decay_x: jax.Array | np.ndarray | RegionArray
+    e_source_x: jax.Array | np.ndarray | RegionArray
+    e_conductivity_x: jax.Array | np.ndarray | RegionArray
+    e_permittivity_x: jax.Array | np.ndarray | RegionArray
+    e_inverse_diagonal_x: jax.Array | np.ndarray | RegionArray
+    e_decay_y: jax.Array | np.ndarray | RegionArray
+    e_source_y: jax.Array | np.ndarray | RegionArray
+    e_conductivity_y: jax.Array | np.ndarray | RegionArray
+    e_permittivity_y: jax.Array | np.ndarray | RegionArray
+    e_inverse_diagonal_y: jax.Array | np.ndarray | RegionArray
+    e_decay_z: jax.Array | np.ndarray | RegionArray
+    e_source_z: jax.Array | np.ndarray | RegionArray
+    e_conductivity_z: jax.Array | np.ndarray | RegionArray
+    e_permittivity_z: jax.Array | np.ndarray | RegionArray
+    e_inverse_diagonal_z: jax.Array | np.ndarray | RegionArray
+    e_inverse_offdiagonal: jax.Array | np.ndarray | RegionArray
 
 
 class DerivativeMetricPlan(NamedTuple):

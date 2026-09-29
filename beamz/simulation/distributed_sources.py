@@ -1,6 +1,7 @@
 """Inject each slab source only on the ranks intersecting its physical support."""
 
 from functools import partial
+from typing import cast
 
 import jax
 import jax.numpy as jnp
@@ -85,8 +86,11 @@ def apply_batched_slabs(value, abs_step, group, plan):
             positions = origin + local_start + jnp.arange(width) - start[axis]
             valid = (positions >= 0) & (positions < group.max_sizes[axis])
             patch = jnp.take(coefficients[source], positions, axis=axis, mode="clip")
-            addition = jnp.where(
-                valid.reshape(broadcast), patch * waveforms[source, safe_step], 0
+            addition = cast(
+                jax.Array,
+                jnp.where(
+                    valid.reshape(broadcast), patch * waveforms[source, safe_step], 0
+                ),
             )
             target = list(start)
             target[axis] = local_start
@@ -104,15 +108,21 @@ def apply_batched_slabs(value, abs_step, group, plan):
             # then needs the original layout too. Linear indices keep the patch
             # update in the field's existing row-major storage without those
             # full-volume layout buffers.
-            flat_indices = 0
+            flat_indices = jnp.asarray(0, dtype=jnp.int32)
             stride = 1
             for dim in reversed(range(local.ndim)):
                 index_shape = [1] * local.ndim
                 index_shape[dim] = patch_shape[dim]
-                flat_indices = flat_indices + (
-                    target[dim]
-                    + jnp.arange(patch_shape[dim], dtype=jnp.int32).reshape(index_shape)
-                ) * stride
+                flat_indices = (
+                    flat_indices
+                    + (
+                        target[dim]
+                        + jnp.arange(patch_shape[dim], dtype=jnp.int32).reshape(
+                            index_shape
+                        )
+                    )
+                    * stride
+                )
                 stride *= local.shape[dim]
             local = (
                 local.reshape(-1)

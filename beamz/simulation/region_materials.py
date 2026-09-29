@@ -41,7 +41,7 @@ def sample_material(grid, component, shape):
                 values = np.take(values, hi, axis=axis)
         return values
 
-    return RegionArray(tuple(shape), np.float32, read)
+    return RegionArray(tuple(shape), np.dtype(np.float32), read)
 
 
 def mapped_material(shape, function, *values):
@@ -49,7 +49,7 @@ def mapped_material(shape, function, *values):
         return np.asarray(function(*values), dtype=np.float32)
     return RegionArray(
         tuple(shape),
-        np.float32,
+        np.dtype(np.float32),
         lambda region: function(*(v if v.ndim == 0 else v[region] for v in values)),
     )
 
