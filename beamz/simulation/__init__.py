@@ -19,6 +19,15 @@ from beamz.simulation.core import (
     Simulation,
     SimulationResults,
 )
+from beamz.simulation.fit import (
+    FITCurrentSource,
+    FITInterfaceMaterial,
+    FITResults,
+    FITSimulation,
+    FITState,
+    PlanarDielectricInterface,
+    UniformFITMesh,
+)
 from beamz.simulation.specs import BoundarySpec, GaussianPulse, GridSpec, ModeSpec, inf
 from beamz.simulation.yee import (
     component_coordinates_3d_um,
@@ -30,6 +39,13 @@ from beamz.simulation.yee import (
 __all__ = [
     "RegularGrid",
     "Simulation",
+    "FITSimulation",
+    "FITCurrentSource",
+    "FITInterfaceMaterial",
+    "PlanarDielectricInterface",
+    "FITResults",
+    "FITState",
+    "UniformFITMesh",
     "Port",
     "PortSpec",
     "MonitorResults",

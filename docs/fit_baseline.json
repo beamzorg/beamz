@@ -1,0 +1,123 @@
+{
+  "recorded_at_utc": "2026-09-30T13:12:26.970711+00:00",
+  "source_revision": "65b1adaf432edb67156b4dd98406483d020fdc24",
+  "source_note": "Existing FDTD physics code is unchanged. FIT and import additions are working-tree changes, not included in source_revision. Initial checkout already had dependency changes.",
+  "dependency_file_sha256": {
+    "pyproject.toml": "03e94d144a68f109991330cb0c82bce28aee321b44a2bd82fa0ca4fdbe08c57b",
+    "uv.lock": "7aaefddde178a2d39e3843070004cb1b3a234b61448b3be97f25f1edee13c9f0"
+  },
+  "environment": {
+    "python": "3.11.15",
+    "platform": "Linux-7.1.5-76070105-generic-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "processor": "x86_64",
+    "versions": {
+      "beamz": "0.3.1",
+      "jax": "0.9.0",
+      "jaxlib": "0.9.0",
+      "numpy": "2.4.1",
+      "scipy": "1.17.0",
+      "micromode": "0.1.0a5",
+      "pytest": "9.1.1",
+      "pytest-cov": "7.1.0"
+    },
+    "jax_backend": "cpu",
+    "devices": [
+      "TFRT_CPU_0"
+    ],
+    "jax_enable_x64": false
+  },
+  "tests": {
+    "tests": 177,
+    "passed": 177,
+    "skipped": 0,
+    "failures": [],
+    "seconds": 201.417,
+    "selector": "(unit or component or optimization) and not slow and not characterization and not pdk",
+    "fit_tests_excluded": true,
+    "imported_junit": true,
+    "reproduce": "JAX_PLATFORMS=cpu MPLBACKEND=Agg .venv/bin/python scripts/record_fit_baseline.py --platform cpu"
+  },
+  "benchmarks": [
+    {
+      "backend": "fdtd",
+      "cell_shape": [
+        48,
+        64
+      ],
+      "spacing_m": 1e-06,
+      "dt_s": 2.475373608165038e-15,
+      "steps_per_run": 64,
+      "permittivity": 2.25,
+      "boundary": "all PEC",
+      "precision": "float32",
+      "record_fields": false,
+      "first_run_seconds": 1.088750760005496,
+      "warm_run_seconds": 0.002181445997848641,
+      "cell_steps_per_second": 90127374.31680469,
+      "comparison": "Same cells/material/timestep; native field storage and seed sampling differ. Timing only, not an accuracy comparison."
+    },
+    {
+      "backend": "fit",
+      "cell_shape": [
+        48,
+        64
+      ],
+      "spacing_m": 1e-06,
+      "dt_s": 2.475373608165038e-15,
+      "steps_per_run": 64,
+      "permittivity": 2.25,
+      "boundary": "all PEC",
+      "precision": "float32",
+      "record_fields": false,
+      "first_run_seconds": 0.14492269299807958,
+      "warm_run_seconds": 0.0004674019946833141,
+      "cell_steps_per_second": 420640053.39389014,
+      "comparison": "Same cells/material/timestep; native field storage and seed sampling differ. Timing only, not an accuracy comparison."
+    },
+    {
+      "backend": "fdtd",
+      "cell_shape": [
+        16,
+        20,
+        24
+      ],
+      "spacing_m": 1e-06,
+      "dt_s": 2.0211340875854828e-15,
+      "steps_per_run": 64,
+      "permittivity": 2.25,
+      "boundary": "all PEC",
+      "precision": "float32",
+      "record_fields": false,
+      "first_run_seconds": 2.0851533640015987,
+      "warm_run_seconds": 0.0037504009960684925,
+      "cell_steps_per_second": 131057985.6701338,
+      "comparison": "Same cells/material/timestep; native field storage and seed sampling differ. Timing only, not an accuracy comparison."
+    },
+    {
+      "backend": "fit",
+      "cell_shape": [
+        16,
+        20,
+        24
+      ],
+      "spacing_m": 1e-06,
+      "dt_s": 2.0211340875854828e-15,
+      "steps_per_run": 64,
+      "permittivity": 2.25,
+      "boundary": "all PEC",
+      "precision": "float32",
+      "record_fields": false,
+      "first_run_seconds": 0.10539452400553273,
+      "warm_run_seconds": 0.0014427300047827885,
+      "cell_steps_per_second": 340687445.5861901,
+      "comparison": "Same cells/material/timestep; native field storage and seed sampling differ. Timing only, not an accuracy comparison."
+    }
+  ],
+  "limits": [
+    "CPU results only; GPU performance was not measured.",
+    "One first run and one warm run per case; timings are descriptive, not statistical performance claims.",
+    "Full integration/characterization suite and coverage were not run.",
+    "The pre-FIT gate selected 177 tests and deselected 383; subsequent collection counts can change."
+  ]
+}

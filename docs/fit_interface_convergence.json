@@ -1,0 +1,1677 @@
+{
+  "environment": {
+    "python": "3.11.15",
+    "jax": "0.9.0",
+    "backend": "gpu",
+    "devices": [
+      "cuda:0"
+    ],
+    "precision": "float64"
+  },
+  "problem": "Unit-square PEC TE cavity, nonmagnetic epsilon=2/12, exact planar interfaces",
+  "reference": "Independent body-fitted P1 triangle FEM with consistent mass and Neumann Hz boundaries",
+  "reference_resolutions": [
+    96,
+    144
+  ],
+  "records": [
+    {
+      "angle_deg": 0,
+      "offset_m": 0.43,
+      "cells_per_axis": 12,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0365533624822627,
+        1.1350350768033377,
+        1.93842727814633
+      ],
+      "reference_omega_over_c0": [
+        1.0501747143734372,
+        1.14770874548521,
+        1.965183903458468
+      ],
+      "relative_frequency_error": [
+        0.012970557855510156,
+        0.011042582651502153,
+        0.01361532895982387
+      ],
+      "reference_relative_drift": [
+        2.273866114155254e-05,
+        5.3729064311891506e-05,
+        0.00014308396404794088
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.26997069000208285,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.43,
+      "cells_per_axis": 12,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.0498868006395825,
+        1.1424569671945095,
+        1.9444389121857215
+      ],
+      "reference_omega_over_c0": [
+        1.0501747143734372,
+        1.14770874548521,
+        1.965183903458468
+      ],
+      "relative_frequency_error": [
+        0.00027415793764040686,
+        0.004575880693912571,
+        0.010556259511508292
+      ],
+      "reference_relative_drift": [
+        2.273866114155254e-05,
+        5.3729064311891506e-05,
+        0.00014308396404794088
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.07129396299569635,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.43,
+      "cells_per_axis": 12,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0498868006395998,
+        1.1464680097927853,
+        1.9482834036901677
+      ],
+      "reference_omega_over_c0": [
+        1.0501747143734372,
+        1.14770874548521,
+        1.965183903458468
+      ],
+      "relative_frequency_error": [
+        0.00027415793762386453,
+        0.0010810544899177987,
+        0.008599958374662764
+      ],
+      "reference_relative_drift": [
+        2.273866114155254e-05,
+        5.3729064311891506e-05,
+        0.00014308396404794088
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 1.357599629998731,
+      "relative_symmetry_defect": 1.2335811384723961e-17
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.43,
+      "cells_per_axis": 20,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0688896952603926,
+        1.16104488840197,
+        1.967828102032375
+      ],
+      "reference_omega_over_c0": [
+        1.0501747143734372,
+        1.14770874548521,
+        1.965183903458468
+      ],
+      "relative_frequency_error": [
+        0.017820826030953585,
+        0.011619797243177743,
+        0.0013455222024023605
+      ],
+      "reference_relative_drift": [
+        2.273866114155254e-05,
+        5.3729064311891506e-05,
+        0.00014308396404794088
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.22969478499726392,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.43,
+      "cells_per_axis": 20,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.0505862056192432,
+        1.1431959426902543,
+        1.95661339508608
+      ],
+      "reference_omega_over_c0": [
+        1.0501747143734372,
+        1.14770874548521,
+        1.965183903458468
+      ],
+      "relative_frequency_error": [
+        0.00039183122596075926,
+        0.00393201046233016,
+        0.004361173708630983
+      ],
+      "reference_relative_drift": [
+        2.273866114155254e-05,
+        5.3729064311891506e-05,
+        0.00014308396404794088
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.08794899899658049,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.43,
+      "cells_per_axis": 20,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.050586205619223,
+        1.1476401236015732,
+        1.9592380940719503
+      ],
+      "reference_omega_over_c0": [
+        1.0501747143734372,
+        1.14770874548521,
+        1.965183903458468
+      ],
+      "relative_frequency_error": [
+        0.0003918312259416634,
+        5.9790329128950326e-05,
+        0.0030255740320556113
+      ],
+      "reference_relative_drift": [
+        2.273866114155254e-05,
+        5.3729064311891506e-05,
+        0.00014308396404794088
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 1.9572007770038908,
+      "relative_symmetry_defect": 8.881784197001254e-18
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.43,
+      "cells_per_axis": 28,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0485259626293182,
+        1.1460091344852783,
+        1.960531084965348
+      ],
+      "reference_omega_over_c0": [
+        1.0501747143734372,
+        1.14770874548521,
+        1.965183903458468
+      ],
+      "relative_frequency_error": [
+        0.0015699785202910599,
+        0.0014808730931236136,
+        0.002367624976436944
+      ],
+      "reference_relative_drift": [
+        2.273866114155254e-05,
+        5.3729064311891506e-05,
+        0.00014308396404794088
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.2936030019991449,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.43,
+      "cells_per_axis": 28,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.049928011249863,
+        1.1468121185887803,
+        1.961146957472025
+      ],
+      "reference_omega_over_c0": [
+        1.0501747143734372,
+        1.14770874548521,
+        1.965183903458468
+      ],
+      "relative_frequency_error": [
+        0.0002349162669770255,
+        0.0007812320851929844,
+        0.0020542331836417294
+      ],
+      "reference_relative_drift": [
+        2.273866114155254e-05,
+        5.3729064311891506e-05,
+        0.00014308396404794088
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.08472755399998277,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.43,
+      "cells_per_axis": 28,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0499280112499472,
+        1.147129817981986,
+        1.961395791192309
+      ],
+      "reference_omega_over_c0": [
+        1.0501747143734372,
+        1.14770874548521,
+        1.965183903458468
+      ],
+      "relative_frequency_error": [
+        0.0002349162668968674,
+        0.0005044202246443641,
+        0.0019276120975204591
+      ],
+      "reference_relative_drift": [
+        2.273866114155254e-05,
+        5.3729064311891506e-05,
+        0.00014308396404794088
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 2.640491051999561,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.47,
+      "cells_per_axis": 12,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.1239343051134305,
+        1.2005965472535558,
+        1.9850478799526934
+      ],
+      "reference_omega_over_c0": [
+        1.0907749418864932,
+        1.1782952075845574,
+        1.9866406802327532
+      ],
+      "relative_frequency_error": [
+        0.030399821222137913,
+        0.018926784667753216,
+        0.0008017555947124055
+      ],
+      "reference_relative_drift": [
+        2.4884579807649132e-05,
+        5.716590661464238e-05,
+        0.00014936187159664271
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.05603893800434889,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.47,
+      "cells_per_axis": 12,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.0914469091498782,
+        1.1688567730578425,
+        1.9648996190176264
+      ],
+      "reference_omega_over_c0": [
+        1.0907749418864932,
+        1.1782952075845574,
+        1.9866406802327532
+      ],
+      "relative_frequency_error": [
+        0.0006160457465431701,
+        0.00801024604527012,
+        0.010943630336100685
+      ],
+      "reference_relative_drift": [
+        2.4884579807649132e-05,
+        5.716590661464238e-05,
+        0.00014936187159664271
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.05588815699593397,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.47,
+      "cells_per_axis": 12,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0914469091499035,
+        1.1780770545571775,
+        1.97067260517033
+      ],
+      "reference_omega_over_c0": [
+        1.0907749418864932,
+        1.1782952075845574,
+        1.9866406802327532
+      ],
+      "relative_frequency_error": [
+        0.0006160457465662628,
+        0.00018514293020599482,
+        0.008037726812556989
+      ],
+      "reference_relative_drift": [
+        2.4884579807649132e-05,
+        5.716590661464238e-05,
+        0.00014936187159664271
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.7062802789951093,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.47,
+      "cells_per_axis": 20,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0688896952603926,
+        1.16104488840197,
+        1.967828102032375
+      ],
+      "reference_omega_over_c0": [
+        1.0907749418864932,
+        1.1782952075845574,
+        1.9866406802327532
+      ],
+      "relative_frequency_error": [
+        0.02006394333578121,
+        0.014640065640213917,
+        0.00946954242282716
+      ],
+      "reference_relative_drift": [
+        2.4884579807649132e-05,
+        5.716590661464238e-05,
+        0.00014936187159664271
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.06623341100203106,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.47,
+      "cells_per_axis": 20,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.0910690935292038,
+        1.1741088274741802,
+        1.9780917318576061
+      ],
+      "reference_omega_over_c0": [
+        1.0907749418864932,
+        1.1782952075845574,
+        1.9866406802327532
+      ],
+      "relative_frequency_error": [
+        0.00026967216738760236,
+        0.0035529127874152078,
+        0.004303218221699545
+      ],
+      "reference_relative_drift": [
+        2.4884579807649132e-05,
+        5.716590661464238e-05,
+        0.00014936187159664271
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.07198008200066397,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.47,
+      "cells_per_axis": 20,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0910690935291911,
+        1.1783800793656827,
+        1.9812207681621483
+      ],
+      "reference_omega_over_c0": [
+        1.0907749418864932,
+        1.1782952075845574,
+        1.9866406802327532
+      ],
+      "relative_frequency_error": [
+        0.00026967216737605604,
+        7.202930180727485e-05,
+        0.0027281793454314585
+      ],
+      "reference_relative_drift": [
+        2.4884579807649132e-05,
+        5.716590661464238e-05,
+        0.00014936187159664271
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 1.269227001001127,
+      "relative_symmetry_defect": 1.7763568394002508e-17
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.47,
+      "cells_per_axis": 28,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0841427701526363,
+        1.1728861546886507,
+        1.979325410130185
+      ],
+      "reference_omega_over_c0": [
+        1.0907749418864932,
+        1.1782952075845574,
+        1.9866406802327532
+      ],
+      "relative_frequency_error": [
+        0.0060802384425759914,
+        0.004590575316855472,
+        0.0036822311026628585
+      ],
+      "reference_relative_drift": [
+        2.4884579807649132e-05,
+        5.716590661464238e-05,
+        0.00014936187159664271
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.08408161000261316,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.47,
+      "cells_per_axis": 28,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.0906833314990834,
+        1.1766565718361304,
+        1.9822896818565325
+      ],
+      "reference_omega_over_c0": [
+        1.0907749418864932,
+        1.1782952075845574,
+        1.9866406802327532
+      ],
+      "relative_frequency_error": [
+        8.398651627561371e-05,
+        0.0013906835382841987,
+        0.002190128501602495
+      ],
+      "reference_relative_drift": [
+        2.4884579807649132e-05,
+        5.716590661464238e-05,
+        0.00014936187159664271
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.06998140599898761,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 0,
+      "offset_m": 0.47,
+      "cells_per_axis": 28,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0906833314992201,
+        1.1779950159295576,
+        1.9833364324995282
+      ],
+      "reference_omega_over_c0": [
+        1.0907749418864932,
+        1.1782952075845574,
+        1.9866406802327532
+      ],
+      "relative_frequency_error": [
+        8.398651615026953e-05,
+        0.0002547677806610249,
+        0.0016632337020491272
+      ],
+      "reference_relative_drift": [
+        2.4884579807649132e-05,
+        5.716590661464238e-05,
+        0.00014936187159664271
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 1.6646472720021848,
+      "relative_symmetry_defect": 1.8126090197961738e-17
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.65,
+      "cells_per_axis": 12,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0598848178520326,
+        1.3309136497483618,
+        1.99097679559524
+      ],
+      "reference_omega_over_c0": [
+        1.0574493617769354,
+        1.3349822272994554,
+        1.9905721238900804
+      ],
+      "relative_frequency_error": [
+        0.0023031420350991816,
+        0.003047664206978995,
+        0.00020329416869802053
+      ],
+      "reference_relative_drift": [
+        2.767498316824657e-05,
+        0.00010150217035942433,
+        0.0001490816121683114
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.07010670000454411,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.65,
+      "cells_per_axis": 12,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.0562657711413892,
+        1.306275088675527,
+        1.9601421867085858
+      ],
+      "reference_omega_over_c0": [
+        1.0574493617769354,
+        1.3349822272994554,
+        1.9905721238900804
+      ],
+      "relative_frequency_error": [
+        0.001119288240485794,
+        0.021503760901746438,
+        0.015287030706542248
+      ],
+      "reference_relative_drift": [
+        2.767498316824657e-05,
+        0.00010150217035942433,
+        0.0001490816121683114
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.05683701499947347,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.65,
+      "cells_per_axis": 12,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0567433845692342,
+        1.3226282790290989,
+        1.9759889144195595
+      ],
+      "reference_omega_over_c0": [
+        1.0574493617769354,
+        1.3349822272994554,
+        1.9905721238900804
+      ],
+      "relative_frequency_error": [
+        0.0006676227091525488,
+        0.009254017033131112,
+        0.007326139704007195
+      ],
+      "reference_relative_drift": [
+        2.767498316824657e-05,
+        0.00010150217035942433,
+        0.0001490816121683114
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.6663292790035484,
+      "relative_symmetry_defect": 1.6007938572700196e-12
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.65,
+      "cells_per_axis": 20,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.058409610066718,
+        1.3313840572736733,
+        1.983804104979095
+      ],
+      "reference_omega_over_c0": [
+        1.0574493617769354,
+        1.3349822272994554,
+        1.9905721238900804
+      ],
+      "relative_frequency_error": [
+        0.0009080796910869715,
+        0.0026952943284203057,
+        0.003400037019386626
+      ],
+      "reference_relative_drift": [
+        2.767498316824657e-05,
+        0.00010150217035942433,
+        0.0001490816121683114
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.07496350300061749,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.65,
+      "cells_per_axis": 20,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.0569830187435065,
+        1.3190879711483887,
+        1.9754598318820977
+      ],
+      "reference_omega_over_c0": [
+        1.0574493617769354,
+        1.3349822272994554,
+        1.9905721238900804
+      ],
+      "relative_frequency_error": [
+        0.000441007437599894,
+        0.01190596835376545,
+        0.007591933910161219
+      ],
+      "reference_relative_drift": [
+        2.767498316824657e-05,
+        0.00010150217035942433,
+        0.0001490816121683114
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.06540992500231368,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.65,
+      "cells_per_axis": 20,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0571865604669637,
+        1.3282274326667198,
+        1.9840112424641585
+      ],
+      "reference_omega_over_c0": [
+        1.0574493617769354,
+        1.3349822272994554,
+        1.9905721238900804
+      ],
+      "relative_frequency_error": [
+        0.0002485237775642357,
+        0.005059838621522261,
+        0.003295977747895029
+      ],
+      "reference_relative_drift": [
+        2.767498316824657e-05,
+        0.00010150217035942433,
+        0.0001490816121683114
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 1.1163253400009125,
+      "relative_symmetry_defect": 1.5788582829914628e-12
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.65,
+      "cells_per_axis": 28,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0576826872548815,
+        1.3320457133010033,
+        1.986586002816071
+      ],
+      "reference_omega_over_c0": [
+        1.0574493617769354,
+        1.3349822272994554,
+        1.9905721238900804
+      ],
+      "relative_frequency_error": [
+        0.00022064931558896106,
+        0.0021996652377854753,
+        0.002002500198897361
+      ],
+      "reference_relative_drift": [
+        2.767498316824657e-05,
+        0.00010150217035942433,
+        0.0001490816121683114
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.07663968799897702,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.65,
+      "cells_per_axis": 28,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.0571880116405343,
+        1.3240519516224802,
+        1.9807423959401584
+      ],
+      "reference_omega_over_c0": [
+        1.0574493617769354,
+        1.3349822272994554,
+        1.9905721238900804
+      ],
+      "relative_frequency_error": [
+        0.00024715144369835684,
+        0.008187581417533951,
+        0.004938142070789242
+      ],
+      "reference_relative_drift": [
+        2.767498316824657e-05,
+        0.00010150217035942433,
+        0.0001490816121683114
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.07697937099874252,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.65,
+      "cells_per_axis": 28,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0573223884162977,
+        1.330345840819915,
+        1.9865928807873483
+      ],
+      "reference_omega_over_c0": [
+        1.0574493617769354,
+        1.3349822272994554,
+        1.9905721238900804
+      ],
+      "relative_frequency_error": [
+        0.00012007512153999755,
+        0.0034729949093924573,
+        0.0019990449253131093
+      ],
+      "reference_relative_drift": [
+        2.767498316824657e-05,
+        0.00010150217035942433,
+        0.0001490816121683114
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 1.654450154004735,
+      "relative_symmetry_defect": 2.605253452397449e-12
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.69,
+      "cells_per_axis": 12,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0867079173569405,
+        1.396058977353885,
+        2.0568145393957744
+      ],
+      "reference_omega_over_c0": [
+        1.0871371636336005,
+        1.4159420563119411,
+        2.0902114651869756
+      ],
+      "relative_frequency_error": [
+        0.0003948409556944199,
+        0.014042297048401098,
+        0.01597777370731901
+      ],
+      "reference_relative_drift": [
+        2.933016503248176e-05,
+        9.914345526129686e-05,
+        0.0001554809529678014
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.06494921699777478,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.69,
+      "cells_per_axis": 12,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.0857151249988337,
+        1.3813720278618493,
+        2.0566686263078364
+      ],
+      "reference_omega_over_c0": [
+        1.0871371636336005,
+        1.4159420563119411,
+        2.0902114651869756
+      ],
+      "relative_frequency_error": [
+        0.0013080581570901195,
+        0.024414860972584718,
+        0.016047581518810028
+      ],
+      "reference_relative_drift": [
+        2.933016503248176e-05,
+        9.914345526129686e-05,
+        0.0001554809529678014
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.05944963500223821,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.69,
+      "cells_per_axis": 12,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.086405257899442,
+        1.4007252807838495,
+        2.072814506920452
+      ],
+      "reference_omega_over_c0": [
+        1.0871371636336005,
+        1.4159420563119411,
+        2.0902114651869756
+      ],
+      "relative_frequency_error": [
+        0.0006732413890737643,
+        0.010746750165558483,
+        0.008323061353492034
+      ],
+      "reference_relative_drift": [
+        2.933016503248176e-05,
+        9.914345526129686e-05,
+        0.0001554809529678014
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.6925270630017621,
+      "relative_symmetry_defect": 1.84099694486587e-12
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.69,
+      "cells_per_axis": 20,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0876433269626697,
+        1.405204572600781,
+        2.083062955964059
+      ],
+      "reference_omega_over_c0": [
+        1.0871371636336005,
+        1.4159420563119411,
+        2.0902114651869756
+      ],
+      "relative_frequency_error": [
+        0.00046559288560921175,
+        0.007583279035533241,
+        0.003419993307843261
+      ],
+      "reference_relative_drift": [
+        2.933016503248176e-05,
+        9.914345526129686e-05,
+        0.0001554809529678014
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.06669640399923082,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.69,
+      "cells_per_axis": 20,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.086569075755843,
+        1.396962948796795,
+        2.074534339543538
+      ],
+      "reference_omega_over_c0": [
+        1.0871371636336005,
+        1.4159420563119411,
+        2.0902114651869756
+      ],
+      "relative_frequency_error": [
+        0.0005225540040032506,
+        0.013403873011993528,
+        0.007500258181788899
+      ],
+      "reference_relative_drift": [
+        2.933016503248176e-05,
+        9.914345526129686e-05,
+        0.0001554809529678014
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.0693350220026332,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.69,
+      "cells_per_axis": 20,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0868859506932496,
+        1.4076565190910177,
+        2.0829511768160898
+      ],
+      "reference_omega_over_c0": [
+        1.0871371636336005,
+        1.4159420563119411,
+        2.0902114651869756
+      ],
+      "relative_frequency_error": [
+        0.00023107750222728374,
+        0.005851607545653725,
+        0.0034734707429405765
+      ],
+      "reference_relative_drift": [
+        2.933016503248176e-05,
+        9.914345526129686e-05,
+        0.0001554809529678014
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 1.2513877979945391,
+      "relative_symmetry_defect": 1.599603325671943e-12
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.69,
+      "cells_per_axis": 28,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0880622444852515,
+        1.4075398708242055,
+        2.0829182689457926
+      ],
+      "reference_omega_over_c0": [
+        1.0871371636336005,
+        1.4159420563119411,
+        2.0902114651869756
+      ],
+      "relative_frequency_error": [
+        0.0008509329665071785,
+        0.005933989636285331,
+        0.0034892145424773036
+      ],
+      "reference_relative_drift": [
+        2.933016503248176e-05,
+        9.914345526129686e-05,
+        0.0001554809529678014
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.07200302399724023,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.69,
+      "cells_per_axis": 28,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.0868115969263012,
+        1.403075473573114,
+        2.080353448007405
+      ],
+      "reference_omega_over_c0": [
+        1.0871371636336005,
+        1.4159420563119411,
+        2.0902114651869756
+      ],
+      "relative_frequency_error": [
+        0.0002994716013672294,
+        0.009086941574671825,
+        0.004716277440708017
+      ],
+      "reference_relative_drift": [
+        2.933016503248176e-05,
+        9.914345526129686e-05,
+        0.0001554809529678014
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.07432497300032992,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 30,
+      "offset_m": 0.69,
+      "cells_per_axis": 28,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0870206295756168,
+        1.4104060049745066,
+        2.086041878781167
+      ],
+      "reference_omega_over_c0": [
+        1.0871371636336005,
+        1.4159420563119411,
+        2.0902114651869756
+      ],
+      "relative_frequency_error": [
+        0.00010719351879584504,
+        0.003909800766744742,
+        0.0019948155845731508
+      ],
+      "reference_relative_drift": [
+        2.933016503248176e-05,
+        9.914345526129686e-05,
+        0.0001554809529678014
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 1.8877301829998032,
+      "relative_symmetry_defect": 1.6005333490535767e-12
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.65,
+      "cells_per_axis": 12,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.05988481785199,
+        1.3309136497483591,
+        1.9909767955952382
+      ],
+      "reference_omega_over_c0": [
+        1.0574493758122128,
+        1.3349818984582822,
+        1.9905721251806276
+      ],
+      "relative_frequency_error": [
+        0.0023031287317245575,
+        0.0030474186313846907,
+        0.0002032935202354036
+      ],
+      "reference_relative_drift": [
+        2.7676253830710706e-05,
+        0.00010132235346826945,
+        0.00014910485753349967
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.06179983699985314,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.65,
+      "cells_per_axis": 12,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.0562657711414,
+        1.3062750886755357,
+        1.9601421867085915
+      ],
+      "reference_omega_over_c0": [
+        1.0574493758122128,
+        1.3349818984582822,
+        1.9905721251806276
+      ],
+      "relative_frequency_error": [
+        0.0011193014983847949,
+        0.021503519872365984,
+        0.015287031344958124
+      ],
+      "reference_relative_drift": [
+        2.7676253830710706e-05,
+        0.00010132235346826945,
+        0.00014910485753349967
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.05769618699559942,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.65,
+      "cells_per_axis": 12,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0567433845692311,
+        1.3226282790290962,
+        1.9759889144195817
+      ],
+      "reference_omega_over_c0": [
+        1.0574493758122128,
+        1.3349818984582822,
+        1.9905721251806276
+      ],
+      "relative_frequency_error": [
+        0.0006676359730596326,
+        0.009253772986324904,
+        0.00732614034757606
+      ],
+      "reference_relative_drift": [
+        2.7676253830710706e-05,
+        0.00010132235346826945,
+        0.00014910485753349967
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.8073239259974798,
+      "relative_symmetry_defect": 1.6007938572229622e-12
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.65,
+      "cells_per_axis": 20,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0584096100668212,
+        1.3313840572736162,
+        1.983804104979149
+      ],
+      "reference_omega_over_c0": [
+        1.0574493758122128,
+        1.3349818984582822,
+        1.9905721251806276
+      ],
+      "relative_frequency_error": [
+        0.0009080664063665367,
+        0.0026950486660688444,
+        0.003400037665485023
+      ],
+      "reference_relative_drift": [
+        2.7676253830710706e-05,
+        0.00010132235346826945,
+        0.00014910485753349967
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.09661225699528586,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.65,
+      "cells_per_axis": 20,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.056983018743471,
+        1.3190879711483705,
+        1.9754598318821088
+      ],
+      "reference_omega_over_c0": [
+        1.0574493758122128,
+        1.3349818984582822,
+        1.9905721251806276
+      ],
+      "relative_frequency_error": [
+        0.00044102070454532516,
+        0.011905724960216246,
+        0.007591934553563329
+      ],
+      "reference_relative_drift": [
+        2.7676253830710706e-05,
+        0.00010132235346826945,
+        0.00014910485753349967
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.08638663599413121,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.65,
+      "cells_per_axis": 20,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0571865604670128,
+        1.3282274326667596,
+        1.9840112424641863
+      ],
+      "reference_omega_over_c0": [
+        1.0574493758122128,
+        1.3349818984582822,
+        1.9905721251806276
+      ],
+      "relative_frequency_error": [
+        0.000248537046984576,
+        0.0050595935415477244,
+        0.0032959783940740284
+      ],
+      "reference_relative_drift": [
+        2.7676253830710706e-05,
+        0.00010132235346826945,
+        0.00014910485753349967
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 1.301349809000385,
+      "relative_symmetry_defect": 1.5788582829914628e-12
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.65,
+      "cells_per_axis": 28,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0576826872549014,
+        1.332045713301019,
+        1.9865860028160813
+      ],
+      "reference_omega_over_c0": [
+        1.0574493758122128,
+        1.3349818984582822,
+        1.9905721251806276
+      ],
+      "relative_frequency_error": [
+        0.0002206360399139573,
+        0.002199419453292939,
+        0.0020025008459236826
+      ],
+      "reference_relative_drift": [
+        2.7676253830710706e-05,
+        0.00010132235346826945,
+        0.00014910485753349967
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.07823601300333394,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.65,
+      "cells_per_axis": 28,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.057188011640527,
+        1.3240519516224734,
+        1.980742395940152
+      ],
+      "reference_omega_over_c0": [
+        1.0574493758122128,
+        1.3349818984582822,
+        1.9905721251806276
+      ],
+      "relative_frequency_error": [
+        0.0002471647131901955,
+        0.00818733710803976,
+        0.004938142715920746
+      ],
+      "reference_relative_drift": [
+        2.7676253830710706e-05,
+        0.00010132235346826945,
+        0.00014910485753349967
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.07083474699902581,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.65,
+      "cells_per_axis": 28,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0573223884165008,
+        1.3303458408198252,
+        1.986592880787299
+      ],
+      "reference_omega_over_c0": [
+        1.0574493758122128,
+        1.3349818984582822,
+        1.9905721251806276
+      ],
+      "relative_frequency_error": [
+        0.00012008839251942405,
+        0.0034727494386336266,
+        0.001999045572371627
+      ],
+      "reference_relative_drift": [
+        2.7676253830710706e-05,
+        0.00010132235346826945,
+        0.00014910485753349967
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 1.7484012200002326,
+      "relative_symmetry_defect": 2.6052534523947477e-12
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.69,
+      "cells_per_axis": 12,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.08670791735696,
+        1.3960589773539003,
+        2.0568145393957846
+      ],
+      "reference_omega_over_c0": [
+        1.0871372238636228,
+        1.4159465030872909,
+        2.0902145815418898
+      ],
+      "relative_frequency_error": [
+        0.00039489633621137,
+        0.014045393445323184,
+        0.01597924081147062
+      ],
+      "reference_relative_drift": [
+        2.944004612071005e-05,
+        0.00010174275057273086,
+        0.00015712695560399226
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.05568476700136671,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.69,
+      "cells_per_axis": 12,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.0857151249988561,
+        1.381372027861867,
+        2.0566686263078258
+      ],
+      "reference_omega_over_c0": [
+        1.0871372238636228,
+        1.4159465030872909,
+        2.0902145815418898
+      ],
+      "relative_frequency_error": [
+        0.0013081134870099875,
+        0.02441792479450211,
+        0.016049048518893327
+      ],
+      "reference_relative_drift": [
+        2.944004612071005e-05,
+        0.00010174275057273086,
+        0.00015712695560399226
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.06289085999742383,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.69,
+      "cells_per_axis": 12,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0864052578994265,
+        1.4007252807838375,
+        2.072814506920444
+      ],
+      "reference_omega_over_c0": [
+        1.0871372238636228,
+        1.4159465030872909,
+        2.0902145815418898
+      ],
+      "relative_frequency_error": [
+        0.0006732967541989154,
+        0.010749856912154132,
+        0.008324539870260717
+      ],
+      "reference_relative_drift": [
+        2.944004612071005e-05,
+        0.00010174275057273086,
+        0.00015712695560399226
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.7292623879984603,
+      "relative_symmetry_defect": 1.8409969448732224e-12
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.69,
+      "cells_per_axis": 20,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0876433269627006,
+        1.4052045726007378,
+        2.083062955964078
+      ],
+      "reference_omega_over_c0": [
+        1.0871372238636228,
+        1.4159465030872909,
+        2.0902145815418898
+      ],
+      "relative_frequency_error": [
+        0.0004655374574327187,
+        0.007586395717021577,
+        0.003421479134709804
+      ],
+      "reference_relative_drift": [
+        2.944004612071005e-05,
+        0.00010174275057273086,
+        0.00015712695560399226
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.0878546029998688,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.69,
+      "cells_per_axis": 20,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.086569075755851,
+        1.396962948796875,
+        2.074534339543491
+      ],
+      "reference_omega_over_c0": [
+        1.0871372238636228,
+        1.4159465030872909,
+        2.0902145815418898
+      ],
+      "relative_frequency_error": [
+        0.0005226093774551854,
+        0.013406971413838398,
+        0.007501737925314833
+      ],
+      "reference_relative_drift": [
+        2.944004612071005e-05,
+        0.00010174275057273086,
+        0.00015712695560399226
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.07953382300183875,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.69,
+      "cells_per_axis": 20,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0868859506932782,
+        1.4076565190910453,
+        2.082951176816031
+      ],
+      "reference_omega_over_c0": [
+        1.0871372238636228,
+        1.4159465030872909,
+        2.0902145815418898
+      ],
+      "relative_frequency_error": [
+        0.00023113289180876073,
+        0.005854729665400682,
+        0.0034749564901134233
+      ],
+      "reference_relative_drift": [
+        2.944004612071005e-05,
+        0.00010174275057273086,
+        0.00015712695560399226
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 1.3502751269988948,
+      "relative_symmetry_defect": 1.5996033257566464e-12
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.69,
+      "cells_per_axis": 28,
+      "model": "staircase",
+      "omega_over_c0": [
+        1.0880622444851662,
+        1.4075398708241396,
+        2.0829182689457477
+      ],
+      "reference_omega_over_c0": [
+        1.0871372238636228,
+        1.4159465030872909,
+        2.0902145815418898
+      ],
+      "relative_frequency_error": [
+        0.0008508775168749594,
+        0.005937111497377745,
+        0.003490700266170599
+      ],
+      "reference_relative_drift": [
+        2.944004612071005e-05,
+        0.00010174275057273086,
+        0.00015712695560399226
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.07439994200103683,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.69,
+      "cells_per_axis": 28,
+      "model": "scalar_fraction",
+      "omega_over_c0": [
+        1.0868115969263166,
+        1.403075473573125,
+        2.0803534480074113
+      ],
+      "reference_omega_over_c0": [
+        1.0871372238636228,
+        1.4159465030872909,
+        2.0902145815418898
+      ],
+      "relative_frequency_error": [
+        0.0002995269871718387,
+        0.009090053533874487,
+        0.004717761334917192
+      ],
+      "reference_relative_drift": [
+        2.944004612071005e-05,
+        0.00010174275057273086,
+        0.00015712695560399226
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 0.08900091900432017,
+      "relative_symmetry_defect": 0.0
+    },
+    {
+      "angle_deg": 60,
+      "offset_m": 0.69,
+      "cells_per_axis": 28,
+      "model": "tensor",
+      "omega_over_c0": [
+        1.0870206295754596,
+        1.410406004974387,
+        2.08604187878119
+      ],
+      "reference_omega_over_c0": [
+        1.0871372238636228,
+        1.4159465030872909,
+        2.0902145815418898
+      ],
+      "relative_frequency_error": [
+        0.00010724891541180614,
+        0.00391292898483353,
+        0.001996303536272226
+      ],
+      "reference_relative_drift": [
+        2.944004612071005e-05,
+        0.00010174275057273086,
+        0.00015712695560399226
+      ],
+      "operator_device": "cuda:0",
+      "assembly_seconds": 1.9901844989944948,
+      "relative_symmetry_defect": 1.600533349330159e-12
+    }
+  ],
+  "timing_workloads": [
+    {
+      "model": "scalar_fraction",
+      "cell_shape": [
+        48,
+        64
+      ],
+      "dt_s": 3.0006059388063604e-16,
+      "precision": "float32",
+      "steps_per_run": 32,
+      "first_run_seconds": 0.17753769300179556,
+      "warm_run_seconds": [
+        0.0012296220011194237,
+        0.0009885330000543036,
+        0.0008201890013879165
+      ],
+      "warm_median_seconds": 0.0009885330000543036,
+      "relative_conserved_energy_drift": 2.9712276921056713e-06,
+      "maximum_constitutive_residual": null,
+      "material_coefficient_bytes": 25024
+    },
+    {
+      "model": "tensor",
+      "cell_shape": [
+        48,
+        64
+      ],
+      "dt_s": 3.0006059388063604e-16,
+      "precision": "float32",
+      "steps_per_run": 32,
+      "first_run_seconds": 2.1202036070026224,
+      "warm_run_seconds": [
+        0.008232796004449483,
+        0.009661529002187308,
+        0.008076104000792839
+      ],
+      "warm_median_seconds": 0.008232796004449483,
+      "relative_conserved_energy_drift": 1.075770958980371e-07,
+      "maximum_constitutive_residual": 4.574150693770207e-07,
+      "material_coefficient_bytes": 196608
+    },
+    {
+      "model": "scalar_fraction",
+      "cell_shape": [
+        12,
+        16,
+        20
+      ],
+      "dt_s": 2.449984489746823e-16,
+      "precision": "float32",
+      "steps_per_run": 32,
+      "first_run_seconds": 0.17667664799955674,
+      "warm_run_seconds": [
+        0.0018317840003874153,
+        0.002142753997759428,
+        0.00172700900293421
+      ],
+      "warm_median_seconds": 0.0018317840003874153,
+      "relative_conserved_energy_drift": 1.0119941546982147e-06,
+      "maximum_constitutive_residual": null,
+      "material_coefficient_bytes": 52288
+    },
+    {
+      "model": "tensor",
+      "cell_shape": [
+        12,
+        16,
+        20
+      ],
+      "dt_s": 2.449984489746823e-16,
+      "precision": "float32",
+      "steps_per_run": 32,
+      "first_run_seconds": 4.865955024994037,
+      "warm_run_seconds": [
+        0.014369464995979797,
+        0.013723440999456216,
+        0.015108332001545932
+      ],
+      "warm_median_seconds": 0.014369464995979797,
+      "relative_conserved_energy_drift": 7.031677284885518e-08,
+      "maximum_constitutive_residual": 4.886934448222746e-07,
+      "material_coefficient_bytes": 1105920
+    }
+  ],
+  "limits": [
+    "Spatial mode eigenvalues, not a propagation/DFT/PML test.",
+    "Only three lowest nonzero cavity modes; no universal convergence-order claim.",
+    "FIT operator assembly runs on selected JAX device; SciPy reference/eigenanalysis runs on CPU.",
+    "Staircase comparator uses center-assigned cells and the initial FIT diagonal native averaging; scalar_fraction uses exact fractions and scalar arithmetic averaging.",
+    "Dense matrices are assembled only for these small validation eigenproblems; production time stepping remains matrix-free."
+  ],
+  "reproduce": "OPENBLAS_NUM_THREADS=1 .venv/bin/python scripts/benchmark_fit_interfaces.py --platform cuda"
+}

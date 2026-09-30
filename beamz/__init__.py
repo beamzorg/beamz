@@ -61,6 +61,15 @@ from beamz.simulation.core import (
     Simulation,
     SimulationResults,
 )
+from beamz.simulation.fit import (
+    FITCurrentSource,
+    FITInterfaceMaterial,
+    FITResults,
+    FITSimulation,
+    FITState,
+    PlanarDielectricInterface,
+    UniformFITMesh,
+)
 from beamz.simulation.specs import BoundarySpec, GaussianPulse, GridSpec, ModeSpec, inf
 
 # Import UI helpers
@@ -134,6 +143,13 @@ _exports = {
     # Simulation
     "RegularGrid": RegularGrid,
     "Simulation": Simulation,
+    "FITSimulation": FITSimulation,
+    "FITCurrentSource": FITCurrentSource,
+    "FITInterfaceMaterial": FITInterfaceMaterial,
+    "PlanarDielectricInterface": PlanarDielectricInterface,
+    "FITResults": FITResults,
+    "FITState": FITState,
+    "UniformFITMesh": UniformFITMesh,
     "GridSpec": GridSpec,
     "GaussianPulse": GaussianPulse,
     "ModeSpec": ModeSpec,

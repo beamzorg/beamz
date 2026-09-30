@@ -32,6 +32,12 @@ pip install beamz
 ## Examples
 Read and try out our **[example notebooks](https://beamzorg.github.io/beamz-notebooks/)** or download and run [`examples/` from this repository](https://github.com/beamzorg/beamz/tree/main/examples).
 
+An experimental uniform-grid **FIT backend** is available alongside FDTD for
+2D TE/TM and 3D PEC simulations. See its [usage guide](beamz/simulation/fit/README.md)
+and [development plan](docs/fit_backend_plan.md). Planar dielectric interfaces
+have an experimental coupled constitutive operator; nonuniform meshes remain
+a planned extension.
+
 
 ## About
 BEAMZ's goal is to become the **pragmatic** FDTD engine of choice for **photonic chip designers**.
