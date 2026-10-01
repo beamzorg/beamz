@@ -22,14 +22,18 @@ from scipy.sparse.linalg import eigsh
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def fem_reference(plane, cells, modes=3):
+def fem_reference(plane, cells, modes=3, polarization="te"):
     """Body-fitted P1 FEM for -div(1/epsilon grad Hz) = lambda Hz.
 
-    PEC implies Neumann Hz boundaries. Each square is split at the exact
+    TM instead solves -laplacian Ez = lambda epsilon Ez with Dirichlet walls.
+    TE PEC implies Neumann Hz boundaries. Each square is split at the exact
     material plane, then each resulting convex polygon is triangulated.
     Use consistent mass, and remove the constant zero-frequency mode.
     """
     from beamz.simulation.fit.interfaces import _clip_polygon
+
+    if polarization not in {"te", "tm"}:
+        raise ValueError("polarization must be te or tm")
 
     nodes, lookup, triangles, permittivities = [], {}, [], []
 
@@ -68,26 +72,34 @@ def fem_reference(plane, cells, modes=3):
     gradients = np.linalg.inv(coordinates)[:, 1:, :]
     stiffness = (
         np.einsum("tki,tkj->tij", gradients, gradients)
-        * (area / np.asarray(permittivities))[:, None, None]
+        * (area / np.asarray(permittivities) if polarization == "te" else area)[
+            :, None, None
+        ]
     )
     mass = (np.ones((3, 3)) + np.eye(3)) * area[:, None, None] / 12
+    if polarization == "tm":
+        mass = mass * np.asarray(permittivities)[:, None, None]
     row = np.repeat(triangles, 3, axis=1).ravel()
     col = np.tile(triangles, (1, 3)).ravel()
     shape = (len(nodes), len(nodes))
     k = coo_matrix((stiffness.ravel(), (row, col)), shape=shape).tocsr()
     m = coo_matrix((mass.ravel(), (row, col)), shape=shape).tocsr()
+    if polarization == "tm":
+        free = np.all((nodes > 1e-12) & (nodes < 1 - 1e-12), axis=1)
+        k, m = k[free][:, free], m[free][:, free]
+    skip = 1 if polarization == "te" else 0
     values = np.sort(
         eigsh(
             k,
             M=m,
-            k=modes + 1,
+            k=modes + skip,
             sigma=-1e-5,
             which="LM",
             tol=1e-9,
-            v0=np.linspace(1, 2, len(nodes)),
+            v0=np.linspace(1, 2, k.shape[0]),
             return_eigenvectors=False,
         )
-    )[1:]
+    )[skip:]
     return np.sqrt(values)
 
 
