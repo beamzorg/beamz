@@ -18,8 +18,10 @@ from beamz.devices.boundaries import (
     PEC,
     PML,
     Absorber,
+    Periodic,
     edges_for_dimension,
     normalize_boundaries,
+    periodic_storage_axes,
 )
 from beamz.lattice import component_axis_offsets_3d
 
@@ -73,6 +75,7 @@ class BoundaryData:
     profiles: Mapping[str, Any] | None
     masks: Mapping[str, Any]
     metallic_edges: frozenset[str]
+    periodic_axes: frozenset[int]
 
 
 class _ComponentSupport:
@@ -116,6 +119,8 @@ def resolve_metallic_edges(boundaries, is_3d: bool) -> frozenset[str]:
     """Apply boundary precedence and return walls that remain metallic."""
     metallic: set[str] = set()
     for boundary in normalize_boundaries(boundaries):
+        if isinstance(boundary, Periodic):
+            continue
         edges = edges_for_dimension(boundary.edges, bool(is_3d))
         if isinstance(boundary, PEC):
             metallic.update(edges)
@@ -281,12 +286,13 @@ class _AbsorberCompiler:
             )
         alpha_max = self.spec.alpha_max
         if self.spec.formulation == "cpml" and alpha_max is None:
-            # Convert a conservative normalized CFS alpha into the solver's
-            # conductivity-like units so default CPML keeps a nonzero CFS shift.
+            # Scale the CFS shift with the physical conductivity profile, not
+            # 1/dt: refining a fixed physical absorber must not increase its
+            # frequency shift and suppress attenuation in the measured band.
             alpha_normalized = self.spec._DEFAULT_CPML_ALPHA_NORMALIZED
             if getattr(fields.permittivity, "ndim", 0) == 3:
                 alpha_normalized = self.spec._DEFAULT_3D_CPML_ALPHA_NORMALIZED
-            alpha_max = 2.0 * EPS_0 * alpha_normalized / max(float(dt), 1e-30)
+            alpha_max = alpha_normalized * float(sigma_max)
         return float(sigma_max), None if alpha_max is None else float(alpha_max)
 
     def _pml_material_variation_edges(self, fields, pml_data):
@@ -908,6 +914,7 @@ def lower_boundaries(
     dt: float,
     *,
     polarization_2d: str = "tm",
+    plane_2d: str = "xy",
     region_setup=False,
 ) -> BoundaryData:
     """Lower the complete boundary tuple once for Simulation compilation."""
@@ -945,4 +952,9 @@ def lower_boundaries(
             region_setup=region_setup,
         ),
         resolve_metallic_edges(boundaries, len(material_grid.shape) == 3),
+        periodic_storage_axes(
+            boundaries,
+            is_3d=len(material_grid.shape) == 3,
+            plane_2d=plane_2d,
+        ),
     )

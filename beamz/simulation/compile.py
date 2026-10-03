@@ -24,6 +24,7 @@ from beamz.devices._boundary_compile import (
     BoundaryData,
     lower_boundaries,
 )
+from beamz.devices.boundaries import Periodic
 from beamz.devices.monitors.compiler import compile_monitor_specs
 from beamz.devices.sources.compiler import compile_source_specs
 from beamz.lattice import (
@@ -257,7 +258,9 @@ def _inverse_permittivity_components(values):
     return jnp.asarray(np.stack(cofactors, axis=-1) / determinant[..., None])
 
 
-def _compile_derivative_metrics(material_grid) -> DerivativeMetricPlan:
+def _compile_derivative_metrics(
+    material_grid, periodic_axes: frozenset[int] = frozenset()
+) -> DerivativeMetricPlan:
     """Precompute O(nx + ny + nz) staggered inverse-distance metrics."""
     kind = material_grid.metric_kind
     empty = jnp.zeros((0,), dtype=jnp.float32)
@@ -268,6 +271,8 @@ def _compile_derivative_metrics(material_grid) -> DerivativeMetricPlan:
     active_axes = ("x", "y", "z") if len(material_grid.shape) == 3 else ("x", "y")
     forward = {}
     backward = {}
+    storage_axes = ("z", "y", "x") if len(material_grid.shape) == 3 else ("y", "x")
+    periodic_names = {storage_axes[index] for index in periodic_axes}
     for axis in active_axes:
         widths = material_grid.grid.cell_widths(axis)
         if kind == "axis_uniform":
@@ -281,6 +286,10 @@ def _compile_derivative_metrics(material_grid) -> DerivativeMetricPlan:
         inverse_backward[-1] = 1.0 / widths[-1]
         if widths.size > 1:
             inverse_backward[1:-1] = 2.0 / (widths[:-1] + widths[1:])
+        if axis in periodic_names:
+            seam_inverse = 2.0 / (widths[-1] + widths[0])
+            inverse_backward[0] = seam_inverse
+            inverse_backward[-1] = seam_inverse
         forward[axis] = jnp.asarray(inverse_forward, dtype=jnp.float32)
         backward[axis] = jnp.asarray(inverse_backward, dtype=jnp.float32)
     return DerivativeMetricPlan(
@@ -560,19 +569,20 @@ def _compile_grid(
                     and not assembly.has_cpml
                 ):
                     component = {"sig_x": "Ex", "sig_y": "Ey", "sig_z": "Ez"}[source]
-                    centered = (
-                        sample_voxel_grid_at_e_component_3d_centered(
+                    if assembly.conductivity.ndim == 0:
+                        centered = assembly.conductivity
+                    elif assembly.permittivity.ndim == 3:
+                        centered = sample_voxel_grid_at_e_component_3d_centered(
                             assembly.conductivity,
                             component,
                         )
-                        if assembly.permittivity.ndim == 3
-                        else sample_voxel_grid_at_component_2d(
+                    else:
+                        centered = sample_voxel_grid_at_component_2d(
                             assembly.conductivity,
                             component,
                             "xy",
                             assembly.polarization_2d,
                         )
-                    )
                     value = value + values_by_name[target] - centered
                 values_by_name[target] = value
         values_by_name.update(
@@ -581,6 +591,25 @@ def _compile_grid(
             eps_ez=values_by_name["eps_z"],
         )
         materials = type(materials)(**values_by_name)
+    if boundary_data.periodic_axes:
+        from beamz.simulation.dispersion import periodic_support_average
+
+        # Native periodic rasters already have equal complete supports. This
+        # also joins clipped coefficients from the legacy static voxel path.
+        arrays = dict(materials.items())
+        for axis in "xyz":
+            for prefix in ("eps_", "sig_"):
+                key = prefix + axis
+                arrays[key] = jnp.asarray(
+                    periodic_support_average(
+                        arrays[key],
+                        material_grid.shape,
+                        boundary_data.periodic_axes,
+                        material_grid.grid,
+                    )
+                )
+            arrays["eps_e" + axis] = arrays["eps_" + axis]
+        materials = type(materials)(**arrays)
     return CompiledGrid(
         **values,
         materials=materials,
@@ -593,6 +622,7 @@ def _compile_boundary(fields, cpml, boundary_data, *, is_3d: bool) -> BoundaryPl
     masks = fields.metallic_masks
     return BoundaryPlan(
         metallic_edges_2d=(frozenset() if is_3d else boundary_data.metallic_edges),
+        periodic_axes=boundary_data.periodic_axes,
         cpml=cpml,
         metallic=MetallicPlan(
             masks["Ex"],
@@ -602,6 +632,7 @@ def _compile_boundary(fields, cpml, boundary_data, *, is_3d: bool) -> BoundaryPl
             masks["Hy"],
             masks["Hz"],
         ),
+        material_shape=tuple(int(value) for value in fields.material_grid.shape),
         logical_component_shapes=fields.component_shapes,
     )
 
@@ -609,6 +640,32 @@ def _compile_boundary(fields, cpml, boundary_data, *, is_3d: bool) -> BoundaryPl
 @trace_preparation("compile_plan")
 def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     """Build an immutable executable plan from a simulation request."""
+    if request.materials.dispersion:
+        from beamz.devices.monitors.monitors import ModeMonitor
+        from beamz.devices.sources.specs import ModeSource
+
+        if any(isinstance(source, ModeSource) for source in request.sources) or any(
+            isinstance(monitor, ModeMonitor) for monitor in request.monitors
+        ):
+            raise ValueError(
+                "Dispersive mode sources and mode monitors are not yet supported; use plane-wave excitation and field/flux monitors."
+            )
+        if request.run.backend != "jax" or request.run.sharding[0]:
+            raise ValueError("Dispersive media require single-device JAX execution.")
+        if request.materials.uses_full_permittivity:
+            raise ValueError(
+                "Dispersive media cannot yet be combined with full-tensor permittivity."
+            )
+        material_geometry = request.materials.grid
+        if material_geometry is None:
+            raise ValueError("Dispersive media require physical grid metrics.")
+        cfl_dt = material_geometry.cfl_time_step(
+            1.0, active_axes=("x", "y", "z") if request.domain.is_3d else ("x", "y")
+        )
+        if request.run.dt > cfl_dt * (1 + 1e-6):
+            raise ValueError(
+                "Dispersive timestep exceeds the vacuum CFL stability bound."
+            )
     # Resolve the actual mesh using shape metadata before any volume allocation.
     shapes = component_shapes(request.materials.shape, request.domain.polarization_2d)
     metadata = SimpleNamespace(
@@ -638,6 +695,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             request.run.dt,
             polarization_2d=request.domain.polarization_2d,
             region_setup=region_setup,
+            plane_2d=request.domain.plane_2d,
         )
     logical_grid = _compile_grid(request, boundary_data, region_setup=region_setup)
     setup = _prepare_compilation(request, logical_grid)
@@ -905,16 +963,21 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         update_coefficients, boundary, sharding_layout
     )
     metrics = lower_derivative_metrics(
-        _compile_derivative_metrics(request.materials), sharding_layout
+        _compile_derivative_metrics(request.materials, boundary_data.periodic_axes),
+        sharding_layout,
     )
     if config.backend != "jax" and sharding_layout.enabled:
         from .cuda.sharding import validate_sharded_config
 
         validate_sharded_config(config, boundary, sharding)
+    from beamz.simulation.dispersion import compile_dispersion
+
+    dispersion = compile_dispersion(logical_grid, dt, boundary_data.periodic_axes)
     program = CompiledProgram(
         grid=logical_grid,
         config=config,
         coefficients=update_coefficients,
+        dispersion=dispersion,
         metrics=metrics,
         boundary=boundary,
         sources=source_specs,
@@ -980,6 +1043,15 @@ def compile_program(
         ("x", "y", "z") if simulation.is_3d else ("x", "y")
     )
     material_grid = simulation._material_grid(progress=progress)
+    has_dispersion = bool(material_grid.dispersion)
+    if has_dispersion and sharding_token[0]:
+        raise ValueError(
+            "Dispersive media currently support single-device execution only."
+        )
+    if has_dispersion and requested_backend not in {"auto", "jax"}:
+        raise CudaBackendUnavailable(
+            "Dispersive media require backend='jax' (including JAX GPU)."
+        )
     cuda_grid_supported = simulation.is_3d
     multi_device = sharding_token[0] and sharding_token[2] != 1
     cuda_material_supported = not material_grid.uses_full_permittivity or (
@@ -989,6 +1061,9 @@ def compile_program(
     # Auto remains on the established JAX path pending CUDA hardware validation.
     cuda_sharding_supported = not multi_device or (
         requested_backend in {"cuda", "cuda_streamed"}
+    )
+    cuda_periodic_supported = not any(
+        isinstance(boundary, Periodic) for boundary in simulation.boundaries
     )
     if requested_backend not in {"auto", "jax"} and not cuda_grid_supported:
         requirement = "a 3D simulation"
@@ -1006,8 +1081,17 @@ def compile_program(
             "CUDA multi-device sharding requires backend='cuda_streamed'; "
             "use backend='jax' for other sharded configurations."
         )
+    if requested_backend not in {"auto", "jax"} and not cuda_periodic_supported:
+        raise CudaBackendUnavailable(
+            "CUDA execution does not yet support periodic boundaries; "
+            "use backend='jax'."
+        )
     cuda_problem_supported = (
-        cuda_grid_supported and cuda_material_supported and cuda_sharding_supported
+        cuda_grid_supported
+        and cuda_material_supported
+        and cuda_sharding_supported
+        and cuda_periodic_supported
+        and not has_dispersion
     )
     resolved_backend = (
         "jax"
@@ -1203,6 +1287,61 @@ def _compiled_memory_entries(program):
             else "compiled_update_coefficients",
             "reference" if target is referenced else "persistent",
         )
+    dispersion = getattr(program, "dispersion", None)
+    if dispersion is not None:
+        for index, region in enumerate(dispersion.regions):
+            for name in ("a", "b", "weights"):
+                _add_memory_arrays(
+                    owned,
+                    f"dispersion[{index}].{name}",
+                    getattr(region, name),
+                    "dispersion_coefficients",
+                )
+            _add_memory_arrays(
+                owned,
+                f"polarization[{index}]",
+                SimpleNamespace(shape=region.shape, dtype=np.complex64),
+                "polarization_state",
+                "runtime",
+            )
+        for index, interface in enumerate(dispersion.interfaces):
+            for name in (
+                "indices",
+                "fractions",
+                "weight",
+                "epsilon",
+                "a",
+                "b",
+                "response",
+                "harmonic_inf",
+                "harmonic_step",
+                "delta",
+            ):
+                _add_memory_arrays(
+                    owned,
+                    f"interface[{index}].{name}",
+                    getattr(interface, name),
+                    "dispersion_coefficients",
+                )
+            _add_memory_arrays(
+                owned,
+                f"interface_polarization[{index}]",
+                SimpleNamespace(shape=interface.shape, dtype=np.complex64),
+                "polarization_state",
+                "runtime",
+            )
+        for component, ratio, inverse, response in dispersion.coefficients:
+            for name, value in (
+                ("ratio", ratio),
+                ("inverse", inverse),
+                ("response", response),
+            ):
+                _add_memory_arrays(
+                    owned,
+                    f"dispersion.{component}.{name}",
+                    value,
+                    "dispersion_coefficients",
+                )
     for phase, terms in (
         ("h", program.boundary.cpml.h_terms),
         ("e", program.boundary.cpml.e_terms),

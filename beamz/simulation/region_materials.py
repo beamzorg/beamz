@@ -56,14 +56,9 @@ def mapped_material(shape, function, *values):
 
 def build_region_materials(fields):
     sigma, mu = fields.conductivity, fields.permeability
-    sigma_base = mapped_material(
-        fields.permittivity.shape,
-        lambda s, m: s * m * np.float32(MU_0) / np.float32(EPS_0),
-        sigma,
-        mu,
-    )
-    if sigma.ndim == 0 and float(sigma) == 0:
-        sigma_base = np.asarray(0, np.float32)
+    # This path supports CPML (or no absorber), whose loss lives in psi.
+    # Physical electric conductivity must not introduce magnetic damping.
+    sigma_base = np.asarray(0, np.float32)
     data = {"total_conductivity": sigma}
     for axis in "xyz":
         e, h = "E" + axis, "H" + axis

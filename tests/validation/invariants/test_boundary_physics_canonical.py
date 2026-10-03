@@ -8,12 +8,14 @@ These tests use a simple, physically grounded process:
 - assert quantitative wall/node or propagation metrics rather than only
   "simulation runs" smoke behavior
 
-BeamZ does not currently expose PMC, periodic, Bloch, or a true uniform plane
-wave source. The cases below therefore target the supported subset:
+BeamZ does not currently expose PMC, nonzero-phase Bloch, or a true uniform plane
+wave source. The cases below target the established quantitative subset:
 
 - PEC standing-wave node at a reflecting wall
 - mixed PEC/PML channel propagation with quantitative speed and wall-suppression
   checks
+
+Zero-phase periodic seam behavior is covered by the canonical Yee kernel tests.
 """
 
 from __future__ import annotations

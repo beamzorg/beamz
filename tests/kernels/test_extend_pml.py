@@ -19,7 +19,7 @@ from tests.utils import compiled_grid
 pytestmark = pytest.mark.unit
 
 
-def _make_fields(shape=(6, 8), *, resolution=0.1, base_sigma=0.0):
+def _make_fields(shape=(6, 8), *, resolution=0.1, base_sigma=0.0, polarization="tm"):
     permittivity = np.ones(shape, dtype=np.float32)
     conductivity = np.full(shape, base_sigma, dtype=np.float32)
     permeability = np.ones(shape, dtype=np.float32)
@@ -29,6 +29,7 @@ def _make_fields(shape=(6, 8), *, resolution=0.1, base_sigma=0.0):
         permeability=permeability,
         resolution=resolution,
         plane_2d="xy",
+        polarization=polarization,
     )
 
 
@@ -132,6 +133,35 @@ def test_cpml_auxiliary_profiles_do_not_merge_shell_into_total_conductivity():
     np.testing.assert_allclose(total_sigma, np.full_like(total_sigma, 0.25))
     assert float(np.max(shell)) > 0.0
     assert float(np.max(total_sigma)) == pytest.approx(0.25)
+
+
+@pytest.mark.parametrize(
+    "shape,polarization", [((6, 8), "tm"), ((6, 8), "te"), ((4, 6, 8), "tm")]
+)
+@pytest.mark.parametrize("formulation", [None, "cpml", "sponge"])
+def test_electric_conductivity_does_not_damp_magnetic_fields(
+    shape, polarization, formulation
+):
+    fields = _make_fields(shape=shape, base_sigma=0.25, polarization=polarization)
+    if formulation is not None:
+        design = (0.8, 0.6, 0.4 if len(shape) == 3 else 0.0)
+        _attach_pml(
+            fields,
+            PML(edges=["left"], thickness=0.2, sigma_max=6.0, formulation=formulation),
+            design,
+        )
+    else:
+        attach_material_coefficients(fields, build_material_coefficients(fields))
+    for name in ("sigma_m_hx", "sigma_m_hy", "sigma_m_hz"):
+        loss = np.asarray(getattr(fields, name))
+        if formulation == "sponge":
+            # The absorber can damp H at the left wall, but the uniform
+            # conducting material must not damp H in the interior.
+            assert np.max(loss) > 0
+            np.testing.assert_array_equal(loss[..., 3:], 0)
+        else:
+            np.testing.assert_array_equal(loss, 0)
+    assert np.max(np.asarray(fields.sig_x)) >= 0.25
 
 
 def test_removed_sigma_formulation_alias_is_rejected():

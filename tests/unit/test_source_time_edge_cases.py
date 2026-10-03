@@ -162,9 +162,9 @@ def test_gaussian_pulse_dc_policy_and_frequency_nodes_are_deterministic():
     assert np.all(np.diff(nodes) > 0)
     assert np.mean(nodes) == pytest.approx(10.0)
 
-    times = np.linspace(0.0, 2e-13, 21)
-    with_dc = GaussianPulse(2e14, 2e13, remove_dc_component=False).sample(times)[0]
-    without_dc = GaussianPulse(2e14, 2e13, remove_dc_component=True).sample(times)[0]
+    times = np.linspace(0.0, 80e-15, 8001)
+    with_dc = GaussianPulse(2e14, 1e14, remove_dc_component=False).sample(times)[0]
+    without_dc = GaussianPulse(2e14, 1e14, remove_dc_component=True).sample(times)[0]
     assert float(np.mean(without_dc)) == pytest.approx(0.0, abs=1e-7)
     assert not np.array_equal(with_dc, without_dc)
 
@@ -192,3 +192,38 @@ def test_gaussian_band_pulse_owns_readonly_arrays_without_running_a_simulation()
         pulse.signal_quadrature,
     ):
         assert not array.flags.writeable
+
+
+@pytest.mark.parametrize("remove_dc", [False, True])
+def test_gaussian_pulse_samples_do_not_depend_on_window_or_chunk(remove_dc):
+    pulse = GaussianPulse(5.9e14, 2.9e14, offset=3.7, remove_dc_component=remove_dc)
+    times = np.arange(24000) * 1e-17
+    whole = pulse.sample(times)
+    short = pulse.sample(times[:12000])
+    chunk = pulse.sample(times[4000:9000])
+    for component, prefix, middle in zip(whole, short, chunk, strict=True):
+        np.testing.assert_array_equal(component[:12000], prefix)
+        np.testing.assert_array_equal(component[4000:9000], middle)
+
+
+@pytest.mark.parametrize("remove_dc", [False, True])
+def test_gaussian_pulse_spectrum_matches_integrated_quadratures(remove_dc):
+    # A broad carrier makes the DC correction significant. Integrate both
+    # quadratures independently of the analytic spectrum implementation.
+    pulse = GaussianPulse(2e14, 1.5e14, offset=3.73, remove_dc_component=remove_dc)
+    times = np.arange(10000) * 1e-17
+    signal, quadrature = pulse.sample(times)
+    frequencies = np.array([0, 1e14, 2e14, 3e14, 4e14])
+    measured = np.sum(
+        (signal.astype(float) - 1j * quadrature.astype(float))[None, :]
+        * np.exp(2j * np.pi * frequencies[:, None] * times),
+        axis=1,
+    ) * (times[1] - times[0])
+    expected = pulse.spectrum(frequencies)
+    np.testing.assert_allclose(measured, expected, rtol=2e-7, atol=2e-23)
+    if remove_dc:
+        assert abs(measured[0]) < 2e-23
+        assert abs(pulse.spectrum([0])[0]) < 2e-30
+    np.testing.assert_allclose(
+        pulse.spectrum([pulse.freq0], normalize=True), [1.0], atol=1e-14
+    )

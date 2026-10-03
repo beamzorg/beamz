@@ -38,6 +38,20 @@ REQUIRED = {
     "wheel": {"beamz/__init__.py", "beamz/py.typed"},
 }
 
+for required_files in REQUIRED.values():
+    required_files.update(
+        f"beamz/material_library/data/{name}"
+        for name in (
+            "catalog.json",
+            "red_eps.csv",
+            "green_eps.csv",
+            "blue_eps.csv",
+            "README.md",
+            "LICENSE-LGPL-2.1.txt",
+            "LICENSE-AGPL-3.0.txt",
+        )
+    )
+
 
 def _archive_names(path: Path) -> list[str]:
     if path.name.endswith(".tar.gz"):

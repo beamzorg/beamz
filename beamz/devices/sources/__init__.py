@@ -1,3 +1,5 @@
+from beamz.devices.sources.specs import PlaneWaveSource
+
 from .specs import (
     CustomSource,
     GaussianBeamSource,
@@ -12,6 +14,7 @@ CANONICAL_SOURCE_TYPES = (
     CustomSource,
     GaussianSource,
     GaussianBeamSource,
+    PlaneWaveSource,
     ModeSource,
 )
 
@@ -23,5 +26,6 @@ __all__ = [
     "SampledSignal",
     "GaussianSource",
     "GaussianBeamSource",
+    "PlaneWaveSource",
     "CustomSource",
 ]

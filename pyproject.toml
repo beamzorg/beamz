@@ -125,6 +125,7 @@ python-source = "."
 module-name = "beamz.design.raster._native"
 features = ["pyo3/extension-module"]
 include = [
+    { path = "beamz/material_library/data/*", format = ["sdist", "wheel"] },
     { path = "cuda/CMakeLists.txt", format = "sdist" },
     { path = "cuda/README.md", format = "sdist" },
     { path = "cuda/abi_layout.json", format = "sdist" },

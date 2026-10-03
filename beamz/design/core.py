@@ -18,6 +18,8 @@ _DEFAULT_DOMAIN_SIZE = object()
 
 def _material_key(material):
     """Return a hashable key for a material based on its physical properties."""
+    if hasattr(material, "cache_spec"):
+        return material.cache_spec()
     return (
         getattr(material, "permittivity", None),
         getattr(material, "permeability", None),
