@@ -114,3 +114,5 @@ def test_handler_generator_rejects_consumed_inputs():
     handler = build.generate_handler(manifest)
     assert 'Attr<int64_t>("nsteps")' in handler
     assert "futhark_new_raw_f32_3d" in handler
+    # A failed context is freed rather than kept, so the next call retries.
+    assert "futhark_context_free(context)" in handler
