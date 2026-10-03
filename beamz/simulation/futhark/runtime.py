@@ -120,10 +120,16 @@ def _constrained(shape, component: int, phase: int, edges: int, z, y, x):
     return np.logical_or.reduce([hit(axis) for axis in range(3) if axis != normal])
 
 
-def source_table(groups, field_shapes, edges: int):
+def storage_shape(field_shapes) -> tuple[int, int, int]:
+    """The zero-padded bounding shape every component occupies during a run."""
+    return tuple(int(max(shape[axis] for shape in field_shapes)) for axis in range(3))
+
+
+def source_table(groups, field_shapes, edges: int, storage=None):
     """Flatten the nine (timing, component) slab groups into one scatter table.
 
-    Returns per-cell flat targets (-1 when dropped), amplitudes, waveform
+    Targets index ``storage`` (default: each component's own shape). Returns
+    per-cell flat targets (-1 when dropped), amplitudes, waveform
     offsets and lengths, group indices and the concatenated waveforms. Out-of-field cells are dropped and post-update sources skip
     PEC-constrained cells, exactly as the CUDA source kernels do.
     """
@@ -154,7 +160,8 @@ def source_table(groups, field_shapes, edges: int):
                     inside &= ~_constrained(
                         shape, component, 0 if timing == 1 else 1, edges, z, y, x
                     )
-                flat = np.where(inside, (z * shape[1] + y) * shape[2] + x, -1)
+                stride = shape if storage is None else storage
+                flat = np.where(inside, (z * stride[1] + y) * stride[2] + x, -1)
                 targets.append(flat)
                 amplitudes.append(coeffs[source].reshape(-1))
                 offsets.append(np.full(flat.shape, wave_offset))
@@ -163,7 +170,8 @@ def source_table(groups, field_shapes, edges: int):
                 waves.append(waveforms[source])
                 wave_offset += waveforms.shape[1]
     if wave_offset >= np.iinfo(np.int32).max or any(
-        int(np.prod(shape)) >= np.iinfo(np.int32).max for shape in field_shapes
+        int(np.prod(shape)) >= np.iinfo(np.int32).max
+        for shape in (*field_shapes, *(() if storage is None else (storage,)))
     ):
         raise FutharkBackendUnavailable("Futhark source indices exceed int32")
 
@@ -220,6 +228,22 @@ def _cpml_arguments(state, ctx):
     return (slabs, profiles("a"), profiles("b"), profiles("inv_kappa")), psi
 
 
+def _storage_indices(indices, shapes, storage):
+    """Rebase [M][6][P][N] plan offsets from component shapes onto storage."""
+    rebased = []
+    for component, shape in enumerate(shapes):
+        flat = indices[:, component]
+        z, rest = jnp.divmod(flat, shape[1] * shape[2])
+        y, x = jnp.divmod(rest, shape[2])
+        valid = (flat >= 0) & (flat < int(np.prod(shape)))
+        rebased.append(
+            jnp.where(valid, (z * storage[1] + y) * storage[2] + x, -1).astype(
+                jnp.int32
+            )
+        )
+    return jnp.stack(rebased, axis=1)
+
+
 def _empty_monitors():
     return (
         jnp.zeros((0, 6, 1, 1), dtype=jnp.int32),
@@ -254,7 +278,8 @@ def run_program(
     e_fields = (state.ex, state.ey, state.ez)
     h_fields = (state.hx, state.hy, state.hz)
     shapes = tuple(value.shape for value in (*e_fields, *h_fields))
-    sources = source_table(groups, shapes, edges)
+    storage = storage_shape(shapes)
+    sources = source_table(groups, shapes, edges, storage)
     (slabs, cpml_a, cpml_b, cpml_k), psi = _cpml_arguments(state, ctx)
     if packed_monitors is None:
         monitors = _empty_monitors()
@@ -262,7 +287,7 @@ def run_program(
         # Neighbor-major gather plans give coalesced reads in the DFT kernel.
         indices, weights, *rest = packed_monitors
         monitors = (
-            jnp.swapaxes(indices, 2, 3),
+            jnp.swapaxes(_storage_indices(indices, shapes, storage), 2, 3),
             jnp.swapaxes(weights, 2, 3),
             *rest,
         )
@@ -272,14 +297,35 @@ def run_program(
     )
     if packed_monitors is None:
         accumulators = tuple(jnp.zeros((0,), jnp.float32) for _ in accumulators)
-    coefficients = tuple(
-        _volume(getattr(coeffs, name))
-        for name in (
-            "h_decay_x", "h_decay_y", "h_decay_z",
-            "h_source_x", "h_source_y", "h_source_z",
-            "e_decay_x", "e_decay_y", "e_decay_z",
-            "e_source_x", "e_source_y", "e_source_z",
-        )
+    e_values = [
+        getattr(coeffs, f"e_{kind}_{axis}")
+        for kind in ("decay", "source")
+        for axis in "xyz"
+    ]
+    if all(jnp.ndim(value) == 1 for value in e_values) and all(
+        jnp.asarray(value).dtype == jnp.int32 for value in e_values[3:]
+    ):
+        # compile.py packed a lossless E update into codebooks (in the decay
+        # slots) and four 8-bit cell codes per int32 word (in the source slots).
+        tables = tuple(jnp.asarray(value, jnp.float32) for value in e_values[:3])
+        codes = tuple(jnp.asarray(value, jnp.int32) for value in e_values[3:])
+        e_values = [jnp.ones((1, 1, 1), jnp.float32)] * 3 + [
+            jnp.zeros((1, 1, 1), jnp.float32)
+        ] * 3
+    else:
+        tables = (jnp.zeros((0,), jnp.float32),) * 3
+        codes = (jnp.zeros((0,), jnp.int32),) * 3
+    coefficients = (
+        *(
+            _volume(getattr(coeffs, name))
+            for name in (
+                "h_decay_x", "h_decay_y", "h_decay_z",
+                "h_source_x", "h_source_y", "h_source_z",
+            )
+        ),
+        *(_volume(value) for value in e_values),
+        *tables,
+        *codes,
     )  # fmt: skip
     metrics = tuple(
         _vector(value) for phase in (0, 1) for value in _phase_metrics(ctx, phase)

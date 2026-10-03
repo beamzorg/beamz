@@ -6,20 +6,31 @@
 -- ghost samples on metallic faces, and CPML recurrences live on packed slabs.
 -- Each timestep applies, in order: pre-E sources, H, H sources, E, E sources and
 -- the vector DFT accumulation.
+--
+-- During a run every field component is stored zero-padded to the common
+-- (z+1, y+1, x+1) bounding shape, so that one kernel per phase can advance all
+-- three components: Futhark fuses only maps of equal size, and separate
+-- component kernels would each reread the shared curl inputs. Logical
+-- component shapes travel as `dims` and decide every boundary.
+
+type dims = (i64, i64, i64)
 
 def axis_coord (axis: i64) (k: i64) (j: i64) (i: i64) : i64 =
   if axis == 0 then k else if axis == 1 then j else i
 
-def axis_size (axis: i64) (a: i64) (b: i64) (c: i64) : i64 =
+def axis_size (axis: i64) ((a, b, c): dims) : i64 =
   if axis == 0 then a else if axis == 1 then b else c
 
 def with_coord (axis: i64) (v: i64) (k: i64) (j: i64) (i: i64) : (i64, i64, i64) =
   if axis == 0 then (v, j, i) else if axis == 1 then (k, v, i) else (k, j, v)
 
+def inside ((a, b, c): dims) (k: i64) (j: i64) (i: i64) : bool =
+  k < a && j < b && i < c
+
 -- tabulate_3d decomposes each flat thread index with two 64-bit divisions,
 -- which GPUs emulate. Field volumes are far below 2^31 cells, so decompose
 -- with 32-bit arithmetic instead.
-def tabulate3 (n0: i64) (n1: i64) (n2: i64) (f: i64 -> i64 -> i64 -> f32) : *[n0][n1][n2]f32 =
+def tabulate3 't (n0: i64) (n1: i64) (n2: i64) (f: i64 -> i64 -> i64 -> t) : *[n0][n1][n2]t =
   let m2 = i32.i64 n2
   let m12 = i32.i64 (n1 * n2)
   in unflatten_3d (tabulate (n0 * n1 * n2) (\q ->
@@ -37,38 +48,36 @@ def metric (kind: i64) (inv: f32) (m: []f32) (coord: i64) : f32 =
   if kind == 0 then inv else if kind == 1 then #[unsafe] m[0] else #[unsafe] m[coord]
 
 -- Magnetic phase: a missing forward neighbor contributes nothing.
-def forward [a][b][c] (v: [a][b][c]f32) (axis: i64) (s: f32) (k: i64) (j: i64) (i: i64) : f32 =
+def forward (v: [][][]f32) (n: dims) (axis: i64) (s: f32) (k: i64) (j: i64) (i: i64) : f32 =
   let co = axis_coord axis k j i
-  in if co + 1 >= axis_size axis a b c then 0
+  in if co + 1 >= axis_size axis n then 0
      else let (k1, j1, i1) = with_coord axis (co + 1) k j i
           in #[unsafe] (v[k1, j1, i1] - v[k, j, i]) * s
 
 -- Electric phase: metallic faces see a zero ghost sample, open faces none.
-def backward [a][b][c] (v: [a][b][c]f32) (axis: i64) (edges: i64) (s: f32)
-                       (k: i64) (j: i64) (i: i64) : f32 =
+def backward (v: [][][]f32) (n: dims) (axis: i64) (edges: i64) (s: f32)
+             (k: i64) (j: i64) (i: i64) : f32 =
   let co = axis_coord axis k j i
-  let n = axis_size axis a b c
+  let m = axis_size axis n
   in if co == 0 then (if edge edges (2 * axis) then #[unsafe] v[k, j, i] * s else 0)
-     else if co == n
+     else if co == m
      then (if edge edges (2 * axis + 1)
-           then let (k1, j1, i1) = with_coord axis (n - 1) k j i
+           then let (k1, j1, i1) = with_coord axis (m - 1) k j i
                 in #[unsafe] (-v[k1, j1, i1]) * s
            else 0)
      else let (k1, j1, i1) = with_coord axis (co - 1) k j i
           in #[unsafe] (v[k, j, i] - v[k1, j1, i1]) * s
 
-def derivative [a][b][c] (phase: i64) (edges: i64) (v: [a][b][c]f32) (axis: i64) (s: f32)
-                         (k: i64) (j: i64) (i: i64) : f32 =
-  if phase == 0 then forward v axis s k j i else backward v axis edges s k j i
+def derivative (phase: i64) (edges: i64) (v: [][][]f32) (n: dims) (axis: i64) (s: f32)
+               (k: i64) (j: i64) (i: i64) : f32 =
+  if phase == 0 then forward v n axis s k j i else backward v n axis edges s k j i
 
 -- Tangential E and normal H vanish on metallic faces.
-def pec (phase: i64) (component: i64) (edges: i64) (a: i64) (b: i64) (c: i64)
-        (k: i64) (j: i64) (i: i64) : bool =
+def pec (phase: i64) (component: i64) (edges: i64) (n: dims) (k: i64) (j: i64) (i: i64) : bool =
   let normal = 2 - component
   let hit axis =
     let co = axis_coord axis k j i
-    let n = axis_size axis a b c
-    in (co == 0 && edge edges (2 * axis)) || (co == n - 1 && edge edges (2 * axis + 1))
+    in (co == 0 && edge edges (2 * axis)) || (co == axis_size axis n - 1 && edge edges (2 * axis + 1))
   in if phase == 0 then hit normal
      else (normal != 0 && hit 0) || (normal != 1 && hit 1) || (normal != 2 && hit 2)
 
@@ -76,12 +85,22 @@ def pec (phase: i64) (component: i64) (edges: i64) (a: i64) (b: i64) (c: i64)
 def coefficient [a][b][c] (v: [a][b][c]f32) (k: i64) (j: i64) (i: i64) : f32 =
   #[unsafe] v[if a == 1 then 0 else k, if b == 1 then 0 else j, if c == 1 then 0 else i]
 
+-- Material source coefficient: from a codebook when `codes` packs one 8-bit
+-- index per cell (four per word, in logical component order), else dense.
+def material (n: dims) (source: [][][]f32) (table: []f32) (codes: []i32)
+             (k: i64) (j: i64) (i: i64) : f32 =
+  if length codes == 0 then coefficient source k j i
+  else let (_, b, c) = n
+       let l = (k * b + j) * c + i
+       let code = (#[unsafe] codes[l >> 2] >> i32.i64 (8 * (l & 3))) & 0xff
+       in #[unsafe] table[i64.i32 code]
+
 def packed (co: i64) (n: i64) (lo: i64) (hi: i64) : i64 =
   if co < lo then co else if co >= n - hi then lo + co - (n - hi) else -1
 
 -- One CPML term: the stretched derivative, or the plain one outside its slab.
-def stretched [pa][pb][pc][L] (n: i64) (axis: i64) (lo: i64) (hi: i64)
-    (ca: [L]f32) (cb: [L]f32) (ck: [L]f32) (psi: [pa][pb][pc]f32)
+def stretched [L] (n: i64) (axis: i64) (lo: i64) (hi: i64)
+    (ca: [L]f32) (cb: [L]f32) (ck: [L]f32) (psi: [][][]f32)
     (d: f32) (k: i64) (j: i64) (i: i64) : f32 =
   let p = packed (axis_coord axis k j i) n lo hi
   in if p < 0 then d
@@ -89,38 +108,56 @@ def stretched [pa][pb][pc][L] (n: i64) (axis: i64) (lo: i64) (hi: i64)
           let next = #[unsafe] f32.fma cb[p] psi[pk, pj, pi] (ca[p] * d)
           in #[unsafe] f32.fma d ck[p] next
 
--- Advance one field component; the CPML memory is advanced by `psi_next`.
-def field_next [a][b][c][a0][b0][c0][a1][b1][c1][da][db][dc][sa][sb][sc]
-               [pa0][pb0][pc0][pa1][pb1][pc1][L]
+-- One field component at one cell; the CPML memory is advanced by `psi_next`.
+-- Its curl is f0's derivative along ax0 minus f1's along ax1.
+def field_value [L]
     (phase: i64) (component: i64) (edges: i64) (scale: i64 -> i64 -> f32)
-    (old: [a][b][c]f32) (decay: [da][db][dc]f32) (source: [sa][sb][sc]f32)
-    (f0: [a0][b0][c0]f32) (ax0: i64) (f1: [a1][b1][c1]f32) (ax1: i64)
+    (n: dims) (old: [][][]f32) (decay: [][][]f32) ((source, table, codes): ([][][]f32, []f32, []i32))
+    (f0: [][][]f32) (n0: dims) (ax0: i64) (f1: [][][]f32) (n1: dims) (ax1: i64)
     (slabs: [12][2]i64) (ca: [12][L]f32) (cb: [12][L]f32) (ck: [12][L]f32)
-    (psi0: [pa0][pb0][pc0]f32) (psi1: [pa1][pb1][pc1]f32) : *[a][b][c]f32 =
+    (psi0: [][][]f32) (psi1: [][][]f32) (k: i64) (j: i64) (i: i64) : f32 =
   let t0 = 6 * phase + 2 * component
   let t1 = t0 + 1
+  in if !(inside n k j i) || pec phase component edges n k j i then 0
+     else
+       let d0 = derivative phase edges f0 n0 ax0 (scale ax0 (axis_coord ax0 k j i)) k j i
+       let d1 = derivative phase edges f1 n1 ax1 (scale ax1 (axis_coord ax1 k j i)) k j i
+       let curl =
+         #[unsafe]
+         stretched (axis_size ax0 n) ax0 slabs[t0, 0] slabs[t0, 1] ca[t0] cb[t0] ck[t0] psi0 d0 k j i
+         - stretched (axis_size ax1 n) ax1 slabs[t1, 0] slabs[t1, 1] ca[t1] cb[t1] ck[t1] psi1 d1 k j i
+       let s = material n source table codes k j i
+       in f32.fma (if phase == 0 then -s else s) curl (coefficient decay k j i * #[unsafe] old[k, j, i])
+
+-- Advance all three components of one phase in a single kernel. `n` holds the
+-- outputs' logical shapes, `m` those of the curl inputs `f`.
+def phase_next [P0][P1][P2][L]
+    (phase: i64) (edges: i64) (scale: i64 -> i64 -> f32)
+    (n: (dims, dims, dims)) (old: ([P0][P1][P2]f32, [P0][P1][P2]f32, [P0][P1][P2]f32))
+    (decay: ([][][]f32, [][][]f32, [][][]f32))
+    (source: (([][][]f32, []f32, []i32), ([][][]f32, []f32, []i32), ([][][]f32, []f32, []i32)))
+    (m: (dims, dims, dims)) (f: ([P0][P1][P2]f32, [P0][P1][P2]f32, [P0][P1][P2]f32))
+    (slabs: [12][2]i64) (ca: [12][L]f32) (cb: [12][L]f32) (ck: [12][L]f32)
+    (psi: ([][][]f32, [][][]f32, [][][]f32, [][][]f32, [][][]f32, [][][]f32))
+    : (*[P0][P1][P2]f32, *[P0][P1][P2]f32, *[P0][P1][P2]f32) =
+  -- Three tabulates of one size over shared inputs: Futhark fuses them into
+  -- one kernel.
+  let value c = field_value phase c edges scale
   in #[unsafe]
-     tabulate3 a b c (\k j i ->
-       if pec phase component edges a b c k j i then 0
-       else
-         let d0 = derivative phase edges f0 ax0 (scale ax0 (axis_coord ax0 k j i)) k j i
-         let d1 = derivative phase edges f1 ax1 (scale ax1 (axis_coord ax1 k j i)) k j i
-         let n0 = axis_size ax0 a b c
-         let n1 = axis_size ax1 a b c
-         let curl =
-           stretched n0 ax0 slabs[t0, 0] slabs[t0, 1] ca[t0] cb[t0] ck[t0] psi0 d0 k j i
-           - stretched n1 ax1 slabs[t1, 0] slabs[t1, 1] ca[t1] cb[t1] ck[t1] psi1 d1 k j i
-         let s = coefficient source k j i
-         in f32.fma (if phase == 0 then -s else s) curl (coefficient decay k j i * old[k, j, i]))
+     (tabulate3 P0 P1 P2 (value 0 n.0 old.0 decay.0 source.0 f.2 m.2 1 f.1 m.1 0
+                                slabs ca cb ck psi.0 psi.1),
+      tabulate3 P0 P1 P2 (value 1 n.1 old.1 decay.1 source.1 f.0 m.0 0 f.2 m.2 2
+                                slabs ca cb ck psi.2 psi.3),
+      tabulate3 P0 P1 P2 (value 2 n.2 old.2 decay.2 source.2 f.1 m.1 2 f.0 m.0 1
+                                slabs ca cb ck psi.4 psi.5))
 
 -- Advance one packed CPML recurrence for an output component of shape dims.
-def psi_next [a0][b0][c0][pa][pb][pc][L]
-    (phase: i64) (edges: i64) (scale: i64 -> i64 -> f32) (dims: (i64, i64, i64))
-    (term: i64) (src: [a0][b0][c0]f32) (axis: i64)
+def psi_next [pa][pb][pc][L]
+    (phase: i64) (edges: i64) (scale: i64 -> i64 -> f32) (dims: dims)
+    (term: i64) (src: [][][]f32) (m: dims) (axis: i64)
     (slabs: [12][2]i64) (ca: [12][L]f32) (cb: [12][L]f32)
     (psi: [pa][pb][pc]f32) : *[pa][pb][pc]f32 =
-  let (na, nb, nc) = dims
-  let n = axis_size axis na nb nc
+  let n = axis_size axis dims
   let lo = slabs[term, 0]
   let hi = slabs[term, 1]
   in #[unsafe]
@@ -128,10 +165,18 @@ def psi_next [a0][b0][c0][pa][pb][pc][L]
        let p = axis_coord axis pk pj pi
        let co = if p < lo then p else n - hi + (p - lo)
        let (k, j, i) = with_coord axis co pk pj pi
-       let d = derivative phase edges src axis (scale axis co) k j i
+       let d = derivative phase edges src m axis (scale axis co) k j i
        in f32.fma cb[term, p] psi[pk, pj, pi] (ca[term, p] * d))
 
-def dims3 [a][b][c] 't (_: [a][b][c]t) : (i64, i64, i64) = (a, b, c)
+def dims3 [a][b][c] 't (_: [a][b][c]t) : dims = (a, b, c)
+
+-- Copy a component into zero-padded run storage.
+def pad [a][b][c] (P0: i64) (P1: i64) (P2: i64) (v: [a][b][c]f32) : *[P0][P1][P2]f32 =
+  tabulate3 P0 P1 P2 (\k j i -> if inside (a, b, c) k j i then #[unsafe] v[k, j, i] else 0)
+
+-- The logical component inside run storage.
+def crop [P0][P1][P2] (a: i64) (b: i64) (c: i64) (v: [P0][P1][P2]f32) : *[a][b][c]f32 =
+  #[unsafe] tabulate3 a b c (\k j i -> v[k, j, i])
 
 -- Add one (timing, component) source group to a field. Cells of other groups,
 -- outside the field or on constrained PEC cells are dropped by reduce_by_index;
@@ -234,7 +279,8 @@ def accumulate_dft [M][P][N][F][R][Q]
 
 -- Advance a whole run. Scalars that do not change between invocations are
 -- static FFI attributes; clocks arrive as one-element device arrays so that
--- chunked runs never synchronize the host.
+-- chunked runs never synchronize the host. Source targets and monitor plans
+-- index the padded run storage.
 entry program
     [z0][y0][x0][z1][y1][x1][z2][y2][x2][z3][y3][x3][z4][y4][x4][z5][y5][x5]
     [L][K][M][P][N][F][R][Q]
@@ -245,6 +291,8 @@ entry program
     (h_source_x: [][][]f32) (h_source_y: [][][]f32) (h_source_z: [][][]f32)
     (e_decay_x: [][][]f32) (e_decay_y: [][][]f32) (e_decay_z: [][][]f32)
     (e_source_x: [][][]f32) (e_source_y: [][][]f32) (e_source_z: [][][]f32)
+    (e_table_x: []f32) (e_table_y: []f32) (e_table_z: []f32)
+    (e_codes_x: []i32) (e_codes_y: []i32) (e_codes_z: []i32)
     (h_metric_z: []f32) (h_metric_y: []f32) (h_metric_x: []f32)
     (e_metric_z: []f32) (e_metric_y: []f32) (e_metric_x: []f32)
     (cpml_slabs: [12][2]i32) (cpml_a: [12][L]f32) (cpml_b: [12][L]f32) (cpml_inv_kappa: [12][L]f32)
@@ -268,87 +316,95 @@ entry program
     if axis == 0 then metric metric_kind inv_resolution e_metric_z co
     else if axis == 1 then metric metric_kind inv_resolution e_metric_y co
     else metric metric_kind inv_resolution e_metric_x co
+  let P0 = i64.maximum [z0, z1, z2, z3, z4, z5]
+  let P1 = i64.maximum [y0, y1, y2, y3, y4, y5]
+  let P2 = i64.maximum [x0, x1, x2, x3, x4, x5]
+  let ne = (dims3 ex, dims3 ey, dims3 ez)
+  let nh = (dims3 hx, dims3 hy, dims3 hz)
+  let h_decay = (h_decay_x, h_decay_y, h_decay_z)
+  let dense v = (v, [] : []f32, [] : []i32)
+  let h_source = (dense h_source_x, dense h_source_y, dense h_source_z)
+  let e_decay = (e_decay_x, e_decay_y, e_decay_z)
+  let e_source = ((e_source_x, e_table_x, e_codes_x),
+                  (e_source_y, e_table_y, e_codes_y),
+                  (e_source_z, e_table_z, e_codes_z))
+  let inject' (field: *[P0][P1][P2]f32) step group : *[P0][P1][P2]f32 =
+    inject field step group source_group source_target source_amplitude
+           source_offset source_length waveforms
   let step0 = i64.i32 current_step[0]
-  in loop (ex, ey, ez, hx, hy, hz,
-           psi_h0, psi_h1, psi_h2, psi_h3, psi_h4, psi_h5,
-           psi_e0, psi_e1, psi_e2, psi_e3, psi_e4, psi_e5,
-           dft_re, dft_im, dft_weight) =
-          -- Inputs alias XLA buffers that are also outputs, so the loop works
-          -- on private copies and the handler copies results back at the end.
-          (inject (copy ex) step0 0 source_group source_target
-                  source_amplitude source_offset source_length waveforms,
-           inject (copy ey) step0 1 source_group source_target
-                  source_amplitude source_offset source_length waveforms,
-           inject (copy ez) step0 2 source_group source_target
-                  source_amplitude source_offset source_length waveforms,
-           copy hx, copy hy, copy hz,
-           copy psi_h0, copy psi_h1, copy psi_h2, copy psi_h3, copy psi_h4, copy psi_h5,
-           copy psi_e0, copy psi_e1, copy psi_e2, copy psi_e3, copy psi_e4, copy psi_e5,
-           copy dft_re, copy dft_im, copy dft_weight)
-     for s < nsteps do
-       let step = step0 + s
-       -- 1. Pre-E sources were applied at the end of the previous iteration
-       --    (or before the loop), after that step's observation.
-       -- 2. Magnetic phase.
-       let hx' = field_next 0 0 edges h_scale hx h_decay_x h_source_x ez 1 ey 0
-                            slabs cpml_a cpml_b cpml_inv_kappa psi_h0 psi_h1
-       let hy' = field_next 0 1 edges h_scale hy h_decay_y h_source_y ex 0 ez 2
-                            slabs cpml_a cpml_b cpml_inv_kappa psi_h2 psi_h3
-       let hz' = field_next 0 2 edges h_scale hz h_decay_z h_source_z ey 2 ex 1
-                            slabs cpml_a cpml_b cpml_inv_kappa psi_h4 psi_h5
-       let psi_h0 = psi_next 0 edges h_scale (dims3 hx) 0 ez 1 slabs cpml_a cpml_b psi_h0
-       let psi_h1 = psi_next 0 edges h_scale (dims3 hx) 1 ey 0 slabs cpml_a cpml_b psi_h1
-       let psi_h2 = psi_next 0 edges h_scale (dims3 hy) 2 ex 0 slabs cpml_a cpml_b psi_h2
-       let psi_h3 = psi_next 0 edges h_scale (dims3 hy) 3 ez 2 slabs cpml_a cpml_b psi_h3
-       let psi_h4 = psi_next 0 edges h_scale (dims3 hz) 4 ey 2 slabs cpml_a cpml_b psi_h4
-       let psi_h5 = psi_next 0 edges h_scale (dims3 hz) 5 ex 1 slabs cpml_a cpml_b psi_h5
-       -- 3. Magnetic sources.
-       let hx = inject hx' step 3 source_group source_target
-                  source_amplitude source_offset source_length waveforms
-       let hy = inject hy' step 4 source_group source_target
-                  source_amplitude source_offset source_length waveforms
-       let hz = inject hz' step 5 source_group source_target
-                  source_amplitude source_offset source_length waveforms
-       -- 4. Electric phase.
-       let ex' = field_next 1 0 edges e_scale ex e_decay_x e_source_x hz 1 hy 0
-                            slabs cpml_a cpml_b cpml_inv_kappa psi_e0 psi_e1
-       let ey' = field_next 1 1 edges e_scale ey e_decay_y e_source_y hx 0 hz 2
-                            slabs cpml_a cpml_b cpml_inv_kappa psi_e2 psi_e3
-       let ez' = field_next 1 2 edges e_scale ez e_decay_z e_source_z hy 2 hx 1
-                            slabs cpml_a cpml_b cpml_inv_kappa psi_e4 psi_e5
-       let psi_e0 = psi_next 1 edges e_scale (dims3 ex) 6 hz 1 slabs cpml_a cpml_b psi_e0
-       let psi_e1 = psi_next 1 edges e_scale (dims3 ex) 7 hy 0 slabs cpml_a cpml_b psi_e1
-       let psi_e2 = psi_next 1 edges e_scale (dims3 ey) 8 hx 0 slabs cpml_a cpml_b psi_e2
-       let psi_e3 = psi_next 1 edges e_scale (dims3 ey) 9 hz 2 slabs cpml_a cpml_b psi_e3
-       let psi_e4 = psi_next 1 edges e_scale (dims3 ez) 10 hy 2 slabs cpml_a cpml_b psi_e4
-       let psi_e5 = psi_next 1 edges e_scale (dims3 ez) 11 hx 1 slabs cpml_a cpml_b psi_e5
-       -- 5. Electric sources.
-       let ex = inject ex' step 6 source_group source_target
-                  source_amplitude source_offset source_length waveforms
-       let ey = inject ey' step 7 source_group source_target
-                  source_amplitude source_offset source_length waveforms
-       let ez = inject ez' step 8 source_group source_target
-                  source_amplitude source_offset source_length waveforms
-       -- 6. Observe the fully constrained end-of-step fields.
-       let time = f32.fma (f32.i64 (i64.i32 elapsed_steps[0] + s + 1)) dt time_origin[0]
-       let (dft_re, dft_im, dft_weight) =
-         if M == 0 then (dft_re, dft_im, dft_weight)
-         else accumulate_dft step time dt
-                (flatten_3d ex) (flatten_3d ey) (flatten_3d ez)
-                (flatten_3d hx) (flatten_3d hy) (flatten_3d hz)
-                monitor_indices monitor_weights monitor_freqs monitor_masks
-                monitor_counts monitor_codes monitor_windows dft_re dft_im dft_weight
-       -- Pre-E sources of the next step, applied after this observation. The
-       -- final step selects no group rather than branching, which keeps the
-       -- loop-carried E fields in their direct layout.
-       let pre = if s + 1 == nsteps then -1 else 0
-       let ex = inject ex (step + 1) pre source_group source_target
-                       source_amplitude source_offset source_length waveforms
-       let ey = inject ey (step + 1) (pre + i32.bool (pre >= 0)) source_group source_target
-                       source_amplitude source_offset source_length waveforms
-       let ez = inject ez (step + 1) (pre + 2 * i32.bool (pre >= 0)) source_group source_target
-                       source_amplitude source_offset source_length waveforms
-       in (ex, ey, ez, hx, hy, hz,
-           psi_h0, psi_h1, psi_h2, psi_h3, psi_h4, psi_h5,
-           psi_e0, psi_e1, psi_e2, psi_e3, psi_e4, psi_e5,
-           dft_re, dft_im, dft_weight)
+  let (ex, ey, ez, hx, hy, hz,
+       psi_h0, psi_h1, psi_h2, psi_h3, psi_h4, psi_h5,
+       psi_e0, psi_e1, psi_e2, psi_e3, psi_e4, psi_e5,
+       dft_re, dft_im, dft_weight) =
+    loop (ex, ey, ez, hx, hy, hz,
+          psi_h0, psi_h1, psi_h2, psi_h3, psi_h4, psi_h5,
+          psi_e0, psi_e1, psi_e2, psi_e3, psi_e4, psi_e5,
+          dft_re, dft_im, dft_weight) =
+         -- Inputs alias XLA buffers that are also outputs, so the loop works
+         -- on private copies and the handler copies results back at the end.
+         (inject' (pad P0 P1 P2 ex) step0 0,
+          inject' (pad P0 P1 P2 ey) step0 1,
+          inject' (pad P0 P1 P2 ez) step0 2,
+          pad P0 P1 P2 hx, pad P0 P1 P2 hy, pad P0 P1 P2 hz,
+          copy psi_h0, copy psi_h1, copy psi_h2, copy psi_h3, copy psi_h4, copy psi_h5,
+          copy psi_e0, copy psi_e1, copy psi_e2, copy psi_e3, copy psi_e4, copy psi_e5,
+          copy dft_re, copy dft_im, copy dft_weight)
+    for s < nsteps do
+      let step = step0 + s
+      -- 1. Pre-E sources were applied at the end of the previous iteration
+      --    (or before the loop), after that step's observation.
+      -- 2. Magnetic phase.
+      let (hx', hy', hz') =
+        phase_next 0 edges h_scale nh (hx, hy, hz) h_decay h_source ne (ex, ey, ez)
+                   slabs cpml_a cpml_b cpml_inv_kappa
+                   (psi_h0, psi_h1, psi_h2, psi_h3, psi_h4, psi_h5)
+      let psi_h0 = psi_next 0 edges h_scale nh.0 0 ez ne.2 1 slabs cpml_a cpml_b psi_h0
+      let psi_h1 = psi_next 0 edges h_scale nh.0 1 ey ne.1 0 slabs cpml_a cpml_b psi_h1
+      let psi_h2 = psi_next 0 edges h_scale nh.1 2 ex ne.0 0 slabs cpml_a cpml_b psi_h2
+      let psi_h3 = psi_next 0 edges h_scale nh.1 3 ez ne.2 2 slabs cpml_a cpml_b psi_h3
+      let psi_h4 = psi_next 0 edges h_scale nh.2 4 ey ne.1 2 slabs cpml_a cpml_b psi_h4
+      let psi_h5 = psi_next 0 edges h_scale nh.2 5 ex ne.0 1 slabs cpml_a cpml_b psi_h5
+      -- 3. Magnetic sources.
+      let hx = inject' hx' step 3
+      let hy = inject' hy' step 4
+      let hz = inject' hz' step 5
+      -- 4. Electric phase.
+      let (ex', ey', ez') =
+        phase_next 1 edges e_scale ne (ex, ey, ez) e_decay e_source nh (hx, hy, hz)
+                   slabs cpml_a cpml_b cpml_inv_kappa
+                   (psi_e0, psi_e1, psi_e2, psi_e3, psi_e4, psi_e5)
+      let psi_e0 = psi_next 1 edges e_scale ne.0 6 hz nh.2 1 slabs cpml_a cpml_b psi_e0
+      let psi_e1 = psi_next 1 edges e_scale ne.0 7 hy nh.1 0 slabs cpml_a cpml_b psi_e1
+      let psi_e2 = psi_next 1 edges e_scale ne.1 8 hx nh.0 0 slabs cpml_a cpml_b psi_e2
+      let psi_e3 = psi_next 1 edges e_scale ne.1 9 hz nh.2 2 slabs cpml_a cpml_b psi_e3
+      let psi_e4 = psi_next 1 edges e_scale ne.2 10 hy nh.1 2 slabs cpml_a cpml_b psi_e4
+      let psi_e5 = psi_next 1 edges e_scale ne.2 11 hx nh.0 1 slabs cpml_a cpml_b psi_e5
+      -- 5. Electric sources.
+      let ex = inject' ex' step 6
+      let ey = inject' ey' step 7
+      let ez = inject' ez' step 8
+      -- 6. Observe the fully constrained end-of-step fields.
+      let time = f32.fma (f32.i64 (i64.i32 elapsed_steps[0] + s + 1)) dt time_origin[0]
+      let (dft_re, dft_im, dft_weight) =
+        if M == 0 then (dft_re, dft_im, dft_weight)
+        else accumulate_dft step time dt
+               (flatten_3d ex) (flatten_3d ey) (flatten_3d ez)
+               (flatten_3d hx) (flatten_3d hy) (flatten_3d hz)
+               monitor_indices monitor_weights monitor_freqs monitor_masks
+               monitor_counts monitor_codes monitor_windows dft_re dft_im dft_weight
+      -- Pre-E sources of the next step, applied after this observation. The
+      -- final step selects no group rather than branching, which keeps the
+      -- loop-carried E fields in their direct layout.
+      let pre = if s + 1 == nsteps then -1 else 0
+      let ex = inject' ex (step + 1) pre
+      let ey = inject' ey (step + 1) (pre + i32.bool (pre >= 0))
+      let ez = inject' ez (step + 1) (pre + 2 * i32.bool (pre >= 0))
+      in (ex, ey, ez, hx, hy, hz,
+          psi_h0, psi_h1, psi_h2, psi_h3, psi_h4, psi_h5,
+          psi_e0, psi_e1, psi_e2, psi_e3, psi_e4, psi_e5,
+          dft_re, dft_im, dft_weight)
+  in (crop z0 y0 x0 ex, crop z1 y1 x1 ey, crop z2 y2 x2 ez,
+      crop z3 y3 x3 hx, crop z4 y4 x4 hy, crop z5 y5 x5 hz,
+      psi_h0, psi_h1, psi_h2, psi_h3, psi_h4, psi_h5,
+      psi_e0, psi_e1, psi_e2, psi_e3, psi_e4, psi_e5,
+      dft_re, dft_im, dft_weight)

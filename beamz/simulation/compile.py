@@ -764,7 +764,8 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             )
             packed_e = (
                 None
-                if sharding_layout.enabled or request.run.backend != "cuda_streamed"
+                if sharding_layout.enabled
+                or request.run.backend not in NATIVE_PROGRAM_BACKENDS
                 else _pack_cuda_lossless_e_coefficients(
                     (e_decay_x, e_decay_y, e_decay_z),
                     (e_source_x, e_source_y, e_source_z),

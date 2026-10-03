@@ -77,16 +77,20 @@ recorders, flux/power monitors) raises `FutharkBackendUnavailable`; use
 
 ## How a call works
 
-1. JAX passes 64 device buffers (state, coefficients, CPML profiles, a flat
+1. JAX passes 70 device buffers (state, coefficients, CPML profiles, a flat
    source scatter table and packed DFT plans) plus five scalar attributes.
+   Lossless low-cardinality E materials arrive as the CUDA backend's
+   codebooks with four 8-bit cell codes per word.
 2. The handler waits for XLA's stream, wraps every buffer with
    `futhark_new_raw_*` (no copy) and runs the entry point on Futhark's stream.
 3. Results are copied device-to-device into the XLA outputs, which alias the
    state inputs.
 
-The program copies its loop state once on entry, because the inputs alias XLA
-outputs. Each run therefore costs two extra state-sized copies, about 2% of a
-256-step run at 16.8M cells.
+During the run every field component lives zero-padded in the common
+(z+1)×(y+1)×(x+1) shape, so each phase is one fused kernel for all three
+components; source targets and monitor plans are rebased onto that storage.
+Padding on entry replaces the private copy the aliased inputs need anyway, and
+cropping on exit adds one state-sized pass, which is negligible next to a run.
 
 ## Performance
 
@@ -100,15 +104,24 @@ JAX 0.9.0 (CUDA 13), Futhark 0.27.1:
 
 | Shape (z×y×x) | Cells | JAX GCUPS | Futhark GCUPS | Speedup |
 |---|---:|---:|---:|---:|
-| 64×96×128 | 0.79 M | 1.16 | 1.54 | 1.33× |
-| 96×160×256 | 3.9 M | 1.36 | 2.06 | 1.52× |
-| 128×256×512 | 16.8 M | 1.52 | 2.37 | 1.56× |
+| 64×96×128 | 0.79 M | 1.16 | 1.73 | 1.49× |
+| 96×160×256 | 3.9 M | 1.36 | 2.35 | 1.73× |
+| 128×256×512 | 16.8 M | 1.52 | 2.54 | 1.67× |
 
-Futhark also lowers to XLA much faster (≈0.6 s versus ≈1.5 s compile). The six
-field-component kernels take about 80% of the device time. Each is a separate
-global-memory stencil at roughly half of peak bandwidth; the hand-written CUDA
-backend instead fuses components and tiles through shared memory, which
-Futhark does not generate for this pattern.
+Futhark also lowers to XLA much faster (≈0.7 s versus ≈1.5 s compile). The two
+fused field kernels take about 82% of the device time and the twelve CPML
+recurrence kernels about 14%. At 16.8 M cells the fused kernels run at
+≈230–240 GB/s: one z plane of their nine streams no longer fits the 4 MB L2, so
+z neighbors are reread from DRAM. The hand-written CUDA backend avoids that by
+tiling through shared memory, which Futhark does not generate for this pattern.
+
+Measured and rejected: y-strip storage layouts to shrink the L2 working set
+(within ±1% of fused at 17–38 M cells once materials are packed, −5% on small
+grids), per-thread z-column marching (`#[sequential]`, 2× slower: Futhark
+virtualizes it and transposes every step), writing CPML memory from the field
+kernels via `scatter` (2× slower: not fused), scatter instead of
+`reduce_by_index` for DFT accumulation (−1.3%), thread-block sizes other than
+256 (no gain), and per-metric-kind entry points (≤1.4%).
 
 ### AMD
 
@@ -122,17 +135,19 @@ Futhark 0.27.1 HIP backend:
 | 96×160×256 | 3.9 M | 1.16 | 1.29 | 1.11× |
 | 128×256×512 | 16.8 M | 1.08 | 1.44 | 1.33× |
 
-Results agree with JAX to float32 rounding on both GPUs.
+The AMD figures predate the fused kernels. Results agree with JAX to float32
+rounding on both GPUs.
 
 ### CPU
 
 Same workload and script on a Ryzen 9 7950X (16 cores, DDR5), JAX 0.9.0 CPU,
-Futhark 0.27.1, ISPC 1.31.0; median of 5 warm samples:
+Futhark 0.27.1 `multicore`; median of 5 warm samples:
 
-| Shape (z×y×x) | Cells | JAX GCUPS | multicore GCUPS | ispc GCUPS | multicore speedup |
-|---|---:|---:|---:|---:|---:|
-| 64×96×128 | 0.79 M | 0.146 | 0.172 | 0.165 | 1.18× |
-| 96×160×256 | 3.9 M | 0.117 | 0.201 | 0.174 | 1.72× |
-| 128×256×512 | 16.8 M | 0.118 | 0.220 | 0.202 | 1.86× |
+| Shape (z×y×x) | Cells | JAX GCUPS | Futhark GCUPS | Speedup |
+|---|---:|---:|---:|---:|
+| 64×96×128 | 0.79 M | 0.145 | 0.213 | 1.47× |
+| 96×160×256 | 3.9 M | 0.115 | 0.229 | 1.99× |
+| 128×256×512 | 16.8 M | 0.119 | 0.259 | 2.18× |
 
-The sequential `c` build reaches 0.018 GCUPS at 0.79 M cells.
+The `ispc` and sequential `c` builds were last measured before the fused
+kernels, at 0.165–0.202 GCUPS and 0.018 GCUPS (0.79 M cells) respectively.

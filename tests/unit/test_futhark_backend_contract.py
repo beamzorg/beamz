@@ -11,7 +11,11 @@ import numpy as np
 import pytest
 
 from beamz.simulation.backend import normalize_backend
-from beamz.simulation.futhark.runtime import source_table
+from beamz.simulation.futhark.runtime import (
+    _storage_indices,
+    source_table,
+    storage_shape,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -57,6 +61,23 @@ def test_pre_e_sources_ignore_pec_constraints():
     group = _group(np.ones((1, 1, 1, 1)), [[0, 0, 0]], [[1.0]])
     target, *_ = source_table((group,) + (None,) * 8, (shape,) * 6, 0b111111)
     assert target.tolist() == [0]
+
+
+def test_targets_and_plans_rebase_onto_padded_storage():
+    shapes = ((3, 4, 5), (3, 5, 6), (4, 4, 6), (4, 5, 5), (4, 4, 6), (3, 5, 6))
+    storage = storage_shape(shapes)
+    assert storage == (4, 5, 6)
+    group = _group(np.ones((1, 1, 1, 1)), [[2, 3, 4]], [[1.0]])
+    target, *_ = source_table((group,) + (None,) * 8, shapes, 0, storage)
+    assert target.tolist() == [(2 * 5 + 3) * 6 + 4]
+    # [M][6][P][N] plan offsets index each component's own shape; -1 and
+    # out-of-range entries stay dropped.
+    indices = np.full((1, 6, 3, 1), -1, np.int32)
+    indices[0, 0, :, 0] = [(2 * 4 + 3) * 5 + 4, -1, 3 * 4 * 5]
+    indices[0, 3, 0, 0] = (1 * 5 + 2) * 5 + 3
+    rebased = np.asarray(_storage_indices(indices, shapes, storage))
+    assert rebased[0, 0, :, 0].tolist() == [(2 * 5 + 3) * 6 + 4, -1, -1]
+    assert rebased[0, 3, 0, 0] == (1 * 5 + 2) * 6 + 3
 
 
 def test_handler_generator_rejects_consumed_inputs():
