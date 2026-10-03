@@ -121,7 +121,11 @@ grids), per-thread z-column marching (`#[sequential]`, 2× slower: Futhark
 virtualizes it and transposes every step), writing CPML memory from the field
 kernels via `scatter` (2× slower: not fused), scatter instead of
 `reduce_by_index` for DFT accumulation (−1.3%), thread-block sizes other than
-256 (no gain), and per-metric-kind entry points (≤1.4%).
+256 (no gain), per-metric-kind entry points (≤1.4%), injecting each source
+group from its own slice of the source table (−0.8%: the dynamic slices stop
+Futhark fusing the selection into the histogram, tripling inject kernels), and
+skipping the DFT on steps no monitor samples (−1.7% when every step samples:
+the device-side condition costs two blocking host reads per step).
 
 ### AMD
 

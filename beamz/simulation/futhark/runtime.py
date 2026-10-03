@@ -18,8 +18,10 @@ import jax.numpy as jnp
 import numpy as np
 
 from beamz.simulation.cuda.runtime import (
+    _ffi_call,
     _metallic_edge_mask,
     _metric_kind_code,
+    _packed_e_material,
     _phase_metrics,
 )
 from beamz.simulation.model import SimulationState
@@ -55,14 +57,14 @@ def futhark_platform() -> str:
     return gpu_platform() or os.environ.get(_CPU_ENV, "multicore")
 
 
-def library_path(platform: str = "cuda") -> Path:
+def library_path(platform: str) -> Path:
     return Path(
         os.environ.get(_LIBRARY_ENV) or _NATIVE / f"libbeamz_futhark_{platform}.so"
     )
 
 
 @cache
-def _register() -> str:
+def _register() -> None:
     platform = futhark_platform()
     path = library_path(platform)
     if not path.exists():
@@ -76,7 +78,6 @@ def _register() -> str:
         jax.ffi.pycapsule(getattr(library, _SYMBOL)),
         platform={"hip": "ROCM", "cuda": "CUDA"}.get(platform, "cpu"),
     )
-    return str(path)
 
 
 def futhark_backend_status() -> str | None:
@@ -125,13 +126,14 @@ def storage_shape(field_shapes) -> tuple[int, int, int]:
     return tuple(int(max(shape[axis] for shape in field_shapes)) for axis in range(3))
 
 
-def source_table(groups, field_shapes, edges: int, storage=None):
+def source_table(groups, field_shapes, edges: int, storage):
     """Flatten the nine (timing, component) slab groups into one scatter table.
 
-    Targets index ``storage`` (default: each component's own shape). Returns
-    per-cell flat targets (-1 when dropped), amplitudes, waveform
-    offsets and lengths, group indices and the concatenated waveforms. Out-of-field cells are dropped and post-update sources skip
-    PEC-constrained cells, exactly as the CUDA source kernels do.
+    Targets index the padded ``storage`` shape. Returns per-cell flat targets
+    (-1 when dropped), amplitudes, waveform offsets and lengths, group indices
+    and the concatenated waveforms. Out-of-field cells are dropped and
+    post-update sources skip PEC-constrained cells, exactly as the CUDA source
+    kernels do.
     """
     if len(groups) != _SOURCE_GROUP_COUNT:
         raise ValueError("Futhark source table requires nine phase/component groups")
@@ -160,8 +162,7 @@ def source_table(groups, field_shapes, edges: int, storage=None):
                     inside &= ~_constrained(
                         shape, component, 0 if timing == 1 else 1, edges, z, y, x
                     )
-                stride = shape if storage is None else storage
-                flat = np.where(inside, (z * stride[1] + y) * stride[2] + x, -1)
+                flat = np.where(inside, (z * storage[1] + y) * storage[2] + x, -1)
                 targets.append(flat)
                 amplitudes.append(coeffs[source].reshape(-1))
                 offsets.append(np.full(flat.shape, wave_offset))
@@ -171,7 +172,7 @@ def source_table(groups, field_shapes, edges: int, storage=None):
                 wave_offset += waveforms.shape[1]
     if wave_offset >= np.iinfo(np.int32).max or any(
         int(np.prod(shape)) >= np.iinfo(np.int32).max
-        for shape in (*field_shapes, *(() if storage is None else (storage,)))
+        for shape in (*field_shapes, storage)
     ):
         raise FutharkBackendUnavailable("Futhark source indices exceed int32")
 
@@ -271,18 +272,21 @@ def run_program(
     if nsteps < 1:
         raise ValueError("Futhark step count must be positive")
     _register()
-    fields = (state.hx, state.hy, state.hz, state.ex, state.ey, state.ez)
-    if any(value.dtype != jnp.float32 or value.ndim != 3 for value in fields):
-        raise FutharkBackendUnavailable("Futhark requires float32 3D fields")
-    edges = _metallic_edge_mask(ctx.boundary.cpml.metallic_edges)
     e_fields = (state.ex, state.ey, state.ez)
     h_fields = (state.hx, state.hy, state.hz)
+    if any(
+        value.dtype != jnp.float32 or value.ndim != 3
+        for value in (*e_fields, *h_fields)
+    ):
+        raise FutharkBackendUnavailable("Futhark requires float32 3D fields")
+    edges = _metallic_edge_mask(ctx.boundary.cpml.metallic_edges)
     shapes = tuple(value.shape for value in (*e_fields, *h_fields))
     storage = storage_shape(shapes)
     sources = source_table(groups, shapes, edges, storage)
     (slabs, cpml_a, cpml_b, cpml_k), psi = _cpml_arguments(state, ctx)
     if packed_monitors is None:
         monitors = _empty_monitors()
+        accumulators = (jnp.zeros((0,), jnp.float32),) * 3
     else:
         # Neighbor-major gather plans give coalesced reads in the DFT kernel.
         indices, weights, *rest = packed_monitors
@@ -291,20 +295,16 @@ def run_program(
             jnp.swapaxes(weights, 2, 3),
             *rest,
         )
-    accumulators = tuple(
-        jnp.asarray(value, dtype=jnp.float32).reshape((-1,))
-        for value in (state.dft_vec_re, state.dft_vec_im, state.dft_weight_sum)
-    )
-    if packed_monitors is None:
-        accumulators = tuple(jnp.zeros((0,), jnp.float32) for _ in accumulators)
+        accumulators = tuple(
+            jnp.asarray(value, dtype=jnp.float32).reshape((-1,))
+            for value in (state.dft_vec_re, state.dft_vec_im, state.dft_weight_sum)
+        )
     e_values = [
         getattr(coeffs, f"e_{kind}_{axis}")
         for kind in ("decay", "source")
         for axis in "xyz"
     ]
-    if all(jnp.ndim(value) == 1 for value in e_values) and all(
-        jnp.asarray(value).dtype == jnp.int32 for value in e_values[3:]
-    ):
+    if _packed_e_material(coeffs):
         # compile.py packed a lossless E update into codebooks (in the decay
         # slots) and four 8-bit cell codes per int32 word (in the source slots).
         tables = tuple(jnp.asarray(value, jnp.float32) for value in e_values[:3])
@@ -336,34 +336,23 @@ def run_program(
         jnp.asarray(origin, dtype=jnp.float32).reshape((1,)),
         jnp.asarray(observation_step_offset, dtype=jnp.int32).reshape((1,)),
     )
-    arguments = (
-        *e_fields,
-        *h_fields,
-        *coefficients,
-        *metrics,
-        jnp.asarray(slabs),
-        cpml_a,
-        cpml_b,
-        cpml_k,
-        *psi,
-        *(jnp.asarray(value) for value in sources),
-        *monitors,
-        *accumulators,
-        *clocks,
-    )
-    state_values = (*e_fields, *h_fields, *psi, *accumulators)
-    psi_start = 6 + len(coefficients) + len(metrics) + 4
-    dft_start = psi_start + len(psi) + len(sources) + len(monitors)
-    aliases = {index: index for index in range(6)}
-    aliases.update({psi_start + index: 6 + index for index in range(len(psi))})
-    aliases.update({dft_start + index: 6 + len(psi) + index for index in range(3)})
-    call = jax.ffi.ffi_call(
-        TARGET,
-        tuple(jax.ShapeDtypeStruct(v.shape, v.dtype) for v in state_values),
-        input_output_aliases=aliases,
-        vmap_method="sequential",
-    )
-    outputs = call(
+    # Each state group is an output aliased to its input slot in place.
+    arguments, aliases, state_values = [], {}, []
+
+    def add(values, state=False):
+        for value in values:
+            if state:
+                aliases[len(arguments)] = len(state_values)
+                state_values.append(value)
+            arguments.append(value)
+
+    add((*e_fields, *h_fields), state=True)
+    add((*coefficients, *metrics, jnp.asarray(slabs), cpml_a, cpml_b, cpml_k))
+    add(psi, state=True)
+    add((*(jnp.asarray(value) for value in sources), *monitors))
+    add(accumulators, state=True)
+    add(clocks)
+    outputs = _ffi_call(TARGET, state_values, aliases)(
         *arguments,
         nsteps=np.int64(nsteps),
         dt=np.float32(ctx.dt),

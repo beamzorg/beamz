@@ -30,6 +30,7 @@ from beamz.devices.sources.compiler import (
 )
 from beamz.simulation.backend import CUDA_BF16_PSI
 from beamz.simulation.boundary_masks import compact_boundary_masks
+from beamz.simulation.compile import NATIVE_PROGRAM_BACKENDS
 from beamz.simulation.model import (
     AutoTermination,
     CompiledProgram,
@@ -708,7 +709,7 @@ def build_scan(program, *, donate_state: bool = False):
     )
     packed_graph_monitors = None
     if (
-        cfg.backend in {"cuda_streamed", "futhark"}
+        cfg.backend in NATIVE_PROGRAM_BACKENDS
         and not cfg.sharding.enabled
         and graph_monitors_supported
         and not bool(jax.config.read("jax_enable_x64"))
@@ -808,7 +809,6 @@ def build_scan(program, *, donate_state: bool = False):
                 graph_source_groups if program.sources else (None,) * 9,
                 packed_graph_monitors,
                 cfg.num_steps,
-                observation_origin=state.t,
             )._replace(
                 t=state.t + dt_scalar * cfg.num_steps,
                 current_step=state.current_step + cfg.num_steps,

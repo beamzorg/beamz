@@ -55,7 +55,6 @@ class Platform:
     """GPU runtime spellings that differ between the CUDA and HIP builds."""
 
     name: str
-    runtime: str  # runtime API prefix: cudaMemcpyAsync / hipMemcpyAsync
     pointer: str  # Futhark's raw device-pointer type
     headers: tuple[str, ...]
     # Disable FMA contraction so that the explicit f32.fma calls in fdtd.fut
@@ -67,7 +66,6 @@ class Platform:
     libraries: tuple[str, ...]
     library_dir: str
     toolkits: tuple[str, ...]
-    marker: str
 
     @property
     def gpu(self) -> bool:
@@ -81,7 +79,7 @@ class Platform:
         if not self.gpu:
             return None
         for candidate in self.toolkits:
-            if candidate and (Path(candidate) / "include" / self.marker).exists():
+            if candidate and (Path(candidate) / "include" / self.headers[0]).exists():
                 return Path(candidate)
         raise SystemExit(f"{self.name} toolkit not found; set CUDA_HOME or ROCM_PATH")
 
@@ -89,7 +87,6 @@ class Platform:
 PLATFORMS = {
     "cuda": Platform(
         name="cuda",
-        runtime="cuda",
         pointer="CUdeviceptr",
         headers=("cuda.h", "cuda_runtime.h", "nvrtc.h"),
         rtc_option=("futhark_context_config_add_nvrtc_option", "--fmad=false"),
@@ -97,11 +94,9 @@ PLATFORMS = {
         libraries=("cuda", "nvrtc", "cudart"),
         library_dir="lib64",
         toolkits=(os.environ.get("CUDA_HOME", ""), "/opt/cuda", "/usr/local/cuda"),
-        marker="cuda.h",
     ),
     "hip": Platform(
         name="hip",
-        runtime="hip",
         pointer="hipDeviceptr_t",
         headers=("hip/hip_runtime.h", "hip/hiprtc.h"),
         rtc_option=("futhark_context_config_add_build_option", "-ffp-contract=off"),
@@ -109,13 +104,11 @@ PLATFORMS = {
         libraries=("amdhip64", "hiprtc"),
         library_dir="lib",
         toolkits=(os.environ.get("ROCM_PATH", ""), "/opt/rocm"),
-        marker="hip/hip_runtime.h",
     ),
     # Host-memory builds for XLA's CPU client: no streams, no runtime compiler.
     **{
         name: Platform(
             name=name,
-            runtime="",
             pointer="unsigned char*",
             headers=(),
             rtc_option=("", ""),
@@ -123,7 +116,6 @@ PLATFORMS = {
             libraries=("pthread", "m"),
             library_dir="",
             toolkits=(),
-            marker="",
         )
         for name in ("c", "multicore", "ispc")
     },
@@ -171,12 +163,11 @@ def _patch_ispc_stdlib(source: Path) -> None:
 
 def generate_handler(
     manifest: dict,
-    header: str,
     platform: Platform = PLATFORMS["cuda"],
     rtc_includes: tuple[str, ...] = (),
 ) -> str:
     """Return C++ for one typed XLA FFI handler around the Futhark entry."""
-    rt = platform.runtime
+    rt = platform.name  # runtime API prefix: cudaMemcpyAsync / hipMemcpyAsync
     entry = manifest["entry_points"][ENTRY]
     record = manifest["types"][entry["output"]["type"]]
     fields = record["record"]["fields"]
@@ -212,7 +203,7 @@ def generate_handler(
         '#include "xla/ffi/api/ffi.h"',
         "",
         'extern "C" {',
-        f'#include "{header}"',
+        '#include "fdtd.h"',
         "}",
         "",
         "namespace ffi = xla::ffi;",
@@ -359,15 +350,27 @@ def generate_handler(
         "  }",
         "  ffi::Error outcome = ffi::Error::Success();",
     ]
+    copy = (
+        [
+            f"      if ({rt}MemcpyAsync(target, source, bytes, {rt}MemcpyDeviceToDevice,",
+            f"                         stream) != {rt}Success) {{",
+            '        outcome = ffi::Error::Internal("output copy failed");',
+            "      }",
+        ]
+        if platform.gpu
+        else ["      std::memcpy(target, source, bytes);"]
+    )
+    outputs = []
     for index, field in enumerate(fields):
         rank, element = _parse_array(field["type"])
         cname, dtype = _ELEMENT[element]
+        outputs.append(f"futhark_free_{element}_{rank}d(ctx, out_{index});")
         lines += [
+            f"  futhark_{element}_{rank}d* out_{index} = nullptr;",
             "  {",
-            f"    futhark_{element}_{rank}d* value = nullptr;",
-            f"    {field['project']}(ctx, &value, result);",
+            f"    {field['project']}(ctx, &out_{index}, result);",
             f"    auto r = rets.get<ffi::AnyBuffer>({index});",
-            f"    const int64_t* shape = futhark_shape_{element}_{rank}d(ctx, value);",
+            f"    const int64_t* shape = futhark_shape_{element}_{rank}d(ctx, out_{index});",
             "    size_t elements = 1;",
             "    bool same = r.has_value() && (*r)->dimensions().size() == "
             f"{rank} && (*r)->element_type() == ffi::DataType::{dtype};",
@@ -375,37 +378,25 @@ def generate_handler(
             "      same = (*r)->dimensions()[axis] == shape[axis];",
             "      elements *= static_cast<size_t>(shape[axis]);",
             "    }",
+            "    void* target = same ? (*r)->untyped_data() : nullptr;",
+            "    void* source = reinterpret_cast<void*>(",
+            f"        futhark_values_raw_{element}_{rank}d(ctx, out_{index}));",
+            f"    size_t bytes = elements * sizeof({cname});",
             "    if (!same) {",
             f'      outcome = Mismatch("output {index}");',
-            *(
-                [
-                    "    } else if (elements != 0 &&",
-                    f"               reinterpret_cast<void*>(futhark_values_raw_{element}_{rank}d(ctx, value)) !=",
-                    "                   (*r)->untyped_data() &&",
-                    f"               {rt}MemcpyAsync((*r)->untyped_data(),",
-                    f"                   reinterpret_cast<void*>(futhark_values_raw_{element}_{rank}d(ctx, value)),",
-                    f"                   elements * sizeof({cname}), {rt}MemcpyDeviceToDevice,",
-                    f"                   stream) != {rt}Success) {{",
-                    '      outcome = ffi::Error::Internal("output copy failed");',
-                    "    }",
-                    "    // Keep Futhark memory alive until the copy has drained.",
-                    f"    if ({rt}StreamSynchronize(stream) != {rt}Success) {{",
-                    '      outcome = ffi::Error::Internal("output copy failed");',
-                    "    }",
-                ]
-                if platform.gpu
-                else [
-                    "    } else {",
-                    f"      void* source = futhark_values_raw_{element}_{rank}d(ctx, value);",
-                    "      if (elements != 0 && source != (*r)->untyped_data()) {",
-                    f"        std::memcpy((*r)->untyped_data(), source, elements * sizeof({cname}));",
-                    "      }",
-                    "    }",
-                ]
-            ),
-            f"    futhark_free_{element}_{rank}d(ctx, value);",
+            "    } else if (bytes != 0 && source != target) {",
+            *copy,
+            "    }",
             "  }",
         ]
+    if platform.gpu:
+        lines += [
+            "  // Keep Futhark memory alive until the copies have drained.",
+            f"  if ({rt}StreamSynchronize(stream) != {rt}Success) {{",
+            '    outcome = ffi::Error::Internal("output copy failed");',
+            "  }",
+        ]
+    lines += [f"  {line}" for line in outputs]
     free_record = record["ops"]["free"]
     lines += [
         f"  {free_record}(ctx, result);",
@@ -429,8 +420,8 @@ def generate_handler(
         ),
         "        .RemainingArgs()",
         "        .RemainingRets()",
-        *[f'        .Attr<{ctype}>("{name}")' for name, ctype in attrs[:-1]],
-        f'        .Attr<{attrs[-1][1]}>("{attrs[-1][0]}"));',
+        *[f'        .Attr<{ctype}>("{name}")' for name, ctype in attrs],
+        ");",
         "",
     ]
     return "\n".join(lines)
@@ -452,7 +443,7 @@ def build(futhark: str, work: Path, output: Path, platform: Platform) -> Path:
     manifest = json.loads(stem.with_suffix(".json").read_text())
     handler = work / "ffi_handler.cc"
     rtc_includes = (str(toolkit / "include"),) if platform.name == "hip" else ()
-    handler.write_text(generate_handler(manifest, "fdtd.h", platform, rtc_includes))
+    handler.write_text(generate_handler(manifest, platform, rtc_includes))
     flags = ["-O3", "-fPIC", f"-I{work}"]
     if toolkit is not None:
         flags.append(f"-I{toolkit / 'include'}")

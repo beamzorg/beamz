@@ -42,7 +42,7 @@ def test_source_table_drops_outside_and_pec_constrained_cells():
     hz = _group(np.full((1, 1, 1, 2), 0.5), [[0, 1, 5]], [[7, 8]])
     groups = (None,) * 5 + (hz, None, None, ez)
     target, amplitude, offset, length, group_ids, waves = source_table(
-        groups, fields, 0b111111
+        groups, fields, 0b111111, shape
     )
     flat = lambda z, y, x: (z * shape[1] + y) * shape[2] + x  # noqa: E731
     # Hz is normal to z: its z=0 face is constrained; x=6 is outside the field.
@@ -59,7 +59,7 @@ def test_source_table_drops_outside_and_pec_constrained_cells():
 def test_pre_e_sources_ignore_pec_constraints():
     shape = (3, 3, 3)
     group = _group(np.ones((1, 1, 1, 1)), [[0, 0, 0]], [[1.0]])
-    target, *_ = source_table((group,) + (None,) * 8, (shape,) * 6, 0b111111)
+    target, *_ = source_table((group,) + (None,) * 8, (shape,) * 6, 0b111111, shape)
     assert target.tolist() == [0]
 
 
@@ -109,8 +109,8 @@ def test_handler_generator_rejects_consumed_inputs():
         },
     }
     with pytest.raises(SystemExit, match="consumed"):
-        build.generate_handler(manifest, "fdtd.h")
+        build.generate_handler(manifest)
     manifest["entry_points"]["program"]["inputs"][1]["unique"] = False
-    handler = build.generate_handler(manifest, "fdtd.h")
+    handler = build.generate_handler(manifest)
     assert 'Attr<int64_t>("nsteps")' in handler
     assert "futhark_new_raw_f32_3d" in handler

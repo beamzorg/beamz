@@ -4,12 +4,10 @@ from .runtime import (
     FutharkBackendUnavailable,
     futhark_backend_status,
     run_program,
-    source_table,
 )
 
 __all__ = [
     "FutharkBackendUnavailable",
     "futhark_backend_status",
     "run_program",
-    "source_table",
 ]
