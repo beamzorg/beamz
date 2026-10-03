@@ -4,6 +4,7 @@ Design module for BEAMZ - Contains components for designing photonic structures.
 
 from beamz.design.core import Design
 from beamz.design.discretization import MaterialGrid, build_material_grid
+from beamz.design.dispersion import PoleResidue, fit_nk
 from beamz.design.gds import ImportedComponent, export_gds, import_component, import_gds
 from beamz.design.gdsfactory import (
     ComponentSimulationResults,
@@ -36,6 +37,8 @@ from beamz.design.structures import (
 
 __all__ = [
     "Material",
+    "PoleResidue",
+    "fit_nk",
     "Design",
     "MaterialGrid",
     "build_material_grid",

@@ -9,6 +9,7 @@ theme:
 
 nav:
   - Getting Started: getting-started.md
+  - Material Library: material-library.md
   - GDSFactory Components: gdsfactory.md
   - Migrating to v0.5: migrating-to-v0.5.md
   - Automatic Graded Meshing: graded-meshing.md

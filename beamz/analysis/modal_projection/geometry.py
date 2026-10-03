@@ -13,7 +13,6 @@ from beamz.devices._placement import snap_plane_region_grid
 from beamz.lattice import (
     component_coordinates_3d_um,
     component_coordinates_rectilinear,
-    plane_sample_area,
     yee_plane_coordinates_3d,
 )
 
@@ -162,10 +161,6 @@ def _plane_axes_for_port_axis(axis: str) -> tuple[str, str]:
         return mapping[axis]
     except KeyError as exc:
         raise ValueError(f"Unsupported port axis {axis!r}.") from exc
-
-
-def _analysis_plane_sample_area(coord0, coord1, fallback_step: float) -> float:
-    return plane_sample_area((coord0, coord1), fallback_step)
 
 
 def _clamp_monitor_grid_index(idx, limit):

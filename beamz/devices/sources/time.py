@@ -373,7 +373,8 @@ class GaussianPulse:
     offset : float, default=4.0
         Pulse-center offset measured in inverse-bandwidth units.
     remove_dc_component : bool, default=True
-        Subtract the sampled waveform mean to suppress DC excitation.
+        Remove the analytic DC component with a Gaussian-envelope correction.
+        Sampling a pulse in chunks or extending the run does not change it.
 
     Notes
     -----
@@ -430,8 +431,20 @@ class GaussianPulse:
             * np.exp(-0.5 * (df / fwidth) ** 2)
             * np.exp(1j * 2.0 * np.pi * df * peak)
         )
+        dc = np.exp(-0.5 * (float(self.freq0) / fwidth) ** 2)
+        if self.remove_dc_component:
+            spectrum -= (
+                float(self.amplitude)
+                * width
+                * np.sqrt(2.0 * np.pi)
+                * dc
+                * np.exp(-0.5 * (freq_arr / fwidth) ** 2)
+                * np.exp(1j * 2.0 * np.pi * df * peak)
+            )
         if normalize:
             center = float(self.amplitude) * width * np.sqrt(2.0 * np.pi)
+            if self.remove_dc_component:
+                center *= -np.expm1(-((float(self.freq0) / fwidth) ** 2))
             spectrum = spectrum / max(abs(center), 1e-300)
         return np.asarray(spectrum, dtype=np.complex128)
 
@@ -471,8 +484,9 @@ class GaussianPulse:
 
         Notes
         -----
-        When ``remove_dc_component`` is enabled, the mean is removed from the
-        in-phase samples after evaluating the analytic pulse.
+        When ``remove_dc_component`` is enabled, subtract the analytically
+        integrated carrier from its envelope in both quadratures. The resulting
+        pulse has zero continuous-time integral and no window-dependent pedestal.
         """
         t = np.asarray(time, dtype=float)
         width = self._time_width()
@@ -481,8 +495,11 @@ class GaussianPulse:
         phase = 2.0 * np.pi * float(self.freq0) * t
         signal = envelope * np.cos(phase)
         quadrature = envelope * np.sin(phase)
-        if self.remove_dc_component and signal.size:
-            signal = signal - np.mean(signal)
+        if self.remove_dc_component:
+            carrier = 2.0 * np.pi * float(self.freq0)
+            dc = np.exp(-0.5 * (carrier * width) ** 2)
+            signal -= envelope * dc * np.cos(carrier * peak)
+            quadrature -= envelope * dc * np.sin(carrier * peak)
         return signal.astype(np.float32), quadrature.astype(np.float32)
 
 

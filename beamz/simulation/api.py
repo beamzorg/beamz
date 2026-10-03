@@ -6,7 +6,7 @@ import os
 from collections import OrderedDict
 from collections.abc import Sequence
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import import_module
 from typing import Any, Literal
 
@@ -28,7 +28,11 @@ from beamz.design.grid_spec import (
 )
 from beamz.design.materials import Material, MaterialProtocol
 from beamz.design.structures import Box
-from beamz.devices.boundaries import normalize_boundaries
+from beamz.devices.boundaries import (
+    normalize_boundaries,
+    periodic_storage_axes,
+    validate_boundary_compatibility,
+)
 from beamz.devices.monitors.monitors import (
     FieldMonitor,
     FieldRecorder,
@@ -39,6 +43,7 @@ from beamz.devices.monitors.monitors import (
 from beamz.devices.sources import (
     CANONICAL_SOURCE_TYPES,
     GaussianBeamSource,
+    PlaneWaveSource,
 )
 from beamz.lattice import (
     grid_vector_to_physical_2d,
@@ -171,7 +176,11 @@ def _resolve_grid_resolution(grid_spec, background, structures) -> float:
 def _devices_require_uniform_grid(sources, monitors) -> bool:
     """Return whether current device operators require isotropic spacing."""
     del monitors
-    return any(isinstance(source, GaussianBeamSource) for source in sources or ())
+    return any(
+        isinstance(source, GaussianBeamSource)
+        and not isinstance(source, PlaneWaveSource)
+        for source in sources or ()
+    )
 
 
 def _normalize_plane_2d(plane) -> str:
@@ -274,6 +283,28 @@ def _prepare_design(design, *, domain, size, background, grid_spec, resolution, 
     )
     for structure in source_structures:
         new_design += _structure_to_domain(structure, offset, sim_size)
+    if grid_spec is not None:
+        # Mesh requests use the same public coordinates as geometry and devices.
+        grid_spec = replace(
+            grid_spec,
+            overrides=tuple(
+                replace(
+                    item,
+                    center=tuple(
+                        value + delta
+                        for value, delta in zip(item.center, offset, strict=True)
+                    ),
+                )
+                for item in grid_spec.overrides
+            ),
+            snapping_points=tuple(
+                tuple(
+                    None if value is None else value + delta
+                    for value, delta in zip(point, offset, strict=True)
+                )
+                for point in grid_spec.snapping_points
+            ),
+        )
     # 4. Resolve adaptive spacing from the rebuilt material set, derive the final time
     # grid, and return the offset needed to shift sources and monitors consistently.
     resolution, grid, time, use_realized_grid = _resolve_design_time_and_grid(
@@ -370,37 +401,91 @@ def _prepare_material_grid(
     )
 
 
+def _resolved_raster_options(
+    options, sources, *, boundaries=(), is_3d=True, plane_2d="xy"
+):
+    """Resolve source frequency and periodic raster topology from the simulation."""
+    from beamz.design.raster import RasterOptions
+
+    if options is None:
+        options = RasterOptions()
+    if not isinstance(options, RasterOptions):
+        raise TypeError("raster_options must be RasterOptions or None.")
+    if options.reference_frequency is None:
+        frequencies = [
+            getattr(getattr(s, "source_time", None), "freq0", None)
+            for s in (() if sources is None else sources)
+        ]
+        positive = [
+            float(f) for f in frequencies if f is not None and np.isfinite(f) and f > 0
+        ]
+        if positive:
+            options = replace(options, reference_frequency=float(np.mean(positive)))
+    storage_axes = periodic_storage_axes(boundaries, is_3d=is_3d, plane_2d=plane_2d)
+    axes = "zyx" if is_3d else "yx"
+    return replace(options, periodic_axes=tuple(axes[i] for i in sorted(storage_axes)))
+
+
 def _rasterize_scene_for_simulation(
-    scene, raster_grid, raster_options, polarization: Literal["tm", "te"]
+    scene,
+    raster_grid,
+    raster_options,
+    polarization: Literal["tm", "te"],
+    *,
+    sources=None,
+    boundaries=(),
+    plane_2d="xy",
 ):
     """Convert an imported scene into the same solver grid used by Design."""
 
-    from beamz.design.raster import Grid, RasterOptions, Scene
+    from beamz.design.raster import Grid, Scene
 
     if not isinstance(scene, Scene):
         raise TypeError("Simulation scene must be a raster Scene.")
     if not isinstance(raster_grid, Grid):
         raise TypeError("Simulation raster_grid must be a raster Grid.")
-    options = (
-        RasterOptions(smoothing="farjadpour_diagonal")
-        if raster_options is None
-        else raster_options
-    )
-    if not isinstance(options, RasterOptions):
-        raise TypeError("raster_options must be RasterOptions or None.")
     dimensions = 2 if raster_grid.shape[2] == 1 else 3
+    options = _resolved_raster_options(
+        raster_options,
+        sources,
+        boundaries=boundaries,
+        is_3d=dimensions == 3,
+        plane_2d=plane_2d,
+    )
     if dimensions == 3 and polarization != "tm":
         raise ValueError("polarization applies only to 2D simulations.")
-    options = RasterOptions(
-        quality=options.quality,
-        smoothing=options.smoothing,
+    from beamz.design.dispersion import PoleResidue
+
+    has_dispersion = any(isinstance(m, PoleResidue) for m in scene.materials)
+    options = replace(
+        options,
         components=(f"two_dimensional_{polarization}" if dimensions == 2 else "all"),
     )
-    return MaterialGrid.from_raster_result(
+    material_grid = MaterialGrid.from_raster_result(
         scene.rasterize(raster_grid, options=options),
         dimensions=dimensions,
         polarization=polarization,
     )
+    if has_dispersion:
+        from beamz.design.raster.dispersion import rasterize_dispersion
+
+        regions, interfaces = rasterize_dispersion(
+            scene,
+            raster_grid,
+            kind="3d" if dimensions == 3 else "2d",
+            polarization=polarization,
+            quality=options.quality,
+            resolution=material_grid.resolution,
+            cache_directory=None,
+            smoothing=options.smoothing,
+            metal_smoothing=options.metal_smoothing,
+            reference_frequency=options.reference_frequency,
+            periodic_axes=options.periodic_axes,
+        )
+        material_grid = replace(
+            material_grid, dispersion=regions, dispersion_interfaces=interfaces
+        )
+    return material_grid
 
 
 def _setup_device_policy_label(policy) -> str:
@@ -517,7 +602,7 @@ class Simulation:
         Immutable source specifications to inject during execution.
     monitors : sequence of monitor specifications, optional
         Quantities to record. Results are keyed by monitor name.
-    boundaries : sequence of PEC, PML, or Absorber, optional
+    boundaries : sequence of PEC, PML, Absorber, or Periodic, optional
         Domain boundary conditions. An all-edge PEC boundary is used when omitted.
     resolution : float, default=0.02 * um
         Uniform cell spacing in metres when ``grid_spec`` does not override it.
@@ -552,7 +637,10 @@ class Simulation:
     raster_options : RasterOptions, optional
         Native raster quality and smoothing policy. Component selection remains
         automatic for the simulation dimensionality. Simulations default to
-        ``farjadpour_diagonal``; select ``farjadpour_full`` to retain lossless
+        ``farjadpour_diagonal`` for dielectrics and staircasing for metals
+        (Re(epsilon_r) < 1 at the mean source center frequency). Select
+        ``metal_smoothing="inherit"`` to smooth metals too, or
+        ``farjadpour_full`` to retain lossless
         off-diagonal electric coupling.
 
     Notes
@@ -654,11 +742,17 @@ class Simulation:
                 raise ValueError(
                     "grid_spec cannot be combined with scene; use raster_grid."
                 )
+            # Raster topology and boundary compilation must see the same input,
+            # including when boundaries were supplied as a one-shot iterable.
+            boundaries = normalize_boundaries(boundaries)
             material_grid = _rasterize_scene_for_simulation(
                 scene,
                 raster_grid,
                 raster_options,
                 polarization,
+                sources=sources,
+                boundaries=boundaries,
+                plane_2d=plane_2d,
             )
             raster_options = None
         require_uniform_grid = _devices_require_uniform_grid(sources, monitors)
@@ -733,6 +827,7 @@ class Simulation:
                 )
         time = _normalize_time(time)
         boundaries = normalize_boundaries(boundaries)
+        validate_boundary_compatibility(boundaries, is_3d=is_3d, plane_2d=plane_2d)
         if raster_options is not None:
             from beamz.design.raster import RasterOptions
 
@@ -990,12 +1085,20 @@ class Simulation:
         token = self._material_grid_token()
         cached = _MATERIAL_GRID_CACHE.get(token)
         if cached is None:
-            raster_kwargs = {}
-            if self.raster_options is not None:
-                raster_kwargs = {
-                    "quality": self.raster_options.quality,
-                    "smoothing": self.raster_options.smoothing,
-                }
+            options = _resolved_raster_options(
+                self.raster_options,
+                self.sources,
+                boundaries=self.boundaries,
+                is_3d=self.is_3d,
+                plane_2d=self.plane_2d,
+            )
+            raster_kwargs = {
+                "quality": options.quality,
+                "smoothing": options.smoothing,
+                "metal_smoothing": options.metal_smoothing,
+                "reference_frequency": options.reference_frequency,
+                "periodic_axes": options.periodic_axes,
+            }
             with _resolved_setup_device_context(self.setup_device_resolved):
                 cached = build_material_grid(
                     self.design,
@@ -1025,7 +1128,13 @@ class Simulation:
                 design.depth,
                 design.background,
                 design.structures,
-                self.raster_options,
+                _resolved_raster_options(
+                    self.raster_options,
+                    self.sources,
+                    boundaries=self.boundaries,
+                    is_3d=self.is_3d,
+                    plane_2d=self.plane_2d,
+                ),
                 self.polarization,
             )
         )
@@ -1068,7 +1177,11 @@ class Simulation:
         for :meth:`step`, branching, debugging, or custom continuation workflows.
         """
         # Allocate disabled features as empty fixed-rank arrays to keep runtime state structurally stable.
-        return SimulationState.initial(self.compile().grid, t=float(self.time[0]))
+        from beamz.simulation.dispersion import initial_polarization
+
+        program = self.compile()
+        state = SimulationState.initial(program.grid, t=float(self.time[0]))
+        return state._replace(polarization=initial_polarization(program.dispersion))
 
     def step(
         self, state=None, *, donate_state=False, backend="auto"

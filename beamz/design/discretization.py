@@ -11,7 +11,7 @@ import numpy.typing as npt
 from beamz._cache_tokens import cache_token
 from beamz.design.grid import RectilinearGrid
 from beamz.devices._immutable import readonly_array
-from beamz.lattice import normalize_polarization_2d
+from beamz.lattice import component_shapes, normalize_polarization_2d
 
 
 def _tensor_diagonal(values) -> np.ndarray:
@@ -86,6 +86,8 @@ class MaterialGrid:
     polarization: Literal["tm", "te"] | None = None
     yee_tensors: Mapping[str, npt.ArrayLike] = field(default_factory=dict)
     grid: RectilinearGrid | None = None
+    dispersion: tuple = ()
+    dispersion_interfaces: tuple = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "permittivity", readonly_array(self.permittivity))
@@ -120,7 +122,17 @@ class MaterialGrid:
                 for key, value in dict(getattr(self, name)).items()
             }
             object.__setattr__(self, name, MappingProxyType(values))
+        shapes = component_shapes(self.shape, self.polarization or "tm")
+        self._validate_dispersion()
         smoothing = str(self.smoothing).strip().lower()
+        if self.dispersion_interfaces and smoothing != "farjadpour_diagonal":
+            raise ValueError(
+                "Dispersive interfaces require diagonal Farjadpour smoothing."
+            )
+        if self.dispersion and smoothing == "farjadpour_full":
+            raise ValueError(
+                "Dispersive material grids support volume or diagonal Farjadpour coefficients."
+            )
         if smoothing not in {"volume", "farjadpour_diagonal", "farjadpour_full"}:
             raise ValueError("Unknown material-grid smoothing mode.")
         object.__setattr__(self, "smoothing", smoothing)
@@ -182,9 +194,6 @@ class MaterialGrid:
                 f"Unknown Yee material fields: {', '.join(sorted(unknown_yee))}."
             )
         if self.yee_materials:
-            from beamz.lattice import component_shapes
-
-            shapes = component_shapes(self.shape, self.polarization or "tm")
             for name, values in self.yee_materials.items():
                 expected = shapes[allowed_yee[name]]
                 if np.asarray(values).shape != expected:
@@ -255,9 +264,6 @@ class MaterialGrid:
                 f"{', '.join(sorted(unknown_yee_tensors))}."
             )
         if self.yee_tensors:
-            from beamz.lattice import component_shapes
-
-            shapes = component_shapes(self.shape, self.polarization or "tm")
             for name, values in self.yee_tensors.items():
                 expected = (
                     tuple(value + 1 for value in self.shape)
@@ -270,6 +276,46 @@ class MaterialGrid:
                         f"{name} tensor has shape {actual}, expected compact "
                         f"(1|3|6, {', '.join(map(str, expected))})."
                     )
+
+    def _validate_dispersion(self):
+        from beamz.design.dispersion import PoleResidue
+
+        shapes = component_shapes(self.shape, self.polarization or "tm")
+        dispersion = []
+        for medium, supports in self.dispersion:
+            if not isinstance(medium, PoleResidue):
+                raise TypeError(
+                    "Dispersive grid entries require PoleResidue materials."
+                )
+            weights = {}
+            for name, value in supports.items():
+                value = np.asarray(value)
+                if (
+                    name not in {"Ex", "Ey", "Ez"}
+                    or value.shape != shapes[name]
+                    or not np.isfinite(value).all()
+                    or np.any((value < 0) | (value > 1))
+                ):
+                    raise ValueError(
+                        "Dispersive weights must be finite Yee-support fractions in [0,1]."
+                    )
+                weights[name] = readonly_array(value)
+            dispersion.append((medium, MappingProxyType(weights)))
+        object.__setattr__(self, "dispersion", tuple(dispersion))
+        from beamz.design.dispersive_interfaces import DispersiveInterface
+
+        for interface in self.dispersion_interfaces:
+            if not isinstance(interface, DispersiveInterface):
+                raise TypeError("Expected immutable dispersive interface data.")
+            if not self.dispersion or np.any(
+                interface.indices >= np.prod(shapes[interface.component])
+            ):
+                raise ValueError(
+                    "Interface indices must belong to a dispersive Yee grid."
+                )
+        object.__setattr__(
+            self, "dispersion_interfaces", tuple(self.dispersion_interfaces)
+        )
 
     @classmethod
     def from_raster_result(
@@ -491,7 +537,7 @@ class MaterialGrid:
 
         if not self.yee_materials:
             return False
-        if self.metric_kind != "isotropic_uniform":
+        if self.dispersion or self.metric_kind != "isotropic_uniform":
             return True
         if self.smoothing == "farjadpour_diagonal" or self.uses_full_permittivity:
             return True
@@ -526,6 +572,8 @@ class MaterialGrid:
             self.smoothing,
             self.polarization,
             self.yee_tensors,
+            tuple((m.cache_spec(), weights) for m, weights in self.dispersion),
+            tuple(i.cache_spec() for i in self.dispersion_interfaces),
         )
 
     def __eq__(self, other):

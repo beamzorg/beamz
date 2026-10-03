@@ -481,3 +481,20 @@ def test_cpml_grid_profiles_are_directional_and_identity_interior():
     np.testing.assert_allclose(y_sigma[3:-3], 0.0)
     np.testing.assert_allclose(y_kappa[3:-3], 1.0)
     np.testing.assert_allclose(y_alpha[3:-3], 0.0)
+
+
+@pytest.mark.parametrize("dimension", [2, 3])
+def test_cpml_physical_profile_is_invariant_under_time_step_refinement(dimension):
+    fields = _make_fields_2d() if dimension == 2 else _make_fields_3d()
+    design = _make_design_2d() if dimension == 2 else _make_design_3d()
+    boundary = PML(thickness=0.2, formulation="cpml")
+    coarse = compile_absorber_regions(
+        boundary, fields, design, resolution=0.1, dt=2e-15
+    )
+    refined = compile_absorber_regions(
+        boundary, fields, design, resolution=0.1, dt=2e-16
+    )
+    for name in coarse:
+        if name.startswith(("sigma_", "alpha_", "kappa_")):
+            np.testing.assert_array_equal(coarse[name], refined[name])
+    assert np.max(np.asarray(coarse["alpha_x"])) > 0

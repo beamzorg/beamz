@@ -131,3 +131,14 @@ def test_pulse_convergence_preserves_frequency_domain_result():
         bounded["output"].dft_weight_sum,
         reference["output"].dft_weight_sum,
     )
+    # Completing a negligible DFT tail also completes the source-normalization
+    # window. Both raw and repeatedly normalized views must remain consistent.
+    np.testing.assert_array_equal(bounded.metadata.time, reference.metadata.time)
+    for source in (None, 0):
+        actual = (
+            bounded.renormalize(None)
+            .renormalize(source)["output"]
+            .get_dft_component("Ez")
+        )
+        expected = reference.renormalize(source)["output"].get_dft_component("Ez")
+        assert np.linalg.norm(actual - expected) / np.linalg.norm(expected) < 5e-3

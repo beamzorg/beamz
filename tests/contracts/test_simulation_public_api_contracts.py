@@ -23,6 +23,7 @@ STABLE_SIMULATION_EXPORTS = {
     "MonitorResults",
     "PEC",
     "PML",
+    "Periodic",
     "Port",
     "RunTermination",
     "Simulation",
@@ -86,6 +87,7 @@ def test_public_specs_have_consistent_reexports():
     assert beamz.PEC is simulation.PEC is devices.PEC
     assert beamz.PML is simulation.PML is devices.PML
     assert beamz.Absorber is simulation.Absorber is devices.Absorber
+    assert beamz.Periodic is simulation.Periodic is devices.Periodic
     assert hasattr(design, "MaterialGrid")
     assert hasattr(design, "build_material_grid")
 
@@ -106,6 +108,7 @@ def test_public_simulation_methods_have_reference_docstrings():
         simulation.PEC,
         simulation.PML,
         simulation.Absorber,
+        simulation.Periodic,
     )
 
     for cls in public_classes:

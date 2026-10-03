@@ -150,3 +150,31 @@ def test_region_basic_negative_and_strided_slices():
         (slice(1, 0), slice(None), slice(None)),
     ]:
         np.testing.assert_array_equal(recipe[key], value[key])
+
+
+@pytest.mark.parametrize("scalar", [False, True])
+def test_region_physical_conductivity_keeps_magnetic_update_lossless(scalar):
+    from types import SimpleNamespace
+
+    from beamz.lattice import build_material_coefficients
+    from beamz.simulation.region_materials import build_region_materials
+
+    shape = (3, 4, 5)
+    sigma = np.asarray(100, np.float32) if scalar else np.full(shape, 100, np.float32)
+    fields = SimpleNamespace(
+        permittivity=np.full(shape, 2, np.float32),
+        conductivity=sigma,
+        permeability=np.ones(shape, np.float32),
+        has_pml=True,
+        has_cpml=True,
+        **{c: np.zeros(s, np.float32) for c, s in component_shapes(shape).items()},
+    )
+    eager = build_material_coefficients(fields)
+    regional = build_region_materials(fields)
+    for axis in "xyz":
+        np.testing.assert_array_equal(getattr(regional, "sigma_m_h" + axis), 0)
+        np.testing.assert_array_equal(getattr(eager, "sigma_m_h" + axis), 0)
+        np.testing.assert_allclose(
+            np.asarray(getattr(regional, "sig_" + axis)),
+            np.asarray(getattr(eager, "sig_" + axis)),
+        )

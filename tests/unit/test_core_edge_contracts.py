@@ -22,7 +22,6 @@ from beamz.lattice import (
     component_shape_3d,
     linear_interpolation_plan,
     plane_axes_3d,
-    plane_sample_area,
 )
 
 
@@ -68,7 +67,6 @@ def test_linear_interpolation_handles_empty_singleton_and_clamped_targets():
 def test_plane_coordinates_and_area_have_explicit_degenerate_fallbacks():
     assert _uniform_axis_centers(2.0, 4.0, 0).shape == (0,)
     np.testing.assert_array_equal(_uniform_axis_centers(2.0, 4.0, 1), [3.0])
-    assert plane_sample_area(([1.0], [2.0]), fallback_step=0.25) == 0.25**2
 
 
 def test_monitor_line_orientation_and_measure_cover_degenerate_geometry():

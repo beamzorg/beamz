@@ -91,4 +91,6 @@ def test_uniform_3d_flux_monitor_keeps_scalar_integration_path():
     )
 
     assert spec.integration_weights.size == 0
-    assert spec.power_scale == 2.0
+    # Twelve cell-center samples integrate an aperture of area twelve.
+    assert spec.power_scale == 1.0
+    assert spec.power_scale * spec.dft_point_count == 4.0 * 3.0

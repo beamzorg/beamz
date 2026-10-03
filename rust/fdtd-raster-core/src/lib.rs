@@ -15,6 +15,6 @@ pub use grid::{Grid, UniformGrid};
 pub use mesh::{MeshReport, TriangleMesh};
 pub use raster::{
     DiagnosticSummary, IntegrationOptions, OutputComponents, Quality, RasterResult, SmoothingMode,
-    TensorArray, rasterize, rasterize_prevalidated,
+    TensorArray, interface_samples, rasterize, rasterize_prevalidated,
 };
 pub use scene::{Material, Object, Scene, SymmetricTensor};

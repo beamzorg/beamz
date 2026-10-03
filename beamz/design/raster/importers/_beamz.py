@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import numpy as np
+
+from beamz._cache_tokens import HashToken, cache_token
 
 from ..schema import (
     Box,
@@ -76,11 +77,11 @@ def from_beamz(
     padded_size = physical_size if padded_size is None else padded_size
 
     materials: list[Material] = []
-    material_ids: dict[str, int] = {}
+    material_ids: dict[HashToken, int] = {}
 
     def add_material(value: Any) -> int:
         material = _material(value)
-        key = json.dumps(material.to_dict(), sort_keys=True)
+        key = cache_token(material.cache_spec())
         if key not in material_ids:
             material_ids[key] = len(materials)
             materials.append(material)
