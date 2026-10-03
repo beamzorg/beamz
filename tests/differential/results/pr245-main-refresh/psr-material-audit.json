@@ -1,0 +1,49 @@
+{
+  "old_commit": "24a8c1ee74b731a61c69fa70cd5ea5eea8fe4391",
+  "new_commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+  "components": {
+    "eps_ex": {
+      "shape": [
+        32,
+        110,
+        986
+      ],
+      "changed_cells": 2592,
+      "fraction_changed": 0.0007468191038170754,
+      "max_abs_change": 0.6983537673950195,
+      "old_sha256": "027c8ca35ff16b91be48d24e92caab840f6210ed99368150a55dc7de6f8ecd8a",
+      "new_sha256": "965956f6fd9151bf6d35860ab2321b8c08bddbcf489384d471fc2bc62f4a73d0"
+    },
+    "eps_ey": {
+      "shape": [
+        32,
+        109,
+        987
+      ],
+      "changed_cells": 2441,
+      "fraction_changed": 0.0007090455741148694,
+      "max_abs_change": 2.1756062507629395,
+      "old_sha256": "922ccafb9c19e7091d38d10efa4ab992a82361c2662a343ead841b0c55918521",
+      "new_sha256": "9f8672349dacd9e5ead7757bc0d9af961a8665ced1ec5e0170323cee8cd92397"
+    },
+    "eps_ez": {
+      "shape": [
+        31,
+        110,
+        987
+      ],
+      "changed_cells": 1914,
+      "fraction_changed": 0.0005686832042357093,
+      "max_abs_change": 5.7220458984375e-06,
+      "old_sha256": "29bd3e1e95adb17dd55cac25ed5a2059779a5c5c62bfaded2be3eeeac021046e",
+      "new_sha256": "2e0fe90ad828d7bfd1576f9ac828d962c70452a74cc8fc6e184f343d9067d34e"
+    }
+  },
+  "old_native_raster_sha256": "5f739bdca4e9c5fbca267f02f580cac4cb553a71088938c9dfc5e4d486b73a14",
+  "new_native_raster_sha256": "534752f43a6de8c398f718cef6dd19f49ec7c84355b5b19245e48aba7a7dcb4e",
+  "notes": [
+    "Built the 6-PPW PSR with exact-center sampling and compiled one step without running FDTD, in each clean source checkout.",
+    "The prior checkout reused its existing native raster binary; its source-to-binary correspondence was not independently rebuilt in this audit.",
+    "Sparse differences include every changed component sample. This is evidence that the discrete materials differ, not a solver-isolated attribution of the power change."
+  ]
+}

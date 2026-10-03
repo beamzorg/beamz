@@ -1,0 +1,29 @@
+{
+  "python": "3.11.15",
+  "jax": "0.9.0",
+  "numpy": "2.4.1",
+  "native_extension_sha256": "679987485a7458eb54e2e8277e567ec94ee7e653cebec908c7c6f60f600631b9",
+  "cuda_backend": {
+    "available": true,
+    "extension_version": "0.12.0",
+    "abi_version": 12,
+    "targets": [
+      "beamz_cuda_hopper",
+      "beamz_cuda_program",
+      "beamz_cuda_streamed"
+    ],
+    "gpu_devices": [
+      "NVIDIA GeForce RTX 3090"
+    ],
+    "compute_capabilities": [
+      86
+    ],
+    "reason": null
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 24576 MiB, 610.43.03",
+  "notes": [
+    "Native library was reused from a local worktree with identical cuda/src; 29 CUDA hardware parity checks passed.",
+    "Some runs shared the GPU; runtime measurements are not isolated performance comparisons.",
+    "JAX allocator peaks omit native CUDA buffers."
+  ]
+}

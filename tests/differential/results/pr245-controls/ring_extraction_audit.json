@@ -1,0 +1,59 @@
+{
+  "reference_source": "https://github.com/JPPhotonics/fdtd-pipeline/blob/622e0a9b7429eaf2335b1000b39e283544a198c4/projects/FDTD_solvers/ring/find_FWHM.py",
+  "reference_sha256": "0bcf1d77ac5fa966707ede8ea37afe835cceeac1d57bc3837031fe818b9000fc",
+  "warning": "Literal upstream window guards can pair crossings from different resonances; neither extraction establishes time convergence.",
+  "runs": [
+    {
+      "run": "reprojected-ring-fixed-6p4",
+      "duration_ps": 6.4,
+      "literal_upstream_fwhm_nm": 8.348348348348411,
+      "literal_upstream_q": 185.11510791366769,
+      "literal_upstream_crossings_nm": [
+        1541.2412412412416,
+        1549.5895895895899
+      ],
+      "dominant_resonances_between_crossings": 2,
+      "beamz_first_complete_dip_fwhm_nm": 0.940940940940882,
+      "beamz_first_complete_dip_q": 1638.4787234043583
+    },
+    {
+      "run": "reprojected-ring-fixed-12p8",
+      "duration_ps": 12.8,
+      "literal_upstream_fwhm_nm": 7.927927927927847,
+      "literal_upstream_q": 194.92676767676969,
+      "literal_upstream_crossings_nm": [
+        1541.4014014014017,
+        1549.3293293293295
+      ],
+      "dominant_resonances_between_crossings": 2,
+      "beamz_first_complete_dip_fwhm_nm": 0.6206206206205156,
+      "beamz_first_complete_dip_q": 2484.1451612907435
+    },
+    {
+      "run": "reprojected-ring-fixed-25p6",
+      "duration_ps": 25.6,
+      "literal_upstream_fwhm_nm": 7.707707707707678,
+      "literal_upstream_q": 200.4909090909099,
+      "literal_upstream_crossings_nm": [
+        1541.4814814814818,
+        1549.1891891891894
+      ],
+      "dominant_resonances_between_crossings": 2,
+      "beamz_first_complete_dip_fwhm_nm": 0.4804804804805496,
+      "beamz_first_complete_dip_q": 3208.708333332872
+    },
+    {
+      "run": "reprojected-ring-fixed-51p2",
+      "duration_ps": 51.2,
+      "literal_upstream_fwhm_nm": -1.4614614614614219,
+      "literal_upstream_q": -1054.2328767123574,
+      "literal_upstream_crossings_nm": [
+        1541.4614614614616,
+        1540.0000000000002
+      ],
+      "dominant_resonances_between_crossings": 0,
+      "beamz_first_complete_dip_fwhm_nm": 0.4804804804805496,
+      "beamz_first_complete_dip_q": 3208.6666666662054
+    }
+  ]
+}

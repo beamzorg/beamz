@@ -1,0 +1,75 @@
+{
+  "environments": [
+    {
+      "original_path": "/tmp/beamz-pr238/.venv",
+      "storage_path": "/home/quentinwach/.cache/beamz-worktree-storage/pr238-venv",
+      "operation": "Move inactive generated virtual-environment dependencies from tmpfs to SSD; retain a real ignored .venv directory with original scripts and config, linking its dependency directories to SSD",
+      "verification": "rsync -aHnc --delete --itemize-changes returned no differences; original-path Python --version passed; original-path BeamZ import passed after retaining the real .venv wrapper",
+      "source_worktree_modified": false
+    },
+    {
+      "original_path": "/tmp/pr238-ci-env",
+      "storage_path": "/home/quentinwach/.cache/beamz-worktree-storage/pr238-ci-env",
+      "operation": "Move inactive generated virtual-environment dependencies from tmpfs to SSD, retaining original paths through dependency-directory symlinks",
+      "verification": "rsync checksum dry-run found no differences; original-path Python --version passed",
+      "source_worktree_modified": false
+    },
+    {
+      "original_path": "/tmp/pr238-wheel-env",
+      "storage_path": "/home/quentinwach/.cache/beamz-worktree-storage/pr238-wheel-env",
+      "operation": "Move inactive generated virtual-environment dependencies from tmpfs to SSD, retaining original paths through dependency-directory symlinks",
+      "verification": "rsync checksum dry-run found no differences; original-path Python --version passed",
+      "source_worktree_modified": false
+    }
+  ],
+  "build_cache": {
+    "original_path": "/tmp/beamz-pr238/target",
+    "storage_path": "/home/quentinwach/.cache/beamz-worktree-storage/pr238-target",
+    "verification": "rsync checksum dry-run found no differences",
+    "operation": "Preserve inactive generated Rust build cache on SSD; original directory remains with linked build subdirectories"
+  },
+  "additional_inactive_generated_artifacts": [
+    {
+      "original_path": "/tmp/beamz-pr285-py310",
+      "storage_path": "/home/quentinwach/.cache/beamz-worktree-storage/pr285-py310",
+      "linked_directories": [
+        "lib",
+        "share"
+      ],
+      "verification": "No active process cwd, executable, open file or memory mapping under the source roots; rsync checksum dry-run found no differences. Original Python path verified when present. NumPy 2.2.6 imports from the original environment path.",
+      "source_worktree_modified": false
+    },
+    {
+      "original_path": "/tmp/beamz-docs-diff-statistics/.venv",
+      "storage_path": "/home/quentinwach/.cache/beamz-worktree-storage/docs-diff-venv",
+      "linked_directories": [
+        "lib",
+        "share"
+      ],
+      "verification": "No active process cwd, executable, open file or memory mapping under the source roots; rsync checksum dry-run found no differences. Original Python path verified when present. BeamZ imports from the original source checkout using the original environment path.",
+      "source_worktree_modified": false
+    },
+    {
+      "original_path": "/tmp/beamz-docs-diff-statistics/target",
+      "storage_path": "/home/quentinwach/.cache/beamz-worktree-storage/docs-diff-target",
+      "linked_directories": [
+        "release",
+        "maturin",
+        "wheels"
+      ],
+      "verification": "No active process cwd, executable, open file or memory mapping under the source roots; rsync checksum dry-run found no differences. Original Python path verified when present.",
+      "source_worktree_modified": false
+    },
+    {
+      "original_path": "/tmp/beamz-pr238-main/target",
+      "storage_path": "/home/quentinwach/.cache/beamz-worktree-storage/pr238-main-target",
+      "linked_directories": [
+        "release",
+        "maturin",
+        "wheels"
+      ],
+      "verification": "No active process cwd, executable, open file or memory mapping under the source roots; rsync checksum dry-run found no differences. Original Python path verified when present.",
+      "source_worktree_modified": false
+    }
+  ]
+}

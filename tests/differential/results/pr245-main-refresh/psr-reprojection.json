@@ -1,0 +1,82 @@
+{
+  "field_run": "/home/quentinwach/Code-pr245/validation-artifacts/pr245/psr-fixed-6ppw",
+  "field_data_sha256": "98eb8767d703570d2a8c83ce71be7795d3ea3349e96739ffc28982456b37dc8a",
+  "field_simulation_commit": "644ed8e6b1076f349de011d1f0852be470db1951",
+  "analysis_commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+  "device": "polarization_splitter_rotator",
+  "ppw": 6,
+  "options": {
+    "run_time_ps": null,
+    "monitor_offset_um": null,
+    "boundary_thickness_um": 1.0,
+    "transverse_span_um": null,
+    "source_profiles": null,
+    "wavelength_step_nm": null,
+    "exact_center": true,
+    "smoothing": "farjadpour_diagonal",
+    "port_extension_policy": "reference"
+  },
+  "wavelengths_um": [
+    1.5600000000000003,
+    1.5549514563106797,
+    1.55,
+    1.5499354838709678,
+    1.5449517684887464,
+    1.5400000000000003
+  ],
+  "previous_analysis_max_reconstruction_error": null,
+  "previous_powers": {
+    "o3": [
+      0.0005194086733259423,
+      0.0005189295894664259,
+      0.0005183516322496899,
+      0.0005183243366711048,
+      0.000516430091139272,
+      0.0005147323191710095
+    ],
+    "conversion": [
+      0.8254354577320567,
+      0.8274867856957658,
+      0.8280773596759526,
+      0.8280620557481513,
+      0.8274543955399745,
+      0.826260331514778
+    ],
+    "crosstalk": [
+      8.768990452573381e-05,
+      4.613709697681058e-05,
+      1.9938064993098673e-05,
+      1.969050446529757e-05,
+      7.121923414447885e-06,
+      4.971617444635133e-06
+    ]
+  },
+  "powers": {
+    "o3": [
+      0.0005370187246722921,
+      0.0005366760885580087,
+      0.0005362710400979921,
+      0.0005362557281056622,
+      0.0005345067811944346,
+      0.0005329045566414349
+    ],
+    "conversion": [
+      0.8521375514910557,
+      0.854490914209559,
+      0.8554002335108827,
+      0.8554049336053822,
+      0.8551060410216248,
+      0.8541118337526413
+    ],
+    "crosstalk": [
+      9.451806030338782e-05,
+      5.112104406210022e-05,
+      2.3382314446727063e-05,
+      2.311673044355728e-05,
+      9.244688967190172e-06,
+      6.087713129074969e-06
+    ]
+  },
+  "selected_output_max": 0.8559643060639314,
+  "analysis_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

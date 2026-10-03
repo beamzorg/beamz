@@ -11,6 +11,7 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from time import perf_counter
+from typing import cast
 
 import jax
 import jax.numpy as jnp
@@ -279,12 +280,12 @@ def _selected_monitor_names(program: CompiledProgram, policy: AutoTermination):
 
 
 def _monitor_vectors(
-    results: SimulationResults, names: tuple[str, ...]
+    monitors: dict[str, MonitorResults], names: tuple[str, ...]
 ) -> dict[tuple[str, str, int], np.ndarray]:
     """Return one raw DFT convergence vector per monitor, component, and frequency."""
     values = {}
     for name in names:
-        monitor = results.monitors[name]
+        monitor = monitors[name]
         fields = monitor._raw_dft_fields or monitor.dft_fields
         for component in sorted(fields):
             field = np.asarray(fields[component], dtype=np.complex128)
@@ -583,7 +584,14 @@ def forward_step(
         state = state._replace(ex=ex, ey=ey, ez=ez)
 
     # 4. Observe only fully constrained end-of-step fields, then advance both clocks.
-    t_phys = state.t + ctx.dt_scalar if observation_time is None else observation_time
+    # Derive the default from the absolute source index, retaining explicit
+    # observation times for streamed schedules.
+    t_phys = (
+        jnp.asarray(cfg.t0, dtype=jnp.float32)
+        + (state.current_step + 1).astype(jnp.float32) * ctx.dt_scalar
+        if observation_time is None
+        else observation_time
+    )
     state = monitor_runtime.update_monitors(
         program,
         state,
@@ -749,6 +757,17 @@ def build_scan(program, *, donate_state: bool = False):
         state: SimulationState,
         coeffs: UpdateCoefficients,
     ):
+        # Normal continuations keep one absolute integer clock. Explicit states
+        # may intentionally supply a different time origin; preserve that API
+        # contract without accumulating rounding at ordinary chunk boundaries.
+        t0 = jnp.asarray(cfg.t0, dtype=jnp.float32)
+        grid_time = t0 + dt_scalar * state.current_step.astype(jnp.float32)
+        clock_tolerance = jnp.finfo(jnp.float32).eps * jnp.maximum(
+            jnp.abs(grid_time), jnp.finfo(jnp.float32).tiny
+        )
+        on_grid = jnp.abs(state.t - grid_time) <= clock_tolerance
+        observation_origin = cast(jax.Array, jnp.where(on_grid, t0, state.t))
+        observation_offset = cast(jax.Array, jnp.where(on_grid, state.current_step, 0))
         if local_dft:
             state = distributed_monitors.scan_local_dft(state, program)
         local_cuda_cpml = (
@@ -795,10 +814,11 @@ def build_scan(program, *, donate_state: bool = False):
             def advance_native_chunk(chunk_state, chunk_steps: int, elapsed_steps):
                 elapsed_steps = jnp.asarray(elapsed_steps, dtype=jnp.int32)
                 chunk_state = chunk_state._replace(
-                    # Derive clocks from the immutable run origin. Incrementally
-                    # accumulating float32 chunk times would perturb long-run DFT
-                    # phases relative to one unbounded native launch.
-                    t=state.t + dt_scalar * elapsed_steps,
+                    # Derive clocks from the simulation origin, including across
+                    # separate advance() calls and automatic-termination chunks.
+                    t=observation_origin
+                    + dt_scalar
+                    * (observation_offset + elapsed_steps).astype(jnp.float32),
                     current_step=state.current_step + elapsed_steps,
                 )
                 chunk_out = (
@@ -811,8 +831,8 @@ def build_scan(program, *, donate_state: bool = False):
                         graph_source_groups,
                         packed_graph_monitors,
                         chunk_steps,
-                        observation_origin=state.t,
-                        observation_step_offset=elapsed_steps,
+                        observation_origin=observation_origin,
+                        observation_step_offset=observation_offset + elapsed_steps,
                     )
                     if program.monitors
                     else run_source_group_steps(
@@ -827,7 +847,9 @@ def build_scan(program, *, donate_state: bool = False):
                     chunk_steps, dtype=jnp.int32
                 )
                 return chunk_out._replace(
-                    t=state.t + dt_scalar * completed_steps,
+                    t=observation_origin
+                    + dt_scalar
+                    * (observation_offset + completed_steps).astype(jnp.float32),
                     current_step=state.current_step + completed_steps,
                 )
 
@@ -854,9 +876,8 @@ def build_scan(program, *, donate_state: bool = False):
                         tail_steps,
                         full_chunks * CUDA_GRAPH_MAX_STEPS,
                     )
-        # Every observation uses the immutable run origin, as native CUDA does.
-        # Repeated float32 additions drift over long optical simulations. The
-        # entry time remains authoritative for explicit continuation states.
+        # Every observation uses the simulation origin and absolute integer
+        # step, including continuation calls, as native CUDA does.
         elif cfg.loop_kind == "scan":
 
             def _scan_body(carry, step_index):
@@ -868,7 +889,9 @@ def build_scan(program, *, donate_state: bool = False):
                         coeffs=coeffs,
                         program=program,
                         update_kernel=update_kernel,
-                        observation_time=state.t + dt_scalar * (step_index + 1),
+                        observation_time=observation_origin
+                        + dt_scalar
+                        * (observation_offset + step_index + 1).astype(jnp.float32),
                     ),
                     None,
                 )
@@ -888,7 +911,8 @@ def build_scan(program, *, donate_state: bool = False):
                     coeffs=coeffs,
                     program=program,
                     update_kernel=update_kernel,
-                    observation_time=state.t + dt_scalar * (_i + 1),
+                    observation_time=observation_origin
+                    + dt_scalar * (observation_offset + _i + 1).astype(jnp.float32),
                 ),
                 state,
             )
@@ -1579,7 +1603,8 @@ def run_until_terminated(
     source_decay = _source_residual(source_activity, 0)
     successful_checks = growth_checks = 0
     reason = "time_limit"
-    last_run: SimulationRun | None = None
+    monitor_results: dict[str, MonitorResults] | None = None
+    program = first_program
     runtime_s = 0.0
     compiling = progress and not program_is_compiled(first_program, donate_state=True)
     if compiling:
@@ -1602,20 +1627,18 @@ def run_until_terminated(
                     progress=False,
                 )
             )
-            last_run = run_simulation_program(
-                simulation,
-                program,
-                state,
-                progress=False,
-                store_full_materials=store_full_materials,
-                monitor_steps=remaining,
-                donate_state=True,
-                performance=performance,
-                report_performance=False,
-            )
-            state = last_run.state
-            if last_run.results.performance is not None:
-                runtime_s += last_run.results.performance.runtime_s
+            if performance:
+                state, elapsed = _run_program_state_timed(
+                    program, state, monitor_steps=remaining, donate_state=True
+                )
+                runtime_s += elapsed
+            else:
+                state = _run_program_state(
+                    program, state, monitor_steps=remaining, donate_state=True
+                )
+            # Convergence uses raw acquisitions. Building a durable result here
+            # repeatedly normalizes the full source record and copies metadata.
+            monitor_results = _decode_monitor_results(simulation, program, state)
             current_step = int(state.current_step)
             if progress:
                 if compiling:
@@ -1631,7 +1654,7 @@ def run_until_terminated(
                 )
 
             energy, max_field, fields_finite = _field_diagnostics(state, terms)
-            current_monitor = _monitor_vectors(last_run.results, monitor_names)
+            current_monitor = _monitor_vectors(monitor_results, monitor_names)
             monitors_finite = all(
                 np.isfinite(value).all() for value in current_monitor.values()
             )
@@ -1683,7 +1706,7 @@ def run_until_terminated(
         if progress:
             _finish_inline_progress()
 
-    if last_run is None:
+    if monitor_results is None:
         raise RuntimeError("Automatic termination executed no simulation steps.")
     report = RunTermination(
         reason=reason,
@@ -1698,7 +1721,15 @@ def run_until_terminated(
         max_field=max_field,
         consecutive_checks=successful_checks,
     )
-    results = last_run.results
+    results = SimulationResults.from_run(
+        simulation,
+        runtime_fields=program.grid,
+        monitor_results=monitor_results,
+        store_full_materials=store_full_materials,
+        source_launch_powers=_compiled_source_launch_powers(
+            program, len(simulation.sources)
+        ),
+    )
     if reason == "converged":
         results = _complete_converged_dft_weights(results, simulation, first_program)
     stats = (

@@ -1,0 +1,16 @@
+{
+  "reprojected-converter-fixed-6ppw": {
+    "selected_output_max": 1.0147417684556228,
+    "input_reflection_max": 0.08910311468873079,
+    "o4_backward_power_max": 0.0872380057385496,
+    "selected_outputs_plus_input_reflection_max": 1.0670452320971593,
+    "physical_variant_matches_pinned_port_extensions": true
+  },
+  "reprojected-converter-ports-fixed-frozen6": {
+    "selected_output_max": 0.9958166760631066,
+    "input_reflection_max": 0.0037937610118731727,
+    "o4_backward_power_max": 0.00042419153269405833,
+    "selected_outputs_plus_input_reflection_max": 0.9958390011334795,
+    "physical_variant_matches_pinned_port_extensions": false
+  }
+}

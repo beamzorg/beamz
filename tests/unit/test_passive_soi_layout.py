@@ -21,7 +21,16 @@ def require_gdsfactory():
         pytest.skip("Requires GDSFactory; install BeamZ with the gds extra.")
 
 
-@pytest.mark.parametrize("device", ["crossing", "directional_coupler"])
+@pytest.mark.parametrize(
+    "device",
+    [
+        "crossing",
+        "directional_coupler",
+        "mode_converter",
+        "polarization_splitter_rotator",
+        "ring_resonator",
+    ],
+)
 @pytest.mark.parametrize("active", [False, True])
 def test_layout_generation_restores_active_pdk(device, active):
     gf = _gdsfactory()

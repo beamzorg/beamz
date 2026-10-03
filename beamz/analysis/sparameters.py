@@ -320,6 +320,7 @@ def _extract_port_waves_dft(
             "minus": np.zeros(freqs.size, dtype=np.complex128),
             "condition_number": np.zeros(freqs.size, dtype=float),
             "mode_neff": np.full(freqs.size, np.nan),
+            "mode_wave_number": np.full(freqs.size, np.nan),
             "projection_residual": np.full(freqs.size, np.nan),
             "projection_residual_e": np.full(freqs.size, np.nan),
             "projection_residual_h": np.full(freqs.size, np.nan),
@@ -342,6 +343,9 @@ def _extract_port_waves_dft(
                 projection_cache,
             )
 
+            values["mode_wave_number"][idx] = float(
+                proj.get("mode_wave_number", np.nan)
+            )
             if context.is_3d:
                 coeff, residual, cond, neff, diag = _project_3d_group_at_monitor(
                     spec,

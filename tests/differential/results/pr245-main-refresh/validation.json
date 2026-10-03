@@ -1,0 +1,102 @@
+{
+  "solver_commit": "652d0d064d48bea1388e46c9fda6998101a42be7",
+  "cpu": {
+    "passed": 209,
+    "deselected_hardware": 4,
+    "log": "cpu-final-tests.txt"
+  },
+  "cuda": {
+    "passed": 22,
+    "deselected": 336,
+    "log": "cuda-final-tests.txt",
+    "command": ".venv/bin/python -m pytest tests/hardware/test_cuda_backends.py -k '(continuation_preserves_absolute_dft_clock or bounded_graph or source_graph_continues or nonuniform or complete_state or long or matches_jax) and not sharded' -q -rs"
+  },
+  "build": {
+    "status": "passed",
+    "command": "uv build --out-dir /tmp/beamz-pr245-dist-final",
+    "log": "build.txt"
+  },
+  "limitations": [
+    "Focused checks, not the complete repository test suite.",
+    "No multi-GPU or Hopper validation.",
+    "Local CUDA runtime validated on sm_86 with CUDA 13.3. CI also builds the CUDA 12 component; no local runtime test against the oldest supported toolkit."
+  ],
+  "typing": {
+    "status": "passed",
+    "command": ".venv/bin/pyright --pythonpath .venv/bin/python beamz/simulation/compile.py beamz/simulation/execute.py",
+    "log": "pyright.txt"
+  },
+  "optional_gds_tests": {
+    "test_commit": "c5f8f8b17b566978c1a4e625511f1fb974f17c9e",
+    "installed": {
+      "passed": 11,
+      "log": "optional-gds-present-tests.txt"
+    },
+    "import_blocked": {
+      "passed": 8,
+      "skipped": 3,
+      "log": "optional-gds-absent-tests.txt"
+    },
+    "scope": "Only the three tests constructing layouts skip when GDSFactory itself is absent; broken installed dependencies still fail."
+  },
+  "initial_ci_failure": {
+    "commit": "652d0d064d48bea1388e46c9fda6998101a42be7",
+    "run_url": "https://github.com/beamzorg/beamz/actions/runs/36805813170",
+    "affected_python_versions": [
+      "3.10",
+      "3.12",
+      "3.13",
+      "3.14"
+    ],
+    "failed_tests": [
+      "test_empty_bus_preserves_ring_grid_and_measurement_planes",
+      "test_ring_duration_and_boundary_sweeps_preserve_grid",
+      "test_thicker_absorber_requires_domain_padding"
+    ],
+    "reason": "ModuleNotFoundError: No module named 'gdsfactory' in compatibility environments omitting the optional extra",
+    "fix_commit": "c5f8f8b17b566978c1a4e625511f1fb974f17c9e"
+  },
+  "sampled_modal_flux_tests": {
+    "test_commit": "c5907b6e5b635fd63c25e673feab462aadf6ad6f",
+    "passed": 4,
+    "deselected_unmodified": 2,
+    "log": "sampled-modal-flux-tests.txt",
+    "initial_evidence_job": "https://github.com/beamzorg/beamz/actions/runs/36805813170/job/110189777575",
+    "initial_failures": [
+      "test_3d_mode_source_suppresses_counterpropagating_power_on_both_grids[+-uniform]",
+      "test_3d_mode_source_suppresses_counterpropagating_power_on_both_grids[+-rectilinear]"
+    ],
+    "correction": "Retain 2% physical modal-power propagation agreement; compare sampled reconstructed flux with sampled raw flux at both planes using the unchanged 2% tolerance. Deembedded modal power is not the same observable as interpolation-attenuated monitor flux."
+  },
+  "artifacts": {
+    "completed_runs": 15,
+    "verified_compact_hashes": 15,
+    "finite_spectrum_grid_incident_arrays": 110,
+    "power_spectra_cross_checked_against_complex_s_parameters": 35,
+    "valid_masks_all_true": true,
+    "raw_hashes_verified_by_collector": true,
+    "source_patch_hashes_verified": true,
+    "report_local_links_verified": true
+  },
+  "ci_source_checks": "ci-source-checks.json",
+  "ci": {
+    "source_commit": "c5907b6e5b635fd63c25e673feab462aadf6ad6f",
+    "required_trust_gate": "passed",
+    "evidence": {
+      "passed": 2025,
+      "skipped": 1,
+      "deselected": 480,
+      "xfailed": 1,
+      "coverage_percent": 86,
+      "log": "ci-evidence-summary.txt"
+    },
+    "compatibility_python": [
+      "3.10",
+      "3.12",
+      "3.13",
+      "3.14"
+    ],
+    "h100_hardware": "skipped",
+    "check_snapshot": "ci-source-checks.json"
+  }
+}

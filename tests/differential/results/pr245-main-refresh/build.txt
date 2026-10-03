@@ -1,0 +1,115 @@
+Building source distribution...
+Running `maturin pep517 write-sdist --sdist-directory /tmp/beamz-pr245-dist-final`
+🍹 Building a mixed python/rust project
+🔗 Found pyo3 bindings with abi3-py3.10 support
+📡 Using build options features from pyproject.toml
+📦 Including files matching "cuda/CMakeLists.txt"
+📦 Including files matching "cuda/README.md"
+📦 Including files matching "cuda/abi_layout.json"
+📦 Including files matching "cuda/pyproject.toml"
+📦 Including files matching "cuda/src/**/*"
+📦 Built source distribution to /tmp/beamz-pr245-dist-final/beamz-0.5.1.tar.gz
+beamz-0.5.1.tar.gz
+Building wheel from source distribution...
+Running `maturin pep517 build-wheel -i /home/quentinwach/.cache/uv/builds-v0/.tmpU8pSgd/bin/python --compatibility off`
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.11 at /home/quentinwach/.cache/uv/builds-v0/.tmpU8pSgd/bin/python
+🔗 Found pyo3 bindings with abi3-py3.10 support
+📡 Using build options features from pyproject.toml
+   Compiling libm v0.2.16
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling target-lexicon v0.13.5
+   Compiling crossbeam-utils v0.8.22
+   Compiling crossbeam-epoch v0.9.20
+   Compiling crossbeam-deque v0.8.7
+   Compiling heapless v0.8.0
+   Compiling byteorder v1.5.0
+   Compiling rayon-core v1.13.0
+   Compiling foldhash v0.2.0
+   Compiling either v1.17.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling smallvec v1.15.2
+   Compiling bytemuck v1.25.2
+   Compiling allocator-api2 v0.2.21
+   Compiling equivalent v1.0.2
+   Compiling find-msvc-tools v0.1.9
+   Compiling shlex v2.0.1
+   Compiling hash32 v0.3.1
+   Compiling libc v0.2.189
+   Compiling robust v1.2.0
+   Compiling serde_core v1.0.229
+   Compiling safe_arch v1.1.0
+   Compiling log v0.4.33
+   Compiling cc v1.4.0
+   Compiling thiserror v2.0.21
+   Compiling rand_core v0.10.1
+   Compiling zmij v1.0.23
+   Compiling heck v0.5.0
+   Compiling num-traits v0.2.19
+   Compiling matrixmultiply v0.3.11
+   Compiling hashbrown v0.16.1
+   Compiling arrayvec v0.7.8
+   Compiling serde v1.0.229
+   Compiling i_tree v0.18.0
+   Compiling rawpointer v0.2.1
+   Compiling serde_json v1.0.151
+   Compiling pyo3-build-config v0.29.2
+   Compiling wide v1.5.0
+   Compiling rand v0.10.2
+   Compiling rand_pcg v0.10.2
+   Compiling syn v2.0.119
+   Compiling syn v3.0.3
+   Compiling i_float v1.16.0
+   Compiling geographiclib-rs v0.2.7
+   Compiling ena v0.14.4
+   Compiling hashbrown v0.17.1
+   Compiling i_shape v1.18.0
+   Compiling constant_time_eq v0.4.2
+   Compiling cpufeatures v0.3.0
+   Compiling downcast-rs v2.0.2
+   Compiling sif-itree v0.4.1
+   Compiling once_cell v1.21.4
+   Compiling cfg-if v1.0.4
+   Compiling memchr v2.8.3
+   Compiling rayon v1.12.0
+   Compiling blake3 v1.8.7
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+   Compiling numpy v0.29.0
+   Compiling approx v0.5.1
+   Compiling num-complex v0.4.6
+   Compiling spade v2.15.1
+   Compiling glam v0.33.2
+   Compiling rstar v0.12.2
+   Compiling rstar v0.13.0
+   Compiling num-integer v0.1.46
+   Compiling earcut v0.4.5
+   Compiling ordered-float v5.3.0
+   Compiling itoa v1.0.18
+   Compiling bitflags v2.13.1
+   Compiling slab v0.4.12
+   Compiling float_next_after v2.0.0
+   Compiling ndarray v0.17.2
+   Compiling rustc-hash v2.1.3
+   Compiling thiserror-impl v2.0.21
+   Compiling serde_derive v1.0.229
+   Compiling i_key_sort v0.10.3
+   Compiling geo-types v0.7.19
+   Compiling pyo3-macros-backend v0.29.2
+   Compiling i_overlay v4.5.2
+   Compiling simba v0.10.2
+   Compiling num-derive v0.4.2
+   Compiling geo v0.33.1
+   Compiling pyo3-macros v0.29.2
+   Compiling glamx v0.3.0
+   Compiling parry3d-f64 v0.30.2
+   Compiling fdtd-raster-core v0.5.1 (/home/quentinwach/.cache/uv/sdists-v9/.tmpPBFrqh/beamz-0.5.1/rust/fdtd-raster-core)
+   Compiling fdtd-raster-py v0.5.1 (/home/quentinwach/.cache/uv/sdists-v9/.tmpPBFrqh/beamz-0.5.1/rust/fdtd-raster-py)
+    Finished `release` profile [optimized] target(s) in 11.83s
+📦 Built wheel for abi3 Python ≥ 3.10 to /home/quentinwach/.cache/uv/sdists-v9/.tmpPBFrqh/beamz-0.5.1/target/wheels/beamz-0.5.1-cp310-abi3-linux_x86_64.whl
+/home/quentinwach/.cache/uv/sdists-v9/.tmpPBFrqh/beamz-0.5.1/target/wheels/beamz-0.5.1-cp310-abi3-linux_x86_64.whl
+Successfully built /tmp/beamz-pr245-dist-final/beamz-0.5.1.tar.gz
+Successfully built /tmp/beamz-pr245-dist-final/beamz-0.5.1-cp310-abi3-linux_x86_64.whl

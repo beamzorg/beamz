@@ -1,0 +1,971 @@
+[
+  {
+    "name": "converter-6",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "mode_converter",
+      "--ppw",
+      "6",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/converter-6"
+    ],
+    "returncode": 0,
+    "wall_s": 76.5564820766449,
+    "peak_polled_rss_bytes": 5065465856,
+    "stopped": null,
+    "configuration": {
+      "device": "mode_converter",
+      "ppw": 6,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "24e4508f2d0826a01b20b6ef018072fc17238a5a",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        971,
+        123,
+        27
+      ],
+      "cells": 3224691,
+      "run_time_ps": 7.204984456280084,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  },
+  {
+    "name": "psr-6",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "polarization_splitter_rotator",
+      "--ppw",
+      "6",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/psr-6"
+    ],
+    "returncode": 0,
+    "wall_s": 117.05633473396301,
+    "peak_polled_rss_bytes": 4441853952,
+    "stopped": null,
+    "configuration": {
+      "device": "polarization_splitter_rotator",
+      "ppw": 6,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "24e4508f2d0826a01b20b6ef018072fc17238a5a",
+      "working_tree_patch_sha256": "53568b4a3453f413f2ac86fd64bb30a7d289c3e455410b331599100fbaea1769",
+      "grid_shape": [
+        986,
+        109,
+        31
+      ],
+      "cells": 3331694,
+      "run_time_ps": 7.32476732286574,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  },
+  {
+    "name": "ring-6p4",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "ring_resonator",
+      "--ppw",
+      "6",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/ring-6p4",
+      "--run-time-ps",
+      "6.4"
+    ],
+    "returncode": 0,
+    "wall_s": 121.57870173454285,
+    "peak_polled_rss_bytes": 4608888832,
+    "stopped": null,
+    "configuration": {
+      "device": "ring_resonator",
+      "ppw": 6,
+      "options": {
+        "run_time_ps": 6.4,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        432,
+        310,
+        27
+      ],
+      "cells": 3615840,
+      "run_time_ps": 6.4,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  },
+  {
+    "name": "mmi-10",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "mmi2x2",
+      "--ppw",
+      "10",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/mmi-10"
+    ],
+    "returncode": 0,
+    "wall_s": 72.06635236740112,
+    "peak_polled_rss_bytes": 4982800384,
+    "stopped": null,
+    "configuration": {
+      "device": "mmi2x2",
+      "ppw": 10,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        763,
+        139,
+        43
+      ],
+      "cells": 4560451,
+      "run_time_ps": 3.40235377102115,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  },
+  {
+    "name": "converter-10",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "mode_converter",
+      "--ppw",
+      "10",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/converter-10"
+    ],
+    "returncode": 0,
+    "wall_s": 426.8571939468384,
+    "peak_polled_rss_bytes": 12419903488,
+    "stopped": null,
+    "configuration": {
+      "device": "mode_converter",
+      "ppw": 10,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        1616,
+        200,
+        43
+      ],
+      "cells": 13897600,
+      "run_time_ps": 7.204984456280084,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  },
+  {
+    "name": "psr-10",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "polarization_splitter_rotator",
+      "--ppw",
+      "10",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/psr-10"
+    ],
+    "returncode": 0,
+    "wall_s": 400.870973110199,
+    "peak_polled_rss_bytes": 10275495936,
+    "stopped": null,
+    "configuration": {
+      "device": "polarization_splitter_rotator",
+      "ppw": 10,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        1642,
+        179,
+        49
+      ],
+      "cells": 14401982,
+      "run_time_ps": 7.32476732286574,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  },
+  {
+    "name": "mmi-15",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "mmi2x2",
+      "--ppw",
+      "15",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/mmi-15"
+    ],
+    "returncode": 0,
+    "wall_s": 347.3020668029785,
+    "peak_polled_rss_bytes": 10609971200,
+    "stopped": null,
+    "configuration": {
+      "device": "mmi2x2",
+      "ppw": 15,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        1144,
+        207,
+        63
+      ],
+      "cells": 14918904,
+      "run_time_ps": 3.40235377102115,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  },
+  {
+    "name": "mmi-20",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "mmi2x2",
+      "--ppw",
+      "20",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/mmi-20"
+    ],
+    "returncode": -15,
+    "wall_s": 199.40667271614075,
+    "peak_polled_rss_bytes": 14083633152,
+    "stopped": "host_memory_guard_1.5_GiB_available",
+    "configuration": {
+      "device": "mmi2x2",
+      "ppw": 20,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        1526,
+        275,
+        84
+      ],
+      "cells": 35250600,
+      "run_time_ps": 3.40235377102115,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": false
+  },
+  {
+    "name": "converter-15",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "mode_converter",
+      "--ppw",
+      "15",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/converter-15"
+    ],
+    "returncode": -15,
+    "wall_s": 71.01096844673157,
+    "peak_polled_rss_bytes": 15748505600,
+    "stopped": "host_memory_guard_1.5_GiB_available",
+    "configuration": {
+      "device": "mode_converter",
+      "ppw": 15,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+      "working_tree_patch_sha256": "42bc7381daea1e4f09a16cbc2a81c6bad71069c67e8cfb8f4c7cce45371673d7",
+      "grid_shape": [
+        2424,
+        300,
+        63
+      ],
+      "cells": 45813600,
+      "run_time_ps": 7.204984456280084,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": false
+  },
+  {
+    "name": "psr-15",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "polarization_splitter_rotator",
+      "--ppw",
+      "15",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/psr-15"
+    ],
+    "returncode": -15,
+    "wall_s": 118.02591633796692,
+    "peak_polled_rss_bytes": 15455776768,
+    "stopped": "host_memory_guard_1.5_GiB_available",
+    "configuration": {
+      "device": "polarization_splitter_rotator",
+      "ppw": 15,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "356faa2f0b585fc09c06b01d8ff0cca057f8134f",
+      "working_tree_patch_sha256": "ddd59c950d42ca154667453bf6400778958ef4953c8d276773016a723b1065ff",
+      "grid_shape": [
+        2464,
+        268,
+        72
+      ],
+      "cells": 47545344,
+      "run_time_ps": 7.32476732286574,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": false
+  },
+  {
+    "name": "mmi-15-reused",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "mmi2x2",
+      "--ppw",
+      "15",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/mmi-15-reused"
+    ],
+    "returncode": 0,
+    "wall_s": 259.75833678245544,
+    "peak_polled_rss_bytes": 11083001856,
+    "stopped": null,
+    "configuration": {
+      "device": "mmi2x2",
+      "ppw": 15,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "d91731cd36853ee356692fc9d1da9c8421e2351d",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        1144,
+        207,
+        63
+      ],
+      "cells": 14918904,
+      "run_time_ps": 3.40235377102115,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  },
+  {
+    "name": "mmi-20-reused",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "mmi2x2",
+      "--ppw",
+      "20",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/mmi-20-reused"
+    ],
+    "returncode": -15,
+    "wall_s": 94.42287564277649,
+    "peak_polled_rss_bytes": 15510335488,
+    "stopped": "host_memory_guard_1.5_GiB_available",
+    "configuration": {
+      "device": "mmi2x2",
+      "ppw": 20,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "d91731cd36853ee356692fc9d1da9c8421e2351d",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        1526,
+        275,
+        84
+      ],
+      "cells": 35250600,
+      "run_time_ps": 3.40235377102115,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": false
+  },
+  {
+    "name": "ring-51p2",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "ring_resonator",
+      "--ppw",
+      "6",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/ring-51p2",
+      "--run-time-ps",
+      "51.2"
+    ],
+    "returncode": -15,
+    "wall_s": 2248.998897075653,
+    "peak_polled_rss_bytes": 4508405760,
+    "stopped": "superseded_by_deferred_result_construction",
+    "stop_note": "Stopped before results were produced. The optimized long run uses identical physics; the completed 6.4-ps run supplies the before/after raw-field control.",
+    "configuration": {
+      "device": "ring_resonator",
+      "ppw": 6,
+      "options": {
+        "run_time_ps": 51.2,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "d91731cd36853ee356692fc9d1da9c8421e2351d",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        432,
+        310,
+        27
+      ],
+      "cells": 3615840,
+      "run_time_ps": 51.2,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": false
+  },
+  {
+    "name": "ring-bus-6p4",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "ring_bus",
+      "--ppw",
+      "6",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/ring-bus-6p4",
+      "--run-time-ps",
+      "6.4"
+    ],
+    "returncode": 0,
+    "wall_s": 82.0575602054596,
+    "peak_polled_rss_bytes": 4186697728,
+    "stopped": null,
+    "configuration": {
+      "device": "ring_bus",
+      "ppw": 6,
+      "options": {
+        "run_time_ps": 6.4,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "652d0d064d48bea1388e46c9fda6998101a42be7",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        432,
+        310,
+        27
+      ],
+      "cells": 3615840,
+      "run_time_ps": 6.4,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  },
+  {
+    "name": "ring-6p4-deferred",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "ring_resonator",
+      "--ppw",
+      "6",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/ring-6p4-deferred",
+      "--run-time-ps",
+      "6.4",
+      "--progress"
+    ],
+    "returncode": 0,
+    "wall_s": 84.06489968299866,
+    "peak_polled_rss_bytes": 4180688896,
+    "stopped": null,
+    "available_before_bytes": 24307802112,
+    "swap_used_before_bytes": 562974720,
+    "configuration": {
+      "device": "ring_resonator",
+      "ppw": 6,
+      "options": {
+        "run_time_ps": 6.4,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "652d0d064d48bea1388e46c9fda6998101a42be7",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        432,
+        310,
+        27
+      ],
+      "cells": 3615840,
+      "run_time_ps": 6.4,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  },
+  {
+    "name": "ring-51p2-deferred",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "ring_resonator",
+      "--ppw",
+      "6",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/ring-51p2-deferred",
+      "--run-time-ps",
+      "51.2",
+      "--progress"
+    ],
+    "returncode": 0,
+    "wall_s": 370.38673973083496,
+    "peak_polled_rss_bytes": 4583641088,
+    "stopped": null,
+    "available_before_bytes": 24374312960,
+    "swap_used_before_bytes": 562974720,
+    "configuration": {
+      "device": "ring_resonator",
+      "ppw": 6,
+      "options": {
+        "run_time_ps": 51.2,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "652d0d064d48bea1388e46c9fda6998101a42be7",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        432,
+        310,
+        27
+      ],
+      "cells": 3615840,
+      "run_time_ps": 51.2,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  },
+  {
+    "name": "mmi-20-headroom",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "mmi2x2",
+      "--ppw",
+      "20",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/mmi-20-headroom",
+      "--progress"
+    ],
+    "returncode": 0,
+    "wall_s": 983.8842606544495,
+    "peak_polled_rss_bytes": 19962544128,
+    "stopped": null,
+    "available_before_bytes": 24404271104,
+    "swap_used_before_bytes": 562974720,
+    "configuration": {
+      "device": "mmi2x2",
+      "ppw": 20,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "652d0d064d48bea1388e46c9fda6998101a42be7",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        1526,
+        275,
+        84
+      ],
+      "cells": 35250600,
+      "run_time_ps": 3.40235377102115,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  },
+  {
+    "name": "converter-15-headroom",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "mode_converter",
+      "--ppw",
+      "15",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/converter-15-headroom",
+      "--progress"
+    ],
+    "returncode": -15,
+    "wall_s": 259.56075716018677,
+    "peak_polled_rss_bytes": 23563812864,
+    "stopped": "host_memory_guard_1.5_GiB_available",
+    "available_before_bytes": 24383287296,
+    "swap_used_before_bytes": 570445824,
+    "configuration": {
+      "device": "mode_converter",
+      "ppw": 15,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "652d0d064d48bea1388e46c9fda6998101a42be7",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        2424,
+        300,
+        63
+      ],
+      "cells": 45813600,
+      "run_time_ps": 7.204984456280084,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": false
+  },
+  {
+    "name": "psr-15-headroom",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "polarization_splitter_rotator",
+      "--ppw",
+      "15",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/psr-15-headroom",
+      "--progress"
+    ],
+    "returncode": 0,
+    "wall_s": 1491.5167908668518,
+    "peak_polled_rss_bytes": 25117093888,
+    "stopped": null,
+    "available_before_bytes": 25146793984,
+    "swap_used_before_bytes": 1091166208,
+    "configuration": {
+      "device": "polarization_splitter_rotator",
+      "ppw": 15,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "652d0d064d48bea1388e46c9fda6998101a42be7",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        2464,
+        268,
+        72
+      ],
+      "cells": 47545344,
+      "run_time_ps": 7.32476732286574,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  },
+  {
+    "name": "converter-15-final-headroom",
+    "command": [
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/.venv/bin/python",
+      "-m",
+      "scripts.investigate_passive_soi",
+      "mode_converter",
+      "--ppw",
+      "15",
+      "--backend",
+      "cuda_streamed",
+      "--exact-center",
+      "--output",
+      "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/converter-15-final-headroom",
+      "--progress"
+    ],
+    "returncode": 0,
+    "wall_s": 1480.5545017719269,
+    "peak_polled_rss_bytes": 26779996160,
+    "stopped": null,
+    "available_before_bytes": 28343205888,
+    "swap_used_before_bytes": 2949337088,
+    "configuration": {
+      "device": "mode_converter",
+      "ppw": 15,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "c5907b6e5b635fd63c25e673feab462aadf6ad6f",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        2424,
+        300,
+        63
+      ],
+      "cells": 45813600,
+      "run_time_ps": 7.204984456280084,
+      "backend": "cuda_streamed"
+    },
+    "summary_available": true
+  }
+]

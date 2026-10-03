@@ -1,0 +1,26 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=3846348519
+rootdir: /home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7
+configfile: pytest.ini
+plugins: cov-7.1.0, hypothesis-6.168.3, platformdirs-4.12.2, randomly-5.0.0
+collected 213 items / 4 deselected / 209 selected
+
+tests/unit/test_modal_normal_sampling.py .........                       [  4%]
+tests/unit/test_passive_soi_layout.py ............                       [ 10%]
+tests/unit/test_execution_backend.py ................................    [ 25%]
+tests/unit/test_passive_soi_experiments.py ...........                   [ 30%]
+tests/validation/invariants/test_automatic_termination.py .....          [ 33%]
+tests/differential/test_ring_resonator.py ...                            [ 34%]
+tests/differential/test_mode_conversion.py ...........                   [ 39%]
+tests/unit/test_cuda_runtime_contract.py ............................... [ 54%]
+...                                                                      [ 55%]
+tests/contracts/test_simulation_api.py ................................. [ 71%]
+....                                                                     [ 73%]
+tests/unit/test_region_preparation.py ...............                    [ 80%]
+tests/integration/test_monitor_clock.py ....                             [ 82%]
+tests/differential/test_mmi2x2.py ....                                   [ 84%]
+tests/unit/test_dense_preparation_reuse.py .....                         [ 87%]
+tests/integration/test_compiled_engine.py ...........................    [100%]
+
+================= 209 passed, 4 deselected in 61.62s (0:01:01) =================

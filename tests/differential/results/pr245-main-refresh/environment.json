@@ -1,0 +1,51 @@
+{
+  "python": "3.11.15",
+  "packages": {
+    "beamz": "0.5.1",
+    "beamz-cuda-component": "0.21.0",
+    "jax": "0.9.0",
+    "jaxlib": "0.9.0",
+    "numpy": "2.4.1",
+    "scipy": "1.17.0",
+    "gdsfactory": "8.18.2",
+    "kfactory": "0.21.7",
+    "klayout": "0.30.6"
+  },
+  "cuda_backend": {
+    "available": true,
+    "extension_version": "0.21.0",
+    "abi_version": 21,
+    "targets": [
+      "beamz_cuda_program",
+      "beamz_cuda_sharded",
+      "beamz_cuda_streamed"
+    ],
+    "gpu_devices": [
+      "NVIDIA GeForce RTX 3090"
+    ],
+    "compute_capabilities": [
+      86
+    ],
+    "reason": null
+  },
+  "native_extension_sha256": "817eed2fd7981121c2210bad9e81298814d0a2c29fa3c3df9950d2afe5d0da24",
+  "gpu": "NVIDIA GeForce RTX 3090, 24576 MiB, 610.43.03, 370.00 W",
+  "main_commit": "1ccaa5878615b80c86229db4e0e6832a2827f686",
+  "pr_start_commit": "24a8c1ee74b731a61c69fa70cd5ea5eea8fe4391",
+  "solver_commit": "652d0d064d48bea1388e46c9fda6998101a42be7",
+  "build": {
+    "toolkit": "13.3",
+    "architecture": "sm_86",
+    "fast_math": false
+  },
+  "notes": [
+    "Fresh optional CUDA extension built from this checkout.",
+    "One simulation process at a time on local RTX 3090; no remote GPU used.",
+    "XLA preallocation disabled; OPENBLAS_NUM_THREADS=OMP_NUM_THREADS=1.",
+    "Historical timing records are not controlled speedup baselines.",
+    "JAX memory peaks exclude native CUDA allocations.",
+    "Some preparation/analysis overlapped CPU-only validation or material audits. Final MMI/converter retries had no concurrent CPU validation. PSR setup/final preparation overlapped optional-dependency checks (under five seconds) and four CPU modal-flux integration tests (19.58 seconds); inactive-cache relocation also occurred during its run. Timings are descriptive single samples."
+  ],
+  "inherited_backend_tuning_overrides": {},
+  "editable_cuda_component_loading": "Copied the freshly installed .venv/lib/python3.11/site-packages/beamz/_cuda*.so into the editable beamz source directory; generated binary is ignored and its hash is recorded above."
+}

@@ -1,0 +1,126 @@
+{
+  "headRefOid": "c5907b6e5b635fd63c25e673feab462aadf6ad6f",
+  "statusCheckRollup": [
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T03:16:22Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/beamzorg/beamz/actions/runs/36808928062/job/110199397500",
+      "name": "Build private CUDA 12 component",
+      "startedAt": "2026-10-01T03:06:06Z",
+      "status": "COMPLETED",
+      "workflowName": "CUDA extension"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T03:07:42Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/beamzorg/beamz/actions/runs/36808927904/job/110199397022",
+      "name": "Quality (Ruff + Pyright + Vulture)",
+      "startedAt": "2026-10-01T03:06:06Z",
+      "status": "COMPLETED",
+      "workflowName": "Trust Gate"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T03:16:22Z",
+      "conclusion": "SKIPPED",
+      "detailsUrl": "https://github.com/beamzorg/beamz/actions/runs/36808928062/job/110201907549",
+      "name": "H100 parity and canonical benchmarks",
+      "startedAt": "2026-10-01T03:16:23Z",
+      "status": "COMPLETED",
+      "workflowName": "CUDA extension"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T03:15:39Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/beamzorg/beamz/actions/runs/36808927904/job/110199397101",
+      "name": "Compatibility (Python 3.10)",
+      "startedAt": "2026-10-01T03:06:05Z",
+      "status": "COMPLETED",
+      "workflowName": "Trust Gate"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T03:24:26Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/beamzorg/beamz/actions/runs/36808927904/job/110199397003",
+      "name": "Compatibility (Python 3.12)",
+      "startedAt": "2026-10-01T03:06:05Z",
+      "status": "COMPLETED",
+      "workflowName": "Trust Gate"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T03:25:56Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/beamzorg/beamz/actions/runs/36808927904/job/110199397069",
+      "name": "Compatibility (Python 3.13)",
+      "startedAt": "2026-10-01T03:06:07Z",
+      "status": "COMPLETED",
+      "workflowName": "Trust Gate"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T03:21:52Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/beamzorg/beamz/actions/runs/36808927904/job/110199397097",
+      "name": "Compatibility (Python 3.14)",
+      "startedAt": "2026-10-01T03:06:06Z",
+      "status": "COMPLETED",
+      "workflowName": "Trust Gate"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T03:40:55Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/beamzorg/beamz/actions/runs/36808927904/job/110199396979",
+      "name": "Evidence (Python 3.11)",
+      "startedAt": "2026-10-01T03:06:06Z",
+      "status": "COMPLETED",
+      "workflowName": "Trust Gate"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T03:08:48Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/beamzorg/beamz/actions/runs/36808927904/job/110199396921",
+      "name": "Fake multi-device CPU sharding",
+      "startedAt": "2026-10-01T03:06:05Z",
+      "status": "COMPLETED",
+      "workflowName": "Trust Gate"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T03:07:34Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/beamzorg/beamz/actions/runs/36808927904/job/110199397038",
+      "name": "Documentation (strict + executable)",
+      "startedAt": "2026-10-01T03:06:06Z",
+      "status": "COMPLETED",
+      "workflowName": "Trust Gate"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T03:07:23Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/beamzorg/beamz/actions/runs/36808927904/job/110199396812",
+      "name": "Package build and installed-wheel quickstart",
+      "startedAt": "2026-10-01T03:06:06Z",
+      "status": "COMPLETED",
+      "workflowName": "Trust Gate"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-10-01T03:41:01Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/beamzorg/beamz/actions/runs/36808927904/job/110207727425",
+      "name": "required / trust-gate",
+      "startedAt": "2026-10-01T03:40:57Z",
+      "status": "COMPLETED",
+      "workflowName": "Trust Gate"
+    }
+  ],
+  "snapshot_utc": "2026-10-01T03:42:24.892370+00:00"
+}

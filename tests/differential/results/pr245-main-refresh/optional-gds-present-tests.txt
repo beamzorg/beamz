@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=384487750
+rootdir: /home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7
+configfile: pytest.ini
+plugins: cov-7.1.0, hypothesis-6.168.3, platformdirs-4.12.2, randomly-5.0.0
+collected 11 items
+
+tests/unit/test_passive_soi_experiments.py ...........                   [100%]
+
+============================== 11 passed in 4.51s ==============================

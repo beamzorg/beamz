@@ -21,6 +21,7 @@ from beamz.design.raster import Grid as RasterGrid
 from beamz.design.raster import Material as RasterMaterial
 from beamz.design.raster import RasterOptions, Scene, rasterize
 from beamz.simulation.execute import _energy_terms, _field_diagnostics
+from beamz.simulation.results import SimulationResults
 
 pytestmark = [pytest.mark.compiled, pytest.mark.component]
 
@@ -56,7 +57,11 @@ def test_full_tensor_energy_includes_offdiagonal_coupling():
     assert energy == pytest.approx(expected, rel=2e-6)
 
 
-def test_pulse_convergence_preserves_frequency_domain_result():
+@pytest.mark.parametrize("monitor_change", [None, 1e-3])
+@pytest.mark.parametrize("performance", [False, True])
+def test_pulse_convergence_preserves_frequency_domain_result(
+    monkeypatch, monitor_change, performance
+):
     """A radiated pulse may stop early without changing its converged DFT."""
     wavelength = 1.0 * um
     resolution, dt = calc_optimal_fdtd_params(
@@ -101,14 +106,30 @@ def test_pulse_convergence_preserves_frequency_domain_result():
     )
     policy = AutoTermination(
         field_decay=1e-5,
-        monitor_change=1e-3,
+        monitor_change=monitor_change,
         source_decay=1e-6,
         chunk_steps=30,
         consecutive_checks=3,
         monitor_names=("output",),
     )
 
-    bounded = simulation.run(progress=False, termination=policy)
+    result_constructions = []
+    from_run = SimulationResults.from_run
+
+    def record_from_run(*args, **kwargs):
+        result_constructions.append(True)
+        return from_run(*args, **kwargs)
+
+    monkeypatch.setattr(SimulationResults, "from_run", record_from_run)
+    bounded = simulation.run(
+        progress=False, termination=policy, performance=performance
+    )
+    # Source normalization and material metadata belong at the final boundary,
+    # even when raw DFT stability is checked after every continuation chunk.
+    assert len(result_constructions) == 1
+    assert bounded.termination.steps > policy.chunk_steps
+    assert (bounded.performance is not None) == performance
+    monkeypatch.setattr(SimulationResults, "from_run", from_run)
     reference = simulation.run(progress=False)
 
     report = bounded.termination
@@ -118,8 +139,11 @@ def test_pulse_convergence_preserves_frequency_domain_result():
     assert report.steps < num_steps
     assert report.source_decay == pytest.approx(0.0)
     assert report.field_decay <= policy.field_decay
-    assert report.monitor_change is not None
-    assert report.monitor_change <= policy.monitor_change
+    if monitor_change is None:
+        assert report.monitor_change is None
+    else:
+        assert report.monitor_change is not None
+        assert report.monitor_change <= policy.monitor_change
 
     bounded_field = bounded["output"].get_dft_component("Ez")
     reference_field = reference["output"].get_dft_component("Ez")

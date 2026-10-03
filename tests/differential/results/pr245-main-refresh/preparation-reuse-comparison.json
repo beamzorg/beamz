@@ -1,0 +1,23 @@
+{
+  "before_commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+  "after_commit": "d91731cd36853ee356692fc9d1da9c8421e2351d",
+  "before_run": "mmi-15",
+  "after_run": "mmi-15-reused",
+  "identical_raw_monitor_artifact": true,
+  "monitor_data_sha256": "c6778a323cc1b07616d4cb9db4d1a346749680d07e7e0119409fc65164365318",
+  "before_host_rss_mib": 10248.6640625,
+  "after_host_rss_mib": 10634.78125,
+  "before_jax_peak_bytes": 6783459584,
+  "after_jax_peak_bytes": 5142538752,
+  "jax_peak_reduction_fraction": 0.2419002887362084,
+  "before_runtime_s": 172.23119140369818,
+  "after_runtime_s": 172.1941161050927,
+  "before_wall_s": 347.3020668029785,
+  "after_wall_s": 259.75833678245544,
+  "notes": [
+    "Same RTX 3090, geometry, source record, frequencies, and configured duration.",
+    "Raw artifact hashes include all retained complex DFT fields and modal diagnostics.",
+    "One sample per revision; descriptive timing, not a controlled repeated performance gate.",
+    "JAX allocation statistics omit native CUDA allocations; host peak did not improve."
+  ]
+}

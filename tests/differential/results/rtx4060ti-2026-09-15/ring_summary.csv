@@ -1,0 +1,2 @@
+device,ppw,beamz_fwhm_nm,published_fwhm_lower_nm,published_fwhm_upper_nm,beamz_q,published_q_lower,published_q_upper,beamz_fsr_nm,published_lumerical_fsr_nm,published_tidy3d_fsr_nm,terminal_field_decay,required_field_decay,termination,spectral_comparison
+ring_resonator,6,3.8238238238238864,0.84,0.9,403.4633507853337,1756.5,1839.4,7.489229525291186,7.4,7.6,0.05071902926309659,1e-05,time_limit,fail

@@ -1,0 +1,9 @@
+{
+  "grid_x_boundaries_m": true,
+  "grid_y_boundaries_m": true,
+  "grid_z_boundaries_m": true,
+  "frequencies_hz": true,
+  "source_time_s": true,
+  "source_signal": true,
+  "source_quadrature": true
+}

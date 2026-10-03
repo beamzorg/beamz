@@ -156,9 +156,16 @@ def test_3d_mode_source_suppresses_counterpropagating_power_on_both_grids(
         near_modal_power = float(np.asarray(waves[near_port.name]["P_minus"])[0])
         far_modal_power = float(np.asarray(waves[far_port.name]["P_minus"])[0])
         assert far_modal_power == pytest.approx(near_modal_power, rel=0.02)
-        assert near_modal_power == pytest.approx(
-            abs(float(result[near_port.name].flux[0])), rel=0.02
-        )
+        # Modal coefficients remove normal-interpolation attenuation. Raw monitor
+        # flux still includes it, so compare with the flux reconstructed from the
+        # sampled modal basis, retaining the same tolerance at both planes.
+        for port in (near_port, far_port):
+            sampled_modal_flux = abs(
+                float(np.asarray(waves[port.name]["projected_signed_power"])[0])
+            )
+            assert sampled_modal_flux == pytest.approx(
+                abs(float(result[port.name].flux[0])), rel=0.02
+            )
 
 
 @pytest.mark.compiled

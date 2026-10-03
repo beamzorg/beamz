@@ -1,0 +1,15 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=925328120
+rootdir: /home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7
+configfile: pytest.ini
+plugins: cov-7.1.0, hypothesis-6.168.3, platformdirs-4.12.2, randomly-5.0.0
+collected 11 items
+
+tests/unit/test_passive_soi_experiments.py s..s.....s.                   [100%]
+
+=========================== short test summary info ============================
+SKIPPED [1] tests/unit/test_passive_soi_experiments.py:66: Requires GDSFactory; install BeamZ with the gds extra.
+SKIPPED [1] tests/unit/test_passive_soi_experiments.py:106: Requires GDSFactory; install BeamZ with the gds extra.
+SKIPPED [1] tests/unit/test_passive_soi_experiments.py:98: Requires GDSFactory; install BeamZ with the gds extra.
+========================= 8 passed, 3 skipped in 0.10s =========================

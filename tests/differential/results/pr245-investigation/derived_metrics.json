@@ -1,0 +1,19 @@
+{
+  "ring_local_ripple_peak_wavelengths_nm": [
+    1543.562066306862,
+    1544.9517684887462,
+    1546.3439752832135
+  ],
+  "ring_local_ripple_median_spacing_nm": 1.3909544881756801,
+  "ring_6p4ps_window_scale_nm_at_1550nm": 1.2521683417399379,
+  "ring_decay_threshold_multiple": 5071.902926309659,
+  "ring_recomputed_fwhm_nm": 3.8238238238238864,
+  "ring_fwhm_crossings_nm": [
+    1540.8608608608608,
+    1544.6846846846847
+  ],
+  "converter_over_bound_wavelengths_nm": [
+    1560.0000000000002,
+    1540.0000000000002
+  ]
+}

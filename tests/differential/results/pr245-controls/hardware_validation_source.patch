@@ -1,0 +1,50 @@
+diff --git a/tests/differential/passive_soi/four_port.py b/tests/differential/passive_soi/four_port.py
+index 7ac10465..42885d11 100644
+--- a/tests/differential/passive_soi/four_port.py
++++ b/tests/differential/passive_soi/four_port.py
+@@ -48,0 +49 @@ class FourPortBenchmarkResult:
++    terminal_field_decay: float
+@@ -553,0 +555,5 @@ def run_four_port_benchmark(
++        terminal_field_decay=(
++            float(termination.field_decay)
++            if termination is not None and termination.field_decay is not None
++            else float("inf")
++        ),
+diff --git a/tests/differential/passive_soi/mode_conversion.py b/tests/differential/passive_soi/mode_conversion.py
+index fc9f2933..bb7c7623 100644
+--- a/tests/differential/passive_soi/mode_conversion.py
++++ b/tests/differential/passive_soi/mode_conversion.py
+@@ -41,0 +42 @@ class ModeConversionResult:
++    terminal_field_decay: float
+@@ -152,0 +154,5 @@ def run_mode_conversion_benchmark(
++        terminal_field_decay=(
++            float(termination.field_decay)
++            if termination is not None and termination.field_decay is not None
++            else float("inf")
++        ),
+diff --git a/tests/differential/test_mmi2x2.py b/tests/differential/test_mmi2x2.py
+index 13e63a7c..a0f0d344 100644
+--- a/tests/differential/test_mmi2x2.py
++++ b/tests/differential/test_mmi2x2.py
+@@ -123,0 +124 @@ def test_mmi2x2_power_is_physical_and_characterizes_reference(
++        "terminal_field_decay": result.terminal_field_decay,
+@@ -127,0 +129,7 @@ def test_mmi2x2_power_is_physical_and_characterizes_reference(
++    validation_metrics.check_upper(
++        "2x2 MMI terminal field-decay ratio",
++        measured=result.terminal_field_decay,
++        upper_bound=1e-5,
++        unit="ratio",
++        metadata=metadata,
++    )
+diff --git a/tests/differential/test_mode_conversion.py b/tests/differential/test_mode_conversion.py
+index 4434aa52..19030abf 100644
+--- a/tests/differential/test_mode_conversion.py
++++ b/tests/differential/test_mode_conversion.py
+@@ -136,0 +137,7 @@ def test_conversion_power_is_physical_and_characterizes_reference(
++    validation_metrics.check_upper(
++        f"{name} terminal field-decay ratio",
++        measured=result.terminal_field_decay,
++        upper_bound=1e-5,
++        unit="ratio",
++        metadata=metadata,
++    )

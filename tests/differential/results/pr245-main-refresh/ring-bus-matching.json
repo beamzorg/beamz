@@ -1,0 +1,30 @@
+{
+  "grid_x_boundaries_m": {
+    "equal": true,
+    "sha256": "3f89c5ec47354b83cda02376cd82c90209b44ccff9b4135e39bdb678a96abb5f"
+  },
+  "grid_y_boundaries_m": {
+    "equal": true,
+    "sha256": "4ef0c9b26be00288e92a2164dbf35f602f6c75121d66a05ef4ca1b936e81cc02"
+  },
+  "grid_z_boundaries_m": {
+    "equal": true,
+    "sha256": "6ddb3065f41e987771a8ec0475c0130e80ca3f4e8511cd9025f5ed323f58d1c9"
+  },
+  "frequencies_hz": {
+    "equal": true,
+    "sha256": "3f3cc2200b325362db2aa5c929f55a2274f5f5da8f84093918041dd812701e6e"
+  },
+  "source_time_s": {
+    "equal": true,
+    "sha256": "a9bc868df8df949b59ce509099114e25d2eafe6b43e35d59465e335a978b5cf2"
+  },
+  "source_signal": {
+    "equal": true,
+    "sha256": "3ed8a5ea5e6a6c31ce5f08bdf4c94cbb54043ed6f5c62f0ad3d558bd3d5e569a"
+  },
+  "source_quadrature": {
+    "equal": true,
+    "sha256": "388837b4e871c92a3f1f00796a51d045ae3764a4d3fb474136aa99aad8196fdf"
+  }
+}

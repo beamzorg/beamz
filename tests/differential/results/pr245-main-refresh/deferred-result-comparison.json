@@ -1,0 +1,50 @@
+{
+  "before_run": "ring-6p4",
+  "after_run": "ring-6p4-deferred",
+  "before_commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+  "after_commit": "652d0d064d48bea1388e46c9fda6998101a42be7",
+  "identical_raw_monitor_artifact": true,
+  "identical_stopping_decision": true,
+  "termination_before": {
+    "reason": "time_limit",
+    "steps": 48363,
+    "time": 6.400119149929662e-12,
+    "converged": false,
+    "field_decay": 0.05110562582409721,
+    "monitor_change": null,
+    "source_decay": 0.0,
+    "energy": 6.2123547073364246e-15,
+    "peak_energy": 1.2155911618652342e-13,
+    "max_field": 13501902.0,
+    "consecutive_checks": 0
+  },
+  "termination_after": {
+    "reason": "time_limit",
+    "steps": 48363,
+    "time": 6.400119149929662e-12,
+    "converged": false,
+    "field_decay": 0.05110562088706156,
+    "monitor_change": null,
+    "source_decay": 0.0,
+    "energy": 6.2123547073364246e-15,
+    "peak_energy": 1.2155912792968747e-13,
+    "max_field": 13501902.0,
+    "consecutive_checks": 0
+  },
+  "termination_float_rtol": 2e-07,
+  "monitor_data_sha256": "d7fc0da3417f868583ad220ccad3b0ab2951defa18ac0e0056117ae1b99b29bd",
+  "before_wall_s": 121.57870173454285,
+  "after_wall_s": 84.06489968299866,
+  "before_stepping_s": 36.903586983215064,
+  "after_stepping_s": 36.98260069952812,
+  "before_host_rss_mib": 4585.75,
+  "after_host_rss_mib": 4437.65625,
+  "notes": [
+    "One sample per revision; descriptive end-to-end timing, not a repeated speedup gate.",
+    "The old run precedes dense material reuse; the combined comparison includes preparation reuse and deferred result construction.",
+    "The optimized run enables progress output.",
+    "Peak energy and derived decay differ by approximately 1e-7 relative, consistent with float32 reduction rounding; final field energy and recorded fields are identical.",
+    "Long unoptimized run stopped without results; no before/after long-run speedup is claimed."
+  ],
+  "elapsed_reduction_fraction": 0.30855570520445685
+}

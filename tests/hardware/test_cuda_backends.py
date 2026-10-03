@@ -886,6 +886,32 @@ def test_streamed_cuda_bounded_graph_replay_preserves_native_result(
         np.testing.assert_array_equal(actual.dft_vec_im, reference.dft_vec_im)
 
 
+def test_streamed_cuda_continuation_preserves_absolute_dft_clock():
+    simulation, state = _simulation_and_seed(
+        cpml=True, source=False, monitor=True, timesteps=60000
+    )
+    start_step = 40001
+    state = state._replace(
+        current_step=np.asarray(start_step, dtype=np.int32),
+        t=np.asarray(simulation.time[0] + start_step * simulation.dt, dtype=np.float32),
+    )
+    reference = simulation.advance(
+        state=_copy_state(state), num_steps=771, backend="cuda_streamed"
+    ).state
+    reference_program = simulation.compile(num_steps=771, backend="cuda_streamed")
+    actual = _copy_state(state)
+    for _ in range(3):
+        actual = simulation.advance(
+            state=actual, num_steps=257, backend="cuda_streamed"
+        ).state
+    continued_program = simulation.compile(num_steps=257, backend="cuda_streamed")
+    assert continued_program.coefficients is reference_program.coefficients
+    assert continued_program.boundary is reference_program.boundary
+    _assert_state_close(reference, actual)
+    np.testing.assert_array_equal(actual.dft_vec_re, reference.dft_vec_re)
+    np.testing.assert_array_equal(actual.dft_vec_im, reference.dft_vec_im)
+
+
 @pytest.mark.parametrize("metric_kind", ["axis_uniform", "rectilinear"])
 @pytest.mark.parametrize("cpml", [False, True], ids=["pec", "cpml"])
 def test_streamed_cuda_matches_jax_on_nonuniform_grids(metric_kind, cpml):

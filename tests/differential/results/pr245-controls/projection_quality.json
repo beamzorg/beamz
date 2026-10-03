@@ -1,0 +1,640 @@
+{
+  "definition": "Field-vector reconstruction norm divided by measured field-vector norm; not a power-fraction error bound.",
+  "limitations": [
+    "Unretained polarization/modes and weak signals can produce large relative residuals.",
+    "Condition number near one does not establish completeness of the retained basis.",
+    "Residuals alone do not identify the physical source of unrepresented fields."
+  ],
+  "runs": [
+    {
+      "run": "reprojected-converter-fixed-6ppw",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.06677878281708823,
+          "wavelength_at_maximum_nm": 1541.9768934531453,
+          "residual_at_1550nm": 0.050116648378239585,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0000000000000004
+        },
+        "o2": {
+          "maximum_residual": 0.9998502269502644,
+          "wavelength_at_maximum_nm": 1557.976653696498,
+          "residual_at_1550nm": 0.9998325137978656,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0
+        },
+        "o4": {
+          "maximum_residual": 0.1075686003670234,
+          "wavelength_at_maximum_nm": 1542.967244701349,
+          "residual_at_1550nm": 0.06410219707106073,
+          "selected_output_power_at_maximum": 0.7618569007153733,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "conversion": {
+          "maximum_residual": 0.07368950345744767,
+          "wavelength_at_maximum_nm": 1541.9768934531453,
+          "residual_at_1550nm": 0.07121871894649166,
+          "selected_output_power_at_maximum": 0.2326500293806249,
+          "maximum_condition_number": 1.0153387382707646
+        },
+        "crosstalk": {
+          "maximum_residual": 0.07368950345744767,
+          "wavelength_at_maximum_nm": 1541.9768934531453,
+          "residual_at_1550nm": 0.07121871894649166,
+          "selected_output_power_at_maximum": 5.21096404949548e-05,
+          "maximum_condition_number": 1.0153387382707646
+        }
+      }
+    },
+    {
+      "run": "reprojected-converter-grid-te1-fixed",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.027258745160987845,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.018234244675496204,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "near": {
+          "maximum_residual": 0.02926003628991429,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.01908922399264091,
+          "selected_output_power_at_maximum": 0.9999879052989337,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "middle": {
+          "maximum_residual": 0.02393664829809473,
+          "wavelength_at_maximum_nm": 1544.9517684887464,
+          "residual_at_1550nm": 0.018814546313459222,
+          "selected_output_power_at_maximum": 0.9995518107257136,
+          "maximum_condition_number": 1.0
+        },
+        "far": {
+          "maximum_residual": 0.029130122053972984,
+          "wavelength_at_maximum_nm": 1554.9514563106798,
+          "residual_at_1550nm": 0.029077917838939076,
+          "selected_output_power_at_maximum": 0.9933768040879072,
+          "maximum_condition_number": 1.0000000000000002
+        }
+      }
+    },
+    {
+      "run": "reprojected-converter-ports-fixed-frozen6",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.05628956668291492,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.04772530667782908,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0000000000000004
+        },
+        "o2": {
+          "maximum_residual": 1.000050677731367,
+          "wavelength_at_maximum_nm": 1548.9361702127662,
+          "residual_at_1550nm": 1.0000430484273075,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0
+        },
+        "o4": {
+          "maximum_residual": 0.06816127519656001,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.055094212551313866,
+          "selected_output_power_at_maximum": 0.7542156892112997,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "conversion": {
+          "maximum_residual": 0.046807822631176194,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.032366138025695046,
+          "selected_output_power_at_maximum": 0.23853246722691515,
+          "maximum_condition_number": 1.0153387382707646
+        },
+        "crosstalk": {
+          "maximum_residual": 0.046807822631176194,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.032366138025695046,
+          "selected_output_power_at_maximum": 5.70790199886469e-05,
+          "maximum_condition_number": 1.0153387382707646
+        }
+      }
+    },
+    {
+      "run": "reprojected-converter-reference-fixed-10ppw",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.029170864980111726,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.027587257995083565,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0
+        },
+        "o2": {
+          "maximum_residual": 0.9997719286524114,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.9997028195169475,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o4": {
+          "maximum_residual": 0.04186345357582932,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.03062792290730688,
+          "selected_output_power_at_maximum": 0.689711245333467,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "conversion": {
+          "maximum_residual": 0.06908943336630469,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.06561879441838221,
+          "selected_output_power_at_maximum": 0.30403282289242317,
+          "maximum_condition_number": 1.0065808283788296
+        },
+        "crosstalk": {
+          "maximum_residual": 0.06908943336630469,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.06561879441838221,
+          "selected_output_power_at_maximum": 0.00015609192594219436,
+          "maximum_condition_number": 1.0065808283788296
+        }
+      }
+    },
+    {
+      "run": "reprojected-grid-te0",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.04155425159083842,
+          "wavelength_at_maximum_nm": 1554.9514563106798,
+          "residual_at_1550nm": 0.04148369835564299,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "near": {
+          "maximum_residual": 0.041014360763331356,
+          "wavelength_at_maximum_nm": 1544.9517684887464,
+          "residual_at_1550nm": 0.04100753652142657,
+          "selected_output_power_at_maximum": 0.9991904406204121,
+          "maximum_condition_number": 1.0
+        },
+        "middle": {
+          "maximum_residual": 0.04128201050076235,
+          "wavelength_at_maximum_nm": 1554.9514563106798,
+          "residual_at_1550nm": 0.040022274840038494,
+          "selected_output_power_at_maximum": 0.9975361276754128,
+          "maximum_condition_number": 1.0
+        },
+        "far": {
+          "maximum_residual": 0.05929382286890707,
+          "wavelength_at_maximum_nm": 1554.9514563106798,
+          "residual_at_1550nm": 0.058926891537721245,
+          "selected_output_power_at_maximum": 0.9900968627646212,
+          "maximum_condition_number": 1.0
+        }
+      }
+    },
+    {
+      "run": "reprojected-mmi-fixed-10ppw",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.05284729685777204,
+          "wavelength_at_maximum_nm": 1544.9517684887464,
+          "residual_at_1550nm": 0.05061473258816486,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o2": {
+          "maximum_residual": 0.9914015868256587,
+          "wavelength_at_maximum_nm": 1544.9517684887464,
+          "residual_at_1550nm": 0.9526402289562017,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0000000000000004
+        },
+        "o3": {
+          "maximum_residual": 0.10004205198720056,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.08992529942412464,
+          "selected_output_power_at_maximum": 0.45158297750674853,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o4": {
+          "maximum_residual": 0.1750766362490346,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.15196024110032902,
+          "selected_output_power_at_maximum": 0.48493750738701297,
+          "maximum_condition_number": 1.0
+        }
+      }
+    },
+    {
+      "run": "reprojected-mmi-fixed-15ppw",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.04449401992309452,
+          "wavelength_at_maximum_nm": 1544.9517684887464,
+          "residual_at_1550nm": 0.03776548343178489,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o2": {
+          "maximum_residual": 0.960923582188703,
+          "wavelength_at_maximum_nm": 1549.9354838709678,
+          "residual_at_1550nm": 0.9608541629618559,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0
+        },
+        "o3": {
+          "maximum_residual": 0.08595948404003258,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.07559713411894103,
+          "selected_output_power_at_maximum": 0.48536325762007054,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o4": {
+          "maximum_residual": 0.13193057698553295,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.11002641866868187,
+          "selected_output_power_at_maximum": 0.48193141924332844,
+          "maximum_condition_number": 1.0
+        }
+      }
+    },
+    {
+      "run": "reprojected-mmi-fixed-6ppw",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.09272746672941772,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.058556225726539894,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0000000000000004
+        },
+        "o2": {
+          "maximum_residual": 0.7560933589796272,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.5153072807234961,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0
+        },
+        "o3": {
+          "maximum_residual": 0.24057782424215549,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.20245334403846046,
+          "selected_output_power_at_maximum": 0.36086866993672034,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o4": {
+          "maximum_residual": 0.40346445831415656,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.3993625538231411,
+          "selected_output_power_at_maximum": 0.4212710368775335,
+          "maximum_condition_number": 1.0000000000000002
+        }
+      }
+    },
+    {
+      "run": "reprojected-psr-fixed-10ppw",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.02092675384989739,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.020720574354072915,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o3": {
+          "maximum_residual": 0.9973965818890692,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.9968188854627684,
+          "selected_output_power_at_maximum": 0.0006209658809033062,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "conversion": {
+          "maximum_residual": 0.056101431611170906,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.05546618512522909,
+          "selected_output_power_at_maximum": 0.8738091870337095,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "crosstalk": {
+          "maximum_residual": 0.9999781461739943,
+          "wavelength_at_maximum_nm": 1550.0,
+          "residual_at_1550nm": 0.9999781461739943,
+          "selected_output_power_at_maximum": 6.362395560935662e-06,
+          "maximum_condition_number": 1.0
+        }
+      }
+    },
+    {
+      "run": "reprojected-psr-fixed-6ppw",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.03497602264299217,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.0305288316090801,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0
+        },
+        "o3": {
+          "maximum_residual": 0.9982049857193033,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.9981279960928043,
+          "selected_output_power_at_maximum": 0.0005370187246722921,
+          "maximum_condition_number": 1.0
+        },
+        "conversion": {
+          "maximum_residual": 0.06487220755832408,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.0644813974407535,
+          "selected_output_power_at_maximum": 0.8540613419660373,
+          "maximum_condition_number": 1.0
+        },
+        "crosstalk": {
+          "maximum_residual": 1.0000073604886173,
+          "wavelength_at_maximum_nm": 1544.9517684887464,
+          "residual_at_1550nm": 1.0000058033397545,
+          "selected_output_power_at_maximum": 7.126353729548834e-06,
+          "maximum_condition_number": 1.0000000000000004
+        }
+      }
+    },
+    {
+      "run": "reprojected-ring-fixed-12p8",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.15019575073203273,
+          "wavelength_at_maximum_nm": 1541.9768934531453,
+          "residual_at_1550nm": 0.024352865940487963,
+          "selected_output_power_at_maximum": 0.28004210247955696,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o2": {
+          "maximum_residual": 0.437462360999582,
+          "wavelength_at_maximum_nm": 1541.7789757412402,
+          "residual_at_1550nm": 0.06579108460950786,
+          "selected_output_power_at_maximum": 0.050729126049517806,
+          "maximum_condition_number": 1.0000000000000004
+        }
+      }
+    },
+    {
+      "run": "reprojected-ring-fixed-25p6",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.14458971639688759,
+          "wavelength_at_maximum_nm": 1541.9768934531453,
+          "residual_at_1550nm": 0.02457238767296166,
+          "selected_output_power_at_maximum": 0.23859573613538834,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o2": {
+          "maximum_residual": 0.6451669989567476,
+          "wavelength_at_maximum_nm": 1541.7789757412402,
+          "residual_at_1550nm": 0.06356862710948942,
+          "selected_output_power_at_maximum": 0.014551470250124696,
+          "maximum_condition_number": 1.0000000000000004
+        }
+      }
+    },
+    {
+      "run": "reprojected-ring-fixed-51p2",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.13970541568923137,
+          "wavelength_at_maximum_nm": 1541.9768934531453,
+          "residual_at_1550nm": 0.024501702505835932,
+          "selected_output_power_at_maximum": 0.23206570408001498,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o2": {
+          "maximum_residual": 0.7425845749917598,
+          "wavelength_at_maximum_nm": 1541.7789757412402,
+          "residual_at_1550nm": 0.06343058493970627,
+          "selected_output_power_at_maximum": 0.008245093761173867,
+          "maximum_condition_number": 1.0000000000000004
+        }
+      }
+    },
+    {
+      "run": "reprojected-ring-fixed-6p4",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.052873672357078697,
+          "wavelength_at_maximum_nm": 1542.1748619848508,
+          "residual_at_1550nm": 0.025335453296503236,
+          "selected_output_power_at_maximum": 0.049438967309305124,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o2": {
+          "maximum_residual": 0.8125571774280115,
+          "wavelength_at_maximum_nm": 1549.135929842662,
+          "residual_at_1550nm": 0.06686832239560285,
+          "selected_output_power_at_maximum": 0.004289847835143128,
+          "maximum_condition_number": 1.0000000000000004
+        }
+      }
+    },
+    {
+      "run": "reprojected-te0-final",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.02858223043481313,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.027176516205190328,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0
+        },
+        "near": {
+          "maximum_residual": 0.02422756536294001,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.023956070265242005,
+          "selected_output_power_at_maximum": 1.003243701838195,
+          "maximum_condition_number": 1.0
+        },
+        "middle": {
+          "maximum_residual": 0.030781871598167383,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.030361010125071246,
+          "selected_output_power_at_maximum": 1.004401059082966,
+          "maximum_condition_number": 1.0
+        },
+        "far": {
+          "maximum_residual": 0.02908023936068769,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.028463317968938636,
+          "selected_output_power_at_maximum": 0.9939033934657607,
+          "maximum_condition_number": 1.0
+        }
+      }
+    },
+    {
+      "run": "reprojected-te1",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.022740858773733455,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.014456448169050465,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0
+        },
+        "near": {
+          "maximum_residual": 0.01727246942792836,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.014613848075488612,
+          "selected_output_power_at_maximum": 0.999936583588406,
+          "maximum_condition_number": 1.0
+        },
+        "middle": {
+          "maximum_residual": 0.021986159222161353,
+          "wavelength_at_maximum_nm": 1554.9514563106798,
+          "residual_at_1550nm": 0.021727368860059413,
+          "selected_output_power_at_maximum": 1.000071727578906,
+          "maximum_condition_number": 1.0
+        },
+        "far": {
+          "maximum_residual": 0.026482779382256343,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.02349450498103557,
+          "selected_output_power_at_maximum": 0.9998992875117039,
+          "maximum_condition_number": 1.0
+        }
+      }
+    },
+    {
+      "run": "reprojected-tm0",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.027551707572519082,
+          "wavelength_at_maximum_nm": 1544.9517684887464,
+          "residual_at_1550nm": 0.027466215162025506,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0
+        },
+        "near": {
+          "maximum_residual": 0.030198171108745314,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.02926597845225069,
+          "selected_output_power_at_maximum": 0.994386366489359,
+          "maximum_condition_number": 1.0
+        },
+        "middle": {
+          "maximum_residual": 0.02812311130251713,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.02763652016979158,
+          "selected_output_power_at_maximum": 0.9944716512281249,
+          "maximum_condition_number": 1.0
+        },
+        "far": {
+          "maximum_residual": 0.03442240313638146,
+          "wavelength_at_maximum_nm": 1549.9354838709678,
+          "residual_at_1550nm": 0.03442153580981864,
+          "selected_output_power_at_maximum": 0.9930830592324371,
+          "maximum_condition_number": 1.0
+        }
+      }
+    },
+    {
+      "run": "reprojected-wide-te0",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.011329580382677494,
+          "wavelength_at_maximum_nm": 1544.9517684887464,
+          "residual_at_1550nm": 0.011189868762708177,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0
+        },
+        "near": {
+          "maximum_residual": 0.010313660997108388,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.010134780900818539,
+          "selected_output_power_at_maximum": 0.9999341963354623,
+          "maximum_condition_number": 1.0
+        },
+        "middle": {
+          "maximum_residual": 0.01196515585585628,
+          "wavelength_at_maximum_nm": 1540.0000000000002,
+          "residual_at_1550nm": 0.011871135576275317,
+          "selected_output_power_at_maximum": 1.0001354463018748,
+          "maximum_condition_number": 1.0
+        },
+        "far": {
+          "maximum_residual": 0.01416209107003471,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.013626048373595842,
+          "selected_output_power_at_maximum": 0.9999793826130455,
+          "maximum_condition_number": 1.0
+        }
+      }
+    },
+    {
+      "run": "converter-grid-te0-10ppw-sampling-fixed",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.02757384214339781,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.02738327782892285,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0
+        },
+        "near": {
+          "maximum_residual": 0.027138689113682096,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.02678536031695352,
+          "selected_output_power_at_maximum": 1.0002253142718278,
+          "maximum_condition_number": 1.0
+        },
+        "middle": {
+          "maximum_residual": 0.027034275978142886,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.026519206711020506,
+          "selected_output_power_at_maximum": 0.9989612684288587,
+          "maximum_condition_number": 1.0
+        },
+        "far": {
+          "maximum_residual": 0.04570366445434985,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.04433318352550301,
+          "selected_output_power_at_maximum": 0.9973610325143667,
+          "maximum_condition_number": 1.0
+        }
+      }
+    },
+    {
+      "run": "ring-bus-final6",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.02367366538984821,
+          "wavelength_at_maximum_nm": 1554.1467201449088,
+          "residual_at_1550nm": 0.022948942901339177,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o2": {
+          "maximum_residual": 0.06003115186318575,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.0577454738280912,
+          "selected_output_power_at_maximum": 0.997730193392339,
+          "maximum_condition_number": 1.0000000000000004
+        }
+      }
+    },
+    {
+      "run": "ring-bus-exact6p4",
+      "ports": {
+        "o1": {
+          "maximum_residual": 0.023679282856819743,
+          "wavelength_at_maximum_nm": 1554.3478260869565,
+          "residual_at_1550nm": 0.02294882708818449,
+          "selected_output_power_at_maximum": null,
+          "maximum_condition_number": 1.0000000000000002
+        },
+        "o2": {
+          "maximum_residual": 0.06003117734485638,
+          "wavelength_at_maximum_nm": 1560.0000000000002,
+          "residual_at_1550nm": 0.057745565838854714,
+          "selected_output_power_at_maximum": 0.9977560799988132,
+          "maximum_condition_number": 1.0000000000000004
+        }
+      }
+    }
+  ]
+}
