@@ -104,3 +104,7 @@ MARKETING_2.md
 
 # Generated reference data
 /beamz/devices/reference/
+
+# Optional Futhark backend build output (futhark/build.py)
+beamz/simulation/futhark/_native/
+futhark/build/

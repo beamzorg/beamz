@@ -1083,9 +1083,10 @@ class Simulation:
             Allow JAX to recycle buffers owned by ``state``. After a donating call,
             the input state must not be read or reused.
             CUDA selects its execution schedule separately from buffer ownership.
-        backend : {"auto", "jax", "cuda", "cuda_streamed"}, default="auto"
+        backend : {"auto", "jax", "cuda", "cuda_streamed", "futhark"}, default="auto"
             Execution policy. ``auto`` uses the optional CUDA extension when it is
-            compatible and otherwise retains the JAX implementation.
+            compatible and otherwise retains the JAX implementation. ``futhark``
+            explicitly selects the optional Futhark-generated program.
 
         Returns
         -------
@@ -1210,7 +1211,7 @@ class Simulation:
             length is used when omitted.
         sharding : ShardingConfig or compatible value, optional
             Runtime device-sharding policy. ``None`` selects the default placement.
-        backend : {"auto", "jax", "cuda", "cuda_streamed"}, default="auto"
+        backend : {"auto", "jax", "cuda", "cuda_streamed", "futhark"}, default="auto"
             Execution policy. Explicit CUDA variants fail if their required typed
             FFI target or GPU architecture is unavailable.
         progress : bool, default=False
@@ -1381,7 +1382,7 @@ class Simulation:
             CUDA keeps its fast schedule when estimated workspace fits; otherwise
             it selects in-place execution. Set BEAMZ_CUDA_MEMORY_POLICY to
             ``speed`` or ``capacity`` to override the default ``auto`` policy.
-        backend : {"auto", "jax", "cuda", "cuda_streamed"}, default="auto"
+        backend : {"auto", "jax", "cuda", "cuda_streamed", "futhark"}, default="auto"
             Execution policy. ``auto`` preserves JAX as the fallback when the
             optional CUDA runtime is not installed.
         performance : bool, default=True
@@ -1491,7 +1492,7 @@ class Simulation:
             material regions needed by configured analysis monitors.
         sharding : ShardingConfig or compatible value, optional
             Runtime device-sharding policy.
-        backend : {"auto", "jax", "cuda", "cuda_streamed"}, default="auto"
+        backend : {"auto", "jax", "cuda", "cuda_streamed", "futhark"}, default="auto"
             Execution policy. ``cuda`` chooses the best compatible CUDA target.
         termination : AutoTermination, optional
             Bounded convergence policy. When supplied, BeamZ executes reusable

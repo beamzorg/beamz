@@ -1,0 +1,517 @@
+#!/usr/bin/env python3
+"""Build BeamZ's optional Futhark backend into a JAX FFI shared library.
+
+The steps are:
+
+1. ``futhark cuda --library`` (or ``futhark hip --library``) compiles
+   ``fdtd.fut`` to C plus a JSON manifest.
+2. On CUDA, the generated context is patched to retain the device's *primary*
+   context, which XLA also uses, so Futhark can alias XLA buffers in place.
+   HIP's runtime API has one context per device, so it needs no patch.
+3. A typed XLA FFI handler is generated from the manifest: every array input is
+   wrapped with ``futhark_new_raw_*`` (no copy), every scalar input becomes an
+   FFI attribute of the same name, and the result record is copied into the
+   XLA-owned outputs.
+4. Everything is linked into ``beamz/simulation/futhark/_native/`` as
+   ``libbeamz_futhark_cuda.so`` or ``libbeamz_futhark_hip.so``.
+
+Set ``FUTHARK`` to the compiler path if ``futhark`` is not on ``PATH``,
+``CUDA_HOME`` if the toolkit is not in ``/opt/cuda`` or ``/usr/local/cuda``, and
+``ROCM_PATH`` if ROCm is not in ``/opt/rocm``.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+OUTPUT = ROOT / "beamz" / "simulation" / "futhark" / "_native"
+ENTRY = "program"
+SYMBOL = "BeamzFutharkProgram"
+
+_ELEMENT = {
+    "f32": ("float", "F32"),
+    "i32": ("int32_t", "S32"),
+    "i64": ("int64_t", "S64"),
+}
+
+
+def _parse_array(type_name: str) -> tuple[int, str] | None:
+    rank = type_name.count("[]")
+    if not rank:
+        return None
+    return rank, type_name.replace("[]", "")
+
+
+@dataclass(frozen=True)
+class Platform:
+    """GPU runtime spellings that differ between the CUDA and HIP builds."""
+
+    name: str
+    runtime: str  # runtime API prefix: cudaMemcpyAsync / hipMemcpyAsync
+    pointer: str  # Futhark's raw device-pointer type
+    headers: tuple[str, ...]
+    # Disable FMA contraction so that the explicit f32.fma calls in fdtd.fut
+    # reproduce the CUDA backend's separately rounded multiply/FMA sequence.
+    rtc_option: tuple[str, str]
+    # Needed by the handler, which includes the runtime headers before fdtd.h
+    # (whose own definitions cover fdtd.c).
+    handler_defines: tuple[str, ...]
+    libraries: tuple[str, ...]
+    library_dir: str
+    toolkits: tuple[str, ...]
+    marker: str
+
+    @property
+    def gpu(self) -> bool:
+        return self.name in ("cuda", "hip")
+
+    @property
+    def library(self) -> str:
+        return f"libbeamz_futhark_{self.name}.so"
+
+    def toolkit(self) -> Path | None:
+        if not self.gpu:
+            return None
+        for candidate in self.toolkits:
+            if candidate and (Path(candidate) / "include" / self.marker).exists():
+                return Path(candidate)
+        raise SystemExit(f"{self.name} toolkit not found; set CUDA_HOME or ROCM_PATH")
+
+
+PLATFORMS = {
+    "cuda": Platform(
+        name="cuda",
+        runtime="cuda",
+        pointer="CUdeviceptr",
+        headers=("cuda.h", "cuda_runtime.h", "nvrtc.h"),
+        rtc_option=("futhark_context_config_add_nvrtc_option", "--fmad=false"),
+        handler_defines=(),
+        libraries=("cuda", "nvrtc", "cudart"),
+        library_dir="lib64",
+        toolkits=(os.environ.get("CUDA_HOME", ""), "/opt/cuda", "/usr/local/cuda"),
+        marker="cuda.h",
+    ),
+    "hip": Platform(
+        name="hip",
+        runtime="hip",
+        pointer="hipDeviceptr_t",
+        headers=("hip/hip_runtime.h", "hip/hiprtc.h"),
+        rtc_option=("futhark_context_config_add_build_option", "-ffp-contract=off"),
+        handler_defines=("__HIP_PLATFORM_AMD__",),
+        libraries=("amdhip64", "hiprtc"),
+        library_dir="lib",
+        toolkits=(os.environ.get("ROCM_PATH", ""), "/opt/rocm"),
+        marker="hip/hip_runtime.h",
+    ),
+    # Host-memory builds for XLA's CPU client: no streams, no runtime compiler.
+    **{
+        name: Platform(
+            name=name,
+            runtime="",
+            pointer="unsigned char*",
+            headers=(),
+            rtc_option=("", ""),
+            handler_defines=(),
+            libraries=("pthread", "m"),
+            library_dir="",
+            toolkits=(),
+            marker="",
+        )
+        for name in ("c", "multicore", "ispc")
+    },
+}
+
+
+def _patch_primary_context(source: Path) -> None:
+    text = source.read_text()
+    created = (
+        "#if (CUDART_VERSION >= 13000)\n"
+        "  CUDA_SUCCEED_FATAL(cuCtxCreate(&ctx->cu_ctx, NULL, 0, ctx->dev));\n"
+        "#else\n"
+        "  CUDA_SUCCEED_FATAL(cuCtxCreate(&ctx->cu_ctx, 0, ctx->dev));\n"
+        "#endif\n"
+    )
+    destroyed = "    CUDA_SUCCEED_FATAL(cuCtxDestroy(ctx->cu_ctx));\n"
+    if text.count(created) != 1 or text.count(destroyed) != 1:
+        raise SystemExit(
+            "Generated Futhark context code changed; update _patch_primary_context"
+        )
+    text = text.replace(
+        created,
+        "  // BeamZ: share XLA's primary context so raw device pointers alias.\n"
+        "  CUDA_SUCCEED_FATAL(cuDevicePrimaryCtxRetain(&ctx->cu_ctx, ctx->dev));\n",
+    ).replace(
+        destroyed,
+        "    CUDA_SUCCEED_FATAL(cuDevicePrimaryCtxRelease(ctx->dev));\n",
+    )
+    source.write_text(text)
+
+
+def _patch_ispc_stdlib(source: Path) -> None:
+    """Drop Futhark's erf/erfc(double) externs, which ISPC 1.31's stdlib defines."""
+    import re
+
+    text = source.read_text()
+    text = re.sub(
+        r'^extern "C" unmasked uniform double erfc?\(uniform double( x)?\);\n',
+        "",
+        text,
+        flags=re.MULTILINE,
+    )
+    source.write_text(text)
+
+
+def generate_handler(
+    manifest: dict,
+    header: str,
+    platform: Platform = PLATFORMS["cuda"],
+    rtc_includes: tuple[str, ...] = (),
+) -> str:
+    """Return C++ for one typed XLA FFI handler around the Futhark entry."""
+    rt = platform.runtime
+    entry = manifest["entry_points"][ENTRY]
+    record = manifest["types"][entry["output"]["type"]]
+    fields = record["record"]["fields"]
+    attrs, arrays, call_args = [], [], []
+    for item in entry["inputs"]:
+        array = _parse_array(item["type"])
+        name = item["name"]
+        if array is None:
+            ctype, _ = _ELEMENT[item["type"]]
+            attrs.append((name, ctype))
+            call_args.append(name)
+        else:
+            rank, element = array
+            if item["unique"]:
+                raise SystemExit(
+                    f"Entry input {name!r} is consumed; XLA-aliased inputs must not be"
+                )
+            arrays.append((name, rank, element))
+            call_args.append(f"in_{name}")
+
+    lines = [
+        f"// Generated by futhark/build.py from the {ENTRY!r} manifest; do not edit.",
+        "#include <cstdint>",
+        "#include <cstdio>",
+        "#include <cstdlib>",
+        "#include <cstring>",
+        "#include <mutex>",
+        "#include <string>",
+        "",
+        # Include the runtime headers outside extern "C"; fdtd.h repeats them.
+        *[f"#include <{name}>" for name in platform.headers],
+        "",
+        '#include "xla/ffi/api/ffi.h"',
+        "",
+        'extern "C" {',
+        f'#include "{header}"',
+        "}",
+        "",
+        "namespace ffi = xla::ffi;",
+        "",
+        "namespace {",
+        "",
+        "struct Runtime {",
+        "  futhark_context_config* config = nullptr;",
+        "  futhark_context* context = nullptr;",
+        "  int device = -1;",
+        "  std::mutex lock;",
+        "};",
+        "",
+        "Runtime& GetRuntime() {",
+        "  static Runtime runtime;",
+        "  return runtime;",
+        "}",
+        "",
+        "std::string TakeError(futhark_context* ctx) {",
+        "  char* message = futhark_context_get_error(ctx);",
+        '  std::string result = message ? message : "unknown Futhark error";',
+        "  std::free(message);",
+        "  return result;",
+        "}",
+        "",
+        "// One context per process, created on XLA's device the first time a",
+        "// program runs. Kernels compile at runtime once and may be cached on disk.",
+        "ffi::Error EnsureContext(Runtime& runtime) {",
+        "  int device = 0;",
+        *(
+            [
+                f"  if ({rt}GetDevice(&device) != {rt}Success) {{",
+                f'    return ffi::Error::Internal("{rt}GetDevice failed");',
+                "  }",
+            ]
+            if platform.gpu
+            else []
+        ),
+        "  if (runtime.context != nullptr) {",
+        "    if (runtime.device != device) {",
+        "      return ffi::Error(ffi::ErrorCode::kUnimplemented,",
+        '                        "Futhark backend supports one GPU per process");',
+        "    }",
+        "    return ffi::Error::Success();",
+        "  }",
+        "  runtime.config = futhark_context_config_new();",
+        *(
+            [
+                '  const std::string selector = "#" + std::to_string(device);',
+                "  futhark_context_config_set_device(runtime.config, selector.c_str());",
+                "  // Match the CUDA backend's explicitly rounded multiply/FMA sequence.",
+                f'  {platform.rtc_option[0]}(runtime.config, "{platform.rtc_option[1]}");',
+                # HIPRTC does not search the ROCm headers that Futhark kernels include.
+                *[
+                    f'  {platform.rtc_option[0]}(runtime.config, "-I{path}");'
+                    for path in rtc_includes
+                ],
+            ]
+            if platform.gpu
+            else [
+                '  if (const char* threads = std::getenv("BEAMZ_FUTHARK_THREADS")) {',
+                "    futhark_context_config_set_num_threads(runtime.config, std::atoi(threads));",
+                "  }",
+            ]
+            if platform.name != "c"
+            else []
+        ),
+        "  // Opt-in per-kernel timing, printed to stderr after every program.",
+        '  if (std::getenv("BEAMZ_FUTHARK_PROFILE")) {',
+        "    futhark_context_config_set_profiling(runtime.config, 1);",
+        "  }",
+        '  if (const char* cache = std::getenv("BEAMZ_FUTHARK_CACHE_FILE")) {',
+        "    futhark_context_config_set_cache_file(runtime.config, cache);",
+        "  }",
+        "  runtime.context = futhark_context_new(runtime.config);",
+        "  if (runtime.context == nullptr) {",
+        '    return ffi::Error::Internal("futhark_context_new failed");',
+        "  }",
+        "  if (char* error = futhark_context_get_error(runtime.context)) {",
+        "    std::string message(error);",
+        "    std::free(error);",
+        "    return ffi::Error::Internal(message);",
+        "  }",
+        "  runtime.device = device;",
+        "  return ffi::Error::Success();",
+        "}",
+        "",
+        "ffi::Error Mismatch(const char* name) {",
+        '  return ffi::Error::InvalidArgument(std::string("unexpected dtype, rank or shape for ") + name);',
+        "}",
+        "",
+    ]
+    attr_params = "".join(f", {ctype} {name}" for name, ctype in attrs)
+    stream_param = f"{rt}Stream_t stream, " if platform.gpu else ""
+    lines += [
+        f"ffi::Error ProgramImpl({stream_param}ffi::RemainingArgs args,",
+        f"                       ffi::RemainingRets rets{attr_params}) {{",
+        f"  if (args.size() != {len(arrays)} || rets.size() != {len(fields)}) {{",
+        '    return ffi::Error::InvalidArgument("Futhark program arity mismatch");',
+        "  }",
+        "  Runtime& runtime = GetRuntime();",
+        "  std::lock_guard<std::mutex> guard(runtime.lock);",
+        "  if (auto error = EnsureContext(runtime); error.failure()) return error;",
+        "  futhark_context* ctx = runtime.context;",
+        *(
+            [
+                "  // Producers run on XLA's stream, Futhark on its own.",
+                f"  if ({rt}StreamSynchronize(stream) != {rt}Success) {{",
+                '    return ffi::Error::Internal("XLA stream synchronization failed");',
+                "  }",
+            ]
+            if platform.gpu
+            else []
+        ),
+    ]
+    for index, (name, rank, element) in enumerate(arrays):
+        _, dtype = _ELEMENT[element]
+        dims = ", ".join(f"d_{name}[{axis}]" for axis in range(rank))
+        lines += [
+            f"  auto a_{name} = args.get<ffi::AnyBuffer>({index});",
+            f"  if (a_{name}.has_error()) return a_{name}.error();",
+            f"  if (a_{name}->element_type() != ffi::DataType::{dtype} ||",
+            f'      a_{name}->dimensions().size() != {rank}) return Mismatch("{name}");',
+            f"  auto d_{name} = a_{name}->dimensions();",
+            f"  futhark_{element}_{rank}d* in_{name} = futhark_new_raw_{element}_{rank}d(",
+            f"      ctx, reinterpret_cast<{platform.pointer}>(a_{name}->untyped_data()), {dims});",
+        ]
+    release_inputs = [
+        f"    futhark_free_{element}_{rank}d(ctx, in_{name});"
+        for name, rank, element in arrays
+    ]
+    opaque = record["ctype"].replace(" *", "")
+    lines += [
+        f"  {opaque}* result = nullptr;",
+        f"  int status = {entry['cfun']}(ctx, &result, {', '.join(call_args)});",
+        "  if (status == 0) status = futhark_context_sync(ctx);",
+        "  std::string failure = status == 0 ? std::string() : TakeError(ctx);",
+        "  auto release_inputs = [&]() {",
+        *release_inputs,
+        "  };",
+        "  if (status != 0) {",
+        "    release_inputs();",
+        "    return ffi::Error::Internal(failure);",
+        "  }",
+        "  ffi::Error outcome = ffi::Error::Success();",
+    ]
+    for index, field in enumerate(fields):
+        rank, element = _parse_array(field["type"])
+        cname, dtype = _ELEMENT[element]
+        lines += [
+            "  {",
+            f"    futhark_{element}_{rank}d* value = nullptr;",
+            f"    {field['project']}(ctx, &value, result);",
+            f"    auto r = rets.get<ffi::AnyBuffer>({index});",
+            f"    const int64_t* shape = futhark_shape_{element}_{rank}d(ctx, value);",
+            "    size_t elements = 1;",
+            "    bool same = r.has_value() && (*r)->dimensions().size() == "
+            f"{rank} && (*r)->element_type() == ffi::DataType::{dtype};",
+            f"    for (int axis = 0; same && axis < {rank}; ++axis) {{",
+            "      same = (*r)->dimensions()[axis] == shape[axis];",
+            "      elements *= static_cast<size_t>(shape[axis]);",
+            "    }",
+            "    if (!same) {",
+            f'      outcome = Mismatch("output {index}");',
+            *(
+                [
+                    "    } else if (elements != 0 &&",
+                    f"               reinterpret_cast<void*>(futhark_values_raw_{element}_{rank}d(ctx, value)) !=",
+                    "                   (*r)->untyped_data() &&",
+                    f"               {rt}MemcpyAsync((*r)->untyped_data(),",
+                    f"                   reinterpret_cast<void*>(futhark_values_raw_{element}_{rank}d(ctx, value)),",
+                    f"                   elements * sizeof({cname}), {rt}MemcpyDeviceToDevice,",
+                    f"                   stream) != {rt}Success) {{",
+                    '      outcome = ffi::Error::Internal("output copy failed");',
+                    "    }",
+                    "    // Keep Futhark memory alive until the copy has drained.",
+                    f"    if ({rt}StreamSynchronize(stream) != {rt}Success) {{",
+                    '      outcome = ffi::Error::Internal("output copy failed");',
+                    "    }",
+                ]
+                if platform.gpu
+                else [
+                    "    } else {",
+                    f"      void* source = futhark_values_raw_{element}_{rank}d(ctx, value);",
+                    "      if (elements != 0 && source != (*r)->untyped_data()) {",
+                    f"        std::memcpy((*r)->untyped_data(), source, elements * sizeof({cname}));",
+                    "      }",
+                    "    }",
+                ]
+            ),
+            f"    futhark_free_{element}_{rank}d(ctx, value);",
+            "  }",
+        ]
+    free_record = record["ops"]["free"]
+    lines += [
+        f"  {free_record}(ctx, result);",
+        '  if (std::getenv("BEAMZ_FUTHARK_PROFILE")) {',
+        "    char* report = futhark_context_report(ctx);",
+        "    std::fputs(report, stderr);",
+        "    std::free(report);",
+        "  }",
+        "  release_inputs();",
+        "  return outcome;",
+        "}",
+        "",
+        "}  // namespace",
+        "",
+        f"XLA_FFI_DEFINE_HANDLER_SYMBOL({SYMBOL}, ProgramImpl,",
+        "    ffi::Ffi::Bind()",
+        *(
+            [f"        .Ctx<ffi::PlatformStream<{rt}Stream_t>>()"]
+            if platform.gpu
+            else []
+        ),
+        "        .RemainingArgs()",
+        "        .RemainingRets()",
+        *[f'        .Attr<{ctype}>("{name}")' for name, ctype in attrs[:-1]],
+        f'        .Attr<{attrs[-1][1]}>("{attrs[-1][0]}"));',
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def build(futhark: str, work: Path, output: Path, platform: Platform) -> Path:
+    import jax.ffi
+
+    toolkit = platform.toolkit()
+    work.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=True)
+    stem = work / "fdtd"
+    subprocess.run(
+        [futhark, platform.name, "--library", "-o", str(stem), str(HERE / "fdtd.fut")],
+        check=True,
+    )
+    if platform.name == "cuda":
+        _patch_primary_context(stem.with_suffix(".c"))
+    manifest = json.loads(stem.with_suffix(".json").read_text())
+    handler = work / "ffi_handler.cc"
+    rtc_includes = (str(toolkit / "include"),) if platform.name == "hip" else ()
+    handler.write_text(generate_handler(manifest, "fdtd.h", platform, rtc_includes))
+    flags = ["-O3", "-fPIC", f"-I{work}"]
+    if toolkit is not None:
+        flags.append(f"-I{toolkit / 'include'}")
+    else:
+        # Host code is the numerical program here; keep FMAs explicit.
+        flags += ["-march=native", "-ffp-contract=off"]
+    source, handler_object = stem.with_suffix(".c"), work / "ffi_handler.o"
+    subprocess.run(
+        ["cc", *flags, "-std=c11", "-c", str(source), "-o", str(work / "fdtd.o")],
+        check=True,
+    )
+    objects = [work / "fdtd.o"]
+    if platform.name == "ispc":
+        _patch_ispc_stdlib(stem.with_suffix(".kernels.ispc"))
+        kernels = work / "fdtd.kernels.o"
+        subprocess.run(
+            [os.environ.get("ISPC", "ispc"), "-O3", "--pic", "--addressing=64"]
+            + ["--woff", str(stem.with_suffix(".kernels.ispc")), "-o", str(kernels)],
+            check=True,
+        )
+        objects.append(kernels)
+    subprocess.run(
+        ["c++", *flags, "-std=c++17", f"-I{jax.ffi.include_dir()}"]
+        + [f"-D{define}" for define in platform.handler_defines]
+        + ["-c", str(handler), "-o", str(handler_object)],
+        check=True,
+    )
+    library = output / platform.library
+    search = []
+    if toolkit is not None:
+        library_dir = toolkit / platform.library_dir
+        search = [f"-L{library_dir}", f"-Wl,-rpath,{library_dir}"]
+    subprocess.run(
+        ["c++", "-shared", "-o", str(library), *map(str, objects)]
+        + [str(handler_object), *search]
+        + [f"-l{name}" for name in platform.libraries],
+        check=True,
+    )
+    (output / f"manifest_{platform.name}.json").write_text(
+        json.dumps(manifest, indent=2) + "\n"
+    )
+    return library
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--futhark", default=os.environ.get("FUTHARK") or shutil.which("futhark")
+    )
+    parser.add_argument("--platform", choices=sorted(PLATFORMS), default="cuda")
+    parser.add_argument("--work", type=Path, help="default: futhark/build/<platform>")
+    parser.add_argument("--output", type=Path, default=OUTPUT)
+    args = parser.parse_args()
+    if not args.futhark:
+        parser.error("futhark compiler not found; pass --futhark or set FUTHARK")
+    platform = PLATFORMS[args.platform]
+    work = args.work or HERE / "build" / platform.name
+    print(build(args.futhark, work, args.output, platform))
+
+
+if __name__ == "__main__":
+    main()
