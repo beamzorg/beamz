@@ -250,12 +250,26 @@ def test_scheduled_resume_and_material_history(
     path = tmp_path / "scheduled.npz"
     partial.save(path)
     restored = optimizer.load_result(path, objective)
+    np.testing.assert_array_equal(partial.final_params, restored.final_params)
+    for expected_state, restored_state in zip(
+        jax.tree.leaves(partial.optimizer_state),
+        jax.tree.leaves(restored.optimizer_state),
+        strict=True,
+    ):
+        np.testing.assert_array_equal(expected_state, restored_state)
     assert restored.settings()["beta"] == schedule.values(1)["beta"]
     resumed = optimizer.run(objective, steps=4, resume=restored)
-    np.testing.assert_array_equal(full.params[-1], resumed.params[-1])
-    np.testing.assert_array_equal(
+    # Independent JAX compilations can differ by a few float32 ULPs, even before
+    # saving the partial run. Check serialization exactly and recomputation to
+    # float32 precision.
+    np.testing.assert_allclose(
+        full.params[-1], resumed.params[-1], rtol=1e-6, atol=1e-7
+    )
+    np.testing.assert_allclose(
         [h.objective_before for h in full.history],
         [h.objective_before for h in resumed.history],
+        rtol=1e-6,
+        atol=1e-7,
     )
     assert resumed.schedule_history == full.schedule_history
     assert resumed.settings()["beta"] == 5
