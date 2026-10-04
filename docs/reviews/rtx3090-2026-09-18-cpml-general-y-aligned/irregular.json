@@ -1,0 +1,376 @@
+{
+  "study": "general_cpml_y",
+  "variants": {
+    "ordinary_queue": [
+      [
+        0,
+        1,
+        2
+      ],
+      0,
+      "0",
+      "oriented"
+    ],
+    "ordinary_auto": [
+      [
+        0,
+        1,
+        2
+      ],
+      0,
+      null,
+      "oriented"
+    ],
+    "retained_pair": [
+      [
+        0,
+        1,
+        2
+      ],
+      589824,
+      null,
+      "oriented"
+    ],
+    "merged": [
+      [
+        0,
+        1,
+        2
+      ],
+      589824,
+      null,
+      "half_y"
+    ],
+    "aligned": [
+      [
+        0,
+        1,
+        2
+      ],
+      589824,
+      null,
+      "half_y_aligned"
+    ],
+    "aligned_pad32": [
+      [
+        0,
+        1,
+        2
+      ],
+      598016,
+      null,
+      "half_y_aligned"
+    ],
+    "aligned_pad64": [
+      [
+        0,
+        1,
+        2
+      ],
+      606208,
+      null,
+      "half_y_aligned"
+    ]
+  },
+  "shape": [
+    257,
+    193,
+    341
+  ],
+  "steps": 256,
+  "presteps": 0,
+  "material": "smooth",
+  "pml": 12,
+  "precision": "fp32",
+  "source": "mode",
+  "monitors": 2,
+  "frequencies": 3,
+  "monitor_type": "mode",
+  "logical_cells": 16913941,
+  "conversion_cost_included": true,
+  "native_sha256": "cff307b62e233f17527a4df892eae20f3edbe720abc2cc5a2f7e1247ea489bef",
+  "storage_sha256": "9ecc0fb03ba56429e3ad497cd5ce7092ec519aa3f45fb4211b25f0a47adef49c",
+  "state_sha256": [
+    "0b39e33b79f1e586d3939d01374cb8504644217f13e40b6e3ff06432c7c23a7f",
+    "d9a7c4d908a4542aabe9ea06da09b22464e43ba4553e62c740a8de24cf3f016b",
+    "187f009029b6a3e3561843abf8da52029755385bf73b819520cca0ec937094ab",
+    "910e319aef35556a68b39d276cec8808a7e4ca000c429041feb50c725ba2d5a7",
+    "d0f65a345ceec228d36aaa0563d5c3c49427d097cb2e15a00f968b5023944915",
+    "de0d609eb8084fbfce561be4c88ea8666553209bb4be68b5c53708fb04f35839",
+    "efaa39a4fffdcd5ec9de2c0780b708e6af61c7424666c5fc46d630120d624f9b",
+    "116cd3cdc9c7b4d354b553154361188207f37f259e751fe324b7d6083b19a808",
+    "b0c5fe875cf2845852eebdf704005e82467487a0b5d8cfd9ac3dbab3452c9e9a",
+    "0b9572cfc79a1d27ccee3499855fbc0dd3571d56f7c0a5fa2d7ca4ea9e3408b1",
+    "7ab38f0a82ee92668508df584420b47318df9d5b97acb669e47065f9e800b1c2",
+    "7afe9a599d9d219199c7becbcea69862b67b8c7b8a83c7db47fa7c23d0ea50ef",
+    "e9785512d22efa78a8c30d53997178d0749bc1d9484dfcdca328c1a5795d5b6b",
+    "053615c126470e8832d49359870931a829920cb093dadb5f8e72ae61fef784ab",
+    "663283d6ab9f3027e435818bdfdc74c4f9cfa6b3b39450d6021321859936e546",
+    "3d8ee16e1b93508b4fd71ad519e27656e0c6a2727e478316afeee53200f93b78",
+    "beefd378d2a392a0c31dc4922ce2b4b841e78026688b6b5900b6a14d9eaf94bd",
+    "b6a08cefd27e26c0a1966c92cb8bb9e8593c6dcc291ada8a3e0b84b109add332",
+    "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+    "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+    "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+    "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0",
+    "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0",
+    "f46913286d895f62d646314f400fc3d7a543cf34eb4ae56df87f43dc4582a36b",
+    "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0",
+    "aeba5d9ee1dfa6ab268dcc4c1a8a62508f029c8637b6678f789082883675afae",
+    "cedb795c3f027623a475d75549f40b9715d4621a4fe536dae83554791069f5f8",
+    "6a8be7f6f12d448f5f2b8d085d1639a96c402326f1fc5a4e2e5f053faf1c9a1c",
+    "fa25a9962bc7fdb1705232befb5a59e0312f2f07d519e688e4f6695b4b3dd847",
+    "bf5e8ffa51a9e748985800c1d3d7f1a2a6ae7435136593ca8d9637e3f87c699c"
+  ],
+  "samples_s": {
+    "ordinary_queue": [
+      0.5221555959979014,
+      0.5222898060019361,
+      0.5224377230006212,
+      0.5225451929982228,
+      0.5221944130025804,
+      0.5223038469994208,
+      0.5223583490005694,
+      0.5225026580010308,
+      0.5225413189982646,
+      0.5224344080015726,
+      0.5226417849989957,
+      0.5222204860001511,
+      0.5222273580002366,
+      0.5222537449990341
+    ],
+    "ordinary_auto": [
+      0.5222538890011492,
+      0.5222947250003926,
+      0.5224458570010029,
+      0.5224528500002634,
+      0.5223638620009297,
+      0.5224851480015786,
+      0.5225464309987728,
+      0.522826995998912,
+      0.5224017879991152,
+      0.5224300600020797,
+      0.5228322319999279,
+      0.5224156000003859,
+      0.5223743419992388,
+      0.522369834001438
+    ],
+    "retained_pair": [
+      0.5960512549972918,
+      0.5965457089987467,
+      0.5988298960000975,
+      0.5968715580020216,
+      0.5985396099968057,
+      0.5981987310005934,
+      0.5972191860018938,
+      0.5986960199988971,
+      0.597036990999186,
+      0.5975186020004912,
+      0.5973326730018016,
+      0.5970607119998022,
+      0.5980502630009141,
+      0.5980947659991216
+    ],
+    "merged": [
+      0.5866713979994529,
+      0.5896456759983266,
+      0.588560932999826,
+      0.5904478560005373,
+      0.58918401900155,
+      0.5898461780016078,
+      0.5893143700013752,
+      0.5871850900002755,
+      0.5900173349982651,
+      0.5903934980015038,
+      0.5904610729994602,
+      0.5902297190004901,
+      0.5886173979997693,
+      0.5890626209984475
+    ],
+    "aligned": [
+      0.6020404119990417,
+      0.602287123001588,
+      0.6038514819992997,
+      0.603439779002656,
+      0.6030223870002374,
+      0.606035767999856,
+      0.6049014330019418,
+      0.605497287997423,
+      0.6047222250017512,
+      0.6054027779973694,
+      0.6046041210029216,
+      0.6047977620000893,
+      0.606879951999872,
+      0.6068471589969704
+    ],
+    "aligned_pad32": [
+      0.634930832999089,
+      0.6360019179992378,
+      0.6350005800013605,
+      0.6354501409987279,
+      0.6349504739991971,
+      0.6354568610004208,
+      0.6357962660003977,
+      0.638170751000871,
+      0.6386123970005428,
+      0.6353013450025173,
+      0.6359735920013918,
+      0.6359985079980106,
+      0.6365706479991786,
+      0.6366327730029298
+    ],
+    "aligned_pad64": [
+      0.6456173879996641,
+      0.6447066200016707,
+      0.6458742560025712,
+      0.6478336139989551,
+      0.6480976569982886,
+      0.648545815001853,
+      0.6471918280003592,
+      0.6473290739995718,
+      0.6467975670020678,
+      0.6476628660020651,
+      0.6485245590010891,
+      0.6486249660010799,
+      0.6483166770012758,
+      0.6475925899976573
+    ]
+  },
+  "timing_orders": [
+    [
+      "merged",
+      "aligned_pad32",
+      "aligned_pad64",
+      "ordinary_queue",
+      "aligned",
+      "ordinary_auto",
+      "retained_pair"
+    ],
+    [
+      "aligned_pad32",
+      "aligned_pad64",
+      "ordinary_queue",
+      "aligned",
+      "ordinary_auto",
+      "retained_pair",
+      "merged"
+    ],
+    [
+      "aligned_pad64",
+      "ordinary_queue",
+      "aligned",
+      "ordinary_auto",
+      "retained_pair",
+      "merged",
+      "aligned_pad32"
+    ],
+    [
+      "ordinary_queue",
+      "aligned",
+      "ordinary_auto",
+      "retained_pair",
+      "merged",
+      "aligned_pad32",
+      "aligned_pad64"
+    ],
+    [
+      "aligned",
+      "ordinary_auto",
+      "retained_pair",
+      "merged",
+      "aligned_pad32",
+      "aligned_pad64",
+      "ordinary_queue"
+    ],
+    [
+      "ordinary_auto",
+      "retained_pair",
+      "merged",
+      "aligned_pad32",
+      "aligned_pad64",
+      "ordinary_queue",
+      "aligned"
+    ],
+    [
+      "retained_pair",
+      "merged",
+      "aligned_pad32",
+      "aligned_pad64",
+      "ordinary_queue",
+      "aligned",
+      "ordinary_auto"
+    ],
+    [
+      "retained_pair",
+      "ordinary_auto",
+      "aligned",
+      "ordinary_queue",
+      "aligned_pad64",
+      "aligned_pad32",
+      "merged"
+    ],
+    [
+      "merged",
+      "retained_pair",
+      "ordinary_auto",
+      "aligned",
+      "ordinary_queue",
+      "aligned_pad64",
+      "aligned_pad32"
+    ],
+    [
+      "aligned_pad32",
+      "merged",
+      "retained_pair",
+      "ordinary_auto",
+      "aligned",
+      "ordinary_queue",
+      "aligned_pad64"
+    ],
+    [
+      "aligned_pad64",
+      "aligned_pad32",
+      "merged",
+      "retained_pair",
+      "ordinary_auto",
+      "aligned",
+      "ordinary_queue"
+    ],
+    [
+      "ordinary_queue",
+      "aligned_pad64",
+      "aligned_pad32",
+      "merged",
+      "retained_pair",
+      "ordinary_auto",
+      "aligned"
+    ],
+    [
+      "aligned",
+      "ordinary_queue",
+      "aligned_pad64",
+      "aligned_pad32",
+      "merged",
+      "retained_pair",
+      "ordinary_auto"
+    ],
+    [
+      "ordinary_auto",
+      "aligned",
+      "ordinary_queue",
+      "aligned_pad64",
+      "aligned_pad32",
+      "merged",
+      "retained_pair"
+    ]
+  ],
+  "median_gcups": {
+    "ordinary_queue": 8.289701518020742,
+    "ordinary_auto": 8.288245932877363,
+    "retained_pair": 7.247711889484641,
+    "merged": 7.345403961214637,
+    "aligned": 7.159813715411404,
+    "aligned_pad32": 6.809359207181189,
+    "aligned_pad64": 6.6858917689838755
+  }
+}

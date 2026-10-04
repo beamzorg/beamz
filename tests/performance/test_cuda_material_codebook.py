@@ -48,3 +48,33 @@ def test_cuda_lossless_codebook_requires_scalar_unit_decay():
         )
         is None
     )
+
+
+def test_codebook_blocks_match_dense_encoding_with_late_values_and_padding(monkeypatch):
+    import importlib
+
+    module = importlib.import_module("beamz.simulation.compile")
+    monkeypatch.setattr(module, "_CUDA_CODEBOOK_CHUNK_CELLS", 8)
+    values = np.array(
+        [3, 1, 3, 2, 1, 3, 2, 1, -4, 3, 8, 2, 9], dtype=np.float32
+    ).reshape(1, 1, -1)
+    expected_table, inverse = np.unique(values, return_inverse=True)
+    ids = np.zeros((values.size + 3) & ~3, dtype=np.uint32)
+    ids[: values.size] = inverse.ravel()
+    expected_words = ids[::4] | (ids[1::4] << 8) | (ids[2::4] << 16) | (ids[3::4] << 24)
+    table, words = _pack_cuda_coefficient_ids(values)
+    np.testing.assert_array_equal(table, expected_table)
+    np.testing.assert_array_equal(np.asarray(words).view(np.uint32), expected_words)
+    np.testing.assert_array_equal(_unpack(table, words, values.size), values.ravel())
+    assert _pack_cuda_coefficient_ids(values, max_values=4) is None
+
+
+def test_codebook_rejects_more_than_256_values_across_blocks(monkeypatch):
+    import importlib
+
+    module = importlib.import_module("beamz.simulation.compile")
+    monkeypatch.setattr(module, "_CUDA_CODEBOOK_CHUNK_CELLS", 8)
+    assert (
+        _pack_cuda_coefficient_ids(np.arange(257, dtype=np.float32).reshape(1, 1, -1))
+        is None
+    )

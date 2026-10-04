@@ -1,11 +1,15 @@
 #include <cuda_runtime_api.h>
 
 #include <cuda_bf16.h>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <type_traits>
+#include "abi_layout.h"
 #include "kernels.h"
 #include "launch.h"
+#include "yee_primitives.cuh"
 
 namespace {
 
@@ -21,6 +25,17 @@ constexpr int kFusedSharedY = kFusedCoreY + 1;
 constexpr int kFusedSharedZ = kFusedCoreZ + 1;
 constexpr int kFusedVolume = kFusedSharedX * kFusedSharedY * kFusedSharedZ;
 constexpr size_t kFusedSharedBytes = 3 * kFusedVolume * sizeof(float);
+
+template <int X_, int Y_, int Z_>
+struct CpmlTile {
+  static constexpr int X = X_, Y = Y_, Z = Z_;
+  static constexpr int SharedX = X + 1, SharedY = Y + 1;
+  static constexpr int Volume = 2 * SharedX * SharedY;
+  static constexpr size_t SharedBytes = 3 * Volume * sizeof(float);
+  __device__ static int Offset(int z, int y, int x) {
+    return (z * SharedY + y) * SharedX + x;
+  }
+};
 
 // The temporal Yee kernel needs only the phase payload, not the full ABI
 // descriptor (versioning, CPML slots, or unused result slots).
@@ -45,9 +60,17 @@ FusedYeePhase MakeFusedYeePhase(const BeamzLaunch& launch) {
 }
 
 bool FitsIntOffsets(const BeamzBuffer& value) {
+  if (value.rank < 0 || value.rank > 4) return false;
   int64_t elements = 1;
   for (int axis = 0; axis < value.rank; ++axis) {
-    if (value.dims[axis] > std::numeric_limits<int>::max()) return false;
+    if (value.dims[axis] < 0 ||
+        value.dims[axis] > std::numeric_limits<int>::max()) {
+      return false;
+    }
+    if (value.dims[axis] != 0 &&
+        elements > std::numeric_limits<int>::max() / value.dims[axis]) {
+      return false;
+    }
     elements *= value.dims[axis];
     if (elements > std::numeric_limits<int>::max()) return false;
   }
@@ -66,9 +89,84 @@ bool SameShape(const BeamzBuffer& left, const BeamzBuffer& right) {
   return true;
 }
 
+bool IsPositive3D(const BeamzBuffer& value) {
+  return value.rank == 3 && value.dims[0] > 0 && value.dims[1] > 0 &&
+         value.dims[2] > 0 && value.data != nullptr;
+}
+
+bool BroadcastsTo(const BeamzBuffer& value, const BeamzBuffer& target) {
+  if (value.rank == 0) return value.data != nullptr;
+  if (value.rank != 3 || value.data == nullptr) return false;
+  for (int axis = 0; axis < 3; ++axis) {
+    if (value.dims[axis] != 1 && value.dims[axis] != target.dims[axis]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// CUDA's three phase outputs are the Yee components of one vector field.  The
+// curl inputs must be the complementary staggered field: forward H curls use
+// one extra cell on their derivative axis; backward E curls use one fewer.
+// Requiring this exact relationship catches mismatched FFI buffers before any
+// kernel computes a flat address from a foreign shape.
+bool IsCompatibleCurlInput(const BeamzBuffer& output,
+                           const BeamzBuffer& source, int axis,
+                           int phase) {
+  if (!IsPositive3D(source)) return false;
+  for (int dimension = 0; dimension < 3; ++dimension) {
+    const int64_t expected =
+        output.dims[dimension] + (dimension == axis ? (phase == 0 ? 1 : -1) : 0);
+    if (expected <= 0 || source.dims[dimension] != expected) return false;
+  }
+  return true;
+}
+
+int64_t Elements(const BeamzBuffer& value) {
+  int64_t elements = 1;
+  for (int axis = 0; axis < value.rank; ++axis) elements *= value.dims[axis];
+  return elements;
+}
+
+int RequiredMetricExtent(const BeamzLaunch &launch, int axis) {
+  int extent = 0;
+  for (int component = 0; component < 3; ++component) {
+    // Only transverse components take a derivative along this axis.
+    if (axis == 2 - component)
+      continue;
+    const int value = static_cast<int>(launch.outputs[component].dims[axis]);
+    extent = value > extent ? value : extent;
+  }
+  return extent;
+}
+
+bool IsCpmlProfile(const BeamzBuffer& value, int axis) {
+  if (!HasType(value, kBeamzF32) || !IsPositive3D(value)) return false;
+  for (int dimension = 0; dimension < 3; ++dimension) {
+    if (dimension != axis && value.dims[dimension] != 1) return false;
+  }
+  return true;
+}
+
+bool IsCpmlPsi(const BeamzBuffer& value, const BeamzBuffer& target, int axis) {
+  if (!IsPositive3D(value) || value.dims[axis] > target.dims[axis]) return false;
+  for (int dimension = 0; dimension < 3; ++dimension) {
+    if (dimension != axis && value.dims[dimension] != target.dims[dimension]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 cudaError_t ValidatePhase(const BeamzLaunch& launch) {
   if (launch.phase < 0 || launch.phase > 1 || launch.metric_kind < 0 ||
-      launch.metric_kind > 2 || (launch.nterms != 0 && launch.nterms != 6)) {
+      launch.metric_kind > 2 || (launch.nterms != 0 && launch.nterms != 6) ||
+      launch.metallic_edges < 0 || launch.metallic_edges > 63 ||
+      !std::isfinite(launch.dt) || !std::isfinite(launch.resolution) ||
+      !std::isfinite(launch.inv_resolution) || launch.dt <= 0.0f ||
+      launch.resolution <= 0.0f || launch.inv_resolution <= 0.0f ||
+      launch.uniform_cpml_thickness < 0 ||
+      (launch.nterms == 0 && launch.uniform_cpml_thickness != 0)) {
     return cudaErrorInvalidValue;
   }
   const int input_count = launch.nterms == 0 ? 12 : 13 + 4 * launch.nterms;
@@ -80,15 +178,28 @@ cudaError_t ValidatePhase(const BeamzLaunch& launch) {
     if (!FitsIntOffsets(launch.outputs[index])) return cudaErrorInvalidValue;
   }
   for (int component = 0; component < 6; ++component) {
-    if (launch.inputs[component].rank != 3 ||
-        !HasType(launch.inputs[component], kBeamzF32)) {
+    if (!HasType(launch.inputs[component], kBeamzF32) ||
+        !IsPositive3D(launch.inputs[component])) {
       return cudaErrorInvalidValue;
     }
   }
   for (int component = 0; component < 3; ++component) {
-    if (launch.outputs[component].rank != 3 ||
-        !HasType(launch.outputs[component], kBeamzF32) ||
+    if (!HasType(launch.outputs[component], kBeamzF32) ||
+        !IsPositive3D(launch.outputs[component]) ||
         !SameShape(launch.inputs[component], launch.outputs[component])) {
+      return cudaErrorInvalidValue;
+    }
+  }
+  for (int component = 0; component < 3; ++component) {
+    const BeamzBuffer& output = launch.outputs[component];
+    const auto first = beamz::cuda::yee::FirstCurlTerm(component);
+    const auto second = beamz::cuda::yee::SecondCurlTerm(component);
+    if (!IsCompatibleCurlInput(output,
+                               launch.inputs[3 + first.source_component],
+                               first.derivative_axis, launch.phase) ||
+        !IsCompatibleCurlInput(output,
+                               launch.inputs[3 + second.source_component],
+                               second.derivative_axis, launch.phase)) {
       return cudaErrorInvalidValue;
     }
   }
@@ -102,43 +213,69 @@ cudaError_t ValidatePhase(const BeamzLaunch& launch) {
     const BeamzBuffer& source = launch.inputs[9 + component];
     const bool ordinary_material =
         HasType(decay, kBeamzF32) && HasType(source, kBeamzF32) &&
-        (decay.rank == 0 || decay.rank == 3) &&
-        (source.rank == 0 || source.rank == 3);
+        BroadcastsTo(decay, launch.outputs[component]) &&
+        BroadcastsTo(source, launch.outputs[component]);
     const bool packed_component =
         packed_material && HasType(decay, kBeamzF32) && decay.rank == 1 &&
-        source.rank == 1;
+        source.rank == 1 && decay.data != nullptr && source.data != nullptr &&
+        decay.dims[0] > 0 && source.dims[0] >= 0 &&
+        Elements(source) >= (Elements(launch.outputs[component]) + 3) / 4;
     if (!ordinary_material && !packed_component) return cudaErrorInvalidValue;
   }
   if (launch.nterms != 0) {
     const BeamzBuffer& metadata = launch.inputs[12];
     if (!HasType(metadata, kBeamzS32) || metadata.rank != 2 ||
-        metadata.dims[0] != 6 || metadata.dims[1] != 5) {
+        metadata.dims[0] != 6 || metadata.dims[1] != 5 ||
+        metadata.data == nullptr) {
       return cudaErrorInvalidValue;
     }
     for (int index = 13; index < 13 + 3 * launch.nterms; ++index) {
-      if (!HasType(launch.inputs[index], kBeamzF32) ||
-          launch.inputs[index].rank != 3) {
-        return cudaErrorInvalidValue;
-      }
+      if (launch.inputs[index].data == nullptr) return cudaErrorInvalidValue;
     }
     const int psi_input_base = 13 + 3 * launch.nterms;
     for (int term = 0; term < launch.nterms; ++term) {
       const BeamzBuffer& input = launch.inputs[psi_input_base + term];
       const BeamzBuffer& output = launch.outputs[3 + term];
+      const BeamzBuffer& target = launch.outputs[term / 2];
       const bool supported_type = HasType(input, kBeamzF32) ||
                                   HasType(input, kBeamzBF16);
       if (!supported_type || input.element_type != output.element_type ||
-          input.rank != 3 || output.rank != 3 || !SameShape(input, output)) {
+          !IsCpmlPsi(input, target, beamz::cuda::yee::CpmlAxis(term)) ||
+          !IsCpmlPsi(output, target, beamz::cuda::yee::CpmlAxis(term)) ||
+          !SameShape(input, output)) {
         return cudaErrorInvalidValue;
+      }
+      for (int coefficient = 0; coefficient < 3; ++coefficient) {
+        const BeamzBuffer& profile = launch.inputs[13 + 3 * term + coefficient];
+        if (!IsCpmlProfile(profile, beamz::cuda::yee::CpmlAxis(term))) {
+          return cudaErrorInvalidValue;
+        }
+      }
+      if (launch.uniform_cpml_thickness > 0) {
+        const int64_t packed_extent =
+            2 * static_cast<int64_t>(launch.uniform_cpml_thickness);
+        if (packed_extent > target.dims[beamz::cuda::yee::CpmlAxis(term)] ||
+            input.dims[beamz::cuda::yee::CpmlAxis(term)] != packed_extent) {
+          return cudaErrorInvalidValue;
+        }
+        for (int coefficient = 0; coefficient < 3; ++coefficient) {
+          if (launch.inputs[13 + 3 * term + coefficient]
+                  .dims[beamz::cuda::yee::CpmlAxis(term)] != packed_extent) {
+            return cudaErrorInvalidValue;
+          }
+        }
       }
     }
   }
   for (int axis = 0; axis < 3; ++axis) {
     const BeamzBuffer& metric = launch.metrics[axis];
     if (!FitsIntOffsets(metric) || !HasType(metric, kBeamzF32) ||
-        (launch.metric_kind == 1 && metric.rank != 0) ||
+        (launch.metric_kind == 1 &&
+         (metric.rank != 0 || metric.data == nullptr)) ||
         (launch.metric_kind == 2 &&
-         (metric.rank != 1 || metric.dims[0] < 1))) {
+         (metric.rank != 1 ||
+          metric.dims[0] < RequiredMetricExtent(launch, axis) ||
+          metric.data == nullptr))) {
       return cudaErrorInvalidValue;
     }
   }
@@ -151,9 +288,7 @@ __device__ __forceinline__ int Offset(const BeamzBuffer& value, int z, int y,
   const int iz = value.dims[0] == 1 ? 0 : z;
   const int iy = value.dims[1] == 1 ? 0 : y;
   const int ix = value.dims[2] == 1 ? 0 : x;
-  return (iz * static_cast<int>(value.dims[1]) + iy) *
-             static_cast<int>(value.dims[2]) +
-         ix;
+  return BeamzOffset3D(value, iz, iy, ix);
 }
 
 __device__ __forceinline__ float Read(const BeamzBuffer& value, int z, int y,
@@ -163,9 +298,7 @@ __device__ __forceinline__ float Read(const BeamzBuffer& value, int z, int y,
 
 __device__ __forceinline__ float Read3D(const BeamzBuffer& value, int z, int y,
                                         int x) {
-  const int offset = (z * static_cast<int>(value.dims[1]) + y) *
-                         static_cast<int>(value.dims[2]) +
-                     x;
+  const int offset = BeamzOffset3D(value, z, y, x);
   return static_cast<const float*>(value.data)[offset];
 }
 
@@ -198,8 +331,9 @@ __device__ __forceinline__ float ForwardDifference(const BeamzBuffer& value,
     if (x + 1 >= value.dims[2]) return 0.0f;
     ++next_x;
   }
-  return (Read3D(value, next_z, next_y, next_x) - Read3D(value, z, y, x)) *
-         MetricScale<MetricKind>(launch, axis, coordinate);
+  return beamz::cuda::yee::ScaleYeeDifference(
+      Read3D(value, next_z, next_y, next_x) - Read3D(value, z, y, x),
+      MetricScale<MetricKind>(launch, axis, coordinate));
 }
 
 template <int MetricKind, bool HasMetallicEdges = true>
@@ -213,7 +347,8 @@ __device__ __forceinline__ float BoundaryDifference(const BeamzBuffer& value,
   if (coordinate == 0) {
     if constexpr (!HasMetallicEdges) return 0.0f;
     const bool metallic = edge_mask & (1 << (2 * axis));
-    return metallic ? Read3D(value, z, y, x) * inv_dx : 0.0f;
+    return metallic ? beamz::cuda::yee::ScaleYeeDifference(
+                          Read3D(value, z, y, x), inv_dx) : 0.0f;
   }
   if (coordinate == size) {
     if constexpr (!HasMetallicEdges) return 0.0f;
@@ -222,13 +357,15 @@ __device__ __forceinline__ float BoundaryDifference(const BeamzBuffer& value,
     if (axis == 1) last_y = size - 1;
     if (axis == 2) last_x = size - 1;
     const bool metallic = edge_mask & (1 << (2 * axis + 1));
-    return metallic ? -Read3D(value, last_z, last_y, last_x) * inv_dx : 0.0f;
+    return metallic ? beamz::cuda::yee::ScaleYeeDifference(
+                          -Read3D(value, last_z, last_y, last_x), inv_dx) : 0.0f;
   }
   int low_z = z, low_y = y, low_x = x;
   if (axis == 0) --low_z;
   if (axis == 1) --low_y;
   if (axis == 2) --low_x;
-  return (Read3D(value, z, y, x) - Read3D(value, low_z, low_y, low_x)) * inv_dx;
+  return beamz::cuda::yee::ScaleYeeDifference(
+      Read3D(value, z, y, x) - Read3D(value, low_z, low_y, low_x), inv_dx);
 }
 
 template <int Term, bool UniformCpml = false, int PsiType = -1>
@@ -236,9 +373,8 @@ __device__ __forceinline__ float CorrectCpml(float derivative, int z, int y,
                                              int x, const BeamzLaunch& launch) {
   // The 3D compiler emits the six curl terms in this fixed derivative order.
   // CPML coefficient buffers are 1D profiles along their derivative axis.
-  constexpr int axes[6] = {1, 0, 0, 2, 2, 1};
-  constexpr int axis = axes[Term];
-  constexpr float sign = Term % 2 == 0 ? 1.0f : -1.0f;
+  constexpr int axis = beamz::cuda::yee::CpmlAxis(Term);
+  constexpr float sign = beamz::cuda::yee::CpmlSign(Term);
   int low;
   int high;
   if constexpr (UniformCpml) {
@@ -253,12 +389,13 @@ __device__ __forceinline__ float CorrectCpml(float derivative, int z, int y,
   const int coordinate = axis == 0 ? z : (axis == 1 ? y : x);
   const int axis_size = static_cast<int>(target.dims[axis]);
   int packed = -1;
-  if (coordinate < low) {
-    packed = coordinate;
-  } else if (coordinate >= axis_size - high) {
-    packed = low + coordinate - (axis_size - high);
+  if (!beamz::cuda::yee::CpmlPackedCoordinate(coordinate, axis_size, low, high,
+                                               &packed)) {
+    // Metadata arrives in a device buffer, so the host cannot inspect its
+    // values without synchronizing every launch. Invalid foreign metadata is a
+    // no-op recurrence rather than an out-of-bounds packed-slab access.
+    return sign * derivative;
   }
-  if (packed < 0) return sign * derivative;
 
   int pz = z, py = y, px = x;
   if (axis == 0) pz = packed;
@@ -268,6 +405,15 @@ __device__ __forceinline__ float CorrectCpml(float derivative, int z, int y,
   const int psi_base = 13 + 3 * launch.nterms;
   const BeamzBuffer& psi_input = launch.inputs[psi_base + Term];
   const BeamzBuffer& psi_output = launch.outputs[3 + Term];
+  const BeamzBuffer& a = launch.inputs[coefficient_base];
+  const BeamzBuffer& b = launch.inputs[coefficient_base + 1];
+  const BeamzBuffer& inv_kappa = launch.inputs[coefficient_base + 2];
+  if (pz < 0 || pz >= psi_output.dims[0] || py < 0 ||
+      py >= psi_output.dims[1] || px < 0 || px >= psi_output.dims[2] ||
+      packed >= a.dims[axis] || packed >= b.dims[axis] ||
+      packed >= inv_kappa.dims[axis]) {
+    return sign * derivative;
+  }
   const int psi_offset = (pz * static_cast<int>(psi_output.dims[1]) + py) *
                              static_cast<int>(psi_output.dims[2]) +
                          px;
@@ -283,12 +429,9 @@ __device__ __forceinline__ float CorrectCpml(float derivative, int z, int y,
                                          psi_input.data)[psi_offset])
                   : static_cast<const float*>(psi_input.data)[psi_offset];
   }
-  const float next_psi =
-      static_cast<const float *>(
-          launch.inputs[coefficient_base + 1].data)[packed] *
-          old_psi +
-      static_cast<const float*>(launch.inputs[coefficient_base].data)[packed] *
-          derivative;
+  const float next_psi = beamz::cuda::yee::AdvanceCpmlPsi(
+      static_cast<const float*>(b.data)[packed], old_psi,
+      static_cast<const float*>(a.data)[packed], derivative);
   if constexpr (PsiType == kBeamzBF16) {
     static_cast<__nv_bfloat16*>(psi_output.data)[psi_offset] =
         __float2bfloat16_rn(next_psi);
@@ -300,10 +443,9 @@ __device__ __forceinline__ float CorrectCpml(float derivative, int z, int y,
   } else {
     static_cast<float*>(psi_output.data)[psi_offset] = next_psi;
   }
-  return sign *
-         (derivative * static_cast<const float*>(
-                           launch.inputs[coefficient_base + 2].data)[packed] +
-          next_psi);
+  return beamz::cuda::yee::CorrectCpmlDerivative(
+      sign, derivative, static_cast<const float*>(inv_kappa.data)[packed],
+      next_psi);
 }
 
 template <int Phase, int Component, bool Cpml, int MetricKind,
@@ -317,60 +459,35 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
   const int linear = (z * static_cast<int>(output.dims[1]) + y) *
                          static_cast<int>(output.dims[2]) +
                      x;
-  constexpr int normal_axis = 2 - Component;
-  constexpr bool constrained = Phase == 0;
-  const int coordinate = normal_axis == 0 ? z : (normal_axis == 1 ? y : x);
-  const int axis_size = static_cast<int>(output.dims[normal_axis]);
-  const bool on_low_wall =
-      coordinate == 0 && (launch.metallic_edges & (1 << (2 * normal_axis)));
-  const bool on_high_wall =
-      coordinate == axis_size - 1 &&
-      (launch.metallic_edges & (1 << (2 * normal_axis + 1)));
   bool zero_on_wall = false;
   if constexpr (HasMetallicEdges) {
-    if constexpr (constrained) {
-      zero_on_wall = on_low_wall || on_high_wall;
-    } else {
-      for (int axis = 0; axis < 3; ++axis) {
-        if (axis == normal_axis) continue;
-        const int axis_coordinate = axis == 0 ? z : (axis == 1 ? y : x);
-        const int size = static_cast<int>(output.dims[axis]);
-        if ((axis_coordinate == 0 &&
-             (launch.metallic_edges & (1 << (2 * axis)))) ||
-            (axis_coordinate == size - 1 &&
-             (launch.metallic_edges & (1 << (2 * axis + 1))))) {
-          zero_on_wall = true;
-          break;
-        }
-      }
-    }
+    zero_on_wall = beamz::cuda::yee::PecConstrained(
+        output, Phase, Component, launch.metallic_edges, z, y, x);
   }
   if constexpr (!Cpml) {
     if (zero_on_wall) {
-      static_cast<float*>(output.data)[linear] = 0.0f;
+      static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] = 0.0f;
       return;
     }
   }
-  constexpr int first_source[3] = {2, 0, 1};
-  constexpr int second_source[3] = {1, 2, 0};
-  constexpr int first_axis[3] = {1, 0, 2};
-  constexpr int second_axis[3] = {0, 2, 1};
-  const BeamzBuffer& first = launch.inputs[3 + first_source[Component]];
-  const BeamzBuffer& second = launch.inputs[3 + second_source[Component]];
+  constexpr auto first_term = beamz::cuda::yee::FirstCurlTerm(Component);
+  constexpr auto second_term = beamz::cuda::yee::SecondCurlTerm(Component);
+  const BeamzBuffer& first = launch.inputs[3 + first_term.source_component];
+  const BeamzBuffer& second = launch.inputs[3 + second_term.source_component];
   float derivative0;
   float derivative1;
   if constexpr (Phase == 0) {
     derivative0 =
-        ForwardDifference<MetricKind>(first, first_axis[Component], z, y, x,
+        ForwardDifference<MetricKind>(first, first_term.derivative_axis, z, y, x,
                                       launch);
     derivative1 =
-        ForwardDifference<MetricKind>(second, second_axis[Component], z, y, x,
+        ForwardDifference<MetricKind>(second, second_term.derivative_axis, z, y, x,
                                       launch);
   } else {
     derivative0 = BoundaryDifference<MetricKind, HasMetallicEdges>(
-        first, first_axis[Component], z, y, x, launch.metallic_edges, launch);
+        first, first_term.derivative_axis, z, y, x, launch.metallic_edges, launch);
     derivative1 = BoundaryDifference<MetricKind, HasMetallicEdges>(
-        second, second_axis[Component], z, y, x, launch.metallic_edges, launch);
+        second, second_term.derivative_axis, z, y, x, launch.metallic_edges, launch);
   }
   float curl;
   if constexpr (Cpml) {
@@ -384,31 +501,24 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
   if (zero_on_wall) {
     // CPML memory still evolves where an absorbing face intersects a PEC face;
     // only the constrained field value is masked after the recurrence update.
-    static_cast<float*>(output.data)[linear] = 0.0f;
+    static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] = 0.0f;
     return;
   }
 
-  const float old_field = static_cast<const float*>(input.data)[linear];
+  const float old_field =
+      static_cast<const float*>(input.data)[BeamzOffset3D(input, z, y, x)];
   float decay;
   float source;
   if constexpr (PackedLosslessMaterial) {
     decay = 1.0f;
-    const auto* packed =
-        static_cast<const uint32_t*>(launch.inputs[9 + Component].data);
-    const uint32_t word = packed[linear >> 2];
-    const uint32_t code = (word >> (8 * (linear & 3))) & 0xffu;
-    source = static_cast<const float*>(launch.inputs[6 + Component].data)[code];
+    source = beamz::cuda::yee::PackedMaterialSource(
+        launch.inputs[6 + Component], launch.inputs[9 + Component], linear);
   } else {
     decay = Read(launch.inputs[6 + Component], z, y, x);
     source = Read(launch.inputs[9 + Component], z, y, x);
   }
-  if constexpr (Phase == 0) {
-    static_cast<float*>(output.data)[linear] =
-        decay * old_field - source * curl;
-  } else {
-    static_cast<float*>(output.data)[linear] =
-        decay * old_field + source * curl;
-  }
+  static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] =
+      beamz::cuda::yee::AdvanceYeeField(Phase, old_field, decay, source, curl);
 }
 
 template <int Phase, bool Cpml, int MetricKind, bool HasMetallicEdges = true,
@@ -435,7 +545,8 @@ __device__ __forceinline__ float UncheckedDifference(
   if (axis == 2) neighbor_x += Phase == 0 ? 1 : -1;
   const float center = Read3D(value, z, y, x);
   const float neighbor = Read3D(value, neighbor_z, neighbor_y, neighbor_x);
-  return (Phase == 0 ? neighbor - center : center - neighbor) * inv_dx;
+  return beamz::cuda::yee::ScaleYeeDifference(
+      Phase == 0 ? neighbor - center : center - neighbor, inv_dx);
 }
 
 template <int Phase, int Component>
@@ -444,14 +555,11 @@ __device__ __forceinline__ void UpdateFullPecScalarComponent(
   const BeamzBuffer& input = launch.inputs[Component];
   const BeamzBuffer& output = launch.outputs[Component];
   if (z >= output.dims[0] || y >= output.dims[1] || x >= output.dims[2]) return;
-  const int linear = (z * static_cast<int>(output.dims[1]) + y) *
-                         static_cast<int>(output.dims[2]) +
-                     x;
   constexpr int normal_axis = 2 - Component;
   if constexpr (Phase == 0) {
     const int coordinate = normal_axis == 0 ? z : (normal_axis == 1 ? y : x);
     if (coordinate == 0 || coordinate == output.dims[normal_axis] - 1) {
-      static_cast<float*>(output.data)[linear] = 0.0f;
+      static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] = 0.0f;
       return;
     }
   } else {
@@ -459,7 +567,7 @@ __device__ __forceinline__ void UpdateFullPecScalarComponent(
       if (axis == normal_axis) continue;
       const int coordinate = axis == 0 ? z : (axis == 1 ? y : x);
       if (coordinate == 0 || coordinate == output.dims[axis] - 1) {
-        static_cast<float*>(output.data)[linear] = 0.0f;
+        static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] = 0.0f;
         return;
       }
     }
@@ -475,13 +583,14 @@ __device__ __forceinline__ void UpdateFullPecScalarComponent(
   const float derivative1 = UncheckedDifference<Phase>(
       launch.inputs[3 + second_source[Component]], second_axis[Component], z,
       y, x, launch.inv_resolution);
-  const float old_field = static_cast<const float*>(input.data)[linear];
+  const float old_field =
+      static_cast<const float*>(input.data)[BeamzOffset3D(input, z, y, x)];
   const float decay =
       static_cast<const float*>(launch.inputs[6 + Component].data)[0];
   const float source =
       static_cast<const float*>(launch.inputs[9 + Component].data)[0];
   const float curl = derivative0 - derivative1;
-  static_cast<float*>(output.data)[linear] =
+  static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] =
       Phase == 0 ? decay * old_field - source * curl
                  : decay * old_field + source * curl;
 }
@@ -581,11 +690,7 @@ __device__ __forceinline__ float FusedHValue(const FusedYeePhase& launch,
   const float derivative1 = ForwardDifference<MetricKind>(
       launch.inputs[3 + second_source[Component]], second_axis[Component], z,
       y, x, launch);
-  const int linear = (z * static_cast<int>(output.dims[1]) + y) *
-                         static_cast<int>(output.dims[2]) +
-                     x;
-  const float old_field =
-      static_cast<const float*>(launch.inputs[Component].data)[linear];
+  const float old_field = Read3D(launch.inputs[Component], z, y, x);
   const float decay =
       ScalarCoefficients
           ? static_cast<const float*>(launch.inputs[6 + Component].data)[0]
@@ -630,17 +735,13 @@ __device__ __forceinline__ float FusedEValue(const FusedYeePhase& launch,
                                     FusedOffset(neighbor_z, neighbor_y,
                                                 neighbor_x)];
     const int coordinate = axis == 0 ? z : (axis == 1 ? y : x);
-    return (center - neighbor) *
-           MetricScale<MetricKind>(launch, axis, coordinate);
+    return beamz::cuda::yee::ScaleYeeDifference(
+        center - neighbor, MetricScale<MetricKind>(launch, axis, coordinate));
   };
   const float curl = difference(first_source[Component], first_axis[Component]) -
                      difference(second_source[Component],
                                 second_axis[Component]);
-  const int linear = (z * static_cast<int>(output.dims[1]) + y) *
-                         static_cast<int>(output.dims[2]) +
-                     x;
-  const float old_field =
-      static_cast<const float*>(launch.inputs[Component].data)[linear];
+  const float old_field = Read3D(launch.inputs[Component], z, y, x);
   const float decay =
       ScalarCoefficients
           ? static_cast<const float*>(launch.inputs[6 + Component].data)[0]
@@ -793,10 +894,7 @@ __global__ void FusedFullStepPec(FusedYeePhase h_launch,
     for (int component = 0; component < 3; ++component) {
       const BeamzBuffer& h_output = h_launch.outputs[component];
       if (BufferContains(h_output, z, y, x)) {
-        const int linear = (z * static_cast<int>(h_output.dims[1]) + y) *
-                               static_cast<int>(h_output.dims[2]) +
-                           x;
-        static_cast<float*>(h_output.data)[linear] =
+        static_cast<float*>(h_output.data)[BeamzOffset3D(h_output, z, y, x)] =
             h_fields[component * kFusedVolume + center];
       }
     }
@@ -813,14 +911,160 @@ __global__ void FusedFullStepPec(FusedYeePhase h_launch,
     for (int component = 0; component < 3; ++component) {
       const BeamzBuffer& e_output = e_launch.outputs[component];
       if (BufferContains(e_output, z, y, x)) {
-        const int linear = (z * static_cast<int>(e_output.dims[1]) + y) *
-                               static_cast<int>(e_output.dims[2]) +
-                           x;
-        static_cast<float*>(e_output.data)[linear] = values[component];
+        static_cast<float*>(e_output.data)[BeamzOffset3D(e_output, z, y, x)] =
+            values[component];
       }
     }
   }
 }
+
+// The shell has already advanced H and injected its H sources. Interior H
+// values (including tile halos) are recomputed from the frozen input bank so
+// adjacent blocks never read another block's in-flight interior writes.
+struct FusedHSources {
+  BeamzSourceGroupLaunch groups[3];
+  int step;
+};
+
+template <int Component>
+__device__ __forceinline__ float
+AddFusedHSource(float value, const FusedHSources &sources, int z, int y, int x,
+                int step_offset = 0) {
+  const auto &group = sources.groups[Component];
+  const auto *starts = static_cast<const int32_t *>(group.starts.data);
+  for (int source = 0; source < group.coefficients.dims[0]; ++source) {
+    const int sz = z - starts[3 * source];
+    const int sy = y - starts[3 * source + 1];
+    const int sx = x - starts[3 * source + 2];
+    if (sz < 0 || sy < 0 || sx < 0 || sz >= group.coefficients.dims[1] ||
+        sy >= group.coefficients.dims[2] || sx >= group.coefficients.dims[3])
+      continue;
+    int t = static_cast<const int *>(group.current_step.data)[0] +
+            sources.step + step_offset;
+    t = max(0, min(t, static_cast<int>(group.waveforms.dims[1]) - 1));
+    const int index =
+        ((source * static_cast<int>(group.coefficients.dims[1]) + sz) *
+             static_cast<int>(group.coefficients.dims[2]) +
+         sy) *
+            static_cast<int>(group.coefficients.dims[3]) +
+        sx;
+    const float contribution =
+        static_cast<const float *>(group.coefficients.data)[index] *
+        static_cast<const float *>(
+            group.waveforms.data)[source * group.waveforms.dims[1] + t];
+    // Match the separately rounded multiply then source addition.
+    value = __fadd_rn(value, contribution);
+  }
+  return value;
+}
+
+template <int Component>
+__device__ float CoreHValue(const FusedYeePhase &h,
+                            const FusedHSources &sources, int z, int y, int x,
+                            int low, int hz, int hy, int hx) {
+  if (!BufferContains(h.outputs[Component], z, y, x))
+    return 0.f;
+  if (z < low || y < low || x < low || z >= hz || y >= hy || x >= hx) {
+    return Read3D(h.outputs[Component], z, y, x);
+  }
+  constexpr auto a = beamz::cuda::yee::FirstCurlTerm(Component);
+  constexpr auto b = beamz::cuda::yee::SecondCurlTerm(Component);
+  const float curl =
+      UncheckedDifference<0>(h.inputs[3 + a.source_component],
+                             a.derivative_axis, z, y, x, h.inv_resolution) -
+      UncheckedDifference<0>(h.inputs[3 + b.source_component],
+                             b.derivative_axis, z, y, x, h.inv_resolution);
+  const float value = beamz::cuda::yee::AdvanceYeeField(
+      0, Read3D(h.inputs[Component], z, y, x),
+      Read(h.inputs[6 + Component], z, y, x),
+      Read(h.inputs[9 + Component], z, y, x), curl);
+  return AddFusedHSource<Component>(value, sources, z, y, x);
+}
+
+template <int Component, bool Packed, typename Tile>
+__device__ void CoreEValue(const FusedYeePhase& e, const float* h_fields,
+                           int lz, int ly, int lx, int z, int y, int x) {
+  auto difference = [&](int source, int axis) {
+    const int center = source * Tile::Volume + Tile::Offset(lz, ly, lx);
+    const int neighbor = source * Tile::Volume +
+                         Tile::Offset(axis == 0 ? (lz ^ 1) : lz,
+                                      ly - (axis == 1), lx - (axis == 2));
+    return beamz::cuda::yee::ScaleYeeDifference(
+        h_fields[center] - h_fields[neighbor], e.inv_resolution);
+  };
+  constexpr auto a = beamz::cuda::yee::FirstCurlTerm(Component);
+  constexpr auto b = beamz::cuda::yee::SecondCurlTerm(Component);
+  const float curl = difference(a.source_component, a.derivative_axis) -
+                     difference(b.source_component, b.derivative_axis);
+  const auto &output = e.outputs[Component];
+  const int linear = (z * static_cast<int>(output.dims[1]) + y) *
+                         static_cast<int>(output.dims[2]) +
+                     x;
+  const float decay = Packed ? 1.f : Read(e.inputs[6 + Component], z, y, x);
+  const float source =
+      Packed ? beamz::cuda::yee::PackedMaterialSource(
+                   e.inputs[6 + Component], e.inputs[9 + Component], linear)
+             : Read(e.inputs[9 + Component], z, y, x);
+  static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] =
+      beamz::cuda::yee::AdvanceYeeField(1, Read3D(e.inputs[Component], z, y, x),
+                                        decay, source, curl);
+}
+
+template <bool Packed, typename Tile, bool Band = false>
+__global__ __launch_bounds__(Tile::X* Tile::Y, 6) void FusedCpmlCore(
+    FusedYeePhase h, FusedYeePhase e, FusedHSources sources, int low, int hz,
+    int hy, int hx) {
+  extern __shared__ float h_fields[];
+  const int thread = threadIdx.y * blockDim.x + threadIdx.x;
+  const int threads = blockDim.x * blockDim.y;
+  const int ox = low + blockIdx.x * Tile::X;
+  const int oy = low + blockIdx.y * Tile::Y;
+  const int oz = low + blockIdx.z * Tile::Z;
+  if constexpr (Band) {
+    if (ox >= low + 2 && oy >= low + 2 && oz >= low + 2 &&
+        ox + Tile::X <= hx - 2 && oy + Tile::Y <= hy - 2 &&
+        oz + Tile::Z <= hz - 2)
+      return;
+  }
+  constexpr int plane = Tile::SharedX * Tile::SharedY;
+  auto stage = [&](int z, int slot) {
+    for (int index = thread; index < plane; index += threads) {
+      const int x = ox + index % Tile::SharedX - 1;
+      const int y = oy + index / Tile::SharedX - 1;
+      const int dest = slot * plane + index;
+      h_fields[dest] = CoreHValue<0>(h, sources, z, y, x, low, hz, hy, hx);
+      h_fields[Tile::Volume + dest] =
+          CoreHValue<1>(h, sources, z, y, x, low, hz, hy, hx);
+      h_fields[2 * Tile::Volume + dest] =
+          CoreHValue<2>(h, sources, z, y, x, low, hz, hy, hx);
+    }
+  };
+  // Only two H planes are live: the current plane and its backward z halo.
+  stage(oz - 1, 1);
+  const int lx = threadIdx.x + 1, ly = threadIdx.y + 1;
+  const int x = ox + threadIdx.x, y = oy + threadIdx.y;
+  for (int dz = 0; dz < Tile::Z && oz + dz < hz; ++dz) {
+    const int z = oz + dz, lz = dz & 1;
+    stage(z, lz);
+    __syncthreads();
+    if (y < hy && x < hx &&
+        (!Band || x < low + 2 || y < low + 2 || z < low + 2 || x >= hx - 2 ||
+         y >= hy - 2 || z >= hz - 2)) {
+      for (int component = 0; component < 3; ++component) {
+        const auto &output = h.outputs[component];
+        static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] =
+            h_fields[component * Tile::Volume + Tile::Offset(lz, ly, lx)];
+      }
+      CoreEValue<0, Packed, Tile>(e, h_fields, lz, ly, lx, z, y, x);
+      CoreEValue<1, Packed, Tile>(e, h_fields, lz, ly, lx, z, y, x);
+      CoreEValue<2, Packed, Tile>(e, h_fields, lz, ly, lx, z, y, x);
+    }
+    __syncthreads();
+  }
+}
+
+#include "temporal_pair.cuh"
+#include "temporal_cpml.cuh"
 
 template <int MetricKind, bool HasMetallicEdges, bool UniformCpml>
 void LaunchFusedUpdate(cudaStream_t stream, const BeamzLaunch& launch,
@@ -995,31 +1239,15 @@ int UniformPsiType(const BeamzLaunch& launch) {
   return psi_type;
 }
 
-bool CpmlCoreScheduleSupported(const BeamzLaunch& h_launch,
-                               const BeamzLaunch& e_launch) {
-  if (h_launch.nterms != 6 || e_launch.nterms != 6 ||
-      h_launch.metric_kind != 0 ||
-      e_launch.metric_kind != 0 || h_launch.uniform_cpml_thickness <= 0 ||
-      e_launch.uniform_cpml_thickness != h_launch.uniform_cpml_thickness ||
-      !HasPackedLosslessMaterial(e_launch)) {
-    return false;
-  }
-  for (int material = 0; material < 6; ++material) {
-    if (h_launch.inputs[6 + material].rank != 0) return false;
-  }
-  const CpmlGeometry geometry = MakeCpmlGeometry(h_launch);
-  return geometry.high_z > geometry.low &&
-         geometry.high_y > geometry.low && geometry.high_x > geometry.low;
-}
-
-template <int Phase, int PsiType, bool PackedLosslessMaterial>
-void LaunchCombinedCpmlQueueForType(cudaStream_t stream,
-                                    const BeamzLaunch& launch,
-                                    const CpmlGeometry& geometry) {
-  constexpr int tile_x = PsiType == kBeamzBF16 ? 32 : 64;
-  constexpr int tile_y = 4;
-  constexpr int core_tile_x = PsiType == kBeamzBF16 ? 64 : tile_x;
-  constexpr int core_tile_y = PsiType == kBeamzBF16 ? 2 : tile_y;
+template <int Phase, int PsiType, bool PackedLosslessMaterial, int TileX, int TileY>
+void LaunchCpmlQueueTile(cudaStream_t stream,
+                                    const BeamzLaunch &launch,
+                                    const CpmlGeometry &geometry,
+                                    bool shell_only = false) {
+  constexpr int tile_x = TileX;
+  constexpr int tile_y = TileY;
+  constexpr int core_tile_x = 64;
+  constexpr int core_tile_y = tile_x * tile_y / core_tile_x;
   static_assert(tile_x * tile_y == core_tile_x * core_tile_y);
   const int max_z = geometry.field.max_z;
   const int max_y = geometry.field.max_y;
@@ -1049,61 +1277,69 @@ void LaunchCombinedCpmlQueueForType(cudaStream_t stream,
   if (launch.metallic_edges == 0) {
     UpdateCombinedCpmlQueue<Phase, PsiType, PackedLosslessMaterial, false,
                             tile_x, tile_y, core_tile_x, core_tile_y>
-        <<<shell_blocks + core_blocks, threads, 0, stream>>>(
+        <<<shell_blocks + (shell_only ? 0 : core_blocks), threads, 0, stream>>>(
             launch, max_z, max_y, max_x, high_z, high_y, high_x,
             z_region_blocks, y_region_blocks, shell_blocks, core_x_blocks,
             core_y_blocks);
   } else {
     UpdateCombinedCpmlQueue<Phase, PsiType, PackedLosslessMaterial, true,
                             tile_x, tile_y, core_tile_x, core_tile_y>
-        <<<shell_blocks + core_blocks, threads, 0, stream>>>(
+        <<<shell_blocks + (shell_only ? 0 : core_blocks), threads, 0, stream>>>(
             launch, max_z, max_y, max_x, high_z, high_y, high_x,
             z_region_blocks, y_region_blocks, shell_blocks, core_x_blocks,
             core_y_blocks);
   }
 }
 
+template <int Phase, int PsiType, bool Packed>
+void LaunchCombinedCpmlQueueForType(cudaStream_t stream, const BeamzLaunch& launch,
+                                    const CpmlGeometry& geometry, bool shell_only) {
+  if (launch.cuda_flags & beamz::cuda::abi::kBeamzShell32x8)
+    LaunchCpmlQueueTile<Phase, PsiType, Packed, 32, 8>(stream, launch, geometry, shell_only);
+  else if (launch.cuda_flags & beamz::cuda::abi::kBeamzShell32x4)
+    LaunchCpmlQueueTile<Phase, PsiType, Packed, 32, 4>(stream, launch, geometry, shell_only);
+  else
+    LaunchCpmlQueueTile<Phase, PsiType, Packed, PsiType == kBeamzBF16 ? 32 : 64, 4>(
+        stream, launch, geometry, shell_only);
+}
+
 cudaError_t LaunchCombinedCpmlQueuePhase(cudaStream_t stream,
-                                         const BeamzLaunch& launch) {
+                                         const BeamzLaunch &launch,
+                                         bool shell_only = false) {
   const CpmlGeometry geometry = MakeCpmlGeometry(launch);
   const int psi_type = UniformPsiType(launch);
   const bool packed = launch.phase == 1 && HasPackedLosslessMaterial(launch);
   if (launch.phase == 0) {
     if (psi_type == kBeamzBF16) {
       LaunchCombinedCpmlQueueForType<0, kBeamzBF16, false>(
-          stream, launch, geometry);
+          stream, launch, geometry, shell_only);
     } else if (psi_type == kBeamzF32) {
-      LaunchCombinedCpmlQueueForType<0, kBeamzF32, false>(
-          stream, launch, geometry);
+      LaunchCombinedCpmlQueueForType<0, kBeamzF32, false>(stream, launch,
+                                                          geometry, shell_only);
     } else {
-      LaunchCombinedCpmlQueueForType<0, -1, false>(
-          stream, launch, geometry);
+      LaunchCombinedCpmlQueueForType<0, -1, false>(stream, launch, geometry,
+                                                   shell_only);
     }
   } else if (packed && psi_type == kBeamzBF16) {
-    LaunchCombinedCpmlQueueForType<1, kBeamzBF16, true>(
-        stream, launch, geometry);
+    LaunchCombinedCpmlQueueForType<1, kBeamzBF16, true>(stream, launch,
+                                                        geometry, shell_only);
   } else if (packed && psi_type == kBeamzF32) {
-    LaunchCombinedCpmlQueueForType<1, kBeamzF32, true>(
-        stream, launch, geometry);
+    LaunchCombinedCpmlQueueForType<1, kBeamzF32, true>(stream, launch, geometry,
+                                                       shell_only);
   } else if (packed) {
-    LaunchCombinedCpmlQueueForType<1, -1, true>(
-        stream, launch, geometry);
+    LaunchCombinedCpmlQueueForType<1, -1, true>(stream, launch, geometry,
+                                                shell_only);
   } else if (psi_type == kBeamzBF16) {
-    LaunchCombinedCpmlQueueForType<1, kBeamzBF16, false>(
-        stream, launch, geometry);
+    LaunchCombinedCpmlQueueForType<1, kBeamzBF16, false>(stream, launch,
+                                                         geometry, shell_only);
   } else if (psi_type == kBeamzF32) {
-    LaunchCombinedCpmlQueueForType<1, kBeamzF32, false>(
-        stream, launch, geometry);
+    LaunchCombinedCpmlQueueForType<1, kBeamzF32, false>(stream, launch,
+                                                        geometry, shell_only);
   } else {
-    LaunchCombinedCpmlQueueForType<1, -1, false>(
-        stream, launch, geometry);
+    LaunchCombinedCpmlQueueForType<1, -1, false>(stream, launch, geometry,
+                                                 shell_only);
   }
   return cudaPeekAtLastError();
-}
-
-bool BeamzCpmlScheduleSupported(const BeamzLaunch& h_launch,
-                                const BeamzLaunch& e_launch) {
-  return CpmlCoreScheduleSupported(h_launch, e_launch);
 }
 
 cudaError_t BeamzEnqueueCpmlPhase(cudaStream_t stream,
@@ -1160,4 +1396,247 @@ cudaError_t BeamzEnqueueFusedFullStep(cudaStream_t stream,
         <<<blocks, threads, kFusedSharedBytes, stream>>>(h_phase, e_phase);
   }
   return cudaPeekAtLastError();
+}
+
+cudaError_t BeamzEnqueueCpmlShell(cudaStream_t stream,
+                                  const BeamzLaunch &launch) {
+  return LaunchCombinedCpmlQueuePhase(stream, launch, true);
+}
+
+template <typename Tile, bool Band = false>
+cudaError_t EnqueueCpmlCoreTile(cudaStream_t stream, const BeamzLaunch& h,
+                                const BeamzLaunch& e,
+                                const BeamzSourceGroupLaunch* groups,
+                                int step) {
+  const CpmlGeometry geometry = MakeCpmlGeometry(h);
+  FusedHSources sources{};
+  sources.step = step;
+  if (groups != nullptr) {
+    for (int component = 0; component < 3; ++component)
+      sources.groups[component] = groups[3 + component];
+  }
+  const dim3 blocks((geometry.high_x - geometry.low + Tile::X - 1) / Tile::X,
+                    (geometry.high_y - geometry.low + Tile::Y - 1) / Tile::Y,
+                    (geometry.high_z - geometry.low + Tile::Z - 1) / Tile::Z);
+  if (HasPackedLosslessMaterial(e)) {
+    FusedCpmlCore<true, Tile, Band>
+        <<<blocks, dim3(Tile::X, Tile::Y), Tile::SharedBytes, stream>>>(
+            MakeFusedYeePhase(h), MakeFusedYeePhase(e), sources, geometry.low,
+            geometry.high_z, geometry.high_y, geometry.high_x);
+  } else {
+    FusedCpmlCore<false, Tile, Band>
+        <<<blocks, dim3(Tile::X, Tile::Y), Tile::SharedBytes, stream>>>(
+            MakeFusedYeePhase(h), MakeFusedYeePhase(e), sources, geometry.low,
+            geometry.high_z, geometry.high_y, geometry.high_x);
+  }
+  return cudaPeekAtLastError();
+}
+
+cudaError_t BeamzEnqueueCpmlCore(cudaStream_t stream, const BeamzLaunch& h,
+                                 const BeamzLaunch& e,
+                                 const BeamzSourceGroupLaunch* groups, int step,
+                                 int tile, bool band) {
+  if (band) {
+    switch (tile) {
+      case 0:
+        return EnqueueCpmlCoreTile<CpmlTile<32, 8, 8>, true>(stream, h, e,
+                                                             groups, step);
+      case 1:
+        return EnqueueCpmlCoreTile<CpmlTile<64, 4, 8>, true>(stream, h, e,
+                                                             groups, step);
+      case 2:
+        return EnqueueCpmlCoreTile<CpmlTile<32, 4, 8>, true>(stream, h, e,
+                                                             groups, step);
+      default:
+        return cudaErrorInvalidValue;
+    }
+  }
+  switch (tile) {
+    case 0:
+      return EnqueueCpmlCoreTile<CpmlTile<32, 8, 8>>(stream, h, e, groups,
+                                                     step);
+    case 1:
+      return EnqueueCpmlCoreTile<CpmlTile<64, 4, 8>>(stream, h, e, groups,
+                                                     step);
+    case 2:
+      return EnqueueCpmlCoreTile<CpmlTile<32, 4, 8>>(stream, h, e, groups,
+                                                     step);
+    default:
+      return cudaErrorInvalidValue;
+  }
+}
+
+template <int X, int Y, int Z>
+cudaError_t EnqueueCpmlPairCoreTile(cudaStream_t stream, const BeamzLaunch &h,
+                                    const BeamzLaunch &e,
+                                    const BeamzBuffer *final_fields,
+                                    const BeamzSourceGroupLaunch *groups,
+                                    int step, BeamzBuffer publication) {
+  const auto geometry = MakeCpmlGeometry(h);
+  PairFieldOutputs final{};
+  FusedHSources hs{}, es{};
+  hs.step = es.step = step;
+  for (int c = 0; c < 6; ++c)
+    final.fields[c] = final_fields[c];
+  for (int c = 0; c < 3; ++c) {
+    hs.groups[c] = groups[3 + c];
+    es.groups[c] = groups[6 + c];
+  }
+  const dim3 blocks((geometry.high_x - geometry.low - 4 + X - 1) / X,
+                    (geometry.high_y - geometry.low - 4 + Y - 1) / Y,
+                    (geometry.high_z - geometry.low - 4 + Z - 1) / Z);
+  if (HasPackedLosslessMaterial(e))
+    TemporalPairCore<true, X, Y, Z>
+        <<<blocks, 256, PairStage<X, Y, 3>::offset * sizeof(float), stream>>>(
+            MakeFusedYeePhase(h), MakeFusedYeePhase(e), final, hs, es,
+            publication, geometry.low, geometry.high_z, geometry.high_y,
+            geometry.high_x);
+  else
+    TemporalPairCore<false, X, Y, Z>
+        <<<blocks, 256, PairStage<X, Y, 3>::offset * sizeof(float), stream>>>(
+            MakeFusedYeePhase(h), MakeFusedYeePhase(e), final, hs, es,
+            publication, geometry.low, geometry.high_z, geometry.high_y,
+            geometry.high_x);
+  return cudaPeekAtLastError();
+}
+
+cudaError_t BeamzEnqueueCpmlPairCore(cudaStream_t stream, const BeamzLaunch &h,
+                                     const BeamzLaunch &e,
+                                     const BeamzBuffer *final_fields,
+                                     const BeamzSourceGroupLaunch *groups,
+                                     int step, BeamzBuffer publication,
+                                     int tile) {
+  switch (tile) {
+  case 0:
+    return EnqueueCpmlPairCoreTile<16, 8, 16>(stream, h, e, final_fields,
+                                              groups, step, publication);
+  case 1:
+    return EnqueueCpmlPairCoreTile<32, 4, 16>(stream, h, e, final_fields,
+                                              groups, step, publication);
+  case 2:
+    return EnqueueCpmlPairCoreTile<32, 8, 16>(stream, h, e, final_fields,
+                                              groups, step, publication);
+  default:
+    return cudaErrorInvalidValue;
+  }
+}
+
+cudaError_t BeamzEnqueueCpmlPairBand(cudaStream_t stream, const BeamzLaunch &h,
+                                     const BeamzLaunch &e,
+                                     const BeamzSourceGroupLaunch *groups,
+                                     int step) {
+  const auto g = MakeCpmlGeometry(h);
+  const int nx = g.high_x - g.low, ny = g.high_y - g.low, nz = g.high_z - g.low;
+  const int count = nx * ny * nz - (nx - 4) * (ny - 4) * (nz - 4);
+  FusedHSources sources{};
+  sources.step = step;
+  for (int c = 0; c < 3; ++c)
+    sources.groups[c] = groups[3 + c];
+  if (HasPackedLosslessMaterial(e))
+    TemporalPairBand<true><<<(count + 255) / 256, 256, 0, stream>>>(
+        MakeFusedYeePhase(h), MakeFusedYeePhase(e), sources, g.low, g.high_z,
+        g.high_y, g.high_x);
+  else
+    TemporalPairBand<false><<<(count + 255) / 256, 256, 0, stream>>>(
+        MakeFusedYeePhase(h), MakeFusedYeePhase(e), sources, g.low, g.high_z,
+        g.high_y, g.high_x);
+  return cudaPeekAtLastError();
+}
+
+
+template <bool Packed, bool Half, int X, int Y, int Z, int Mask, int Steps>
+cudaError_t LaunchTemporalCpmlMask(cudaStream_t stream,
+    const PairCpmlPhase &h, const PairCpmlPhase &e, const PairFieldOutputs &final,
+    const FusedHSources &hs, const FusedHSources &es, BeamzBuffer publication,
+    PairCpmlGrid grid) {
+  int counts[3];
+  const int sizes[3]={Z,Y,X};
+  for (int a=0;a<3;++a) {
+    counts[a]=(Mask & (1<<a)) ? (grid.high[a]+sizes[a]-1)/sizes[a]+(grid.extent[a]-grid.boundary[a]+sizes[a]-1)/sizes[a]
+                            : (grid.boundary[a]-grid.high[a]+sizes[a]-1)/sizes[a];
+    if (!counts[a]) return cudaSuccess;
+  }
+  constexpr size_t bytes=Steps==1 ? PairStage<X-2,Y-2,1>::offset*sizeof(float)
+      : PairPsiStage<X,Y,1,Mask,Half>::offset*sizeof(float)+
+        2*PairPsiTerms(Mask)*(X+2)*(Y+2)*(Half?sizeof(__nv_bfloat16):sizeof(float));
+  TemporalCpmlPair<Packed,Half,X,Y,Z,Mask,Steps>
+      <<<dim3(counts[2],counts[1],counts[0]),
+         (Steps == 2 && ((Mask == 4 && X == 15 && Y == 16) || (Mask == 2 && X == 16 && Y == 15))) ? 384 : 256,
+         bytes,stream>>>(h,e,final,hs,es,publication,grid);
+  return cudaPeekAtLastError();
+}
+
+template <bool Packed, bool Half, int Tile, int Steps=2>
+cudaError_t LaunchTemporalCpmlMasks(cudaStream_t stream, const BeamzLaunch &h,
+    const BeamzLaunch &e, const BeamzBuffer *final_fields,
+    const BeamzSourceGroupLaunch *groups, int step, BeamzBuffer publication) {
+  PairFieldOutputs final{};
+  FusedHSources hs{}, es{};
+  hs.step = es.step = step;
+  int extents[3]{};
+  for (int c=0;c<6;++c) {
+    final.fields[c]=final_fields[c];
+    for (int a=0;a<3;++a)
+      extents[a]=std::max(extents[a],static_cast<int>(final_fields[c].dims[a]));
+  }
+  for (int c=0;c<3;++c) {hs.groups[c]=groups[3+c];es.groups[c]=groups[6+c];}
+  PairCpmlGrid grid{};
+  for (int a=0;a<3;++a) {
+    int limit=static_cast<int>(h.outputs[0].dims[a]);
+    for(int c=1;c<3;++c)limit=std::min(limit,static_cast<int>(h.outputs[c].dims[a]));
+    grid.field_high[a]=limit;
+    grid.extent[a]=extents[a];
+    grid.high[a]=h.uniform_cpml_thickness+Steps;
+    grid.boundary[a]=limit-h.uniform_cpml_thickness-Steps;
+  }
+  const auto hp=MakePairCpmlPhase(h), ep=MakePairCpmlPhase(e);
+#define LAUNCH_MASK(M) { \
+    constexpr bool face=(M==1||M==2||M==4); \
+    constexpr int X=Steps==1 ? ((M&4)?15:31) : M==0?16:Tile==2&&face?(M==4?15:M==2?16:32):16; \
+    constexpr int Y=Steps==1 ? ((M&4)?15:7) : M==0?8:Tile==2&&face?(M==4?16:M==2?15:4):8; \
+    constexpr int Z=Steps==1 ? 16 : M==0||Tile==0||Tile==2&&face?16:4; \
+    auto error=LaunchTemporalCpmlMask<Packed,Half,X,Y,Z,M,Steps>( \
+        stream,hp,ep,final,hs,es,publication,grid); \
+    if(error!=cudaSuccess)return error; \
+  }
+  LAUNCH_MASK(0); LAUNCH_MASK(1); LAUNCH_MASK(2); LAUNCH_MASK(4);
+  LAUNCH_MASK(3); LAUNCH_MASK(5); LAUNCH_MASK(6); LAUNCH_MASK(7);
+#undef LAUNCH_MASK
+  return cudaSuccess;
+}
+
+cudaError_t BeamzEnqueueTemporalCpml(cudaStream_t stream, const BeamzLaunch &h,
+    const BeamzLaunch &e, const BeamzBuffer *final_fields,
+    const BeamzSourceGroupLaunch *groups, int step, BeamzBuffer publication, int tile) {
+#define LAUNCH_TILE(T) \
+  if (HasPackedLosslessMaterial(e)) { \
+    if(h.inputs[31].element_type==kBeamzBF16) \
+      return LaunchTemporalCpmlMasks<true,true,T>(stream,h,e,final_fields,groups,step,publication); \
+    return LaunchTemporalCpmlMasks<true,false,T>(stream,h,e,final_fields,groups,step,publication); \
+  } \
+  if(h.inputs[31].element_type==kBeamzBF16) \
+    return LaunchTemporalCpmlMasks<false,true,T>(stream,h,e,final_fields,groups,step,publication); \
+  return LaunchTemporalCpmlMasks<false,false,T>(stream,h,e,final_fields,groups,step,publication);
+  switch(tile) {
+    case 0: {LAUNCH_TILE(0)}
+    case 1: {LAUNCH_TILE(1)}
+    case 2: {LAUNCH_TILE(2)}
+    default: return cudaErrorInvalidValue;
+  }
+#undef LAUNCH_TILE
+}
+
+
+cudaError_t BeamzEnqueueSpatialCpml(cudaStream_t stream, const BeamzLaunch &h,
+    const BeamzLaunch &e, const BeamzSourceGroupLaunch *groups, int step) {
+  BeamzBuffer final[6];
+  for(int c=0;c<3;++c){final[c]=h.outputs[c];final[3+c]=e.outputs[c];}
+  if (HasPackedLosslessMaterial(e)) {
+    if(h.inputs[31].element_type==kBeamzBF16)
+      return LaunchTemporalCpmlMasks<true,true,2,1>(stream,h,e,final,groups,step,{});
+    return LaunchTemporalCpmlMasks<true,false,2,1>(stream,h,e,final,groups,step,{});
+  }
+  if(h.inputs[31].element_type==kBeamzBF16)
+    return LaunchTemporalCpmlMasks<false,true,2,1>(stream,h,e,final,groups,step,{});
+  return LaunchTemporalCpmlMasks<false,false,2,1>(stream,h,e,final,groups,step,{});
 }

@@ -1,0 +1,144 @@
+{
+  "note": "Analytical geometry model, not a CUDA benchmark or scheduler correctness proof. Rank widths exclude extra halo blocks and runtime clipping. CUDA slot ratios are unclipped tile envelopes, not instruction counts.",
+  "cpu_window_coverage_checks": 630,
+  "halo_envelopes": [
+    {
+      "tile_xyz": [
+        16,
+        8,
+        16
+      ],
+      "stage_cell_slots": [
+        3971,
+        3240,
+        2601,
+        2048
+      ],
+      "owned_four_phase_cell_updates": 8192,
+      "issued_slot_ratio": 1.44775390625
+    },
+    {
+      "tile_xyz": [
+        15,
+        16,
+        16
+      ],
+      "stage_cell_slots": [
+        6498,
+        5508,
+        4624,
+        3840
+      ],
+      "owned_four_phase_cell_updates": 15360,
+      "issued_slot_ratio": 1.3326822916666667
+    },
+    {
+      "tile_xyz": [
+        32,
+        4,
+        16
+      ],
+      "stage_cell_slots": [
+        4655,
+        3672,
+        2805,
+        2048
+      ],
+      "owned_four_phase_cell_updates": 8192,
+      "issued_slot_ratio": 1.60888671875
+    },
+    {
+      "tile_xyz": [
+        16,
+        8,
+        4
+      ],
+      "stage_cell_slots": [
+        1463,
+        1080,
+        765,
+        512
+      ],
+      "owned_four_phase_cell_updates": 2048,
+      "issued_slot_ratio": 1.865234375
+    }
+  ],
+  "wavefront_rank_widths": [
+    {
+      "logical_zyx": [
+        128,
+        256,
+        512
+      ],
+      "tile_zyx": [
+        16,
+        8,
+        16
+      ],
+      "block_grid_zyx": [
+        8,
+        32,
+        32
+      ],
+      "single_pass_max_rank_width": 240,
+      "eight_pass_max_rank_width": 1528
+    },
+    {
+      "logical_zyx": [
+        1024,
+        256,
+        64
+      ],
+      "tile_zyx": [
+        16,
+        8,
+        16
+      ],
+      "block_grid_zyx": [
+        64,
+        32,
+        4
+      ],
+      "single_pass_max_rank_width": 128,
+      "eight_pass_max_rank_width": 1024
+    },
+    {
+      "logical_zyx": [
+        97,
+        289,
+        593
+      ],
+      "tile_zyx": [
+        16,
+        8,
+        16
+      ],
+      "block_grid_zyx": [
+        7,
+        37,
+        38
+      ],
+      "single_pass_max_rank_width": 250,
+      "eight_pass_max_rank_width": 1647
+    },
+    {
+      "logical_zyx": [
+        64,
+        256,
+        1024
+      ],
+      "tile_zyx": [
+        16,
+        8,
+        16
+      ],
+      "block_grid_zyx": [
+        4,
+        32,
+        64
+      ],
+      "single_pass_max_rank_width": 128,
+      "eight_pass_max_rank_width": 1024
+    }
+  ]
+}

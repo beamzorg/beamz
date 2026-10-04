@@ -1,0 +1,116 @@
+{
+  "seed": 2026091807,
+  "cases": [
+    {
+      "name": "short_x",
+      "shape": [
+        1126,
+        297,
+        65
+      ],
+      "material": "binary",
+      "bounds": [
+        [
+          700,
+          1500
+        ],
+        [
+          160,
+          400
+        ],
+        [
+          50,
+          110
+        ]
+      ]
+    },
+    {
+      "name": "long_y",
+      "shape": [
+        104,
+        1083,
+        180
+      ],
+      "material": "smooth",
+      "bounds": [
+        [
+          55,
+          110
+        ],
+        [
+          700,
+          1400
+        ],
+        [
+          180,
+          400
+        ]
+      ]
+    },
+    {
+      "name": "flat_z",
+      "shape": [
+        110,
+        202,
+        866
+      ],
+      "material": "binary",
+      "bounds": [
+        [
+          65,
+          140
+        ],
+        [
+          180,
+          400
+        ],
+        [
+          400,
+          1000
+        ]
+      ]
+    },
+    {
+      "name": "irregular",
+      "shape": [
+        325,
+        203,
+        312
+      ],
+      "material": "smooth",
+      "bounds": [
+        [
+          190,
+          390
+        ],
+        [
+          180,
+          350
+        ],
+        [
+          200,
+          450
+        ]
+      ]
+    }
+  ],
+  "selection": "Stratified random integer extents, accepted at 16\u201324 Mi cells",
+  "process_order": [
+    "main",
+    "branch",
+    "branch",
+    "main"
+  ],
+  "steps": 256,
+  "warmups": 4,
+  "samples": 9,
+  "main_commit": "3dc23ed55eb5fb22f9539c8dd69bfb918e3c0c84",
+  "branch_head": "b0a5ff32d70755aa3c6f5d20e8ae9a5fdfe4ee7b",
+  "main_source_sha256": "f356b249b2458637953e27a7bcd4dc7e474d25548f7aa811d0c0a87d07e5697f",
+  "branch_source_sha256": "880bbd8bba49c46d0c20a887ed6458556fb1e397bae89f5f3c509c016cc34277",
+  "native_build": "CUDA13.3.73 SM86 Release fast math OFF GNU16.1.1",
+  "main_native_reused_from": "c5fe0d88; source unchanged at 3dc23ed5",
+  "precision": "FP32",
+  "pml": 12,
+  "branch_selection": "Default predictive auto, no manual overrides"
+}

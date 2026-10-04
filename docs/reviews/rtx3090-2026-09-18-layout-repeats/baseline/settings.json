@@ -1,0 +1,19 @@
+{
+  "python": "/home/quentinwach/Code/.venv-cuda-pr233/bin/python",
+  "source_root": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/layout-baseline",
+  "output": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/docs/reviews/rtx3090-2026-09-18-layout-repeats/baseline",
+  "cases": [
+    "volume_128_256_512",
+    "aspect_1024_256_64",
+    "aspect_256_1024_64",
+    "full_field_1024_256_64"
+  ],
+  "seed": 19,
+  "samples": 7,
+  "padding": "none",
+  "tile": "auto",
+  "temporal_steps": 1,
+  "fusion": "auto",
+  "shell_tile": "64x4",
+  "dry_run": false
+}

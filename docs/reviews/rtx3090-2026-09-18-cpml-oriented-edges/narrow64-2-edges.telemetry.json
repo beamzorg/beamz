@@ -1,0 +1,212 @@
+[
+  {
+    "free_mib": 23668.0,
+    "used_mib": 448.0,
+    "utilization": 0.0,
+    "power_w": 155.57,
+    "limit_w": 370.0,
+    "temperature_c": 62.0,
+    "sm_mhz": 1935.0,
+    "elapsed_s": 0.014146433997666463
+  },
+  {
+    "free_mib": 23270.0,
+    "used_mib": 845.0,
+    "utilization": 5.0,
+    "power_w": 134.93,
+    "limit_w": 370.0,
+    "temperature_c": 60.0,
+    "sm_mhz": 1755.0,
+    "elapsed_s": 1.0288151780005137
+  },
+  {
+    "free_mib": 23270.0,
+    "used_mib": 845.0,
+    "utilization": 1.0,
+    "power_w": 128.86,
+    "limit_w": 370.0,
+    "temperature_c": 60.0,
+    "sm_mhz": 1755.0,
+    "elapsed_s": 2.043671789997461
+  },
+  {
+    "free_mib": 21346.0,
+    "used_mib": 2769.0,
+    "utilization": 4.0,
+    "power_w": 129.61,
+    "limit_w": 370.0,
+    "temperature_c": 60.0,
+    "sm_mhz": 1755.0,
+    "elapsed_s": 3.0584787160005362
+  },
+  {
+    "free_mib": 21318.0,
+    "used_mib": 2798.0,
+    "utilization": 4.0,
+    "power_w": 128.61,
+    "limit_w": 370.0,
+    "temperature_c": 59.0,
+    "sm_mhz": 1755.0,
+    "elapsed_s": 4.072752549000143
+  },
+  {
+    "free_mib": 21318.0,
+    "used_mib": 2798.0,
+    "utilization": 0.0,
+    "power_w": 128.26,
+    "limit_w": 370.0,
+    "temperature_c": 59.0,
+    "sm_mhz": 1755.0,
+    "elapsed_s": 5.090376176998689
+  },
+  {
+    "free_mib": 19271.0,
+    "used_mib": 4845.0,
+    "utilization": 4.0,
+    "power_w": 130.19,
+    "limit_w": 370.0,
+    "temperature_c": 59.0,
+    "sm_mhz": 1755.0,
+    "elapsed_s": 6.110387406999507
+  },
+  {
+    "free_mib": 19269.0,
+    "used_mib": 4847.0,
+    "utilization": 4.0,
+    "power_w": 131.16,
+    "limit_w": 370.0,
+    "temperature_c": 59.0,
+    "sm_mhz": 1755.0,
+    "elapsed_s": 7.1251082889975805
+  },
+  {
+    "free_mib": 19269.0,
+    "used_mib": 4847.0,
+    "utilization": 2.0,
+    "power_w": 130.46,
+    "limit_w": 370.0,
+    "temperature_c": 59.0,
+    "sm_mhz": 1755.0,
+    "elapsed_s": 8.141935314997681
+  },
+  {
+    "free_mib": 19294.0,
+    "used_mib": 4822.0,
+    "utilization": 1.0,
+    "power_w": 128.9,
+    "limit_w": 370.0,
+    "temperature_c": 58.0,
+    "sm_mhz": 1755.0,
+    "elapsed_s": 9.156310350997956
+  },
+  {
+    "free_mib": 19294.0,
+    "used_mib": 4822.0,
+    "utilization": 0.0,
+    "power_w": 127.7,
+    "limit_w": 370.0,
+    "temperature_c": 58.0,
+    "sm_mhz": 1755.0,
+    "elapsed_s": 10.170819946997653
+  },
+  {
+    "free_mib": 19294.0,
+    "used_mib": 4822.0,
+    "utilization": 3.0,
+    "power_w": 128.75,
+    "limit_w": 370.0,
+    "temperature_c": 58.0,
+    "sm_mhz": 1755.0,
+    "elapsed_s": 11.18526235399986
+  },
+  {
+    "free_mib": 19294.0,
+    "used_mib": 4822.0,
+    "utilization": 0.0,
+    "power_w": 130.41,
+    "limit_w": 370.0,
+    "temperature_c": 58.0,
+    "sm_mhz": 1755.0,
+    "elapsed_s": 12.199637541998527
+  },
+  {
+    "free_mib": 19254.0,
+    "used_mib": 4862.0,
+    "utilization": 100.0,
+    "power_w": 294.35,
+    "limit_w": 370.0,
+    "temperature_c": 68.0,
+    "sm_mhz": 1875.0,
+    "elapsed_s": 13.216826247997233
+  },
+  {
+    "free_mib": 19254.0,
+    "used_mib": 4862.0,
+    "utilization": 99.0,
+    "power_w": 367.72,
+    "limit_w": 370.0,
+    "temperature_c": 69.0,
+    "sm_mhz": 1875.0,
+    "elapsed_s": 14.234015964997525
+  },
+  {
+    "free_mib": 19216.0,
+    "used_mib": 4900.0,
+    "utilization": 100.0,
+    "power_w": 368.16,
+    "limit_w": 370.0,
+    "temperature_c": 69.0,
+    "sm_mhz": 1875.0,
+    "elapsed_s": 15.25085655300063
+  },
+  {
+    "free_mib": 19140.0,
+    "used_mib": 4976.0,
+    "utilization": 100.0,
+    "power_w": 368.29,
+    "limit_w": 370.0,
+    "temperature_c": 70.0,
+    "sm_mhz": 1860.0,
+    "elapsed_s": 16.268038186997728
+  },
+  {
+    "free_mib": 19102.0,
+    "used_mib": 5014.0,
+    "utilization": 100.0,
+    "power_w": 368.29,
+    "limit_w": 370.0,
+    "temperature_c": 70.0,
+    "sm_mhz": 1860.0,
+    "elapsed_s": 17.284993705998204
+  },
+  {
+    "free_mib": 19024.0,
+    "used_mib": 5092.0,
+    "utilization": 98.0,
+    "power_w": 368.1,
+    "limit_w": 370.0,
+    "temperature_c": 70.0,
+    "sm_mhz": 1875.0,
+    "elapsed_s": 18.301744055999734
+  },
+  {
+    "free_mib": 18948.0,
+    "used_mib": 5168.0,
+    "utilization": 100.0,
+    "power_w": 368.13,
+    "limit_w": 370.0,
+    "temperature_c": 70.0,
+    "sm_mhz": 1875.0,
+    "elapsed_s": 19.31806971699916
+  },
+  {
+    "free_mib": 18888.0,
+    "used_mib": 5227.0,
+    "utilization": 100.0,
+    "power_w": 236.6,
+    "limit_w": 370.0,
+    "temperature_c": 62.0,
+    "sm_mhz": 1935.0,
+    "elapsed_s": 20.334230435997597
+  }
+]

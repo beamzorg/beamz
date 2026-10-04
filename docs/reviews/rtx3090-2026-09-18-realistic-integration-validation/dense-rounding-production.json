@@ -1,0 +1,799 @@
+{
+  "fused": {
+    "rolling": [
+      {
+        "path": "(GetAttrKey(name='ex'),)",
+        "peak": 14599962.0,
+        "error": 7.0,
+        "relative_peak": 4.794533026866782e-07,
+        "relative_l2": 6.039476261321397e-07
+      },
+      {
+        "path": "(GetAttrKey(name='ey'),)",
+        "peak": 17896356.0,
+        "error": 9.0,
+        "relative_peak": 5.028956732867853e-07,
+        "relative_l2": 5.206721311878937e-07
+      },
+      {
+        "path": "(GetAttrKey(name='ez'),)",
+        "peak": 9735662.0,
+        "error": 6.625,
+        "relative_peak": 6.804878805365264e-07,
+        "relative_l2": 1.0537416983424919e-06
+      },
+      {
+        "path": "(GetAttrKey(name='hx'),)",
+        "peak": 72673.265625,
+        "error": 0.04736328125,
+        "relative_peak": 6.517290896820079e-07,
+        "relative_l2": 6.640523224632489e-07
+      },
+      {
+        "path": "(GetAttrKey(name='hy'),)",
+        "peak": 37201.24609375,
+        "error": 0.03955078125,
+        "relative_peak": 1.0631574316174515e-06,
+        "relative_l2": 1.3001862271266873e-06
+      },
+      {
+        "path": "(GetAttrKey(name='hz'),)",
+        "peak": 151067.390625,
+        "error": 0.05859375,
+        "relative_peak": 3.878649770647682e-07,
+        "relative_l2": 4.5656855718334555e-07
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=0))",
+        "peak": 138609475584.0,
+        "error": 787456.0,
+        "relative_peak": 5.681112324263766e-06,
+        "relative_l2": 6.003271209920058e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=1))",
+        "peak": 344547688448.0,
+        "error": 1433600.0,
+        "relative_peak": 4.160817350009192e-06,
+        "relative_l2": 3.2834848298080033e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=2))",
+        "peak": 112045785088.0,
+        "error": 1034240.0,
+        "relative_peak": 9.230512323044682e-06,
+        "relative_l2": 8.041270120884292e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=3))",
+        "peak": 936582512640.0,
+        "error": 2723272.0,
+        "relative_peak": 2.907669066256377e-06,
+        "relative_l2": 3.0644505386590026e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=4))",
+        "peak": 3750495256576.0,
+        "error": 3014656.0,
+        "relative_peak": 8.038021097918195e-07,
+        "relative_l2": 8.502127570864104e-07
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=5))",
+        "peak": 143887400960.0,
+        "error": 1183488.0,
+        "relative_peak": 8.225098181660838e-06,
+        "relative_l2": 5.7151787586917635e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=0))",
+        "peak": 1214410112.0,
+        "error": 4104.0,
+        "relative_peak": 3.3794185007576748e-06,
+        "relative_l2": 3.1942006444296567e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=1))",
+        "peak": 487398496.0,
+        "error": 3712.0,
+        "relative_peak": 7.615944715594691e-06,
+        "relative_l2": 5.485723249876173e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=2))",
+        "peak": 536550080.0,
+        "error": 4224.0,
+        "relative_peak": 7.872517696763739e-06,
+        "relative_l2": 5.495428467838792e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=3))",
+        "peak": 46880182272.0,
+        "error": 32768.0,
+        "relative_peak": 6.989733915683014e-07,
+        "relative_l2": 6.568292860720248e-07
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=4))",
+        "peak": 10501881856.0,
+        "error": 18432.0,
+        "relative_peak": 1.755114012206233e-06,
+        "relative_l2": 1.8383609585725935e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=5))",
+        "peak": 506075200.0,
+        "error": 3219.0,
+        "relative_peak": 6.360714771243483e-06,
+        "relative_l2": 7.390223800030071e-06
+      },
+      {
+        "path": "(GetAttrKey(name='powers'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='timestamps'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_flux_re'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_flux_im'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_phase_re'),)",
+        "peak": 1.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_phase_im'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='dft_vec_re'),)",
+        "peak": 21783890.0,
+        "error": 6.0,
+        "relative_peak": 2.7543290018449416e-07,
+        "relative_l2": 4.884091140411329e-07
+      },
+      {
+        "path": "(GetAttrKey(name='dft_vec_im'),)",
+        "peak": 21398224.0,
+        "error": 6.0,
+        "relative_peak": 2.803971021146428e-07,
+        "relative_l2": 3.6234712297300575e-07
+      },
+      {
+        "path": "(GetAttrKey(name='dft_weight_sum'),)",
+        "peak": 256.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='t'),)",
+        "peak": 3.746901064156233e-14,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      }
+    ],
+    "monitors": [
+      {
+        "path": "(GetAttrKey(name='ex'),)",
+        "peak": 14599962.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='ey'),)",
+        "peak": 17896356.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='ez'),)",
+        "peak": 9735662.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='hx'),)",
+        "peak": 72673.265625,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='hy'),)",
+        "peak": 37201.24609375,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='hz'),)",
+        "peak": 151067.390625,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=0))",
+        "peak": 138609475584.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=1))",
+        "peak": 344547688448.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=2))",
+        "peak": 112045785088.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=3))",
+        "peak": 936582512640.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=4))",
+        "peak": 3750495256576.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=5))",
+        "peak": 143887400960.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=0))",
+        "peak": 1214410112.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=1))",
+        "peak": 487398496.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=2))",
+        "peak": 536550080.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=3))",
+        "peak": 46880182272.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=4))",
+        "peak": 10501881856.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=5))",
+        "peak": 506075200.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='powers'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='timestamps'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_flux_re'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_flux_im'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_phase_re'),)",
+        "peak": 1.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_phase_im'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='dft_vec_re'),)",
+        "peak": 21783890.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='dft_vec_im'),)",
+        "peak": 21398224.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='dft_weight_sum'),)",
+        "peak": 256.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='t'),)",
+        "peak": 3.746901064156233e-14,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      }
+    ]
+  },
+  "jax": {
+    "rolling": [
+      {
+        "path": "(GetAttrKey(name='ex'),)",
+        "peak": 14599954.0,
+        "error": 10.0,
+        "relative_peak": 6.84933664859492e-07,
+        "relative_l2": 7.63634034228744e-07
+      },
+      {
+        "path": "(GetAttrKey(name='ey'),)",
+        "peak": 17896348.0,
+        "error": 16.0,
+        "relative_peak": 8.940371521608767e-07,
+        "relative_l2": 8.846234322845703e-07
+      },
+      {
+        "path": "(GetAttrKey(name='ez'),)",
+        "peak": 9735663.0,
+        "error": 6.9375,
+        "relative_peak": 7.125862922740855e-07,
+        "relative_l2": 1.1844379059766652e-06
+      },
+      {
+        "path": "(GetAttrKey(name='hx'),)",
+        "peak": 72673.28125,
+        "error": 0.068359375,
+        "relative_peak": 9.406397210116338e-07,
+        "relative_l2": 8.985996942101337e-07
+      },
+      {
+        "path": "(GetAttrKey(name='hy'),)",
+        "peak": 37201.25390625,
+        "error": 0.048828125,
+        "relative_peak": 1.312539763392132e-06,
+        "relative_l2": 1.5286572079276084e-06
+      },
+      {
+        "path": "(GetAttrKey(name='hz'),)",
+        "peak": 151067.4375,
+        "error": 0.134765625,
+        "relative_peak": 8.920891704408503e-07,
+        "relative_l2": 9.53850758378394e-07
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=0))",
+        "peak": 138609541120.0,
+        "error": 762496.0,
+        "relative_peak": 5.501035454261231e-06,
+        "relative_l2": 6.664269221801078e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=1))",
+        "peak": 344548212736.0,
+        "error": 1499136.0,
+        "relative_peak": 4.351019522335091e-06,
+        "relative_l2": 3.6015633213537512e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=2))",
+        "peak": 112045785088.0,
+        "error": 1128448.0,
+        "relative_peak": 1.007131146534182e-05,
+        "relative_l2": 8.482987141178455e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=3))",
+        "peak": 936583036928.0,
+        "error": 2523136.0,
+        "relative_peak": 2.693980032220001e-06,
+        "relative_l2": 3.380162297617062e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=4))",
+        "peak": 3750496305152.0,
+        "error": 7962624.0,
+        "relative_peak": 2.1230854138055978e-06,
+        "relative_l2": 1.2104042070859578e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=5))",
+        "peak": 143887286272.0,
+        "error": 1297856.0,
+        "relative_peak": 9.019949111741351e-06,
+        "relative_l2": 6.119298632256687e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=0))",
+        "peak": 1214409856.0,
+        "error": 5208.0,
+        "relative_peak": 4.288502744167452e-06,
+        "relative_l2": 3.546660991560202e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=1))",
+        "peak": 487398976.0,
+        "error": 3960.0,
+        "relative_peak": 8.124760606801111e-06,
+        "relative_l2": 6.132092039479176e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=2))",
+        "peak": 536550464.0,
+        "error": 4888.0,
+        "relative_peak": 9.110047102671036e-06,
+        "relative_l2": 5.910389518248849e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=3))",
+        "peak": 46880137216.0,
+        "error": 81920.0,
+        "relative_peak": 1.7474351583604376e-06,
+        "relative_l2": 1.0504965075597283e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=4))",
+        "peak": 10501890048.0,
+        "error": 29184.0,
+        "relative_peak": 2.7789283516216072e-06,
+        "relative_l2": 2.3782693006069167e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=5))",
+        "peak": 506074752.0,
+        "error": 3571.5,
+        "relative_peak": 7.057257817912244e-06,
+        "relative_l2": 8.032545338210184e-06
+      },
+      {
+        "path": "(GetAttrKey(name='powers'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='timestamps'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_flux_re'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_flux_im'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_phase_re'),)",
+        "peak": 1.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_phase_im'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='dft_vec_re'),)",
+        "peak": 21783330.0,
+        "error": 1992.0,
+        "relative_peak": 9.14460736719317e-05,
+        "relative_l2": 0.00013316060358192772
+      },
+      {
+        "path": "(GetAttrKey(name='dft_vec_im'),)",
+        "peak": 21398184.0,
+        "error": 2056.5,
+        "relative_peak": 9.610628640262182e-05,
+        "relative_l2": 8.043010893743485e-05
+      },
+      {
+        "path": "(GetAttrKey(name='dft_weight_sum'),)",
+        "peak": 256.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='t'),)",
+        "peak": 3.7469091956725264e-14,
+        "error": 8.131516293641283e-20,
+        "relative_peak": 2.17019304952272e-06,
+        "relative_l2": 2.170193056372227e-06
+      }
+    ],
+    "monitors": [
+      {
+        "path": "(GetAttrKey(name='ex'),)",
+        "peak": 14599954.0,
+        "error": 8.5,
+        "relative_peak": 5.821936151305683e-07,
+        "relative_l2": 7.352406328209327e-07
+      },
+      {
+        "path": "(GetAttrKey(name='ey'),)",
+        "peak": 17896348.0,
+        "error": 15.5,
+        "relative_peak": 8.660984911558492e-07,
+        "relative_l2": 8.654023986309767e-07
+      },
+      {
+        "path": "(GetAttrKey(name='ez'),)",
+        "peak": 9735663.0,
+        "error": 5.056396484375,
+        "relative_peak": 5.193684790008652e-07,
+        "relative_l2": 1.1418374015192967e-06
+      },
+      {
+        "path": "(GetAttrKey(name='hx'),)",
+        "peak": 72673.28125,
+        "error": 0.06640625,
+        "relative_peak": 9.137643004113014e-07,
+        "relative_l2": 8.66717243752646e-07
+      },
+      {
+        "path": "(GetAttrKey(name='hy'),)",
+        "peak": 37201.25390625,
+        "error": 0.041015625,
+        "relative_peak": 1.1025334012493908e-06,
+        "relative_l2": 1.4695741583636845e-06
+      },
+      {
+        "path": "(GetAttrKey(name='hz'),)",
+        "peak": 151067.4375,
+        "error": 0.140625,
+        "relative_peak": 9.308756561121916e-07,
+        "relative_l2": 9.278846846427768e-07
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=0))",
+        "peak": 138609541120.0,
+        "error": 826880.0,
+        "relative_peak": 5.96553450302628e-06,
+        "relative_l2": 6.5838203227031045e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=1))",
+        "peak": 344548212736.0,
+        "error": 1466368.0,
+        "relative_peak": 4.2559152704807716e-06,
+        "relative_l2": 3.5700745684152935e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=2))",
+        "peak": 112045785088.0,
+        "error": 1042432.0,
+        "relative_peak": 9.303625291940085e-06,
+        "relative_l2": 8.328217518283054e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=3))",
+        "peak": 936583036928.0,
+        "error": 2195456.0,
+        "relative_peak": 2.344112495568053e-06,
+        "relative_l2": 3.3828002869995544e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=4))",
+        "peak": 3750496305152.0,
+        "error": 7340032.0,
+        "relative_peak": 1.9570828505862304e-06,
+        "relative_l2": 1.2586125421876204e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_h_terms'), SequenceKey(idx=5))",
+        "peak": 143887286272.0,
+        "error": 1412096.0,
+        "relative_peak": 9.813903900658868e-06,
+        "relative_l2": 6.079464583308436e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=0))",
+        "peak": 1214409856.0,
+        "error": 4584.0,
+        "relative_peak": 3.774672922285637e-06,
+        "relative_l2": 3.493172471280559e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=1))",
+        "peak": 487398976.0,
+        "error": 3800.0,
+        "relative_peak": 7.796487450970763e-06,
+        "relative_l2": 5.977105502097402e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=2))",
+        "peak": 536550464.0,
+        "error": 4912.0,
+        "relative_peak": 9.154777284844544e-06,
+        "relative_l2": 5.9274407249176875e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=3))",
+        "peak": 46880137216.0,
+        "error": 59392.0,
+        "relative_peak": 1.2668904898113172e-06,
+        "relative_l2": 1.107465436689381e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=4))",
+        "peak": 10501890048.0,
+        "error": 26624.0,
+        "relative_peak": 2.5351627067425187e-06,
+        "relative_l2": 2.3634136141481576e-06
+      },
+      {
+        "path": "(GetAttrKey(name='cpml_psi_e_terms'), SequenceKey(idx=5))",
+        "peak": 506074752.0,
+        "error": 3688.0,
+        "relative_peak": 7.2874609638696225e-06,
+        "relative_l2": 7.888053914939519e-06
+      },
+      {
+        "path": "(GetAttrKey(name='powers'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='timestamps'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_flux_re'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_flux_im'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_phase_re'),)",
+        "peak": 1.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='freq_phase_im'),)",
+        "peak": 0.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='dft_vec_re'),)",
+        "peak": 21783330.0,
+        "error": 1990.0,
+        "relative_peak": 9.135426034495185e-05,
+        "relative_l2": 0.000133110472233966
+      },
+      {
+        "path": "(GetAttrKey(name='dft_vec_im'),)",
+        "peak": 21398184.0,
+        "error": 2056.5,
+        "relative_peak": 9.610628640262182e-05,
+        "relative_l2": 8.038736268645152e-05
+      },
+      {
+        "path": "(GetAttrKey(name='dft_weight_sum'),)",
+        "peak": 256.0,
+        "error": 0.0,
+        "relative_peak": 0.0,
+        "relative_l2": 0.0
+      },
+      {
+        "path": "(GetAttrKey(name='t'),)",
+        "peak": 3.7469091956725264e-14,
+        "error": 8.131516293641283e-20,
+        "relative_peak": 2.17019304952272e-06,
+        "relative_l2": 2.170193056372227e-06
+      }
+    ]
+  },
+  "native_sha256": "f306491d5fbf657fcc1b7f866525428bdb83beeba36f515e90023f4fd7671198"
+}

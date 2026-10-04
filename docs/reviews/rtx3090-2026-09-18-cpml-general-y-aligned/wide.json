@@ -1,0 +1,376 @@
+{
+  "study": "general_cpml_y",
+  "variants": {
+    "ordinary_queue": [
+      [
+        0,
+        1,
+        2
+      ],
+      0,
+      "0",
+      "oriented"
+    ],
+    "ordinary_auto": [
+      [
+        0,
+        1,
+        2
+      ],
+      0,
+      null,
+      "oriented"
+    ],
+    "retained_pair": [
+      [
+        0,
+        1,
+        2
+      ],
+      589824,
+      null,
+      "oriented"
+    ],
+    "merged": [
+      [
+        0,
+        1,
+        2
+      ],
+      589824,
+      null,
+      "half_y"
+    ],
+    "aligned": [
+      [
+        0,
+        1,
+        2
+      ],
+      589824,
+      null,
+      "half_y_aligned"
+    ],
+    "aligned_pad32": [
+      [
+        0,
+        1,
+        2
+      ],
+      598016,
+      null,
+      "half_y_aligned"
+    ],
+    "aligned_pad64": [
+      [
+        0,
+        1,
+        2
+      ],
+      606208,
+      null,
+      "half_y_aligned"
+    ]
+  },
+  "shape": [
+    128,
+    256,
+    512
+  ],
+  "steps": 256,
+  "presteps": 0,
+  "material": "binary",
+  "pml": 12,
+  "precision": "fp32",
+  "source": "mode",
+  "monitors": 2,
+  "frequencies": 3,
+  "monitor_type": "mode",
+  "logical_cells": 16777216,
+  "conversion_cost_included": true,
+  "native_sha256": "cff307b62e233f17527a4df892eae20f3edbe720abc2cc5a2f7e1247ea489bef",
+  "storage_sha256": "9ecc0fb03ba56429e3ad497cd5ce7092ec519aa3f45fb4211b25f0a47adef49c",
+  "state_sha256": [
+    "0f1dad66a7ef1efecf6d79862c7f021ceb034d9ae328ac5f72f74d7a0d6a59e0",
+    "18d7adb27855a83b023314c6a2cfedec0af06fe06955fe162aed4216441df77a",
+    "ca22cd76c7862412f00db1b69cde24d15e0782d55d96e943243de1f5ad65906a",
+    "796f81a65ade187f20c548e683148430b2e2218da12df61af4a1e256d5389649",
+    "6ff09020eacf2a22d864439f210c0dd23211f521cdf650f0d51c2746ab7ff7d4",
+    "f00dcd77e7788df726fba346527528391e1bf172af492db9958d36ff969d1262",
+    "6d7ea7ae1fa2283a6d5745fdf4f1c0b011b5f0a4cf05b05147adeef6d594d48d",
+    "694f6ee643cc0e3852702d4af1e0e0aee1d50f983f8662b9dbb5d711a6c4c144",
+    "43185033d3ef988a631c9ae1e2ebb838478328c67e1a1b7684e026d90543af72",
+    "01e07d3f2dee38059e7413da113a316f165a692a8fffa9975964971b664467ef",
+    "d7ada9f7b87cf412b1792fa20b4491942fafa5b37ccfc0e0b8010e66a7d4d30f",
+    "df4a05c2cd693d1ff9e111bf5a99b080abf70ed47ee09dd1bc70537eefbe88b2",
+    "7a110bc4b251ae35e2dd3d7a863f7aa78ed677c704583d7c386738c35e7e8347",
+    "8bbce042ccc3f1b1343b41379169bbc8bd0959637ab9b0aa0937ba6ca527542b",
+    "fbc64c7c4fa0e8e0014d8cb2bd634db7bdc39f8c98bc5ea8effc4a1cc86a85b7",
+    "6fa9c854920443bf99cdbcd8165a81ace74aa59839ee8b9bde076eccc8311a7f",
+    "627e44d016a8af6829a8d6a3f53b5f43c07e3cbe7308f0139d9dfcd48592e6c5",
+    "bfb8afa33faed1c9618e4349192116a692db8f1fe473a4b65e7385d51bbac317",
+    "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+    "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+    "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+    "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0",
+    "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0",
+    "f46913286d895f62d646314f400fc3d7a543cf34eb4ae56df87f43dc4582a36b",
+    "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0",
+    "19a9b0eb3572bcbee480f15089a756416b5ec8619f8f95fc78658f727be4fbf9",
+    "19a9b0eb3572bcbee480f15089a756416b5ec8619f8f95fc78658f727be4fbf9",
+    "6a8be7f6f12d448f5f2b8d085d1639a96c402326f1fc5a4e2e5f053faf1c9a1c",
+    "fa25a9962bc7fdb1705232befb5a59e0312f2f07d519e688e4f6695b4b3dd847",
+    "bf5e8ffa51a9e748985800c1d3d7f1a2a6ae7435136593ca8d9637e3f87c699c"
+  ],
+  "samples_s": {
+    "ordinary_queue": [
+      0.5126556780014653,
+      0.5129354010023235,
+      0.5134004409992485,
+      0.5133001529975445,
+      0.512774396000168,
+      0.5131696329990518,
+      0.5132733970021945,
+      0.5132857380012865,
+      0.5132891859975643,
+      0.5134110120015976,
+      0.5130821040002047,
+      0.5133317529980559,
+      0.5133095989986032,
+      0.512990040002478
+    ],
+    "ordinary_auto": [
+      0.4907298429970979,
+      0.4917068510003446,
+      0.4917419770026754,
+      0.49169168200023705,
+      0.4915506639990781,
+      0.49182709000160685,
+      0.491279874000611,
+      0.492246025998611,
+      0.49214692799796467,
+      0.49198656500084326,
+      0.4922257419966627,
+      0.49231165399760357,
+      0.49173040199821116,
+      0.49125646600077744
+    ],
+    "retained_pair": [
+      0.5634894379982143,
+      0.5656118010010687,
+      0.5659721939991869,
+      0.5658054899977287,
+      0.5655895549971319,
+      0.5656277779999073,
+      0.5631373799988069,
+      0.5655512209996232,
+      0.5630786270012322,
+      0.5629107730019314,
+      0.5632958530004544,
+      0.563033329002792,
+      0.5638984690012876,
+      0.5642259400010516
+    ],
+    "merged": [
+      0.5379933949989208,
+      0.5389878450005199,
+      0.5382479399995646,
+      0.5387062059999153,
+      0.5391260699980194,
+      0.539735913000186,
+      0.5391785350002465,
+      0.5378719580003235,
+      0.5404333660007978,
+      0.5409260659980646,
+      0.5406220660006511,
+      0.5401625650010828,
+      0.540131295001629,
+      0.5392821739987994
+    ],
+    "aligned": [
+      0.5379754909990879,
+      0.538637118999759,
+      0.5390338020006311,
+      0.5383795640009339,
+      0.5383695650016307,
+      0.5401391779996629,
+      0.5403988320031203,
+      0.5417299649998313,
+      0.542617256000085,
+      0.5422011249975185,
+      0.541921480999008,
+      0.542383713000163,
+      0.5415504240008886,
+      0.5423594359999697
+    ],
+    "aligned_pad32": [
+      0.5460699729992484,
+      0.5496976550020918,
+      0.5481349469991983,
+      0.5486643869990075,
+      0.5485111179987143,
+      0.5486837800017383,
+      0.5483640510028636,
+      0.5508453959992039,
+      0.5512576879991684,
+      0.5487194439992891,
+      0.5486147169976903,
+      0.5502169749997847,
+      0.5501433760000509,
+      0.5513185960007831
+    ],
+    "aligned_pad64": [
+      0.5457104279994383,
+      0.5452253490002477,
+      0.5455232970016368,
+      0.5475550789997214,
+      0.5483918350000749,
+      0.5486730199991143,
+      0.5484919219998119,
+      0.5483546420000494,
+      0.5480381169982138,
+      0.5479091839988541,
+      0.5492293269999209,
+      0.5481361069978448,
+      0.5489541889983229,
+      0.5486856259994966
+    ]
+  },
+  "timing_orders": [
+    [
+      "merged",
+      "aligned_pad32",
+      "aligned_pad64",
+      "ordinary_queue",
+      "aligned",
+      "ordinary_auto",
+      "retained_pair"
+    ],
+    [
+      "aligned_pad32",
+      "aligned_pad64",
+      "ordinary_queue",
+      "aligned",
+      "ordinary_auto",
+      "retained_pair",
+      "merged"
+    ],
+    [
+      "aligned_pad64",
+      "ordinary_queue",
+      "aligned",
+      "ordinary_auto",
+      "retained_pair",
+      "merged",
+      "aligned_pad32"
+    ],
+    [
+      "ordinary_queue",
+      "aligned",
+      "ordinary_auto",
+      "retained_pair",
+      "merged",
+      "aligned_pad32",
+      "aligned_pad64"
+    ],
+    [
+      "aligned",
+      "ordinary_auto",
+      "retained_pair",
+      "merged",
+      "aligned_pad32",
+      "aligned_pad64",
+      "ordinary_queue"
+    ],
+    [
+      "ordinary_auto",
+      "retained_pair",
+      "merged",
+      "aligned_pad32",
+      "aligned_pad64",
+      "ordinary_queue",
+      "aligned"
+    ],
+    [
+      "retained_pair",
+      "merged",
+      "aligned_pad32",
+      "aligned_pad64",
+      "ordinary_queue",
+      "aligned",
+      "ordinary_auto"
+    ],
+    [
+      "retained_pair",
+      "ordinary_auto",
+      "aligned",
+      "ordinary_queue",
+      "aligned_pad64",
+      "aligned_pad32",
+      "merged"
+    ],
+    [
+      "merged",
+      "retained_pair",
+      "ordinary_auto",
+      "aligned",
+      "ordinary_queue",
+      "aligned_pad64",
+      "aligned_pad32"
+    ],
+    [
+      "aligned_pad32",
+      "merged",
+      "retained_pair",
+      "ordinary_auto",
+      "aligned",
+      "ordinary_queue",
+      "aligned_pad64"
+    ],
+    [
+      "aligned_pad64",
+      "aligned_pad32",
+      "merged",
+      "retained_pair",
+      "ordinary_auto",
+      "aligned",
+      "ordinary_queue"
+    ],
+    [
+      "ordinary_queue",
+      "aligned_pad64",
+      "aligned_pad32",
+      "merged",
+      "retained_pair",
+      "ordinary_auto",
+      "aligned"
+    ],
+    [
+      "aligned",
+      "ordinary_queue",
+      "aligned_pad64",
+      "aligned_pad32",
+      "merged",
+      "retained_pair",
+      "ordinary_auto"
+    ],
+    [
+      "ordinary_auto",
+      "aligned",
+      "ordinary_queue",
+      "aligned_pad64",
+      "aligned_pad32",
+      "merged",
+      "retained_pair"
+    ]
+  ],
+  "median_gcups": {
+    "ordinary_queue": 8.367695828814451,
+    "ordinary_auto": 8.734291654155603,
+    "retained_pair": 7.61435044171816,
+    "merged": 7.964995405324126,
+    "aligned": 7.939313737989365,
+    "aligned_pad32": 7.827509892564302,
+    "aligned_pad64": 7.834023770698039
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "platform": "macOS-15.6-arm64-arm-64bit-Mach-O",
+  "python": "3.13.9",
+  "cases": [
+    {
+      "subdivisions": 8,
+      "tetrahedra": 3072,
+      "surface_triangles": 768,
+      "boundary_seconds": 0.004831750000448665,
+      "reference_boundary_seconds": 0.16052933299943106,
+      "boundary_speedup": 33.223849119785726,
+      "import_seconds": 0.005307333998644026,
+      "compile_seconds": 0.002054749998933403,
+      "raster_seconds": 0.01925512500019977,
+      "absolute_volume_error": 3.6954879156780862e-09,
+      "peak_process_rss_mib": 190.234375
+    },
+    {
+      "subdivisions": 16,
+      "tetrahedra": 24576,
+      "surface_triangles": 3072,
+      "boundary_seconds": 0.037377042001025984,
+      "import_seconds": 0.04082487500272691,
+      "compile_seconds": 0.008233708998886868,
+      "raster_seconds": 0.04061733300113701,
+      "absolute_volume_error": 3.6954879156780862e-09,
+      "peak_process_rss_mib": 210.140625
+    },
+    {
+      "subdivisions": 24,
+      "tetrahedra": 82944,
+      "surface_triangles": 6912,
+      "boundary_seconds": 0.12888691700209165,
+      "import_seconds": 0.14736645799712278,
+      "compile_seconds": 0.019974500002717832,
+      "raster_seconds": 0.07723325000188197,
+      "absolute_volume_error": 3.6954879156780862e-09,
+      "peak_process_rss_mib": 269.46875
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "baseline_commit": "b0a5ff32d70755aa3c6f5d20e8ae9a5fdfe4ee7b",
+  "origin_main": "14f8c47d",
+  "cuda_toolkit": "13.3.73",
+  "driver": "610.43.03",
+  "jax": "0.9.0",
+  "gpu": "RTX 3090 24 GiB",
+  "power_limit_w": 370,
+  "board_maximum_power_w": 450,
+  "build_architectures": [
+    80,
+    86,
+    89,
+    90
+  ],
+  "final_extension_sha256": "67d647a29ab09025bf13d4bdfdfc4c2e09b5ceee888b639d171553e97b5aa0be",
+  "build_notes": "Release; fast math OFF; --allow-unsupported-compiler. CUDA 12 CI and H100 validation remain outstanding."
+}

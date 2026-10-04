@@ -1,0 +1,655 @@
+{
+  "SiO2": {
+    "name": "Silica",
+    "default": "Malitson1965",
+    "variants": {
+      "Malitson1965": {
+        "medium": {
+          "epsilon_inf": 1.0,
+          "frequency_range": [
+            428274940000000.0,
+            749481145000000.0
+          ],
+          "poles": [
+            [
+              [
+                0.0,
+                -2.753703447457036e+16
+              ],
+              [
+                0.0,
+                9585177701567046.0
+              ]
+            ],
+            [
+              [
+                0.0,
+                -1.6204653138286818e+16
+              ],
+              [
+                0.0,
+                3305284166665442.0
+              ]
+            ],
+            [
+              [
+                0.0,
+                -190341645341951.62
+              ],
+              [
+                0.0,
+                85413852828253.77
+              ]
+            ]
+          ]
+        },
+        "nk_file": "SiO2-Malitson.csv",
+        "description": "Silica, visible band (400\u2013700 nm).",
+        "source": "https://raw.githubusercontent.com/polyanskiy/refractiveindex.info-database/c5c2f188e848453def5970e347399d653df2ffc2/database/data/main/SiO2/nk/Malitson.yml",
+        "license": "CC0-1.0",
+        "source_file": "SiO2-Malitson.yml",
+        "source_sha256": "c587670f397241ecb93a1af3279d6fe7ed67888e587e399074b0eab729c92b52",
+        "references": "1) I. H. Malitson.\nInterspecimen comparison of the refractive index of fused silica.\n<a href=\"https://doi.org/10.1364/JOSA.55.001205\"><i>J. Opt. Soc. Am.</i> <b>55</b>, 1205-1208 (1965)</a><br>\n2) C. Z. Tan.\nDetermination of refractive index of silica glass for infrared wavelengths by IR spectroscopy.\n<a href=\"https://doi.org/10.1016/S0022-3093(97)00438-9\"><i>J. Non-Cryst. Solids</i> <b>223</b>, 158-163 (1998)</a><br>\n* Sellmeier formula is reported in Ref. 1 for the 0.21\u20133.71 \u03bcm wavelength range. Ref. 2 verifies the validity of the formula up to 6.7 \u03bcm.\n",
+        "conditions": "Fused silica, 20 \u00b0C\n",
+        "fit": {
+          "method": "Exact Sellmeier conversion",
+          "rms_n": 0.0,
+          "rms_k": 0.0,
+          "max_abs_n": 2.220446049250313e-16,
+          "max_abs_k": 0.0
+        }
+      }
+    }
+  },
+  "SiN": {
+    "name": "Silicon nitride",
+    "default": "Philipp1973",
+    "variants": {
+      "Philipp1973": {
+        "medium": {
+          "epsilon_inf": 1.0,
+          "frequency_range": [
+            428274940000000.0,
+            749481145000000.0
+          ],
+          "poles": [
+            [
+              [
+                0.0,
+                -1.3486443526232214e+16
+              ],
+              [
+                0.0,
+                1.95142094602817e+16
+              ]
+            ]
+          ]
+        },
+        "nk_file": "Si3N4-Philipp.csv",
+        "description": "Silicon nitride, visible band (400\u2013700 nm).",
+        "source": "https://raw.githubusercontent.com/polyanskiy/refractiveindex.info-database/c5c2f188e848453def5970e347399d653df2ffc2/database/data/main/Si3N4/nk/Philipp.yml",
+        "license": "CC0-1.0",
+        "source_file": "Si3N4-Philipp.yml",
+        "source_sha256": "0f100f6291db2ace85cf342d34cac0ece7dd5b7140c39020b4559003d36bbb23",
+        "references": "1) H. R. Philipp.\nOptical properties of silicon nitride.\n<a href=\"https://doi.org/10.1149/1.2403440\"><i>J. Electrochim. Soc.</i> <b>120</b>, 295-300 (1973)</a><br>\n2) T. B\u00e5\u00e5k.\nSilicon oxynitride; a material for GRIN optics.\n<a href=\"https://doi.org/10.1364/AO.21.001069\"><i>Appl. Opt.</i> <b>21</b>, 1069-1072 (1982)</a><br>\n* Ref.2 provides a dispersion formula based on data from Ref. 1\n",
+        "conditions": "",
+        "fit": {
+          "method": "Exact Sellmeier conversion",
+          "rms_n": 0.0,
+          "rms_k": 0.0,
+          "max_abs_n": 4.440892098500626e-16,
+          "max_abs_k": 0.0
+        }
+      },
+      "Horiba2006": {
+        "medium": {
+          "epsilon_inf": 2.32,
+          "frequency_range": [
+            428274940000000.0,
+            749481145000000.0
+          ],
+          "poles": [
+            [
+              [
+                -302334222151229.4,
+                -9863009385232970.0
+              ],
+              [
+                0.0,
+                6244215164693548.0
+              ]
+            ]
+          ]
+        },
+        "nk_file": "SiN-Horiba2006.csv",
+        "description": "Published single-Lorentz model, independently implemented.",
+        "source": "https://www.horiba.com/fileadmin/uploads/Scientific/Downloads/OpticalSchool_CN/TN/ellipsometer/Lorentz_Dispersion_Model.pdf",
+        "license": "Apache-2.0",
+        "references": "HORIBA Jobin Yvon, Lorentz Dispersion Model, Technical Note 08, September 2006; equation 9, page 4 parameter table.",
+        "conditions": "Analytic bulk model; sampled values are calculated, not measured. Apache-2.0 covers this implementation, not the source publication.",
+        "fit": {
+          "method": "Exact Lorentz conversion; no numerical fitting",
+          "epsilon_inf": 2.32,
+          "epsilon_static": 3.585,
+          "resonance_energy_eV": 6.495,
+          "damping_energy_eV": 0.398
+        }
+      }
+    }
+  },
+  "aSi": {
+    "name": "Amorphous silicon",
+    "default": "Pierce1972",
+    "variants": {
+      "Pierce1972": {
+        "medium": {
+          "epsilon_inf": 5.936937461121036,
+          "frequency_range": [
+            428274940000000.0,
+            749481145000000.0
+          ],
+          "poles": [
+            [
+              [
+                -137201083378.0,
+                0.0
+              ],
+              [
+                2369279074.49535,
+                0.0
+              ]
+            ],
+            [
+              [
+                -8261034036293059.0,
+                0.0
+              ],
+              [
+                -2369279074.49535,
+                0.0
+              ]
+            ],
+            [
+              [
+                -745373950620942.6,
+                4094909198925310.0
+              ],
+              [
+                0.0,
+                -4899165735649315.0
+              ]
+            ],
+            [
+              [
+                -674213018333252.6,
+                5075828517891152.0
+              ],
+              [
+                0.0,
+                -1.4031034915692434e+16
+              ]
+            ]
+          ]
+        },
+        "nk_file": "Si-Pierce.csv",
+        "description": "Amorphous silicon, visible band (400\u2013700 nm).",
+        "source": "https://raw.githubusercontent.com/polyanskiy/refractiveindex.info-database/c5c2f188e848453def5970e347399d653df2ffc2/database/data/main/Si/nk/Pierce.yml",
+        "license": "CC0-1.0",
+        "source_file": "Si-Pierce.yml",
+        "source_sha256": "b17a9b9b9a274bf4e565835f10784bdd0a0d299c3bd601209e4f99e1956914f9",
+        "references": "1) D. T. Pierce and W. E. Spicer.\nElectronic structure of amorphous Si from photoemission and optical studies.\n<a href=\"https://doi.org/10.1103/PhysRevB.5.3017\"><i>Phys. Rev. B</i> <b>5</b>, 3017-3029 (1972)</a><br>\n2) Handbook of Optical Constants of Solids, Edward D. Palik, ed. Academic Press, Boston, 1985<br>\n* Ref. 2 provides numerical values for the graphical data reported in Ref. 1\n",
+        "conditions": "Amorphous silicon (\u03b1-Si or a-Si). 60-nm film.\n",
+        "fit": {
+          "rms_epsilon": 0.3530687458214442,
+          "rms_n": 0.017361452502920014,
+          "rms_k": 0.036355782947980635,
+          "optimizer_success": true,
+          "evaluations": 37,
+          "method": "Positive Lorentz fit to linearly interpolated n,k",
+          "interpolation_samples": 151,
+          "oscillators": 3,
+          "max_abs_n": 0.05103838046939568,
+          "max_abs_k": 0.0880297618812591
+        }
+      },
+      "Horiba2006": {
+        "medium": {
+          "epsilon_inf": 3.109,
+          "frequency_range": [
+            428274940000000.0,
+            749481145000000.0
+          ],
+          "poles": [
+            [
+              [
+                -1458496750076282.2,
+                -5789844327200832.0
+              ],
+              [
+                0.0,
+                4.485863370051097e+16
+              ]
+            ]
+          ]
+        },
+        "nk_file": "aSi-Horiba2006.csv",
+        "description": "Published single-Lorentz model, independently implemented.",
+        "source": "https://www.horiba.com/fileadmin/uploads/Scientific/Downloads/OpticalSchool_CN/TN/ellipsometer/Lorentz_Dispersion_Model.pdf",
+        "license": "Apache-2.0",
+        "references": "HORIBA Jobin Yvon, Lorentz Dispersion Model, Technical Note 08, September 2006; equation 9, page 4 parameter table.",
+        "conditions": "Analytic bulk model; sampled values are calculated, not measured. Apache-2.0 covers this implementation, not the source publication.",
+        "fit": {
+          "method": "Exact Lorentz conversion; no numerical fitting",
+          "epsilon_inf": 3.109,
+          "epsilon_static": 17.68,
+          "resonance_energy_eV": 3.93,
+          "damping_energy_eV": 1.92
+        }
+      }
+    }
+  },
+  "Al": {
+    "name": "Aluminum",
+    "default": "Rakic1995",
+    "variants": {
+      "Rakic1995": {
+        "medium": {
+          "epsilon_inf": 1.0,
+          "frequency_range": [
+            428274940000000.0,
+            749481145000000.0
+          ],
+          "poles": [
+            [
+              [
+                -27107594.32820393,
+                328278727233296.7
+              ],
+              [
+                0.0,
+                -4.8929254696099725e+17
+              ]
+            ],
+            [
+              [
+                -920553631354115.2,
+                1820108820886640.0
+              ],
+              [
+                0.0,
+                -5.7623654390828456e+16
+              ]
+            ],
+            [
+              [
+                -133489585220442.95,
+                9.475750866287224e+16
+              ],
+              [
+                0.0,
+                -721579887.9595431
+              ]
+            ],
+            [
+              [
+                -21969662557.5,
+                0.0
+              ],
+              [
+                3242.80649703324,
+                0.0
+              ]
+            ],
+            [
+              [
+                -2451073834132097.0,
+                0.0
+              ],
+              [
+                -3242.80649703324,
+                0.0
+              ]
+            ]
+          ]
+        },
+        "nk_file": "Al-Rakic.csv",
+        "description": "Aluminum, visible band (400\u2013700 nm).",
+        "source": "https://raw.githubusercontent.com/polyanskiy/refractiveindex.info-database/c5c2f188e848453def5970e347399d653df2ffc2/database/data/main/Al/nk/Rakic.yml",
+        "license": "CC0-1.0",
+        "source_file": "Al-Rakic.yml",
+        "source_sha256": "e93b31fe821551836e5b000949c67c633b8a1ca1f2c5549f4db0f1c03b24844d",
+        "references": "A. D. Raki\u0107.\nAlgorithm for the determination of intrinsic optical constants of metal films: application to aluminum.\n<a href=\"https://doi.org/10.1364/AO.34.004755\"><i>Appl. Opt.</i> <b>34</b>, 4755-4767 (1995)</a>\n",
+        "conditions": "\\Optical and electron-energy-loss data for evaporated-aluminum films have been critically analyzed and used in an iterative, self-consistent algorithm that represents a combination of the Kramers-Kronig analysis and the semiquantum-model application.\"\"\n",
+        "fit": {
+          "rms_epsilon": 0.2515659270709244,
+          "rms_n": 0.015222769294335373,
+          "rms_k": 0.008769053912232027,
+          "optimizer_success": true,
+          "evaluations": 103,
+          "method": "Positive Lorentz fit to linearly interpolated n,k",
+          "interpolation_samples": 151,
+          "oscillators": 4,
+          "max_abs_n": 0.04968962780261488,
+          "max_abs_k": 0.015389631712982244
+        }
+      }
+    }
+  },
+  "CMOS_RGB": {
+    "name": "Synthetic RGB filters",
+    "default": "green",
+    "variants": {
+      "red": {
+        "medium": {
+          "epsilon_inf": 1.0,
+          "frequency_range": [
+            428274940000000.0,
+            749481145000000.0
+          ],
+          "poles": [
+            [
+              [
+                -1425613759675896.0,
+                0.0
+              ],
+              [
+                5503399910120744.0,
+                0.0
+              ]
+            ],
+            [
+              [
+                -436759478786111.6,
+                -2298915226928268.0
+              ],
+              [
+                -1593860044370003.5,
+                -636983493301969.8
+              ]
+            ],
+            [
+              [
+                -49460287570462.7,
+                -2789887641559467.5
+              ],
+              [
+                -960151307560.172,
+                -1006505667920.5693
+              ]
+            ],
+            [
+              [
+                -77854380462795.19,
+                -3052404800216077.5
+              ],
+              [
+                65882676741204.3,
+                -22159936666625.668
+              ]
+            ],
+            [
+              [
+                -131999171084961.33,
+                -3055353906916116.5
+              ],
+              [
+                35478153934632.26,
+                12409549833735.219
+              ]
+            ]
+          ]
+        },
+        "nk_file": "red.csv",
+        "description": "Synthetic red filter fitted to smooth absorption targets.",
+        "source": "Analytic definition in scripts/build_material_library.py",
+        "license": "Apache-2.0",
+        "fit": {
+          "method": "Independent scalar vector fitting with constrained passive residues",
+          "weighted_rms_epsilon": 0.04621267263655295,
+          "tolerance_rms": 0.02,
+          "tolerance_met": false,
+          "weights": [
+            0.1,
+            1.9
+          ],
+          "epsilon_inf": 1.0,
+          "max_poles": 9,
+          "rational_order": 9,
+          "pole_entries": 5,
+          "num_iters": 200,
+          "selected_iteration": 100,
+          "trials": 72,
+          "relaxed": false,
+          "real_initial_poles": true,
+          "logspacing": true,
+          "passivity_audit_min": 0.030015852925532827,
+          "optimizer_success": true,
+          "rms_n": 0.13176827646342468,
+          "rms_k": 0.022916091772430116,
+          "fitting_samples": 200,
+          "validation_samples": 3001,
+          "thickness_m": 1e-06,
+          "max_passband_index_error": 0.3238289851296958,
+          "max_passband_transmission_error": 0.08780438727022777,
+          "max_transmission_error": 0.08780438727022777,
+          "transmission_target_met": false,
+          "index_target_met": false
+        }
+      },
+      "green": {
+        "medium": {
+          "epsilon_inf": 1.0,
+          "frequency_range": [
+            428274940000000.0,
+            749481145000000.0
+          ],
+          "poles": [
+            [
+              [
+                -634532177340016.6,
+                -2402472876404406.0
+              ],
+              [
+                1139821141146829.0,
+                -92849638353470.3
+              ]
+            ],
+            [
+              [
+                -82947533703654.69,
+                -3051740524744878.0
+              ],
+              [
+                -43166225617555.91,
+                58364940336173.55
+              ]
+            ],
+            [
+              [
+                -83934369196636.9,
+                -3079206627418378.5
+              ],
+              [
+                -16968301708733.418,
+                -56353608254458.66
+              ]
+            ],
+            [
+              [
+                -605510453421549.0,
+                -3198066017163828.5
+              ],
+              [
+                -505764919829369.7,
+                -883484982734591.8
+              ]
+            ],
+            [
+              [
+                -4697229781871829.0,
+                -3591834216063042.5
+              ],
+              [
+                35057334064125.773,
+                7645403115837134.0
+              ]
+            ],
+            [
+              [
+                -157119764245881.97,
+                -3849715390102523.0
+              ],
+              [
+                33765507447719.156,
+                -46219087157495.664
+              ]
+            ],
+            [
+              [
+                -122307486610389.45,
+                -3884053691001177.5
+              ],
+              [
+                94685918985185.7,
+                16059522035362.83
+              ]
+            ]
+          ]
+        },
+        "nk_file": "green.csv",
+        "description": "Synthetic green filter fitted to smooth absorption targets.",
+        "source": "Analytic definition in scripts/build_material_library.py",
+        "license": "Apache-2.0",
+        "fit": {
+          "method": "Independent scalar vector fitting with constrained passive residues",
+          "weighted_rms_epsilon": 0.059124320588102984,
+          "tolerance_rms": 0.02,
+          "tolerance_met": false,
+          "weights": [
+            0.1,
+            1.9
+          ],
+          "epsilon_inf": 1.0,
+          "max_poles": 9,
+          "rational_order": 14,
+          "pole_entries": 7,
+          "num_iters": 200,
+          "selected_iteration": 4,
+          "trials": 72,
+          "relaxed": true,
+          "real_initial_poles": false,
+          "logspacing": true,
+          "passivity_audit_min": 8.003849981824061e-10,
+          "optimizer_success": true,
+          "rms_n": 0.1960954853217951,
+          "rms_k": 0.04087446950080132,
+          "fitting_samples": 200,
+          "validation_samples": 3001,
+          "thickness_m": 1e-06,
+          "max_passband_index_error": 0.3395622331217414,
+          "max_passband_transmission_error": 0.1555697407197726,
+          "max_transmission_error": 0.19562247737065896,
+          "transmission_target_met": false,
+          "index_target_met": false
+        }
+      },
+      "blue": {
+        "medium": {
+          "epsilon_inf": 1.0,
+          "frequency_range": [
+            428274940000000.0,
+            749481145000000.0
+          ],
+          "poles": [
+            [
+              [
+                -1.1066577972236234e+16,
+                0.0
+              ],
+              [
+                1.1254977394853072e+16,
+                0.0
+              ]
+            ],
+            [
+              [
+                -50768486488588.75,
+                0.0
+              ],
+              [
+                871497027615525.8,
+                0.0
+              ]
+            ],
+            [
+              [
+                -137326272539643.44,
+                -3901117599129586.5
+              ],
+              [
+                -202705335139279.3,
+                -53380550786151.58
+              ]
+            ],
+            [
+              [
+                -187874016367126.72,
+                -3919888970140521.0
+              ],
+              [
+                92876236258619.47,
+                53888713210172.17
+              ]
+            ],
+            [
+              [
+                -816437413153060.2,
+                -4143777071401880.0
+              ],
+              [
+                -729675972316040.0,
+                -478516790678585.9
+              ]
+            ]
+          ]
+        },
+        "nk_file": "blue.csv",
+        "description": "Synthetic blue filter fitted to smooth absorption targets.",
+        "source": "Analytic definition in scripts/build_material_library.py",
+        "license": "Apache-2.0",
+        "fit": {
+          "method": "Independent scalar vector fitting with constrained passive residues",
+          "weighted_rms_epsilon": 0.0477086416097823,
+          "tolerance_rms": 0.02,
+          "tolerance_met": false,
+          "weights": [
+            0.1,
+            1.9
+          ],
+          "epsilon_inf": 1.0,
+          "max_poles": 9,
+          "rational_order": 8,
+          "pole_entries": 5,
+          "num_iters": 200,
+          "selected_iteration": 5,
+          "trials": 72,
+          "relaxed": true,
+          "real_initial_poles": true,
+          "logspacing": true,
+          "passivity_audit_min": 0.026312993478362134,
+          "optimizer_success": true,
+          "rms_n": 0.15833293130770465,
+          "rms_k": 0.03726940823816155,
+          "fitting_samples": 200,
+          "validation_samples": 3001,
+          "thickness_m": 1e-06,
+          "max_passband_index_error": 0.2944586482328788,
+          "max_passband_transmission_error": 0.2490021404773834,
+          "max_transmission_error": 0.2490021404773834,
+          "transmission_target_met": false,
+          "index_target_met": false
+        }
+      }
+    }
+  }
+}

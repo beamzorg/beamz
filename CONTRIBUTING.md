@@ -108,6 +108,49 @@ Before submitting, confirm that:
 The pull request template asks for the same evidence and must be completed by
 the author.
 
+## Releases and Zenodo citations
+
+`CITATION.cff` is the citation metadata source for GitHub and Zenodo. Keep
+its title, authors, ORCIDs, abstract, and license accurate. Additional authors
+can be added for future releases; contributor acknowledgments can be maintained
+below. Avoid adding `.zenodo.json` unless Zenodo-specific metadata is needed:
+Zenodo gives that file precedence over `CITATION.cff`.
+
+Before the first archived release, sign in to the existing Quentin Wach Zenodo
+account used for Image Ranker. In the profile menu, open **GitHub**, select
+**Sync now**, and enable `beamzorg/beamz`. Confirm that Image Ranker is visible
+in the same account. If BeamZ is missing, check repository admin permissions
+and the `beamzorg` organization's access settings for the Zenodo GitHub app.
+See [Zenodo's connection guide](https://help.zenodo.org/docs/github/enable-repository/).
+
+For each planned release:
+
+1. Review citation credits and metadata before preparing the release.
+2. Use `release_version.py` with the chosen version as usual. It updates and
+   stages `CITATION.cff` with the Python and Rust versions. The initial citation
+   version matches the current package; this setup does not archive `v0.5.1`.
+   Do not invent a future release date or reuse a previous release's DOI in the
+   metadata for a new release.
+3. Validate the citation with
+   `uv tool run --python 3.11 --from cffconvert==2.0.0 cffconvert --validate` and
+   check version agreement with `python release_version.py --verify X.Y.Z`
+   (replace `X.Y.Z` with the chosen version). CI repeats both checks.
+4. Let the existing release workflow validate and build the package and publish
+   the GitHub release. Zenodo's native integration archives the published
+   release; a tag alone is not enough. No Zenodo API token is needed in CI.
+5. Check the new Zenodo record's title, author, ORCID, license, version, and
+   archived source. Confirm it belongs to the existing BeamZ version series
+   after the first deposit.
+6. After the first archive, add a README badge using the **concept DOI** (all
+   versions). Update the README's BibTeX and plain-text citation with the
+   **version DOI**, version, release year, and Zenodo as publisher. Remove the
+   pending-archive text. Repeat the citation update after subsequent releases.
+   Keep version-specific DOIs out of the rolling `CITATION.cff` so that a new
+   release cannot inherit the previous release's DOI.
+
+See [Zenodo's release guide](https://help.zenodo.org/docs/github/archive-software/github-upload/)
+and [DOI versioning documentation](https://zenodo.org/help/versioning).
+
 ## Historical contributors
 
 BeamZ gratefully acknowledges contributions that predate the repository's
@@ -117,6 +160,10 @@ current Git history.
   dimensions and field-array ordering in BeamZ's original 2D FDTD simulator.
   His contribution was merged in [PR #4](https://github.com/beamzorg/beamz/pull/4)
   in 2025, before the repository history was squashed.
+- [Vahid Ansari (`@vvahidd`)](https://github.com/vvahidd) independently
+  identified the CPML broadcast-profile padding issue in device sharding and
+  supplied focused regression evidence in
+  [PR #276](https://github.com/beamzorg/beamz/pull/276) in 2026.
 
 ## Repository map
 

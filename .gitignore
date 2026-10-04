@@ -31,6 +31,7 @@ ENV/
 
 # Test, coverage, and type-checker artifacts
 .coverage
+.coverage.*
 coverage.json
 coverage.xml
 htmlcov/
@@ -77,6 +78,14 @@ validation-results.json
 /wip/
 /benchmarks/results/
 /benchmarks/*-results.json
+# Generated benchmark evidence belongs in results/ or an external archive.
+/benchmarks/reports/**/*.mlir
+/benchmarks/reports/**/*.hlo
+/benchmarks/reports/**/*.npz
+/benchmarks/reports/**/*.log
+/benchmarks/reports/**/*.jsonl
+/benchmarks/reports/**/raw/
+/benchmarks/reports/**/telemetry.csv
 /validation-results/
 /validation-artifacts/
 

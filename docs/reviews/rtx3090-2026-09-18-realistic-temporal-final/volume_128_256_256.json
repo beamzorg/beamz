@@ -1,0 +1,329 @@
+{
+  "case": {
+    "steps": 256,
+    "presteps": 0,
+    "pml": 12,
+    "material": "binary",
+    "source": "mode",
+    "monitors": 2,
+    "frequencies": 3,
+    "monitor_type": "mode",
+    "name": "volume_128_256_256",
+    "shape": [
+      128,
+      256,
+      256
+    ]
+  },
+  "correctness_reference": "auto_one_step",
+  "variants": {
+    "one_step": {
+      "cuda_flags": 128,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 1
+        }
+      ],
+      "compile_s": 0.4323191961739212,
+      "samples_s": [
+        0.25674611306749284,
+        0.25682251201942563,
+        0.2558469660580158,
+        0.2568065000232309,
+        0.2569384849630296,
+        0.25703304004855454
+      ],
+      "correctness_reference": "auto_one_step",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 8.362002915137719,
+      "paired_speedups": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "median_paired_speedup": 1.0
+    },
+    "16x8x16": {
+      "cuda_flags": 65664,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.12823424208909273,
+      "samples_s": [
+        0.3167777890339494,
+        0.31467758887447417,
+        0.31641475507058203,
+        0.316522513050586,
+        0.3164855199865997,
+        0.31581626692786813
+      ],
+      "correctness_reference": "fused_one_step",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 6.786167529492629,
+      "paired_speedups": [
+        0.8104927869168792,
+        0.8161449086285992,
+        0.8085810220858523,
+        0.8113372333240277,
+        0.8118491012603315,
+        0.81386890722529
+      ],
+      "median_paired_speedup": 0.8115931672921797
+    },
+    "single": {
+      "cuda_flags": 65664,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.12362756300717592,
+      "samples_s": [
+        0.2557014040648937,
+        0.2550435259472579,
+        0.2557384700048715,
+        0.25510616903193295,
+        0.2555686868727207,
+        0.25505894608795643
+      ],
+      "correctness_reference": "auto_one_step",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 8.410375498890627,
+      "paired_speedups": [
+        1.0040856600159067,
+        1.0069752253681423,
+        1.0004242461180841,
+        1.006665189625756,
+        1.0053598040787801,
+        1.0077397558128283
+      ],
+      "median_paired_speedup": 1.006012496852268
+    }
+  },
+  "orders": [
+    [
+      "one_step",
+      "single",
+      "16x8x16"
+    ],
+    [
+      "16x8x16",
+      "single",
+      "one_step"
+    ],
+    [
+      "16x8x16",
+      "one_step",
+      "single"
+    ],
+    [
+      "one_step",
+      "16x8x16",
+      "single"
+    ],
+    [
+      "single",
+      "one_step",
+      "16x8x16"
+    ],
+    [
+      "single",
+      "16x8x16",
+      "one_step"
+    ]
+  ],
+  "seed": 37,
+  "setup_s": 8.129562842892483,
+  "warmups": 4,
+  "jax": "0.9.0",
+  "device": "cuda:0",
+  "source_sha256": "fc8b92cf00c30eb809e5e1577fa9aa3166804cca5c7ba0a52a84ff02af444e7b",
+  "extension_sha256": "f306491d5fbf657fcc1b7f866525428bdb83beeba36f515e90023f4fd7671198",
+  "benchmark_sha256": "8198a0db2165c64c39bc0133269e630053f8e1032d3419f80f3085ddf0c12e67",
+  "builder_sha256": "8ef0831a2267c4b2e0a3d478d877dd27c295ca65b77640f052c2e410c2edc6f6",
+  "field_shapes": {
+    "ex": [
+      129,
+      257,
+      256
+    ],
+    "ey": [
+      129,
+      256,
+      257
+    ],
+    "ez": [
+      128,
+      257,
+      257
+    ],
+    "hx": [
+      128,
+      256,
+      257
+    ],
+    "hy": [
+      128,
+      257,
+      256
+    ],
+    "hz": [
+      129,
+      256,
+      256
+    ]
+  },
+  "field_dtype": "float32",
+  "cpml_dtypes": [
+    "float32"
+  ],
+  "monitor_regions": [
+    {
+      "center": [
+        1.3312e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    },
+    {
+      "center": [
+        1.5360000000000002e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    }
+  ],
+  "source_specs": 8
+}

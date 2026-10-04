@@ -13,6 +13,7 @@ from beamz.lattice import (
     adjacent_difference as _adjacent_difference,
 )
 from beamz.lattice import build_h_boundary_views_for_e_3d, component_axis_offsets_3d
+from beamz.simulation.boundary_masks import AxisMask
 from beamz.simulation.model import (
     BoundaryPlan,
     CpmlPackedSlabSpec,
@@ -154,6 +155,11 @@ def advance_e_from_coefficients(field, curl, decay, source):
 
 def apply_zero_mask(field, mask):
     """Apply a compiled PEC mask without changing the field representation."""
+    if isinstance(mask, AxisMask):
+        combined = jnp.asarray(False)
+        for profile in mask.profiles:
+            combined = combined | jnp.asarray(profile)
+        return jnp.where(combined, 0.0, field)
     return field if mask is None else jnp.where(mask, 0.0, field)
 
 
@@ -255,13 +261,20 @@ def compile_cpml_term(*, component, axis, sign, sigma, kappa, alpha, dt, full_sh
 
 
 def correct_cpml_term(derivative, psi, term):
-    """Apply one packed recurrence and return the signed corrected derivative."""
+    """Apply CPML in field precision, rounding only the stored auxiliary state."""
     if not term.slab.low and not term.slab.high:
         return term.sign * derivative, psi
-    derivative_slab = _pack_cpml_slab(derivative.astype(psi.dtype), term.slab)
-    psi = term.b.astype(psi.dtype) * psi + term.a.astype(psi.dtype) * derivative_slab
-    corrected = derivative_slab * term.inv_kappa.astype(psi.dtype) + psi
-    return term.sign * _unpack_cpml_slab(derivative, corrected, term.slab), psi
+    arithmetic_dtype = jnp.result_type(derivative.dtype, psi.dtype, jnp.float32)
+    derivative_slab = _pack_cpml_slab(derivative.astype(arithmetic_dtype), term.slab)
+    next_psi = (
+        term.b.astype(arithmetic_dtype) * psi.astype(arithmetic_dtype)
+        + term.a.astype(arithmetic_dtype) * derivative_slab
+    )
+    corrected = derivative_slab * term.inv_kappa.astype(arithmetic_dtype) + next_psi
+    return (
+        term.sign * _unpack_cpml_slab(derivative, corrected, term.slab),
+        next_psi.astype(psi.dtype),
+    )
 
 
 def fused_update_h_lossy_3d_material(
@@ -468,6 +481,7 @@ def cpml_update_h_from_e_3d(
     psi_terms,
     dt,
     magnetic_conductivities,
+    source_scales=None,
 ):
     """Advance 3D H fields and their six packed CPML memories."""
     derivatives = (
@@ -492,6 +506,14 @@ def cpml_update_h_from_e_3d(
         strict=True,
     )
     curls = tuple(corrected[index] + corrected[index + 1] for index in (0, 2, 4))
+    if source_scales is not None:
+        updated = tuple(
+            field - scale * (curl + sigma * field)
+            for field, curl, sigma, scale in zip(
+                (hx, hy, hz), curls, magnetic_conductivities, source_scales, strict=True
+            )
+        )
+        return *updated, tuple(next_psi)
     one = jnp.asarray(1.0, dtype=hx.dtype)
     dt_over_mu = jnp.asarray(dt, dtype=hx.dtype) / jnp.asarray(MU_0, dtype=hx.dtype)
     updated = []
@@ -569,10 +591,17 @@ def cpml_update_e_from_h_3d(
     inverse_diagonals=None,
     inverse_offdiagonal=None,
     logical_shapes=None,
+    periodic_axes=frozenset(),
+    source_scales=None,
 ):
     """Advance 3D E fields and their six packed CPML memories."""
     views = build_h_boundary_views_for_e_3d(
-        hx, hy, hz, metallic_edges, logical_shapes=logical_shapes
+        hx,
+        hy,
+        hz,
+        metallic_edges,
+        logical_shapes=logical_shapes,
+        periodic_axes=periodic_axes,
     )
     derivatives = (
         ("hz_y", 1, ex.shape),
@@ -606,6 +635,14 @@ def cpml_update_e_from_h_3d(
             inverse_offdiagonal,
             ("Ex", "Ey", "Ez"),
             dt,
+        )
+        return *updated, tuple(next_psi)
+    if source_scales is not None:
+        updated = tuple(
+            field + scale * (curl - sigma * field)
+            for field, curl, sigma, scale in zip(
+                (ex, ey, ez), curls, conductivities, source_scales, strict=True
+            )
         )
         return *updated, tuple(next_psi)
     one = jnp.asarray(1.0, dtype=ex.dtype)
@@ -644,10 +681,16 @@ def cpml_update_e_from_h_3d_metric(
     inverse_diagonals=None,
     inverse_offdiagonal=None,
     logical_shapes=None,
+    periodic_axes=frozenset(),
 ):
     """Advance 3D E/CPML using physical center-to-center distances."""
     views = build_h_boundary_views_for_e_3d(
-        hx, hy, hz, metallic_edges, logical_shapes=logical_shapes
+        hx,
+        hy,
+        hz,
+        metallic_edges,
+        logical_shapes=logical_shapes,
+        periodic_axes=periodic_axes,
     )
     derivatives = (
         ("hz_y", 1, metrics.h_to_e_y, ex.shape),
@@ -738,11 +781,15 @@ def tm_xy_curl_e_to_h_2d(ez, resolution, hx_shape, hy_shape, metallic_edges):
     )
 
 
-def _tm_xy_h_derivatives(hx, hy, resolution, metallic_edges):
+def _tm_xy_h_derivatives(hx, hy, resolution, metallic_edges, periodic_axes=frozenset()):
     """Return padded H derivatives on the complete Ez node lattice."""
     resolution = _scalar_like(resolution, hy.dtype)
-    left, right = hy[:, :1], hy[:, -1:]
-    bottom, top = hx[:1, :], hx[-1:, :]
+    left, right = (
+        (hy[:, -1:], hy[:, :1]) if 1 in periodic_axes else (hy[:, :1], hy[:, -1:])
+    )
+    bottom, top = (
+        (hx[-1:, :], hx[:1, :]) if 0 in periodic_axes else (hx[:1, :], hx[-1:, :])
+    )
     if "left" in metallic_edges:
         left = jnp.zeros_like(left)
     if "right" in metallic_edges:
@@ -758,9 +805,18 @@ def _tm_xy_h_derivatives(hx, hy, resolution, metallic_edges):
     return d_hy_dx, d_hx_dy
 
 
-def tm_xy_curl_h_to_e_2d(hx, hy, resolution, ez_shape, metallic_edges=frozenset()):
+def tm_xy_curl_h_to_e_2d(
+    hx,
+    hy,
+    resolution,
+    ez_shape,
+    metallic_edges=frozenset(),
+    periodic_axes=frozenset(),
+):
     """Differentiate Hx and Hy onto the native Ez support."""
-    d_hy_dx, d_hx_dy = _tm_xy_h_derivatives(hx, hy, resolution, metallic_edges)
+    d_hy_dx, d_hx_dy = _tm_xy_h_derivatives(
+        hx, hy, resolution, metallic_edges, periodic_axes
+    )
     curl = d_hy_dx - d_hx_dy
     if curl.shape != ez_shape:
         raise ValueError(f"curl(H) shape {curl.shape} does not match Ez {ez_shape}")
@@ -793,12 +849,15 @@ def tm_xy_cpml_curl_h_to_e_2d(
     resolution,
     ez_shape,
     metallic_edges,
+    periodic_axes=frozenset(),
     *,
     terms,
     psi_e_terms,
 ):
     """Correct the two H derivatives with canonical 2D CPML memory."""
-    derivatives = _tm_xy_h_derivatives(hx, hy, resolution, metallic_edges)
+    derivatives = _tm_xy_h_derivatives(
+        hx, hy, resolution, metallic_edges, periodic_axes
+    )
     corrected = tuple(
         correct_cpml_term(derivative, psi, term)
         for derivative, psi, term in zip(derivatives, psi_e_terms, terms, strict=True)
@@ -820,11 +879,15 @@ def te_xy_curl_e_to_h_2d(ex, ey, resolution, hz_shape):
     return curl
 
 
-def _te_xy_h_derivatives(hz, resolution, metallic_edges):
+def _te_xy_h_derivatives(hz, resolution, metallic_edges, periodic_axes=frozenset()):
     """Return padded Hz derivatives on the complete Ex and Ey supports."""
     resolution = _scalar_like(resolution, hz.dtype)
-    bottom, top = hz[:1, :], hz[-1:, :]
-    left, right = hz[:, :1], hz[:, -1:]
+    bottom, top = (
+        (hz[-1:, :], hz[:1, :]) if 0 in periodic_axes else (hz[:1, :], hz[-1:, :])
+    )
+    left, right = (
+        (hz[:, -1:], hz[:, :1]) if 1 in periodic_axes else (hz[:, :1], hz[:, -1:])
+    )
     if "bottom" in metallic_edges:
         bottom = jnp.zeros_like(bottom)
     if "top" in metallic_edges:
@@ -841,9 +904,18 @@ def _te_xy_h_derivatives(hz, resolution, metallic_edges):
     )
 
 
-def te_xy_curl_h_to_e_2d(hz, resolution, ex_shape, ey_shape, metallic_edges):
+def te_xy_curl_h_to_e_2d(
+    hz,
+    resolution,
+    ex_shape,
+    ey_shape,
+    metallic_edges,
+    periodic_axes=frozenset(),
+):
     """Differentiate Hz onto the canonical Ex and Ey supports."""
-    d_hz_dy, d_hz_dx = _te_xy_h_derivatives(hz, resolution, metallic_edges)
+    d_hz_dy, d_hz_dx = _te_xy_h_derivatives(
+        hz, resolution, metallic_edges, periodic_axes
+    )
     curls = d_hz_dy, -d_hz_dx
     if curls[0].shape != ex_shape or curls[1].shape != ey_shape:
         raise ValueError(
@@ -867,9 +939,17 @@ def te_xy_cpml_curl_e_to_h_2d(ex, ey, resolution, *, terms, psi_h_terms):
     return corrected[0][0] + corrected[1][0], tuple(item[1] for item in corrected)
 
 
-def te_xy_cpml_curl_h_to_e_2d(hz, resolution, metallic_edges, *, terms, psi_e_terms):
+def te_xy_cpml_curl_h_to_e_2d(
+    hz,
+    resolution,
+    metallic_edges,
+    periodic_axes=frozenset(),
+    *,
+    terms,
+    psi_e_terms,
+):
     """Correct the Hz derivatives used by the Ex and Ey updates."""
-    derivatives = _te_xy_h_derivatives(hz, resolution, metallic_edges)
+    derivatives = _te_xy_h_derivatives(hz, resolution, metallic_edges, periodic_axes)
     corrected = tuple(
         correct_cpml_term(derivative, psi, term)
         for derivative, psi, term in zip(derivatives, psi_e_terms, terms, strict=True)
@@ -885,9 +965,15 @@ def tm_xy_curl_e_to_h_2d_metric(ez, metrics):
     )
 
 
-def _tm_xy_h_derivatives_metric(hx, hy, metrics, metallic_edges):
-    left, right = hy[:, :1], hy[:, -1:]
-    bottom, top = hx[:1, :], hx[-1:, :]
+def _tm_xy_h_derivatives_metric(
+    hx, hy, metrics, metallic_edges, periodic_axes=frozenset()
+):
+    left, right = (
+        (hy[:, -1:], hy[:, :1]) if 1 in periodic_axes else (hy[:, :1], hy[:, -1:])
+    )
+    bottom, top = (
+        (hx[-1:, :], hx[:1, :]) if 0 in periodic_axes else (hx[:1, :], hx[-1:, :])
+    )
     if "left" in metallic_edges:
         left = jnp.zeros_like(left)
     if "right" in metallic_edges:
@@ -904,9 +990,13 @@ def _tm_xy_h_derivatives_metric(hx, hy, metrics, metallic_edges):
     )
 
 
-def tm_xy_curl_h_to_e_2d_metric(hx, hy, metrics, ez_shape, metallic_edges):
+def tm_xy_curl_h_to_e_2d_metric(
+    hx, hy, metrics, ez_shape, metallic_edges, periodic_axes=frozenset()
+):
     """Differentiate H onto Ez using physical center-to-center distances."""
-    d_hy_dx, d_hx_dy = _tm_xy_h_derivatives_metric(hx, hy, metrics, metallic_edges)
+    d_hy_dx, d_hx_dy = _tm_xy_h_derivatives_metric(
+        hx, hy, metrics, metallic_edges, periodic_axes
+    )
     curl = d_hy_dx - d_hx_dy
     if curl.shape != ez_shape:
         raise ValueError(f"curl(H) shape {curl.shape} does not match Ez {ez_shape}")
@@ -931,11 +1021,14 @@ def tm_xy_cpml_curl_h_to_e_2d_metric(
     metrics,
     ez_shape,
     metallic_edges,
+    periodic_axes=frozenset(),
     *,
     terms,
     psi_e_terms,
 ):
-    derivatives = _tm_xy_h_derivatives_metric(hx, hy, metrics, metallic_edges)
+    derivatives = _tm_xy_h_derivatives_metric(
+        hx, hy, metrics, metallic_edges, periodic_axes
+    )
     corrected = tuple(
         correct_cpml_term(derivative, psi, term)
         for derivative, psi, term in zip(derivatives, psi_e_terms, terms, strict=True)
@@ -957,9 +1050,13 @@ def te_xy_curl_e_to_h_2d_metric(ex, ey, metrics, hz_shape):
     return curl
 
 
-def _te_xy_h_derivatives_metric(hz, metrics, metallic_edges):
-    bottom, top = hz[:1, :], hz[-1:, :]
-    left, right = hz[:, :1], hz[:, -1:]
+def _te_xy_h_derivatives_metric(hz, metrics, metallic_edges, periodic_axes=frozenset()):
+    bottom, top = (
+        (hz[-1:, :], hz[:1, :]) if 0 in periodic_axes else (hz[:1, :], hz[-1:, :])
+    )
+    left, right = (
+        (hz[:, -1:], hz[:, :1]) if 1 in periodic_axes else (hz[:, :1], hz[:, -1:])
+    )
     if "bottom" in metallic_edges:
         bottom = jnp.zeros_like(bottom)
     if "top" in metallic_edges:
@@ -976,8 +1073,17 @@ def _te_xy_h_derivatives_metric(hz, metrics, metallic_edges):
     )
 
 
-def te_xy_curl_h_to_e_2d_metric(hz, metrics, ex_shape, ey_shape, metallic_edges):
-    d_hz_dy, d_hz_dx = _te_xy_h_derivatives_metric(hz, metrics, metallic_edges)
+def te_xy_curl_h_to_e_2d_metric(
+    hz,
+    metrics,
+    ex_shape,
+    ey_shape,
+    metallic_edges,
+    periodic_axes=frozenset(),
+):
+    d_hz_dy, d_hz_dx = _te_xy_h_derivatives_metric(
+        hz, metrics, metallic_edges, periodic_axes
+    )
     curls = d_hz_dy, -d_hz_dx
     if curls[0].shape != ex_shape or curls[1].shape != ey_shape:
         raise ValueError(
@@ -1000,9 +1106,17 @@ def te_xy_cpml_curl_e_to_h_2d_metric(ex, ey, metrics, *, terms, psi_h_terms):
 
 
 def te_xy_cpml_curl_h_to_e_2d_metric(
-    hz, metrics, metallic_edges, *, terms, psi_e_terms
+    hz,
+    metrics,
+    metallic_edges,
+    periodic_axes=frozenset(),
+    *,
+    terms,
+    psi_e_terms,
 ):
-    derivatives = _te_xy_h_derivatives_metric(hz, metrics, metallic_edges)
+    derivatives = _te_xy_h_derivatives_metric(
+        hz, metrics, metallic_edges, periodic_axes
+    )
     corrected = tuple(
         correct_cpml_term(derivative, psi, term)
         for derivative, psi, term in zip(derivatives, psi_e_terms, terms, strict=True)
@@ -1025,13 +1139,49 @@ def astype_like(value, ref: jnp.ndarray) -> jnp.ndarray:
 def apply_post_source_boundaries(
     values: tuple[jnp.ndarray, ...],
     metallic_masks: tuple[jnp.ndarray, ...],
+    *,
+    components: tuple[str, ...] = (),
+    periodic_axes: frozenset[int] = frozenset(),
+    material_shape: tuple[int, ...] = (),
+    logical_shapes=None,
 ) -> tuple[jnp.ndarray, ...]:
     # Apply the precomputed boundary policy so kernels never reinterpret configuration
     # objects.
-    return tuple(
+    constrained = tuple(
         jnp.asarray(apply_zero_mask(value, mask))
         for value, mask in zip(values, metallic_masks, strict=True)
     )
+    if not periodic_axes:
+        return constrained
+    if (
+        len(components) != len(constrained)
+        or not material_shape
+        or logical_shapes is None
+    ):
+        raise ValueError(
+            "Periodic constraints require component and logical shape metadata."
+        )
+    out = []
+    for component, value in zip(components, constrained, strict=True):
+        logical_shape = logical_shapes[component]
+        for axis in sorted(periodic_axes):
+            if int(logical_shape[axis]) != int(material_shape[axis]) + 1:
+                continue
+            low = jnp.take(value, jnp.asarray([0]), axis=axis)
+            high = jnp.take(
+                value, jnp.asarray([int(logical_shape[axis]) - 1]), axis=axis
+            )
+            seam = 0.5 * (low + high)
+            low_index = [slice(None)] * value.ndim
+            high_index = [slice(None)] * value.ndim
+            low_index[axis] = slice(0, 1)
+            high_index[axis] = slice(
+                int(logical_shape[axis]) - 1, int(logical_shape[axis])
+            )
+            value = value.at[tuple(low_index)].set(seam)
+            value = value.at[tuple(high_index)].set(seam)
+        out.append(value)
+    return tuple(out)
 
 
 # Each function is one static combination of dimension and boundary physics. Some
@@ -1086,6 +1236,11 @@ def update_h_3d_cpml(eng, ctx, coeffs):
         terms=cpml.h_terms,
         psi_terms=eng.cpml_psi_h_terms,
         dt=ctx.dt_scalar,
+        source_scales=(
+            (coeffs.h_source_x, coeffs.h_source_y, coeffs.h_source_z)
+            if coeffs.h_source_x.size
+            else None
+        ),
         magnetic_conductivities=(
             coeffs.h_sigma_m_x,
             coeffs.h_sigma_m_y,
@@ -1133,6 +1288,11 @@ def update_e_3d_cpml(eng, ctx, coeffs):
         psi_terms=eng.cpml_psi_e_terms,
         metallic_edges=cpml.metallic_edges,
         dt=ctx.dt_scalar,
+        source_scales=(
+            (coeffs.e_source_x, coeffs.e_source_y, coeffs.e_source_z)
+            if coeffs.e_source_x.size
+            else None
+        ),
         conductivities=(
             coeffs.e_conductivity_x,
             coeffs.e_conductivity_y,
@@ -1144,6 +1304,7 @@ def update_e_3d_cpml(eng, ctx, coeffs):
             coeffs.e_inverse_offdiagonal if coeffs.e_inverse_offdiagonal.size else None
         ),
         logical_shapes=ctx.boundary.logical_component_shapes,
+        periodic_axes=ctx.boundary.periodic_axes,
     )
     # 3. Replace E and packed 3D memory atomically, leaving unrelated carry fields intact.
     return _replace_e(
@@ -1181,6 +1342,7 @@ def update_e_3d_yee(eng, ctx, coeffs):
         eng.hz,
         ctx.boundary.cpml.metallic_edges,
         logical_shapes=ctx.boundary.logical_component_shapes,
+        periodic_axes=ctx.boundary.periodic_axes,
     )
     ex, ey, ez = fused_update_e_lossy_3d_material(
         eng.hx,
@@ -1271,6 +1433,7 @@ def update_e_2d_tm_xy(eng, ctx, coeffs):
         ctx.resolution,
         eng.ez.shape,
         ctx.boundary.metallic_edges_2d,
+        ctx.boundary.periodic_axes,
     )
     return _update_e_tm_from_curl(eng, ctx, coeffs, curl_ez)
 
@@ -1284,6 +1447,7 @@ def update_e_2d_tm_xy_cpml(eng, ctx, coeffs):
         ctx.resolution,
         eng.ez.shape,
         ctx.boundary.metallic_edges_2d,
+        ctx.boundary.periodic_axes,
         terms=cpml.e_terms,
         psi_e_terms=eng.cpml_psi_e_terms,
     )
@@ -1340,6 +1504,7 @@ def update_e_2d_te_xy(eng, ctx, coeffs):
         eng.ex.shape,
         eng.ey.shape,
         ctx.boundary.metallic_edges_2d,
+        ctx.boundary.periodic_axes,
     )
     return _update_e_te_from_curls(eng, ctx, coeffs, curls)
 
@@ -1349,6 +1514,7 @@ def update_e_2d_te_xy_cpml(eng, ctx, coeffs):
         eng.hz,
         ctx.resolution,
         ctx.boundary.metallic_edges_2d,
+        ctx.boundary.periodic_axes,
         terms=ctx.boundary.cpml.e_terms,
         psi_e_terms=eng.cpml_psi_e_terms,
     )
@@ -1414,6 +1580,7 @@ def update_e_3d_cpml_metric(eng, ctx, coeffs):
             coeffs.e_inverse_offdiagonal if coeffs.e_inverse_offdiagonal.size else None
         ),
         logical_shapes=ctx.boundary.logical_component_shapes,
+        periodic_axes=ctx.boundary.periodic_axes,
     )
     return _replace_e(eng, ex, ey, ez, cpml_e=psi_e)
 
@@ -1442,6 +1609,7 @@ def update_e_3d_yee_metric(eng, ctx, coeffs):
         eng.hz,
         ctx.boundary.cpml.metallic_edges,
         logical_shapes=ctx.boundary.logical_component_shapes,
+        periodic_axes=ctx.boundary.periodic_axes,
     )
     ex, ey, ez = fused_update_e_lossy_3d_material_metric(
         eng.hx,
@@ -1487,6 +1655,7 @@ def update_e_2d_tm_xy_metric(eng, ctx, coeffs):
         ctx.metrics,
         eng.ez.shape,
         ctx.boundary.metallic_edges_2d,
+        ctx.boundary.periodic_axes,
     )
     return _update_e_tm_from_curl(eng, ctx, coeffs, curl)
 
@@ -1508,6 +1677,7 @@ def update_e_2d_tm_xy_cpml_metric(eng, ctx, coeffs):
         ctx.metrics,
         eng.ez.shape,
         ctx.boundary.metallic_edges_2d,
+        ctx.boundary.periodic_axes,
         terms=ctx.boundary.cpml.e_terms,
         psi_e_terms=eng.cpml_psi_e_terms,
     )
@@ -1526,6 +1696,7 @@ def update_e_2d_te_xy_metric(eng, ctx, coeffs):
         eng.ex.shape,
         eng.ey.shape,
         ctx.boundary.metallic_edges_2d,
+        ctx.boundary.periodic_axes,
     )
     return _update_e_te_from_curls(eng, ctx, coeffs, curls)
 
@@ -1546,6 +1717,7 @@ def update_e_2d_te_xy_cpml_metric(eng, ctx, coeffs):
         eng.hz,
         ctx.metrics,
         ctx.boundary.metallic_edges_2d,
+        ctx.boundary.periodic_axes,
         terms=ctx.boundary.cpml.e_terms,
         psi_e_terms=eng.cpml_psi_e_terms,
     )
@@ -1567,6 +1739,9 @@ class CompiledStepContext:
     dt: float
     dt_scalar: jnp.ndarray
     is_3d: bool
+    sharding_plan: Any = None
+    # Capacity scheduling is selected separately from buffer donation.
+    low_memory: bool = False
 
 
 @dataclass(frozen=True)
@@ -1593,10 +1768,9 @@ def select_update_kernel(ctx: CompiledStepContext) -> StepUpdateKernel:
                 "CUDA execution currently requires a three-dimensional grid"
             )
         if ctx.config.sharding.enabled:
-            raise ValueError(
-                "CUDA execution currently supports one GPU; use backend='jax' "
-                "for sharded multi-GPU execution"
-            )
+            from beamz.simulation.cuda.sharding import select_sharded_kernel
+
+            return select_sharded_kernel(ctx)
         from beamz.simulation.cuda import update_e, update_h
 
         return StepUpdateKernel(ctx.config.backend, update_h, update_e)

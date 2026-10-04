@@ -1,0 +1,41 @@
+{
+  "python": "3.11.15 (main, Aug  7 2026, 02:25:55) [Clang 22.1.3 ]",
+  "device": "NVIDIA GeForce RTX 3090, 610.43.03, 370.00 W",
+  "commits": {
+    "before": "88142066ba8f3fc96358f574e0dd60ff21347313",
+    "main": "639a11270f365805027cfd26faf199cb75847999",
+    "merged": "085387d3b3bb64a0aea4c385386a560e7e6b447e"
+  },
+  "native_extensions": "Fresh CUDA builds in each checkout; Rust rebuilt for before and main/merged (main and merged Rust sources identical).",
+  "baseline_notebook_sha256": "8022c0ccbeda914218f1455744174b761e602bebd58eaea4bb56981253e21574",
+  "extensions": {
+    "before": {
+      "beamz/_cuda.cpython-311-x86_64-linux-gnu.so": "47a0752ee027362daf0a280fec2579c9109c0e0fd4f2dc4a6539537594121abb",
+      "beamz/design/raster/_native.abi3.so": "5f739bdca4e9c5fbca267f02f580cac4cb553a71088938c9dfc5e4d486b73a14"
+    },
+    "main": {
+      "beamz/_cuda.cpython-311-x86_64-linux-gnu.so": "765c2307c8c4ac2e6d1f850c7fa12a870e08f80aa285ba7166db1fefe9b99521",
+      "beamz/design/raster/_native.abi3.so": "1f5572a76c8b1b5ca0409173d339d76e99e18e2483608f504433ba44e7f5a66b"
+    },
+    "merged": {
+      "beamz/_cuda.cpython-311-x86_64-linux-gnu.so": "27fd84ccc2671f4f0a67d340a02f09723b3a8c269277d509f2079d150ec3c9e1",
+      "beamz/design/raster/_native.abi3.so": "1f5572a76c8b1b5ca0409173d339d76e99e18e2483608f504433ba44e7f5a66b"
+    }
+  },
+  "notebook_artifacts": {
+    "before": {
+      "arrays.npz": "164fdbe5ad350d7a78384046ca339158baf1d3886db34c160f1a1c7d9197de43",
+      "modal_sources_monitors.ipynb": "e402679d36fb9609466507f864e86ac971e3ab1fe0ee3b79f008beecafa39954"
+    },
+    "merged": {
+      "arrays.npz": "164fdbe5ad350d7a78384046ca339158baf1d3886db34c160f1a1c7d9197de43",
+      "modal_sources_monitors.ipynb": "0dcee87d838ae14c70ed4321654672955957b88bac27aeb293125f247f911e3e"
+    },
+    "main-final": {
+      "arrays.npz": "112d6959184619c09b9da3a6783d952e4b01e9e1b7351a60448c7edd3650aa02",
+      "modal_sources_monitors.ipynb": "a9b219bd8987f14c0a151f6f1d9dd9d665a901d9f1d7b5977e8e943b52b30564"
+    }
+  },
+  "final_main": "aa26e533b8acc60e2d8063efbd0149ee1425c901",
+  "final_main_delta": "CONTRIBUTING.md and CPML sharding tests only; solver and notebook unchanged from tested main."
+}

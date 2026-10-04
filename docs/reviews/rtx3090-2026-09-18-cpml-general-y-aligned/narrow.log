@@ -1,0 +1,8 @@
+ordinary_queue exact complete-state parity
+ordinary_auto exact complete-state parity
+retained_pair exact complete-state parity
+merged exact complete-state parity
+aligned exact complete-state parity
+aligned_pad32 exact complete-state parity
+aligned_pad64 exact complete-state parity
+{'ordinary_queue': 8.666466904599147, 'ordinary_auto': 8.579360855759367, 'retained_pair': 7.035694248929321, 'merged': 7.751412149504184, 'aligned': 7.72780076785108, 'aligned_pad32': 7.681457844292803, 'aligned_pad64': 7.621874456085303}

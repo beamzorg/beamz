@@ -1,0 +1,18 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=1959780560
+rootdir: /home/quentinwach/.t3/worktrees/beamz/pr224-validation
+configfile: pytest.ini
+plugins: randomly-5.0.0, hypothesis-6.168.0, cov-7.1.0
+collected 40 items
+
+tests/unit/test_cuda_calibration_control.py ..........                   [ 25%]
+tests/unit/test_cuda_tuning.py ......................                    [ 80%]
+tests/unit/test_cuda_storage_transforms.py ........                      [100%]
+
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.11.15-final-0 _______________
+
+Coverage XML written to file .cache/pr224/coverage-ci.xml
+Coverage JSON written to file .cache/pr224/coverage-ci.json
+============================== 40 passed in 9.62s ==============================

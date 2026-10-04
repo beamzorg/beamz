@@ -19,9 +19,10 @@ def array_cache_token(value: object) -> HashToken | None:
     arr = np.asarray(value)
     if arr.dtype == object:
         return None
-    digest = hashlib.blake2b(
-        np.ascontiguousarray(arr).tobytes(), digest_size=16
-    ).hexdigest()
+    # Hash the existing C-order buffer without allocating a second full-volume
+    # bytes object. Non-contiguous inputs still need one contiguous conversion.
+    raw = np.ascontiguousarray(arr).reshape(-1).view(np.uint8)
+    digest = hashlib.blake2b(raw.data, digest_size=16).hexdigest()
     return ("array", tuple(int(v) for v in arr.shape), str(arr.dtype), digest)
 
 

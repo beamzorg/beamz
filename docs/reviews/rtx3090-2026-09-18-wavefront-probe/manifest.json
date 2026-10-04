@@ -1,0 +1,8 @@
+{
+  "source_sha256": "a342edf4e7a2ff493c0f3ebff09e28e49249389e0d4bfec1b83aab8599e2d010",
+  "binary_sha256": "68ce350978ec9001046dd006ba70fa1e6e9c48a7e64c8fb09c8090b8e44bff7c",
+  "note": "Diagnostic common-extent stencil; not production staggered Yee or realistic mode sources/monitors.",
+  "post_format_source_sha256": "092995ef38f582093ab98d9d731037d0f398f339cd1c5f325f86e437cdb043fb",
+  "post_format_binary_sha256": "3acb9ef8401a211333194c563727fb280d66747213d9c86ee82880b2bbab6c0a",
+  "post_format_note": "clang-format only after measurements; final binary reran all 16 numerical fixtures successfully."
+}

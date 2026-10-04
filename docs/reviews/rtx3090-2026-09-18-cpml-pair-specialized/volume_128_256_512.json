@@ -1,0 +1,331 @@
+{
+  "case": {
+    "steps": 256,
+    "presteps": 0,
+    "pml": 12,
+    "material": "binary",
+    "source": "mode",
+    "monitors": 2,
+    "frequencies": 3,
+    "monitor_type": "mode",
+    "name": "volume_128_256_512",
+    "shape": [
+      128,
+      256,
+      512
+    ]
+  },
+  "correctness_reference": "fused_one_step",
+  "variants": {
+    "one_step": {
+      "cuda_flags": 128,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 1
+        }
+      ],
+      "compile_s": 0.4272046647965908,
+      "samples_s": [
+        0.4914425970055163,
+        0.49156533810310066,
+        0.4910852659959346,
+        0.49118701787665486,
+        0.4911119870375842,
+        0.491136543918401
+      ],
+      "correctness_reference": "auto_one_step",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 8.744506317555004,
+      "paired_speedups": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "median_paired_speedup": 1.0
+    },
+    "single": {
+      "cuda_flags": 65664,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.13039850303903222,
+      "samples_s": [
+        0.4916104329749942,
+        0.49142730911262333,
+        0.4912983179092407,
+        0.4914213081356138,
+        0.4912091491278261,
+        0.4920221660286188
+      ],
+      "correctness_reference": "auto_one_step",
+      "parity_gate": "bitwise",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 8.73983484460705,
+      "paired_speedups": [
+        0.9996585996589571,
+        1.0002808736672095,
+        0.9995663491904211,
+        0.9995232395195727,
+        0.9998021981259624,
+        0.9982000361541307
+      ],
+      "median_paired_speedup": 0.999612474424689
+    },
+    "cpml_pair": {
+      "cuda_flags": 589952,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.12505628704093397,
+      "samples_s": [
+        0.6528686401434243,
+        0.650435731979087,
+        0.6523674689233303,
+        0.6507780749816447,
+        0.6477968911640346,
+        0.6506646319758147
+      ],
+      "correctness_reference": "auto_one_step",
+      "parity_gate": "rtol=3e-5, atol=3e-6+3e-6*leaf_peak",
+      "max_absolute_difference_by_leaf": [
+        4.0,
+        4.0,
+        2.75,
+        0.02734375,
+        0.025390625,
+        0.0234375,
+        5.5789947509765625e-05,
+        532480.0,
+        294912.0,
+        1.2116903504194741e-27,
+        3.2311742677852644e-27,
+        0.000244140625,
+        1.430511474609375e-06,
+        1168.0,
+        1540.0,
+        1.8932661725304283e-29,
+        6.310887241768095e-30,
+        3.2223761081695557e-07,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 6.600317129658157,
+      "paired_speedups": [
+        0.7527434567810679,
+        0.7557477456034128,
+        0.7527739953165101,
+        0.7547688478756892,
+        0.758126495721674,
+        0.7548228684676019
+      ],
+      "median_paired_speedup": 0.7547958581716456
+    }
+  },
+  "orders": [
+    [
+      "one_step",
+      "cpml_pair",
+      "single"
+    ],
+    [
+      "single",
+      "cpml_pair",
+      "one_step"
+    ],
+    [
+      "single",
+      "one_step",
+      "cpml_pair"
+    ],
+    [
+      "one_step",
+      "single",
+      "cpml_pair"
+    ],
+    [
+      "cpml_pair",
+      "one_step",
+      "single"
+    ],
+    [
+      "cpml_pair",
+      "single",
+      "one_step"
+    ]
+  ],
+  "seed": 37,
+  "setup_s": 13.705597385996953,
+  "warmups": 4,
+  "jax": "0.9.0",
+  "device": "cuda:0",
+  "source_sha256": "e66091b1a46eba724c2fd805eb5a3ef9a5f32ad6d6a038c4b3417ce6962fe479",
+  "extension_sha256": "a10f2528171d34a8210ab1337625cd6410071eae104867367e7d71375b81f5e7",
+  "benchmark_sha256": "5789affb35191b77c792a78d159cdb17e094f968756dc93e536e96d62e03b2e0",
+  "builder_sha256": "8ef0831a2267c4b2e0a3d478d877dd27c295ca65b77640f052c2e410c2edc6f6",
+  "field_shapes": {
+    "ex": [
+      129,
+      257,
+      512
+    ],
+    "ey": [
+      129,
+      256,
+      513
+    ],
+    "ez": [
+      128,
+      257,
+      513
+    ],
+    "hx": [
+      128,
+      256,
+      513
+    ],
+    "hy": [
+      128,
+      257,
+      512
+    ],
+    "hz": [
+      129,
+      256,
+      512
+    ]
+  },
+  "field_dtype": "float32",
+  "cpml_dtypes": [
+    "float32"
+  ],
+  "monitor_regions": [
+    {
+      "center": [
+        2.6624e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    },
+    {
+      "center": [
+        3.0720000000000004e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    }
+  ],
+  "source_specs": 8
+}

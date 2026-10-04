@@ -1,0 +1,17 @@
+{
+  "baseline": {
+    ".cache/perf/cpml-face384-source/src/update.cu": "238b9a57162fdcb903d52f40935f6d429981dab47f0401d5852cede903f65b0f",
+    ".cache/perf/cpml-face384-source/src/temporal_cpml.cuh": "a445f25b0fac80c9d9873edcd137c189cdadc5ac7c2b9674ca4cb9e59ee731cd",
+    ".cache/perf/cpml-face384-source/src/program.cu": "2668818fd18f722ae87448a119b0206e8c36bd677c1f786e88176f1c807166cc"
+  },
+  "regcap": {
+    ".cache/perf/cpml-yface-regcap-source/src/update.cu": "439a79e6ee476e78e3db5c07664e5a176d5f844ceee6fcdab2741018f2229f30",
+    ".cache/perf/cpml-yface-regcap-source/src/temporal_cpml.cuh": "7ce132fc8b071bcb27bbe5c64db81c4e9adabc8d99767be6696c0e0e6dc1ff9a",
+    ".cache/perf/cpml-yface-regcap-source/src/program.cu": "131fa5a90382b1ab73fe27284dbbe028ac026a49efbd82ebd1a6d96726b51cdd"
+  },
+  "retained": {
+    ".cache/perf/cpml-yface-retained-source/src/update.cu": "ac064e8d8939156fc480f3b496b80c036cb4db0743290b673d3c05988aa90013",
+    ".cache/perf/cpml-yface-retained-source/src/temporal_cpml.cuh": "e17ac2e53100fef14430861fcecb242aee8491e70d2e6a26e378dfe0e13c259c",
+    ".cache/perf/cpml-yface-retained-source/src/program.cu": "2668818fd18f722ae87448a119b0206e8c36bd677c1f786e88176f1c807166cc"
+  }
+}

@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: >-
+  If you use BeamZ in your research, please cite this software.
+  Cite the Zenodo DOI for the version you used.
+type: software
+title: "BeamZ: CUDA-accelerated Differentiable FDTD for Photonics"
+authors:
+  - family-names: Wach
+    given-names: Quentin
+    orcid: "https://orcid.org/0009-0009-7731-890X"
+version: "0.5.3"
+license: Apache-2.0
+abstract: >-
+  BeamZ is an open-source electromagnetic simulation framework for photonic
+  design using the finite-difference time-domain (FDTD) method. It provides
+  CUDA-accelerated simulations, a Python API, and differentiable workflows
+  for gradient-based inverse design of photonic devices.
+keywords:
+  - FDTD
+  - electromagnetics
+  - photonics
+  - CUDA
+  - GPU acceleration
+  - inverse design
+  - differentiable simulation
+repository-code: "https://github.com/beamzorg/beamz"
+url: "https://www.beamz.tech"

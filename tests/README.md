@@ -104,6 +104,11 @@ python -m pytest -m "not release and not pdk and not hardware"
 python -m pytest tests/hardware/ -m "not release"
 ```
 
+Coverage runs include child Python processes through the `subprocess` patch in
+`pyproject.toml` (pytest-cov 7 or newer). The CUDA sharding CPU contracts use fresh
+processes to configure virtual JAX devices; their measurements are combined into
+the same coverage report used by the risk-weighted and changed-line gates.
+
 Run a focused evidence class with, for example:
 
 ```bash

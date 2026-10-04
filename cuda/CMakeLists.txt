@@ -6,6 +6,8 @@ option(
   "Enable CUDA approximate math intrinsics after hardware parity validation"
   OFF
 )
+set(BEAMZ_CUDA_ARCHITECTURES "80;86;89;90" CACHE STRING
+    "CUDA architectures to compile (use 90 for an H100-only build)")
 
 find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module)
 find_package(nanobind CONFIG REQUIRED)
@@ -26,7 +28,7 @@ nanobind_add_module(
   src/io.cu
   src/program.cu
   src/update.cu
-  src/hopper.cu
+  src/sharded.cu
 )
 target_compile_features(_cuda PRIVATE cxx_std_17)
 target_include_directories(_cuda PRIVATE "${JAX_FFI_INCLUDE}" src)
@@ -35,7 +37,7 @@ set_target_properties(
   PROPERTIES
     CUDA_STANDARD 17
     CUDA_STANDARD_REQUIRED ON
-    CUDA_ARCHITECTURES "80;86;89;90"
+    CUDA_ARCHITECTURES "${BEAMZ_CUDA_ARCHITECTURES}"
     CUDA_SEPARABLE_COMPILATION ON
 )
 target_compile_options(

@@ -1,0 +1,46 @@
+{
+  "source_root": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371",
+  "commit": "b0a5ff32d70755aa3c6f5d20e8ae9a5fdfe4ee7b",
+  "extension_sha256": "1b0d5591cbb10a5565a8ddc249dc3567452d87c03b843fd2f3db22d0daaae826",
+  "device": "cuda:0",
+  "jax": "0.9.0",
+  "shape": [
+    64,
+    96,
+    128
+  ],
+  "steps": 160,
+  "material": "binary",
+  "pml": 8,
+  "monitors": 2,
+  "frequencies": 3,
+  "source_specs": 8,
+  "setup_s": 8.6270779769402,
+  "compile_s": 0.4628041619434953,
+  "samples_s": [
+    0.021435535978525877,
+    0.024520498933270574,
+    0.02371579292230308,
+    0.0237333660479635,
+    0.023706295993179083,
+    0.023542628856375813,
+    0.023914796067401767,
+    0.023121780017390847,
+    0.023391586961224675,
+    0.023572035133838654,
+    0.02343383594416082
+  ],
+  "median_gcups": 5.338067726675282,
+  "e_coefficient_shapes": [
+    [
+      201760
+    ],
+    [
+      201240
+    ],
+    [
+      200208
+    ]
+  ],
+  "gpu": "name, utilization.gpu [%], clocks.current.sm [MHz], clocks.current.memory [MHz], power.draw [W], memory.used [MiB]\nNVIDIA GeForce RTX 3090, 97 %, 1755 MHz, 9501 MHz, 140.85 W, 10964 MiB"
+}

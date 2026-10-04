@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/narrow_fusion_probe.py", line 32, in <module>
+    state = sim.advance(state=state, num_steps=a.presteps, backend='cuda_streamed').state
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/beamz/simulation/api.py", line 1425, in advance
+    raise ValueError(f"num_steps must be in [1, {remaining}], got {steps}.")
+ValueError: num_steps must be in [1, 256], got 1024.

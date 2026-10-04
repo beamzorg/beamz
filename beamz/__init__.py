@@ -28,6 +28,7 @@ from beamz.const import (
 
 # Import design-related classes and functions
 from beamz.design.core import Design
+from beamz.design.dispersion import PoleResidue, fit_nk
 from beamz.design.grid import AxisGridQuality, Grid, GridQualityReport, RectilinearGrid
 
 # Import simulation-related classes and functions
@@ -43,7 +44,8 @@ from beamz.design.structures import (
     Sphere,
     Taper,
 )
-from beamz.devices.boundaries import PEC, PML, Absorber
+from beamz.design.vector_fit import fit_nk_vector
+from beamz.devices.boundaries import PEC, PML, Absorber, Periodic
 from beamz.devices.monitors import FieldMonitor, FieldRecorder, FluxMonitor, ModeMonitor
 from beamz.devices.ports import Port
 from beamz.devices.sources import (
@@ -54,9 +56,11 @@ from beamz.devices.sources import (
     ModeData,
     ModeSource,
     ModeSpec,
+    PlaneWaveSource,
     SampledSignal,
 )
 from beamz.devices.sources.time import ramped_cosine
+from beamz.material_library import material_library
 from beamz.simulation.api import Simulation
 from beamz.simulation.model import AutoTermination, SimulationState
 from beamz.simulation.results import (
@@ -84,6 +88,10 @@ __all__ = [
     "µm",  # pyright: ignore[reportUnsupportedDunderAll] -- Unicode public alias
     "μm",
     "Material",
+    "PoleResidue",
+    "fit_nk",
+    "fit_nk_vector",
+    "material_library",
     "design",
     "optimization",
     "Design",
@@ -99,6 +107,7 @@ __all__ = [
     "ModeData",
     "GaussianSource",
     "GaussianBeamSource",
+    "PlaneWaveSource",
     "CustomSource",
     "FieldMonitor",
     "FieldRecorder",
@@ -126,6 +135,7 @@ __all__ = [
     "PML",
     "PEC",
     "Absorber",
+    "Periodic",
     "display_status",
     "create_plain_progress",
     "get_si_scale_and_label",
@@ -136,4 +146,4 @@ __all__ = [
 
 
 # Version information
-__version__ = "0.5.1"
+__version__ = "0.5.3"

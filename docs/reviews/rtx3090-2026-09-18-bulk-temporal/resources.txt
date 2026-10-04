@@ -1,0 +1,60 @@
+
+Fatbin elf code:
+================
+arch = sm_86
+code version = [1,8]
+host = linux
+compile_size = 64bit
+identifier = cuda/tests/temporal_bulk_benchmark.cu 
+
+Resource usage:
+ Common:
+  GLOBAL:0
+
+Fatbin elf code:
+================
+arch = sm_86
+code version = [1,8]
+host = linux
+compile_size = 64bit
+identifier = cuda/tests/temporal_bulk_benchmark.cu
+
+Resource usage:
+ Common:
+  GLOBAL:0
+ Function _Z10RingKernelILi8ELi8ELi4ELi32EEv6FieldsS0_5Shape:
+  REG:56 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:460 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z10RingKernelILi4ELi16ELi8ELi16EEv6FieldsS0_5Shape:
+  REG:56 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:460 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z10RingKernelILi4ELi32ELi4ELi32EEv6FieldsS0_5Shape:
+  REG:56 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:460 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z10RingKernelILi4ELi32ELi4ELi16EEv6FieldsS0_5Shape:
+  REG:56 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:460 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z10RingKernelILi2ELi16ELi8ELi16EEv6FieldsS0_5Shape:
+  REG:55 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:460 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z10RingKernelILi2ELi64ELi4ELi16EEv6FieldsS0_5Shape:
+  REG:55 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:460 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z10RingKernelILi2ELi32ELi8ELi32EEv6FieldsS0_5Shape:
+  REG:55 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:460 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z10RingKernelILi2ELi32ELi8ELi16EEv6FieldsS0_5Shape:
+  REG:55 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:460 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z10RingKernelILi2ELi32ELi8ELi8EEv6FieldsS0_5Shape:
+  REG:55 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:460 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z10RingKernelILi1ELi32ELi8ELi16EEv6FieldsS0_5Shape:
+  REG:56 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:460 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z10RingKernelILi1ELi32ELi8ELi8EEv6FieldsS0_5Shape:
+  REG:56 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:460 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z11PhaseKernelILi1EEv6Fields5Shape:
+  REG:40 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:412 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z11PhaseKernelILi0EEv6Fields5Shape:
+  REG:40 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:412 TEXTURE:0 SURFACE:0 SAMPLER:0
+
+Fatbin ptx code:
+================
+arch = sm_86
+code version = [9,3]
+host = linux
+compile_size = 64bit
+compressed
+identifier = cuda/tests/temporal_bulk_benchmark.cu
+ptxasOptions =  --generate-line-info 

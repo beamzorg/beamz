@@ -1,0 +1,5 @@
+{
+  "source_sha256": "05d34e0cef691531627854010ed5b6c902f4a27a046849b81f824756a06a223d",
+  "binary_sha256": "f29835360b278f27558ef9f2bb826fc29b22ab277c22ae12e1d2c7f19e755787",
+  "command": "nvcc --allow-unsupported-compiler -std=c++17 -arch=sm_86 -lineinfo cuda/tests/temporal_bulk_benchmark.cu -o .cache/perf/temporal-bulk"
+}

@@ -1,0 +1,331 @@
+{
+  "case": {
+    "steps": 256,
+    "presteps": 0,
+    "pml": 12,
+    "material": "binary",
+    "source": "mode",
+    "monitors": 2,
+    "frequencies": 3,
+    "monitor_type": "mode",
+    "name": "aspect_1024_256_64",
+    "shape": [
+      1024,
+      256,
+      64
+    ]
+  },
+  "correctness_reference": "fused_one_step",
+  "variants": {
+    "one_step": {
+      "cuda_flags": 128,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 1
+        }
+      ],
+      "compile_s": 0.4264415029902011,
+      "samples_s": [
+        0.6322369289118797,
+        0.6335974629037082,
+        0.6319678649306297,
+        0.6328465230762959,
+        0.6321905518416315,
+        0.6307485869619995
+      ],
+      "correctness_reference": "auto_one_step",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 6.79353677672443,
+      "paired_speedups": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "median_paired_speedup": 1.0
+    },
+    "single": {
+      "cuda_flags": 65664,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.13140924996696413,
+      "samples_s": [
+        0.6322555930819362,
+        0.6294862348586321,
+        0.6304742521606386,
+        0.6303339758887887,
+        0.6313204888720065,
+        0.6326420090626925
+      ],
+      "correctness_reference": "auto_one_step",
+      "parity_gate": "bitwise",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 6.807711518095288,
+      "paired_speedups": [
+        0.9999704800238055,
+        1.006531084902912,
+        1.0023690305589366,
+        1.0039860570485104,
+        1.001378163682252,
+        0.9970071192339911
+      ],
+      "median_paired_speedup": 1.0018735971205943
+    },
+    "cpml_pair": {
+      "cuda_flags": 589952,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.1283715688623488,
+      "samples_s": [
+        0.8633081389125437,
+        0.8634230371098965,
+        0.8683797470293939,
+        0.8687290439847857,
+        0.8645359040237963,
+        0.8689827278722078
+      ],
+      "correctness_reference": "auto_one_step",
+      "parity_gate": "rtol=3e-5, atol=3e-6+3e-6*leaf_peak",
+      "max_absolute_difference_by_leaf": [
+        5.5,
+        8.0,
+        5.375,
+        0.0419921875,
+        0.0458984375,
+        0.07421875,
+        5.5789947509765625e-05,
+        0.0,
+        0.0,
+        2473984.0,
+        2981888.0,
+        0.0003662109375,
+        1.9073486328125e-06,
+        0.0,
+        0.0,
+        40960.0,
+        24320.0,
+        2.868473529815674e-07,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        64.0,
+        48.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 4.956925968542909,
+      "paired_speedups": [
+        0.7323421388199465,
+        0.7338204283088452,
+        0.727755186705475,
+        0.7284740017134492,
+        0.7312484639437606,
+        0.7258470930791125
+      ],
+      "median_paired_speedup": 0.7298612328286049
+    }
+  },
+  "orders": [
+    [
+      "one_step",
+      "cpml_pair",
+      "single"
+    ],
+    [
+      "single",
+      "cpml_pair",
+      "one_step"
+    ],
+    [
+      "single",
+      "one_step",
+      "cpml_pair"
+    ],
+    [
+      "one_step",
+      "single",
+      "cpml_pair"
+    ],
+    [
+      "cpml_pair",
+      "one_step",
+      "single"
+    ],
+    [
+      "cpml_pair",
+      "single",
+      "one_step"
+    ]
+  ],
+  "seed": 37,
+  "setup_s": 14.020120440982282,
+  "warmups": 4,
+  "jax": "0.9.0",
+  "device": "cuda:0",
+  "source_sha256": "e66091b1a46eba724c2fd805eb5a3ef9a5f32ad6d6a038c4b3417ce6962fe479",
+  "extension_sha256": "a10f2528171d34a8210ab1337625cd6410071eae104867367e7d71375b81f5e7",
+  "benchmark_sha256": "5789affb35191b77c792a78d159cdb17e094f968756dc93e536e96d62e03b2e0",
+  "builder_sha256": "8ef0831a2267c4b2e0a3d478d877dd27c295ca65b77640f052c2e410c2edc6f6",
+  "field_shapes": {
+    "ex": [
+      1025,
+      257,
+      64
+    ],
+    "ey": [
+      1025,
+      256,
+      65
+    ],
+    "ez": [
+      1024,
+      257,
+      65
+    ],
+    "hx": [
+      1024,
+      256,
+      65
+    ],
+    "hy": [
+      1024,
+      257,
+      64
+    ],
+    "hz": [
+      1025,
+      256,
+      64
+    ]
+  },
+  "field_dtype": "float32",
+  "cpml_dtypes": [
+    "float32"
+  ],
+  "monitor_regions": [
+    {
+      "center": [
+        3.328e-06,
+        1.024e-05,
+        4.096e-05
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    },
+    {
+      "center": [
+        3.8400000000000005e-06,
+        1.024e-05,
+        4.096e-05
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    }
+  ],
+  "source_specs": 8
+}

@@ -160,6 +160,7 @@ def test_full_tensor_conversion_rejects_unsupported_material_couplings(
     result = rasterize(
         Scene((Material(epsilon_r=epsilon, conductivity=conductivity),)),
         Grid.uniform((0, 0, 0), (1, 1, 1), shape),
+        options=RasterOptions(smoothing="farjadpour_full"),
     )
 
     with pytest.raises(ValueError, match=message):
@@ -781,6 +782,7 @@ def test_centered_2d_devices_round_trip_through_plane_aware_offsets(
     signal = np.asarray([1.0, 0.0])
     simulation = bz.Simulation(
         domain=(2.0, 4.0),
+        resolution=0.5,
         sources=[bz.GaussianSource(position=(0.0, 0.0), width=0.1, signal=signal)],
         plane_2d=plane,
         polarization=polarization,
@@ -1274,3 +1276,32 @@ def test_native_sidewall_rasterization_narrows_toward_top():
     epsilon = design.rasterize(0.1, quality="reference").permittivity
 
     assert np.count_nonzero(epsilon[-2] > 2.0) < np.count_nonzero(epsilon[1] > 2.0)
+
+
+@pytest.mark.parametrize("conductivity", [0.0, 0.2])
+def test_scalar_cell_conductivity_preserves_direct_yee_absorber_coefficients(
+    conductivity,
+):
+    """A compact constant summary must match an expanded cell array with a sponge."""
+    from dataclasses import replace
+
+    grid = design_3d().rasterize(0.125e-6)
+    direct = dict(grid.yee_materials)
+    for axis in "xyz":
+        direct["sig_" + axis] = np.full_like(direct["sig_" + axis], conductivity + 0.1)
+    programs = []
+    for summary in (conductivity, np.full(grid.shape, conductivity)):
+        compact = replace(grid, conductivity=summary, yee_materials=direct)
+        sim = bz.Simulation(
+            material_grid=compact,
+            boundaries=[bz.Absorber(edges=("front", "back"), thickness=0.25e-6)],
+            time=np.arange(3) * grid.grid.cfl_time_step(0.5),
+        )
+        programs.append(sim.compile(backend="jax"))
+    for axis in "xyz":
+        for prefix in ("sig_", "eps_"):
+            np.testing.assert_allclose(
+                getattr(programs[0].grid, prefix + axis),
+                getattr(programs[1].grid, prefix + axis),
+                rtol=1e-6,
+            )

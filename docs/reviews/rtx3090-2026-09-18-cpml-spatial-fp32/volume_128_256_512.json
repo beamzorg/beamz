@@ -1,0 +1,335 @@
+{
+  "case": {
+    "steps": 256,
+    "presteps": 0,
+    "psi_precision": "fp32",
+    "pml": 12,
+    "material": "binary",
+    "source": "mode",
+    "monitors": 2,
+    "frequencies": 3,
+    "monitor_type": "mode",
+    "name": "volume_128_256_512",
+    "shape": [
+      128,
+      256,
+      512
+    ]
+  },
+  "correctness_reference": "fused_one_step",
+  "variants": {
+    "one_step": {
+      "cuda_flags": 128,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 1
+        }
+      ],
+      "compile_s": 0.4334199820000322,
+      "samples_s": [
+        0.5042928030002258,
+        0.49442129099998056,
+        0.5133920420003051,
+        0.5094707090001975,
+        0.4919517560001623,
+        0.49244793399975606
+      ],
+      "correctness_reference": "fused_one_step",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "parity_passed": true,
+      "median_gcups": 8.600994662640883,
+      "paired_speedups": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "median_paired_speedup": 1.0
+    },
+    "single": {
+      "cuda_flags": 65664,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.13182501500023136,
+      "samples_s": [
+        0.5143561029999546,
+        0.5133744989998377,
+        0.5127898799996728,
+        0.5126391779999722,
+        0.5127846119999049,
+        0.5146214340002189
+      ],
+      "correctness_reference": "fused_one_step",
+      "parity_gate": "bitwise",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "parity_passed": true,
+      "median_gcups": 8.370914804482895,
+      "paired_speedups": [
+        0.9804351500039854,
+        0.9630811268639522,
+        1.0011742860460362,
+        0.9938192999369728,
+        0.9593730866484221,
+        0.9569129878091059
+      ],
+      "median_paired_speedup": 0.9717581384339689
+    },
+    "spatial": {
+      "cuda_flags": 65664,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.12691075800012186,
+      "samples_s": [
+        0.5758819669999866,
+        0.5845609060002062,
+        0.5947354320001068,
+        0.5924683070002175,
+        0.5917736299998069,
+        0.5931310790001589
+      ],
+      "correctness_reference": "fused_one_step",
+      "parity_gate": "rtol=3e-5, atol=3e-6+3e-6*leaf_peak",
+      "max_absolute_difference_by_leaf": [
+        6.0,
+        7.0,
+        4.875,
+        0.04296875,
+        0.0517578125,
+        0.078125,
+        5.602836608886719e-05,
+        528384.0,
+        335872.0,
+        8.077935669463161e-28,
+        3.2311742677852644e-27,
+        0.0003662109375,
+        1.430511474609375e-06,
+        1264.0,
+        1952.0,
+        1.8932661725304283e-29,
+        6.310887241768095e-30,
+        3.1478703022003174e-07,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "parity_passed": true,
+      "median_gcups": 7.253530147530845,
+      "paired_speedups": [
+        0.8756877830839207,
+        0.8457994469438677,
+        0.8632276040352223,
+        0.8599121724835326,
+        0.8313174684724002,
+        0.8302514426151392
+      ],
+      "median_paired_speedup": 0.8528558097137001
+    }
+  },
+  "orders": [
+    [
+      "one_step",
+      "spatial",
+      "single"
+    ],
+    [
+      "single",
+      "spatial",
+      "one_step"
+    ],
+    [
+      "single",
+      "one_step",
+      "spatial"
+    ],
+    [
+      "one_step",
+      "single",
+      "spatial"
+    ],
+    [
+      "spatial",
+      "one_step",
+      "single"
+    ],
+    [
+      "spatial",
+      "single",
+      "one_step"
+    ]
+  ],
+  "seed": 37,
+  "setup_s": 10.02751804899981,
+  "warmups": 4,
+  "jax": "0.9.0",
+  "device": "cuda:0",
+  "source_sha256": "d17c701969042d12e5a49a2a34bf2f878ea45eaeffc64c260bdb244a309bfe9d",
+  "extension_sha256": "0a01745f27af1d8a4139b7986fe3791f933635d255090f1f9b6df5c71781feb1",
+  "benchmark_sha256": "74cc7b6c79299cdfe2d0ed9dd239bb3f9a33cbe35f8b6d5f5dcce69677548d50",
+  "builder_sha256": "8ef0831a2267c4b2e0a3d478d877dd27c295ca65b77640f052c2e410c2edc6f6",
+  "field_shapes": {
+    "ex": [
+      129,
+      257,
+      512
+    ],
+    "ey": [
+      129,
+      256,
+      513
+    ],
+    "ez": [
+      128,
+      257,
+      513
+    ],
+    "hx": [
+      128,
+      256,
+      513
+    ],
+    "hy": [
+      128,
+      257,
+      512
+    ],
+    "hz": [
+      129,
+      256,
+      512
+    ]
+  },
+  "field_dtype": "float32",
+  "cpml_dtypes": [
+    "float32"
+  ],
+  "monitor_regions": [
+    {
+      "center": [
+        2.6624e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    },
+    {
+      "center": [
+        3.0720000000000004e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    }
+  ],
+  "source_specs": 8
+}

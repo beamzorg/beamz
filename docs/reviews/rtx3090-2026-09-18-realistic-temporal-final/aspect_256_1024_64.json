@@ -1,0 +1,329 @@
+{
+  "case": {
+    "steps": 256,
+    "presteps": 0,
+    "pml": 12,
+    "material": "binary",
+    "source": "mode",
+    "monitors": 2,
+    "frequencies": 3,
+    "monitor_type": "mode",
+    "name": "aspect_256_1024_64",
+    "shape": [
+      256,
+      1024,
+      64
+    ]
+  },
+  "correctness_reference": "auto_one_step",
+  "variants": {
+    "one_step": {
+      "cuda_flags": 128,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 1
+        }
+      ],
+      "compile_s": 0.4294665481429547,
+      "samples_s": [
+        0.6343351060058922,
+        0.6345471199601889,
+        0.6358821941539645,
+        0.6350064799189568,
+        0.6606090490240604,
+        0.661871689837426
+      ],
+      "correctness_reference": "auto_one_step",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 6.758998460873156,
+      "paired_speedups": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "median_paired_speedup": 1.0
+    },
+    "16x8x16": {
+      "cuda_flags": 65664,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.13699320796877146,
+      "samples_s": [
+        0.9118810629006475,
+        0.9117130159866065,
+        0.9121972599532455,
+        0.9122378721367568,
+        0.9424292230978608,
+        0.9340487171430141
+      ],
+      "correctness_reference": "fused_one_step",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 4.708270763323716,
+      "paired_speedups": [
+        0.6956335993951933,
+        0.6959943631752545,
+        0.6970884720554373,
+        0.6960974755757133,
+        0.700964096648628,
+        0.7086051055901033
+      ],
+      "median_paired_speedup": 0.6965929738155754
+    },
+    "single": {
+      "cuda_flags": 65664,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.13033902295865119,
+      "samples_s": [
+        0.6340738029684871,
+        0.634954015025869,
+        0.6343498411588371,
+        0.6342850117944181,
+        0.6374098318628967,
+        0.649922993965447
+      ],
+      "correctness_reference": "auto_one_step",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 6.7674375604748915,
+      "paired_speedups": [
+        1.0004121019291157,
+        0.9993591739621277,
+        1.0024156276169758,
+        1.001137451005657,
+        1.0363960767491796,
+        1.0183847870946603
+      ],
+      "median_paired_speedup": 1.0017765393113165
+    }
+  },
+  "orders": [
+    [
+      "one_step",
+      "single",
+      "16x8x16"
+    ],
+    [
+      "16x8x16",
+      "single",
+      "one_step"
+    ],
+    [
+      "16x8x16",
+      "one_step",
+      "single"
+    ],
+    [
+      "one_step",
+      "16x8x16",
+      "single"
+    ],
+    [
+      "single",
+      "one_step",
+      "16x8x16"
+    ],
+    [
+      "single",
+      "16x8x16",
+      "one_step"
+    ]
+  ],
+  "seed": 37,
+  "setup_s": 13.1677742570173,
+  "warmups": 4,
+  "jax": "0.9.0",
+  "device": "cuda:0",
+  "source_sha256": "fc8b92cf00c30eb809e5e1577fa9aa3166804cca5c7ba0a52a84ff02af444e7b",
+  "extension_sha256": "f306491d5fbf657fcc1b7f866525428bdb83beeba36f515e90023f4fd7671198",
+  "benchmark_sha256": "8198a0db2165c64c39bc0133269e630053f8e1032d3419f80f3085ddf0c12e67",
+  "builder_sha256": "8ef0831a2267c4b2e0a3d478d877dd27c295ca65b77640f052c2e410c2edc6f6",
+  "field_shapes": {
+    "ex": [
+      257,
+      1025,
+      64
+    ],
+    "ey": [
+      257,
+      1024,
+      65
+    ],
+    "ez": [
+      256,
+      1025,
+      65
+    ],
+    "hx": [
+      256,
+      1024,
+      65
+    ],
+    "hy": [
+      256,
+      1025,
+      64
+    ],
+    "hz": [
+      257,
+      1024,
+      64
+    ]
+  },
+  "field_dtype": "float32",
+  "cpml_dtypes": [
+    "float32"
+  ],
+  "monitor_regions": [
+    {
+      "center": [
+        3.328e-06,
+        4.096e-05,
+        1.024e-05
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    },
+    {
+      "center": [
+        3.8400000000000005e-06,
+        4.096e-05,
+        1.024e-05
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    }
+  ],
+  "source_specs": 8
+}

@@ -4,64 +4,70 @@
     <img alt="BeamZ logo" src="docs/assets/beamz_logo_white.png" width="130">
   </picture>
 
-  <strong>BeamZ</strong> is a <strong>GPU-accelerated</strong> <strong><a href="https://en.wikipedia.org/wiki/Electromagnetism">electromagnetic</a> simulation</strong> framework for photonic chip designers using the <strong><a href="https://en.wikipedia.org/wiki/Finite-difference_time-domain_method">FDTD</a> method</strong>. It enables fast, large-scale simulations and offers a <strong>familiar, high-level API</strong> for fast prototyping with just a few lines of code as well as an <strong>inverse design module</strong> for gradient-based optimization using the <strong>adjoint method</strong>.
+  <strong>BeamZ</strong> is a differentiable, <strong>GPU-accelerated</strong> <strong><a href="https://en.wikipedia.org/wiki/Electromagnetism">electromagnetic</a> simulation</strong> framework for photonic chip designers using the <strong><a href="https://en.wikipedia.org/wiki/Finite-difference_time-domain_method">FDTD</a> method</strong>. Its engine enables fast, large-scale simulations and offers a <strong>familiar, high-level API</strong> for fast prototyping with just a few lines of code as well as an <strong>inverse design module</strong> for gradient-based optimization.
 
   <h3>
 
-  [Homepage](https://www.beamz.tech) / [Documentation](https://www.beamz.tech/docs/index) / [Example Library](https://www.beamz.tech/examples)
+  [Homepage](https://www.beamz.tech) / [Documentation](https://www.beamz.tech/docs/getting-started/) / [Example Library](https://www.beamz.tech/simulation-examples)
 
   </h3>
 
   [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://github.com/beamzorg/beamz/blob/main/LICENSE)
   [![Tests](https://github.com/beamzorg/beamz/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/beamzorg/beamz/actions/workflows/tests.yml)
   [![Coverage](https://raw.githubusercontent.com/beamzorg/beamz/main/.github/badges/coverage.svg)](https://github.com/beamzorg/beamz/actions/workflows/tests.yml)
+  [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23085101.svg)](https://doi.org/10.5281/zenodo.23085101)
 </div>
 
 
 
 ## Core Features
-- **Python-first**, free (Apache-2.0 license) & open-source, with a native Rust rasterizer.
-- FDTD simulation in **2D and 3D**.
+- **Python-first** with an intuitive and **familiar API**.
+- **Free and open-source** FDTD simulation in **true 2D and 3D**.
 - **GPU-accelerated**, achieving high **GCUPS performance**.
 - **Multi-GPU** runs, handling **large-scale simulations** with _billions of cells_.
 - CPU-capable for **fast prototyping**, even on your laptop.
-- Intuitive and **familiar API**.
-- Native **FDFD mode solver** with discrete Yee-grid refinement and validation.
-- **CPML**, absorbing layers and PEC boundaries.
-- Unidirectional **mode sources** (single freq. and broadband, Huygens fields + TFSF, TE/TM).
-- **Gaussian sources**, e.g. for grating coupler simulations.
-- Integrated **rasterization module**.
-- **Sub-pixel averaging** using super-sampling.
-- Custom source time profiles.
-- Built-in layout flow (GDSII import/export).
+- Dedicated CUDA-backend for acceleration beyond default Jax.
+- **CPML**, absorbing layers, PEC and zero-phase periodic boundaries (JAX).
+- **Unidirectional mode sources** (single freq. and broadband, Huygens fields + TFSF, TE/TM).
+- **3D Gaussian sources**, e.g. for grating coupler simulations.
+- **Broadband dispersive materials** (pole-residue, Drude/Lorentz) and uniform plane-wave sources on single-device JAX.
 - **DFT monitors** and S-parameter extraction workflow for compact modeling.
-- Streamlined **parametric design** module.
+- Integrated **FDFD mode solver** and **rasterization module**.
+- Regular and **rectilinear meshing**.
+- Full-tensor and diagonal Farjadpour (polarized averaging) **subpixel-smoothing**; dielectrics default to diagonal averaging and optical metals to staircasing.
+- Simple **GDS**, **GMSH** and **STL** import and export.
+- Streamlined, integrated **parametric design** module.
 - 2D and extruded 3D topology **inverse design** in `beamz.optimization`, with selectable JAX autodiff or spectral adjoint FDTD gradients.
 
 
 ## Examples
-Try out notebooks from our growing **[example library](https://beamz.tech/examples/)**. It includes:
 
-- [1) Mode Sources and Monitors](https://beamz.tech/examples/modal_sources_monitors)
-- [2) Waveguide Crossing with Cosine Tapers](https://beamz.tech/examples/cosine_waveguide_crossing)
-- [3) Topology Optimized 90° Bend (2D)](https://beamz.tech/examples/ceviche_bend)
-- [4) Inverse-designed Mode Converter (2D)](examples/notebooks/topology_mode_converter.ipynb)
-- [5) Topology Gradient Checks: Autodiff and Adjoint FDTD](examples/notebooks/topology_gradient_checks.ipynb)
-- [6) Broadband Inverse-designed Wavelength Demultiplexer](examples/notebooks/topology_broadband_demultiplexer.ipynb)
-- [7) Meep's Broadband Bend: Nominal and Fabrication-Robust Inverse Design](examples/notebooks/meep_filtered_waveguide_bend.ipynb)
-- [8) Tidy3D-style Inverse Design: 1-to-3 Splitter](examples/notebooks/tidy3d_inverse_design_splitter.ipynb)
-- [9) Tidy3D Reference: 3D Topology Waveguide Bend](examples/notebooks/tidy3d_topology_bend_3d.ipynb)
-- [10) Tidy3D Reference: Scheduled Four-channel WDM](examples/notebooks/tidy3d_wdm_4channel.ipynb)
-<!--- [Broadband Mode Sources]() (coming soon)
-- [Straight & Curved Waveguide Benchmark]() (coming soon)-->
-<!--- [Mode Converter (3D)]() (coming soon)
-- [DEMUX]() (coming soon)-->
+Try out notebooks from our growing **[example library](https://beamz.tech/simulation-examples/)**. It includes:
+
+- [1) Mode Sources and Monitors (3D)](https://beamz.tech/examples/modal_sources_monitors)
+- [2) Waveguide Crossing with Cosine Tapers (3D)](https://beamz.tech/examples/cosine_waveguide_crossing)
+- [3) Grating Coupler (3D)](https://www.beamz.tech/examples/grating_coupler)
+- [4) Microring Resooator (3D)](https://www.beamz.tech/examples/ring_resonator_add_drop)
+- [5) 1x4 MMI Powersplitter (3D)](https://www.beamz.tech/examples/mmi1x4_power_splitter)
+- [6) Topology Optimized 90° Bend (2D)](https://beamz.tech/examples/ceviche_bend)
+- [7) GDSFactory PDK 1x2 MMI (3D)](https://www.beamz.tech/examples/gdsfactory_component_sparameters)
+
+
+- [CMOS RGB Image Sensor](https://beamz.tech/examples/cmos_rgb_sensor)
+- [Inverse-designed Mode Converter (2D)](examples/notebooks/topology_mode_converter.ipynb)
+- [Topology Gradient Checks: Autodiff and Adjoint FDTD](examples/notebooks/topology_gradient_checks.ipynb)
+- [Broadband Inverse-designed Wavelength Demultiplexer](examples/notebooks/topology_broadband_demultiplexer.ipynb)
+- [Meep's Broadband Bend: Nominal and Fabrication-Robust Inverse Design](examples/notebooks/meep_filtered_waveguide_bend.ipynb)
+- [Tidy3D-style Inverse Design: 1-to-3 Splitter](examples/notebooks/tidy3d_inverse_design_splitter.ipynb)
+- [Tidy3D Reference: 3D Topology Waveguide Bend](examples/notebooks/tidy3d_topology_bend_3d.ipynb)
+- [Tidy3D Reference: Scheduled Four-channel WDM](examples/notebooks/tidy3d_wdm_4channel.ipynb)
 
 ## Integration 
 
-BeamZ is used by several other OSS packages as an FDTD engine:
-+ [SiEPIC's GDS FDTD](https://github.com/SiEPIC/gds_fdtd), an EDA- and solver-agnostic 3D FDTD compact modeling framework.
-+ [Lumix](https://github.com/amiskandarmuda/lumix), a research codebase for optical neural networks and matrix inverse design.
+BeamZ is used by several other OSS packages as an FDTD engine and integrates with workflows across the open-source photonics ecosystem:
++ [SiEPIC's GDS FDTD](https://github.com/SiEPIC/gds_fdtd), an EDA- and solver-agnostic 3D FDTD compact modeling framework using BeamZ as the default engine.
++ [Lumix](https://github.com/amiskandarmuda/lumix), a research codebase for optical neural networks and matrix inverse design, using BeamZ as the main solver.
++ [GDSFactory](https://github.com/gdsfactory/gdsfactory), the most popular open-source layout package for chip design for which BeamZ provides a simple workflow from PDK import to compact modeling.
 
 
 ## Installation
@@ -85,12 +91,9 @@ For a ready-to-use CUDA and Jupyter development environment, see the
 [Docker and RunPod guide](docker/runpod/README.md).
 
 
-## About
-BeamZ's mission is to be the **pragmatic** FDTD engine of choice for **photonic chip designers**.
+## Mission
 
-It focuses on **streamlined workflows** over **feature bloat** to produce **useful results** without tedious setup or configuration files and bringing GPU-acceleration for **maximum performance in large-scale simulations** to everyone.
-
-The project is **actively maintained**. We aim to keep the code in Python, minimize dependencies, keep the line-count low, commented, and features local within the code to **make the code readable and development easy** so that - if there is something that isn't working or missing - you can quickly add it yourself. The engine is grounded in hundreds of tests, verifiable simulations and benchmarks, replicating known results from the established literature. Beyond benchmarking the core engine stats, we aim to **reduce friction for chip designers at every step** - from installation, to setting up the sim using a familiar API, to optimizing the performance of the rasterizer, mode solver, compiler, optimization loop, and integration into the overall chip design workflow.
+BeamZ aims to become the FDTD engine of choice for **photonic simulations** in industry and research, including photonic circuits, inverse design, metamaterials, fiber optics, nanophotonics, sensors (planned), active photonic devices (planned), and RF (planned), focusing on **streamlined workflows** and bringing multi-physics GPU-acceleration for **maximum performance in large-scale simulations** to everyone. - [_Detailed roadmap coming soon_.](www.beamz.tech/roadmap)
 
 
 ## Contributing
@@ -98,6 +101,32 @@ The project is **actively maintained**. We aim to keep the code in Python, minim
 **We appreciate all contributions.** If you are planning to contribute bug-fixes, please do so without any further discussion. If you would like to add new features, please first open an issue and discuss the feature with us. There may be ongoing work that could conflict with your changes, or we may be heading in a different direction and we don't want to waste your time working on something that might be rejected. - You can find [more information here](CONTRIBUTING.md).
 
 The simplest way to support the project of course is by **giving this repo a star.** Thank you!
+
+
+## Citation
+
+If you use BeamZ in your research, please cite:
+
+Quentin Wach (2026). *BeamZ: CUDA-accelerated Differentiable FDTD for Photonics*
+(v0.5.3). Zenodo. https://doi.org/10.5281/zenodo.23135312
+
+```bibtex
+@software{wach_beamz,
+  author = {Wach, Quentin},
+  title = {{BeamZ}: {CUDA}-accelerated Differentiable {FDTD} for Photonics},
+  year = {2026},
+  version = {v0.5.3},
+  publisher = {Zenodo},
+  doi = {10.5281/zenodo.23135312},
+  url = {https://doi.org/10.5281/zenodo.23135312}
+}
+```
+
+Citation metadata is available in [CITATION.cff](CITATION.cff). For reproducible
+research, cite the DOI of the specific release you used; the citation above is
+for v0.5.3. If using an unreleased version, also report the commit hash.
+To reference BeamZ across all versions, use the
+[all-versions DOI](https://doi.org/10.5281/zenodo.23085101).
 
 ---
 

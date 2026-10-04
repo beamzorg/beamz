@@ -58,7 +58,7 @@ def cube():
 @pytest.mark.parametrize(
     ("values", "error", "message"),
     [
-        ([[0, 1]], ValueError, "at least 3 vertex indices"),
+        ([[0, 1]], ValueError, "exactly 3 vertex indices"),
         ([[0.5, 1, 2]], ValueError, "finite integers"),
         ([[np.inf, 1, 2]], ValueError, "finite integers"),
         ([["0", "1", "2"]], TypeError, "integer numeric dtype"),
@@ -76,9 +76,9 @@ def test_mesh_cell_indices_reject_invalid_arrays(values, error, message):
         )
 
 
-def test_mesh_cell_indices_accept_integral_floats_and_trim_high_order_nodes():
+def test_mesh_cell_indices_accept_integral_floats():
     result = mesh_import._cell_indices(
-        [[0.0, 1.0, 2.0, 3.0]],
+        [[0.0, 1.0, 2.0]],
         width=3,
         point_count=3,
         cell_type="triangle",
@@ -116,7 +116,7 @@ def test_meshio_adapter_handles_surface_and_tetrahedral_regions(monkeypatch):
     )
     volume = SimpleNamespace(
         points=vertices,
-        cells=(SimpleNamespace(type="tetra10", data=np.array([[0, 1, 2, 3]])),),
+        cells=(SimpleNamespace(type="tetra", data=np.array([[0, 1, 2, 3]])),),
         cell_data={},
         field_data={},
     )
@@ -137,7 +137,7 @@ def test_meshio_adapter_handles_surface_and_tetrahedral_regions(monkeypatch):
     assert len(surface_scene.objects) == 2
     np.testing.assert_array_equal(
         surface_scene.objects[0].geometry.vertices,
-        vertices * 2,
+        vertices[np.unique(triangles[0])] * 2,
     )
     assert len(volume_scene.objects) == 1
     assert volume_scene.objects[0].geometry.triangles.shape == (4, 3)
@@ -291,7 +291,7 @@ def test_multi_region_gmsh_enters_simulation_without_losing_materials(tmp_path):
     simulation.compile()
 
 
-def test_mesh_reference_quality_converges_to_tetrahedron_volume_fraction():
+def test_mesh_tetrahedron_volume_fraction_is_exact_at_every_quality():
     vertices, triangles = tetrahedron()
     scene = from_mesh_arrays(vertices, triangles, material=raster.Material(4.0))
     grid = raster.Grid.uniform((0, 0, 0), (1, 1, 1), (1, 1, 1))
@@ -300,13 +300,11 @@ def test_mesh_reference_quality_converges_to_tetrahedron_volume_fraction():
         result = raster.rasterize(
             scene,
             grid,
-            options=raster.RasterOptions(quality=quality),
+            options=raster.RasterOptions(quality=quality, smoothing="volume"),
         )
         values.append(float(result.tensors["epsilon"][0, 0, 0, 0]))
 
-    errors = [abs(value - 1.5) for value in values]
-    assert errors[2] < errors[1] < errors[0]
-    assert errors[2] < 1e-3
+    np.testing.assert_allclose(values, 1.5, rtol=0, atol=1e-7)
 
 
 def test_mesh_triangle_order_does_not_change_raster_result():

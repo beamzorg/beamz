@@ -1,0 +1,13 @@
+{
+  "output": "docs/reviews/rtx3090-2026-09-18-realistic-temporal-profiles",
+  "cases": [
+    "volume_128_256_512",
+    "field_eleven_frequencies",
+    "aspect_64_256_1024"
+  ],
+  "study": "temporal_schedule",
+  "rounds": 12,
+  "seed": 37,
+  "profile": true,
+  "worker": null
+}

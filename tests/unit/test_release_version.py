@@ -14,6 +14,9 @@ def _write_release_fixture(root: Path) -> None:
         '[tool.ruff]\ntarget-version = "py310"\n'
     )
     (root / "beamz" / "__init__.py").write_text('__version__ = "0.4.3"\n')
+    (root / "CITATION.cff").write_text(
+        'cff-version: 1.2.0\ntitle: "BeamZ"\nversion: "0.4.3"\n'
+    )
     (root / "uv.lock").write_text("version = 1\n")
     (root / "Cargo.toml").write_text(
         '[workspace]\nmembers = []\n\n[workspace.package]\nversion = "0.4.3"\n'
@@ -48,6 +51,10 @@ def test_update_version_keeps_python_and_native_engine_versions_in_sync(
     assert 'version = "0.5.0"' in pyproject
     assert 'target-version = "py310"' in pyproject
     assert '__version__ = "0.5.0"' in (tmp_path / "beamz" / "__init__.py").read_text()
+    citation = (tmp_path / "CITATION.cff").read_text()
+    assert 'version: "0.5.0"' in citation
+    assert "cff-version: 1.2.0" in citation
+    assert 'title: "BeamZ"' in citation
     assert (
         '[workspace.package]\nversion = "0.5.0"'
         in (tmp_path / "Cargo.toml").read_text()
@@ -92,6 +99,33 @@ def test_repository_python_and_rust_version_metadata_stay_in_sync():
     assert release_version.verify_version_sync()
 
 
+def test_verify_version_sync_rejects_stale_citation(tmp_path, monkeypatch):
+    _write_release_fixture(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "CITATION.cff").write_text('version: "0.4.2"\n')
+
+    with pytest.raises(RuntimeError, match="CITATION.cff=0.4.2"):
+        release_version.verify_version_sync("0.4.3")
+
+
+@pytest.mark.parametrize("citation", [None, "cff-version: 1.2.0\n"])
+def test_update_version_requires_citation_before_modifying_files(
+    tmp_path, monkeypatch, citation
+):
+    _write_release_fixture(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    if citation is None:
+        (tmp_path / "CITATION.cff").unlink()
+    else:
+        (tmp_path / "CITATION.cff").write_text(citation)
+    original = (tmp_path / "pyproject.toml").read_text()
+
+    with pytest.raises((FileNotFoundError, RuntimeError), match="citation"):
+        release_version.update_version("0.5.0")
+
+    assert (tmp_path / "pyproject.toml").read_text() == original
+
+
 def test_commit_version_changes_stages_python_and_rust_metadata(tmp_path, monkeypatch):
     _write_release_fixture(tmp_path)
     monkeypatch.chdir(tmp_path)
@@ -109,6 +143,7 @@ def test_commit_version_changes_stages_python_and_rust_metadata(tmp_path, monkey
         "pyproject.toml",
         "uv.lock",
         "beamz/__init__.py",
+        "CITATION.cff",
         "Cargo.toml",
         "Cargo.lock",
     ]

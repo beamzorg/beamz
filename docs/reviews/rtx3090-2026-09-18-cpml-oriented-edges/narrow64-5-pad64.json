@@ -1,0 +1,182 @@
+{
+  "source_sha256": "bd1b774366c9d2cc6fbc1f013e55907baa63222e441dfdbb0256dd6c496c1854",
+  "benchmark_sha256": "784b9511cab97e74c64a2cfc2965948759f169f90935a0e44122a23a35107c3a",
+  "warmups": 4,
+  "cpml_core_fusion_env": "0",
+  "field_padding_env": "64",
+  "storage_axes": [
+    1,
+    2,
+    0
+  ],
+  "cpml_tile_env": "auto",
+  "cpml_pair_tile_env": "half_y",
+  "cpml_temporal_env": "1",
+  "cpml_shell_tile_env": "64x4",
+  "temporal_steps_env": "2",
+  "source_root": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371",
+  "commit": "b0a5ff32d70755aa3c6f5d20e8ae9a5fdfe4ee7b",
+  "extension_sha256": "67c79d29763d441eb6902c23aee322c2baf5abbd11b5640557cd1162f7cb989d",
+  "device": "cuda:0",
+  "jax": "0.9.0",
+  "shape": [
+    1024,
+    256,
+    64
+  ],
+  "steps": 256,
+  "material": "binary",
+  "pml": 12,
+  "monitors": 2,
+  "frequencies": 3,
+  "in_place_experiment": false,
+  "source_specs": 8,
+  "setup_s": 9.88162029799787,
+  "compile_s": 2.0301300049977726,
+  "source": "mode",
+  "monitor_type": "mode",
+  "native_plans": [
+    {
+      "layout": 6,
+      "flags": 255,
+      "monitor_count": 2,
+      "coincident_source_group_mask": 360,
+      "disjoint_source_group_mask": 0,
+      "logical_shape": [
+        256,
+        64,
+        1024
+      ],
+      "temporal_steps": 2
+    }
+  ],
+  "presteps": 0,
+  "conditioning_s": 0.0,
+  "public_samples_s": [],
+  "samples_s": [
+    0.5930381569996825,
+    0.598911801000213,
+    0.5940141630017024,
+    0.5794124069980171,
+    0.5981801380003162,
+    0.5985142549980083,
+    0.5870496879979328,
+    0.5856250369979534,
+    0.5977489659999264
+  ],
+  "median_gcups": 7.230412275519583,
+  "field_dtype": "float32",
+  "field_shapes": {
+    "ex": [
+      1025,
+      257,
+      64
+    ],
+    "ey": [
+      1025,
+      256,
+      65
+    ],
+    "ez": [
+      1024,
+      257,
+      65
+    ],
+    "hx": [
+      1024,
+      256,
+      65
+    ],
+    "hy": [
+      1024,
+      257,
+      64
+    ],
+    "hz": [
+      1025,
+      256,
+      64
+    ]
+  },
+  "monitor_regions": [
+    {
+      "center": [
+        3.328e-06,
+        1.024e-05,
+        4.096e-05
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    },
+    {
+      "center": [
+        3.8400000000000005e-06,
+        1.024e-05,
+        4.096e-05
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    }
+  ],
+  "cpml_dtypes": [
+    "float32"
+  ],
+  "h_coefficient_shapes": {
+    "h_decay_x": [],
+    "h_decay_y": [],
+    "h_decay_z": [],
+    "h_source_x": [],
+    "h_source_y": [],
+    "h_source_z": []
+  },
+  "e_coefficient_shapes": [
+    [
+      4214800
+    ],
+    [
+      4264000
+    ],
+    [
+      4276480
+    ]
+  ],
+  "gpu": "name, utilization.gpu [%], clocks.current.sm [MHz], clocks.current.memory [MHz], power.draw [W], power.limit [W], temperature.gpu, memory.used [MiB]\nNVIDIA GeForce RTX 3090, 100 %, 1875 MHz, 9501 MHz, 367.90 W, 370.00 W, 68, 5185 MiB",
+  "state_sha256": [
+    "8d3ddda6707c99f9d70c6107dd5ad30b90019edf81c77698235c03b700e4df61",
+    "1543ff4d144cc3a3372f91185b607190b0984932a9404f7cf8d28753beb285ee",
+    "64d09fd44be95c12a9bc6146c88d36ac56347356be33d69a484b36c008ca2335",
+    "29a3ae0950feff40147f8c376b8592280f7ae7ceca6f17a42b11c77d23042441",
+    "b7a4942d3f58f73b585eb0c8cf75d0467810b42ec6cd1474a93fe730bf6f599c",
+    "94f45e5ec2c5cb846572e5f24cb2fddc1251d6867f33d9e3be3e650e1a08aafa",
+    "798906ebc982eac92d93e58d9582df43ecf5b8e17fb4f819eba6afe05bf0a50e",
+    "51506aa94bd9a2a2e69a1cb607cbb8770970f008748ff296f0258affe3a74c01",
+    "8b8fc8a00ffdaefe3454b64b7ca07d3f6e15b9e3fb35a3cf55450fa5277a0b03",
+    "57ebef59454d2f038a7089612562798f509a8d1539cbb21b1026fdd816307cc2",
+    "89bbf091c74fba58b5bbc48c538cf6889583ac544ce34c6127f1a782e3169f33",
+    "cb1fc1ca059bcab09f6436dbb5b0747bb3b2e069d55766e0c3f9458fc453ed05",
+    "72da2ea0a024ee3ad65a642ab0ed40ccd7d5c1500ac4db7883135a4c60582675",
+    "8b8fc8a00ffdaefe3454b64b7ca07d3f6e15b9e3fb35a3cf55450fa5277a0b03",
+    "51506aa94bd9a2a2e69a1cb607cbb8770970f008748ff296f0258affe3a74c01",
+    "620e31140115253053ec6b35a543c1dffb71d4c7de8414472b7f3a0600b75299",
+    "76492fe17e71037aa29e2233cf278dc1fd39af2a93ac26fd1e9d74a9c50a4ec2",
+    "7e2ed24fa4be5cef33593d8ea56c54d8470ff376c3fd0959507afcc97daf5b5b",
+    "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+    "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+    "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+    "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0",
+    "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0",
+    "f46913286d895f62d646314f400fc3d7a543cf34eb4ae56df87f43dc4582a36b",
+    "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0",
+    "de13e791b9cc5b6ac7fa173fd33ecbbe4a0d386b63052630246efda07fa5900b",
+    "a6ce59169462aa07e61cec08751473ba84b55dcecdf13acd7c2c40a635c7d492",
+    "6a8be7f6f12d448f5f2b8d085d1639a96c402326f1fc5a4e2e5f053faf1c9a1c",
+    "fa25a9962bc7fdb1705232befb5a59e0312f2f07d519e688e4f6695b4b3dd847",
+    "bf5e8ffa51a9e748985800c1d3d7f1a2a6ae7435136593ca8d9637e3f87c699c"
+  ]
+}

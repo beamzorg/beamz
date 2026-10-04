@@ -1,0 +1,12 @@
+[
+  {
+    "free_mib": 14136.0,
+    "used_mib": 9979.0,
+    "utilization": 16.0,
+    "power_w": 35.03,
+    "limit_w": 370.0,
+    "temperature_c": 54.0,
+    "sm_mhz": 210.0,
+    "elapsed_s": 0.05826804903335869
+  }
+]

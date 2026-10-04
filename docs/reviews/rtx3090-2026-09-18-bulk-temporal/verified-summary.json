@@ -1,0 +1,10 @@
+{
+  "configurations": 48,
+  "shapes": 4,
+  "max_temperature_c": 79.0,
+  "minimum_free_gib": 11.7685546875,
+  "power_limits_w": [
+    370.0
+  ],
+  "all_large_outputs_identical": true
+}

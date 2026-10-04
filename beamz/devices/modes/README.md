@@ -31,6 +31,14 @@ frequencies are measured in hertz. The result contains labeled effective
 indices, field components, and solver diagnostics; BeamZ analysis owns plotting
 and persistence.
 
+For a uniformly bent cross-section, add `bend_radius=10.0` (micrometres) and
+optionally `bend_axis="x"` or `"y"` (local radial coordinate). Radius is measured
+from coordinate zero; positive radius puts the curvature center at `-R`.
+`bend_radius=None` preserves straight solves. See
+[circular-bend modes](../../../docs/bent-waveguide-modes.md) for the material
+assumptions, field conventions, validation results, and limitations, and
+[the runnable example](../../../examples/bent_waveguide_modes.py).
+
 The discrete launch path converts solved modes onto BeamZ's component-specific
 Yee supports, normalizes their signed power, and applies guarded refinement
 only when field overlap, impedance, energy, power, and discrete-Maxwell

@@ -1,0 +1,59 @@
+--- a/cuda/src/update.cu
++++ b/cuda/src/update.cu
+@@ -961,7 +961,7 @@
+ template <int Component>
+ __device__ float CoreHValue(const FusedYeePhase &h,
+                             const FusedHSources &sources, int z, int y, int x,
+-                            int low, int hz, int hy, int hx) {
++                            int low, int hz, int hy, int hx, bool source_active = true) {
+   if (!BufferContains(h.outputs[Component], z, y, x))
+     return 0.f;
+   if (z < low || y < low || x < low || z >= hz || y >= hy || x >= hx) {
+@@ -978,7 +978,7 @@
+       0, Read3D(h.inputs[Component], z, y, x),
+       Read(h.inputs[6 + Component], z, y, x),
+       Read(h.inputs[9 + Component], z, y, x), curl);
+-  return AddFusedHSource<Component>(value, sources, z, y, x);
++  return source_active ? AddFusedHSource<Component>(value, sources, z, y, x) : value;
+ }
+ 
+ template <int Component, bool Packed, typename Tile>
+@@ -1026,17 +1026,35 @@
+         oz + Tile::Z <= hz - 2)
+       return;
+   }
++  // Sources are spatially sparse. Test the staged tile plus backward halo
++  // once, instead of rereading source bounds for every staged H component.
++  __shared__ bool active_sources[3];
++  if (thread < 3) {
++    const auto &group = sources.groups[thread];
++    const auto *starts = static_cast<const int *>(group.starts.data);
++    bool active = false;
++    for (int source = 0; source < group.coefficients.dims[0]; ++source) {
++      active |= starts[3 * source] < oz + Tile::Z &&
++                starts[3 * source] + group.coefficients.dims[1] > oz - 1 &&
++                starts[3 * source + 1] < oy + Tile::Y &&
++                starts[3 * source + 1] + group.coefficients.dims[2] > oy - 1 &&
++                starts[3 * source + 2] < ox + Tile::X &&
++                starts[3 * source + 2] + group.coefficients.dims[3] > ox - 1;
++    }
++    active_sources[thread] = active;
++  }
++  __syncthreads();
+   constexpr int plane = Tile::SharedX * Tile::SharedY;
+   auto stage = [&](int z, int slot) {
+     for (int index = thread; index < plane; index += threads) {
+       const int x = ox + index % Tile::SharedX - 1;
+       const int y = oy + index / Tile::SharedX - 1;
+       const int dest = slot * plane + index;
+-      h_fields[dest] = CoreHValue<0>(h, sources, z, y, x, low, hz, hy, hx);
++      h_fields[dest] = CoreHValue<0>(h, sources, z, y, x, low, hz, hy, hx, active_sources[0]);
+       h_fields[Tile::Volume + dest] =
+-          CoreHValue<1>(h, sources, z, y, x, low, hz, hy, hx);
++          CoreHValue<1>(h, sources, z, y, x, low, hz, hy, hx, active_sources[1]);
+       h_fields[2 * Tile::Volume + dest] =
+-          CoreHValue<2>(h, sources, z, y, x, low, hz, hy, hx);
++          CoreHValue<2>(h, sources, z, y, x, low, hz, hy, hx, active_sources[2]);
+     }
+   };
+   // Only two H planes are live: the current plane and its backward z halo.

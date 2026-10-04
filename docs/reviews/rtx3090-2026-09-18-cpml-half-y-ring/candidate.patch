@@ -1,0 +1,185 @@
+--- a/cuda/src/update.cu
++++ b/cuda/src/update.cu
+@@ -1554,14 +1554,21 @@
+   for (int a=0;a<3;++a) {
+     counts[a]=(Mask & (1<<a)) ? (grid.high[a]+sizes[a]-1)/sizes[a]+(grid.extent[a]-grid.boundary[a]+sizes[a]-1)/sizes[a]
+                             : (grid.boundary[a]-grid.high[a]+sizes[a]-1)/sizes[a];
++    if constexpr (Steps == 2 && Mask == 2 && Y == 66) if (a == 1) counts[a] = 1;
++    if constexpr (Steps == 2 && Mask == 2 && Y == 33) if (a == 1) counts[a] = 2;
+     if (!counts[a]) return cudaSuccess;
+   }
+   constexpr size_t bytes=Steps==1 ? PairStage<X-2,Y-2,1>::offset*sizeof(float)
+       : PairPsiStage<X,Y,1,Mask,Half>::offset*sizeof(float)+
+-        2*PairPsiTerms(Mask)*(X+2)*(Y+2)*(Half?sizeof(__nv_bfloat16):sizeof(float));
++        2*PairPsiTerms(Mask)*(X+2)*((Mask == 2 && Y == 66) ? 24 : (Mask == 2 && Y == 33) ? 12 : Y+2)*(Half?sizeof(__nv_bfloat16):sizeof(float));
++  if constexpr (bytes > 48*1024) {
++    auto error = cudaFuncSetAttribute(TemporalCpmlPair<Packed,Half,X,Y,Z,Mask,Steps>,
++                                    cudaFuncAttributeMaxDynamicSharedMemorySize,bytes);
++    if (error != cudaSuccess) return error;
++  }
+   TemporalCpmlPair<Packed,Half,X,Y,Z,Mask,Steps>
+       <<<dim3(counts[2],counts[1],counts[0]),
+-         (Steps == 2 && ((Mask == 4 && X == 15 && Y == 16) || (Mask == 2 && X == 16 && Y == 15))) ? 384 : 256,
++         (Steps == 2 && Mask == 2 && Y == 33) ? 704 : (Steps == 2 && Mask == 2 && Y == 66) ? 1024 : (Steps == 2 && ((Mask == 4 && X == 15 && Y == 16) || (Mask == 2 && X == 16 && Y == 15))) ? 384 : 256,
+          bytes,stream>>>(h,e,final,hs,es,publication,grid);
+   return cudaPeekAtLastError();
+ }
+@@ -1592,14 +1599,15 @@
+   const auto hp=MakePairCpmlPhase(h), ep=MakePairCpmlPhase(e);
+ #define LAUNCH_MASK(M) { \
+     constexpr bool face=(M==1||M==2||M==4); \
+-    constexpr int X=Steps==1 ? ((M&4)?15:31) : M==0?16:Tile==2&&face?(M==4?15:M==2?16:32):16; \
+-    constexpr int Y=Steps==1 ? ((M&4)?15:7) : M==0?8:Tile==2&&face?(M==4?16:M==2?15:4):8; \
+-    constexpr int Z=Steps==1 ? 16 : M==0||Tile==0||Tile==2&&face?16:4; \
++    constexpr int X=Steps==1 ? ((M&4)?15:31) : M==0?16:Tile>=2&&face?(M==4?15:M==2?(Tile==4?16:Tile==3?15:16):32):16; \
++    constexpr int Y=Steps==1 ? ((M&4)?15:7) : M==0?8:Tile>=2&&face?(M==4?16:M==2?(Tile==4?33:Tile==3?66:15):4):8; \
++    constexpr int Z=Steps==1 ? 16 : M==0||Tile==0||Tile>=2&&face?16:4; \
+     auto error=LaunchTemporalCpmlMask<Packed,Half,X,Y,Z,M,Steps>( \
+         stream,hp,ep,final,hs,es,publication,grid); \
+     if(error!=cudaSuccess)return error; \
+   }
+-  LAUNCH_MASK(0); LAUNCH_MASK(1); LAUNCH_MASK(2); LAUNCH_MASK(4);
++  if constexpr (Tile < 3) { LAUNCH_MASK(0); }
++  LAUNCH_MASK(1); LAUNCH_MASK(2); LAUNCH_MASK(4);
+   LAUNCH_MASK(3); LAUNCH_MASK(5); LAUNCH_MASK(6); LAUNCH_MASK(7);
+ #undef LAUNCH_MASK
+   return cudaSuccess;
+@@ -1617,7 +1625,23 @@
+   if(h.inputs[31].element_type==kBeamzBF16) \
+     return LaunchTemporalCpmlMasks<false,true,T>(stream,h,e,final_fields,groups,step,publication); \
+   return LaunchTemporalCpmlMasks<false,false,T>(stream,h,e,final_fields,groups,step,publication);
++  if (tile == 3 || tile == 4) {
++    bool supported = h.uniform_cpml_thickness == 12;
++    for (int c=0;c<3;++c)
++      supported &= h.outputs[c].dims[1] <= 66 && e.outputs[c].dims[1] <= 66;
++    if (tile == 4) {
++      int max_y = 0;
++      for (int c=0;c<3;++c) {
++        max_y = std::max(max_y,static_cast<int>(h.outputs[c].dims[1]));
++        max_y = std::max(max_y,static_cast<int>(e.outputs[c].dims[1]));
++      }
++      supported &= max_y >= 63;
++    }
++    if (!supported) tile = 2;
++  }
+   switch(tile) {
++    case 4: { LAUNCH_TILE(4); }
++    case 3: { LAUNCH_TILE(3); }
+     case 0: {LAUNCH_TILE(0)}
+     case 1: {LAUNCH_TILE(1)}
+     case 2: {LAUNCH_TILE(2)}
+--- a/cuda/src/temporal_cpml.cuh
++++ b/cuda/src/temporal_cpml.cuh
+@@ -38,10 +38,27 @@
+   int high[3], field_high[3], extent[3], boundary[3];
+ };
+ 
++template <int X, int Y, int K, bool Compact>
++struct CpmlFieldStage : PairStage<X,Y,K> {};
++
++template <int X, int Y, int K>
++struct CpmlFieldStage<X,Y,K,true> {
++  static constexpr int sx=X+3-K, sy=Y+3-K;
++  __device__ static __forceinline__ float &At(float *shared, int c, int z,
++                                             int y, int x) {
++    if constexpr (K == 1)
++      return shared[9*(X+3)*(Y+3)+((c*2+(z&1))*(Y+2)+y)*(X+2)+x];
++    else
++      return shared[((c*3+(z+3)%3)*(Y+3)+y+(K==2))*(X+3)+x+(K==2)];
++  }
++};
++
+ template <int X, int Y, int K, int Mask, bool Half> struct PairPsiStage {
+-  static constexpr int sx = X + 3 - K, sy = Y + 3 - K;
+-  static constexpr int offset = PairStage<X, Y, 3>::offset +
+-                                (K == 0 ? 0 : (Half ? 1 : 2) * PairPsiTerms(Mask) * (X + 3) * (Y + 3));
++  static constexpr bool full_y = Mask == 2 && Y == 66;
++  static constexpr bool half_y = Mask == 2 && Y == 33;
++  static constexpr int sx = X + 3 - K, sy = full_y ? 24 : half_y ? 12 : Y + 3 - K;
++  static constexpr int offset = (half_y ? 9*(X+3)*(Y+3)+6*(X+2)*(Y+2) : PairStage<X, Y, 3>::offset) +
++                                (K == 0 ? 0 : (Half ? 1 : 2) * PairPsiTerms(Mask) * (X + 3) * (full_y ? 24 : half_y ? 12 : Y + 3));
+   using Value=std::conditional_t<Half,__nv_bfloat16,float>;
+   __device__ static __forceinline__ Value &At(float *shared, int term, int z,
+                                               int y, int x) {
+@@ -72,14 +89,14 @@
+     if constexpr(Half) old=__bfloat162float(static_cast<const __nv_bfloat16 *>(input)[index]);
+     else old=static_cast<const float *>(input)[index];
+   } else {
+-    const auto value=PairPsiStage<X,Y,K-2,Mask,Half>::At(shared,Term,z,iy+1,ix+1);
++    const auto value=PairPsiStage<X,Y,K-2,Mask,Half>::At(shared,Term,z,(Mask == 2 && Y == 66) ? packed : (Mask == 2 && Y == 33) ? packed % 12 : iy+1,ix+1);
+     if constexpr(Half) old=__bfloat162float(value); else old=value;
+   }
+   const float next = beamz::cuda::yee::AdvanceCpmlPsi(
+       p.profiles[3 * Term + 1][packed], old,
+       p.profiles[3 * Term][packed], derivative);
+   if constexpr (K < 2*(Steps-1)) {
+-    auto &value=PairPsiStage<X,Y,K,Mask,Half>::At(shared,Term,z,iy,ix);
++    auto &value=PairPsiStage<X,Y,K,Mask,Half>::At(shared,Term,z,(Mask == 2 && Y == 66) ? packed : (Mask == 2 && Y == 33) ? packed % 12 : iy,ix);
+     if constexpr(Half) value=__float2bfloat16_rn(next); else value=next;
+   } else if (owned) {
+     if constexpr(Half) static_cast<__nv_bfloat16 *>(p.final_psi[Term])[index]=__float2bfloat16_rn(next);
+@@ -95,7 +112,7 @@
+     const PairFieldOutputs &final, const FusedHSources &hs,
+     const FusedHSources &es, const BeamzBuffer &publication,
+     const bool *active_sources, int ox, int oy, int oz, int wave, int end_x, int end_y, int end_z) {
+-  using Here = PairStage<X+2*(Steps-2),Y+2*(Steps-2),K>;
++  using Here = CpmlFieldStage<X+2*(Steps-2),Y+2*(Steps-2),K,(Mask==2 && Y==33 && Steps==2)>;
+   constexpr int phase = K % 2, shift = phase == 1 ? 1 : 0;
+   constexpr int sign = phase == 0 ? 1 : -1;
+   const auto &p = phase == 0 ? h : e;
+@@ -118,12 +135,12 @@
+           if constexpr (K < 2)
+             old = Read3D(f.inputs[c], z, y, x);
+           else
+-            old = PairStage<X, Y, K - 2>::At(shared, c, z, iy + 1, ix + 1);
++            old = CpmlFieldStage<X, Y, K - 2,(Mask==2 && Y==33 && Steps==2)>::At(shared, c, z, iy + 1, ix + 1);
+           auto other = [&](int component, int dz, int dy, int dx) {
+             if constexpr (K == 0)
+               return Read3D(h.field.inputs[3 + component], z + dz, y + dy, x + dx);
+             else
+-              return PairStage<X+2*(Steps-2),Y+2*(Steps-2),K-1>::At(
++              return CpmlFieldStage<X+2*(Steps-2),Y+2*(Steps-2),K-1,(Mask==2 && Y==33 && Steps==2)>::At(
+                   shared, component, z + dz, iy + shift + dy, ix + shift + dx);
+           };
+           auto diff = [&](int component, int axis) {
+@@ -199,9 +216,9 @@
+ // Bound registers so its 32-KiB shared stages, rather than registers, set residency.
+ template <bool Packed, bool Half, int X, int Y, int Z, int Mask, int Steps>
+ __global__ __launch_bounds__(
+-    (Steps == 2 && ((Mask == 4 && X == 15 && Y == 16) ||
++    (Steps == 2 && Mask == 2 && Y == 33) ? 704 : (Steps == 2 && Mask == 2 && Y == 66) ? 1024 : (Steps == 2 && ((Mask == 4 && X == 15 && Y == 16) ||
+                     (Mask == 2 && X == 16 && Y == 15))) ? 384 : 256,
+-    (Steps == 2 && Mask == 2 && X == 16 && Y == 15) ? 3 : 1)
++    (Steps == 2 && Mask == 2 && Y == 33) ? 2 : (Steps == 2 && Mask == 2 && X == 16 && Y == 15) ? 3 : 1)
+ void TemporalCpmlPair(
+     const __grid_constant__ PairCpmlPhase h,
+     const __grid_constant__ PairCpmlPhase e,
+@@ -211,6 +228,8 @@
+     const __grid_constant__ BeamzBuffer publication, PairCpmlGrid grid) {
+   extern __shared__ float shared[];
+   auto tile_coordinate = [&](int axis, int local, int size) {
++    if constexpr (Mask == 2 && Y == 66) if (axis == 1) return 0;
++    if constexpr (Mask == 2 && Y == 33) if (axis == 1) return local * ((grid.extent[1]+1)/2);
+     const int low_count=(grid.high[axis]+size-1)/size;
+     if (Mask & (1 << axis))
+       return local < low_count ? local * size
+@@ -218,6 +237,8 @@
+     return grid.high[axis] + local * size;
+   };
+   auto tile_end = [&](int axis, int local, int origin, int size) {
++    if constexpr (Mask == 2 && Y == 66) if (axis == 1) return grid.extent[1];
++    if constexpr (Mask == 2 && Y == 33) if (axis == 1) return local == 0 ? (grid.extent[1]+1)/2 : grid.extent[1];
+     const int low_count=(grid.high[axis]+size-1)/size;
+     if (Mask & (1 << axis))
+       return min(origin+size,local<low_count?grid.high[axis]:grid.extent[axis]);
+--- a/cuda/src/program.cu
++++ b/cuda/src/program.cu
+@@ -669,6 +669,8 @@
+     if (const char *choice=std::getenv("BEAMZ_CUDA_CPML_PAIR_TILE")) {
+       if (std::strcmp(choice,"16x8x4")==0) cpml_tile=1;
+       else if (std::strcmp(choice,"oriented")==0) cpml_tile=2;
++      else if (std::strcmp(choice,"full_y")==0) cpml_tile=3;
++      else if (std::strcmp(choice,"half_y")==0) cpml_tile=4;
+       else if (std::strcmp(choice,"16x8x16")!=0) return cudaErrorInvalidValue;
+     }
+   }

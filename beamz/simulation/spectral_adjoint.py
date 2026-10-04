@@ -167,7 +167,8 @@ class SpectralAdjoint:
                     coeffs=coefficients,
                     program=program,
                     update_kernel=update_kernel,
-                    time_origin=problem._initial.t,
+                    observation_time=problem._initial.t
+                    + (state.current_step + 1).astype(jnp.float32) * ctx.dt_scalar,
                 )
                 phase = jnp.exp(2j * jnp.pi * frequencies * state.t)
                 dfts = tuple(

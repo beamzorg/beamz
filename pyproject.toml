@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "beamz"
-version = "0.5.1"
+version = "0.5.3"
 dynamic = []
 authors = [
     { name = "Quentin Wach", email = "quentin.wach+beamz@gmail.com" },
@@ -59,13 +59,14 @@ mesh = [
     "trimesh>=4.5",
 ]
 dev = [
+    "PyYAML>=6.0",
     "ipykernel>=6.29.0",
     "maturin>=1.9,<2",
     "meshio>=5.3",
     "nbconvert>=7.16.0",
     "trimesh>=4.5",
     "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
+    "pytest-cov>=7.0.0",
     "myst-parser>=2.0.0",
     "mkdocs>=1.5.0",
     "mkdocs-material>=9.0.0",
@@ -85,12 +86,16 @@ ubc = [
 ]
 test = [ # Adding a 'test' extra that includes pytest and pytest-cov for convenience
     "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
+    "pytest-cov>=7.0.0",
     "pytest-randomly>=3.0.0",
     "hypothesis>=6.100.0",
     "diff-cover>=9.0.0",
 ]
 
+
+[tool.coverage.run]
+# CPU sharding contracts initialize JAX devices in fresh Python processes.
+patch = ["subprocess"]
 
 [tool.ruff]
 line-length = 88
@@ -122,6 +127,7 @@ python-source = "."
 module-name = "beamz.design.raster._native"
 features = ["pyo3/extension-module"]
 include = [
+    { path = "beamz/material_library/data/*", format = ["sdist", "wheel"] },
     { path = "cuda/CMakeLists.txt", format = "sdist" },
     { path = "cuda/README.md", format = "sdist" },
     { path = "cuda/abi_layout.json", format = "sdist" },

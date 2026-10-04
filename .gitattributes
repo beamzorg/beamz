@@ -1,0 +1,2 @@
+# Keep docs versioned without line-by-line diffs or line-change statistics.
+docs/** -diff

@@ -1,0 +1,98 @@
+[
+  {
+    "case": "short_x",
+    "variant": "main",
+    "repeat": 1,
+    "median_gcups": 7.122349040917062
+  },
+  {
+    "case": "short_x",
+    "variant": "branch",
+    "repeat": 1,
+    "median_gcups": 8.322224057628421
+  },
+  {
+    "case": "short_x",
+    "variant": "branch",
+    "repeat": 2,
+    "median_gcups": 8.500669916421245
+  },
+  {
+    "case": "short_x",
+    "variant": "main",
+    "repeat": 2,
+    "median_gcups": 7.112802501107564
+  },
+  {
+    "case": "long_y",
+    "variant": "main",
+    "repeat": 1,
+    "median_gcups": 5.864823355406357
+  },
+  {
+    "case": "long_y",
+    "variant": "branch",
+    "repeat": 1,
+    "median_gcups": 7.0877894784739635
+  },
+  {
+    "case": "long_y",
+    "variant": "branch",
+    "repeat": 2,
+    "median_gcups": 7.088838471535009
+  },
+  {
+    "case": "long_y",
+    "variant": "main",
+    "repeat": 2,
+    "median_gcups": 6.035821177566494
+  },
+  {
+    "case": "flat_z",
+    "variant": "main",
+    "repeat": 1,
+    "median_gcups": 8.187298376318902
+  },
+  {
+    "case": "flat_z",
+    "variant": "branch",
+    "repeat": 1,
+    "median_gcups": 8.728184893657653
+  },
+  {
+    "case": "flat_z",
+    "variant": "branch",
+    "repeat": 2,
+    "median_gcups": 8.728201023554643
+  },
+  {
+    "case": "flat_z",
+    "variant": "main",
+    "repeat": 2,
+    "median_gcups": 8.188109315753037
+  },
+  {
+    "case": "irregular",
+    "variant": "main",
+    "repeat": 1,
+    "median_gcups": 7.06210679466161
+  },
+  {
+    "case": "irregular",
+    "variant": "branch",
+    "repeat": 1,
+    "median_gcups": 8.34216846708784
+  },
+  {
+    "case": "irregular",
+    "variant": "branch",
+    "repeat": 2,
+    "median_gcups": 8.34357168341667
+  },
+  {
+    "case": "irregular",
+    "variant": "main",
+    "repeat": 2,
+    "median_gcups": 7.061630150656111
+  }
+]

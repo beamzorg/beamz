@@ -51,6 +51,31 @@ impl SupportSpec {
         std::array::from_fn(|axis| cells[axis] + usize::from(self.axes[axis] == AxisLocation::Edge))
     }
 
+    /// Actual staggered sample location, not the midpoint of a clipped dual volume.
+    pub(crate) fn point(self, grid: &Grid, index: [usize; 3]) -> [f64; 3] {
+        let edges = [&grid.x_edges, &grid.y_edges, &grid.z_edges];
+        std::array::from_fn(|axis| match self.axes[axis] {
+            AxisLocation::Center => 0.5 * (edges[axis][index[axis]] + edges[axis][index[axis] + 1]),
+            AxisLocation::Edge => {
+                let value = edges[axis][index[axis]];
+                if index[axis] + 1 == edges[axis].len() {
+                    // The domain's final face owns its interior limit. Otherwise
+                    // a box clipped to the domain would acquire an exterior-air
+                    // sample and contaminate the joined periodic half supports.
+                    if value == 0.0 {
+                        -f64::from_bits(1)
+                    } else if value > 0.0 {
+                        f64::from_bits(value.to_bits() - 1)
+                    } else {
+                        f64::from_bits(value.to_bits() + 1)
+                    }
+                } else {
+                    value
+                }
+            }
+        })
+    }
+
     pub(crate) fn volume(self, grid: &Grid, index: [usize; 3]) -> Aabb {
         let edges = [&grid.x_edges, &grid.y_edges, &grid.z_edges];
         let bounds: [[f64; 2]; 3] = std::array::from_fn(|axis| match self.axes[axis] {
@@ -61,6 +86,48 @@ impl SupportSpec {
             min: [bounds[0][0], bounds[1][0], bounds[2][0]],
             max: [bounds[0][1], bounds[1][1], bounds[2][1]],
         }
+    }
+
+    /// Complete dual volumes at periodic faces, expressed across the low seam.
+    pub(crate) fn periodic_volume(
+        self,
+        grid: &Grid,
+        index: [usize; 3],
+        periodic: [bool; 3],
+    ) -> Aabb {
+        let mut volume = self.volume(grid, index);
+        let edges = [&grid.x_edges, &grid.y_edges, &grid.z_edges];
+        for axis in 0..3 {
+            let e = edges[axis];
+            let last = e.len() - 1;
+            if periodic[axis]
+                && self.axes[axis] == AxisLocation::Edge
+                && (index[axis] == 0 || index[axis] == last)
+            {
+                volume.min[axis] = e[0] - 0.5 * (e[last] - e[last - 1]);
+                volume.max[axis] = e[0] + 0.5 * (e[1] - e[0]);
+            }
+        }
+        volume
+    }
+
+    pub(crate) fn periodic_point(
+        self,
+        grid: &Grid,
+        index: [usize; 3],
+        periodic: [bool; 3],
+    ) -> [f64; 3] {
+        let mut point = self.point(grid, index);
+        let edges = [&grid.x_edges, &grid.y_edges, &grid.z_edges];
+        for axis in 0..3 {
+            if periodic[axis]
+                && self.axes[axis] == AxisLocation::Edge
+                && index[axis] + 1 == edges[axis].len()
+            {
+                point[axis] = edges[axis][0];
+            }
+        }
+        point
     }
 }
 
@@ -181,6 +248,20 @@ fn validate_axis(name: &str, edges: &[f64]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn periodic_dual_volume_joins_nonuniform_end_cells_and_canonicalizes_point() {
+        let grid = super::Grid::new(vec![0.0, 1.0, 3.0], vec![0.0, 2.0], vec![0.0, 1.0]).unwrap();
+        let support = super::SupportSpec::EY;
+        let periodic = [true, false, false];
+        let low = support.periodic_volume(&grid, [0, 0, 0], periodic);
+        let high = support.periodic_volume(&grid, [2, 0, 0], periodic);
+        assert_eq!(low, high);
+        assert_eq!(low.min[0], -1.0);
+        assert_eq!(low.max[0], 0.5);
+        assert_eq!(support.periodic_point(&grid, [0, 0, 0], periodic)[0], 0.0);
+        assert_eq!(support.periodic_point(&grid, [2, 0, 0], periodic)[0], 0.0);
+    }
+
     use super::*;
 
     #[test]

@@ -38,6 +38,27 @@ REQUIRED = {
     "wheel": {"beamz/__init__.py", "beamz/py.typed"},
 }
 
+for required_files in REQUIRED.values():
+    required_files.update(
+        f"beamz/material_library/data/{name}"
+        for name in (
+            "catalog.json",
+            "red.csv",
+            "green.csv",
+            "blue.csv",
+            "README.md",
+            "LICENSE-CC0-1.0.txt",
+            "SiO2-Malitson.yml",
+            "Si3N4-Philipp.yml",
+            "Si-Pierce.yml",
+            "Al-Rakic.yml",
+            "SiO2-Malitson.csv",
+            "Si3N4-Philipp.csv",
+            "Si-Pierce.csv",
+            "Al-Rakic.csv",
+        )
+    )
+
 
 def _archive_names(path: Path) -> list[str]:
     if path.name.endswith(".tar.gz"):

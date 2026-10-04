@@ -818,3 +818,76 @@ def test_mode_source_rejects_removed_runtime_launch_attributes():
             direction="+",
             _initialized=True,
         )
+
+
+@pytest.mark.parametrize("axis", ("x", "y", "z"))
+@pytest.mark.parametrize("direction", (-1, 1))
+@pytest.mark.parametrize("plane", (2, 25))
+def test_local_launch_power_matches_dense_yee_diagnostic(
+    monkeypatch, axis, direction, plane
+):
+    """Cropping must preserve staggering, launch direction, and outer Yee edges."""
+    fields = _uniform_3d_fields(shape=(48, 52, 56))
+    normal = {"x": 2, "y": 1, "z": 0}[axis]
+    center = [28.0, 26.0, 24.0]
+    center[2 - normal] = plane + 0.5
+    size = tuple(0.0 if name == axis else 6.0 for name in ("x", "y", "z"))
+    source = _mode_source(
+        center=tuple(center), size=size, direction="+" if direction > 0 else "-"
+    )
+    electric, magnetic = {"x": ("Ey", "Hz"), "y": ("Ez", "Hx"), "z": ("Ex", "Hy")}[axis]
+    components, indices = {}, {}
+    for name in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz"):
+        index = [
+            slice(int(center[2 - d]) - 5, int(center[2 - d]) + 5) for d in range(3)
+        ]
+        index[normal] = plane
+        indices[name] = tuple(index)
+        amplitude = (
+            1.0 if name == electric else direction / 250.0 if name == magnetic else 0.0
+        )
+        components[name] = np.full((10, 10), amplitude, dtype=np.complex128)
+    profile = FieldProfile3D(
+        components=components,
+        indices=indices,
+        axis=axis,
+        direction_sign=float(direction),
+        omega=2.0e8,
+        k_axis=direction * 1.0,
+        phase_ref_coord=plane + 1.0,
+        phase_plane_coord=plane + 0.5,
+    )
+    planar = mode_launch_module.planar_tfsf
+    dt = 1e-10
+    residuals = planar.compute_discrete_3d_h_phasor_residuals(
+        profile,
+        fields,
+        resolution=1.0,
+        max_shift=12,
+        dt=dt,
+    ) + planar.compute_discrete_3d_e_phasor_residuals(
+        profile,
+        fields,
+        resolution=1.0,
+        max_shift=12,
+        dt=dt,
+    )
+    powers = []
+    measure = mode_launch_module._yee_plane_power_3d
+
+    def record(*args, **kwargs):
+        value = measure(*args, **kwargs)
+        powers.append(value)
+        return value
+
+    monkeypatch.setattr(mode_launch_module, "_yee_plane_power_3d", record)
+    local = _launch_power_diagnostics_3d(
+        source, profile, residuals, fields, resolution=1.0, dt=dt, requested_power=1.0
+    )
+    monkeypatch.setattr(planar, "local_3d_phasor_context", lambda *a, **kw: None)
+    dense = _launch_power_diagnostics_3d(
+        source, profile, residuals, fields, resolution=1.0, dt=dt, requested_power=1.0
+    )
+    assert len(powers) == 2  # Neither path may silently fall back to modal weights.
+    np.testing.assert_allclose(powers[0], powers[1], rtol=2e-6, atol=1e-10)
+    assert local == pytest.approx(dense, rel=2e-6, abs=1e-10)

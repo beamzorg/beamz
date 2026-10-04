@@ -1,0 +1,186 @@
+{
+  "cases": [
+    {
+      "name": "short_x",
+      "shape": [
+        1126,
+        297,
+        65
+      ],
+      "material": "binary",
+      "cells": 21737430,
+      "main_gcups": 7.117575771012312,
+      "branch_gcups": 8.411446987024833,
+      "main_repeats": [
+        7.122349040917062,
+        7.112802501107564
+      ],
+      "branch_repeats": [
+        8.322224057628421,
+        8.500669916421245
+      ],
+      "gain_pct": 18.178537997193644,
+      "conservative_pair_gain_pct": 16.846619139531338,
+      "axes": [
+        1,
+        2,
+        0
+      ],
+      "shell": "64x4",
+      "calibration_s": [
+        0.0,
+        0.0
+      ],
+      "field_tolerance_pass": true,
+      "monitor_tolerance_pass": true,
+      "cpml_mismatch_counts": [
+        16,
+        16
+      ],
+      "field_max_error_over_leaf_peak": 8.299837687303241e-07,
+      "monitor_max_error_over_leaf_peak": 1.7290499233771526e-07,
+      "cpml_max_error_over_leaf_peak": 4.307611846960614e-06,
+      "main_repeat_exact": true,
+      "branch_repeat_exact": true,
+      "source_file": "short_x-branch-1.json"
+    },
+    {
+      "name": "long_y",
+      "shape": [
+        104,
+        1083,
+        180
+      ],
+      "material": "smooth",
+      "cells": 20273760,
+      "main_gcups": 5.950322266486426,
+      "branch_gcups": 7.088313975004486,
+      "main_repeats": [
+        5.864823355406357,
+        6.035821177566494
+      ],
+      "branch_repeats": [
+        7.0877894784739635,
+        7.088838471535009
+      ],
+      "gain_pct": 19.124875217725435,
+      "conservative_pair_gain_pct": 17.42875194542457,
+      "axes": [
+        0,
+        1,
+        2
+      ],
+      "shell": "64x4",
+      "calibration_s": [
+        0.0,
+        0.0
+      ],
+      "field_tolerance_pass": true,
+      "monitor_tolerance_pass": true,
+      "cpml_mismatch_counts": [
+        716,
+        716
+      ],
+      "field_max_error_over_leaf_peak": 1.2272608817622644e-06,
+      "monitor_max_error_over_leaf_peak": 3.6079557733894934e-07,
+      "cpml_max_error_over_leaf_peak": 3.6243461048602286e-06,
+      "main_repeat_exact": true,
+      "branch_repeat_exact": true,
+      "source_file": "long_y-branch-1.json"
+    },
+    {
+      "name": "flat_z",
+      "shape": [
+        110,
+        202,
+        866
+      ],
+      "material": "binary",
+      "cells": 19242520,
+      "main_gcups": 8.18770384603597,
+      "branch_gcups": 8.728192958606147,
+      "main_repeats": [
+        8.187298376318902,
+        8.188109315753037
+      ],
+      "branch_repeats": [
+        8.728184893657653,
+        8.728201023554643
+      ],
+      "gain_pct": 6.601229389016705,
+      "conservative_pair_gain_pct": 6.5958520713147895,
+      "axes": [
+        0,
+        1,
+        2
+      ],
+      "shell": "64x4",
+      "calibration_s": [
+        0.0,
+        0.0
+      ],
+      "field_tolerance_pass": true,
+      "monitor_tolerance_pass": true,
+      "cpml_mismatch_counts": [
+        476,
+        476
+      ],
+      "field_max_error_over_leaf_peak": 8.453154061812608e-07,
+      "monitor_max_error_over_leaf_peak": 0.0,
+      "cpml_max_error_over_leaf_peak": 3.024816880946935e-06,
+      "main_repeat_exact": true,
+      "branch_repeat_exact": true,
+      "source_file": "flat_z-branch-1.json"
+    },
+    {
+      "name": "irregular",
+      "shape": [
+        325,
+        203,
+        312
+      ],
+      "material": "smooth",
+      "cells": 20584200,
+      "main_gcups": 7.06186847265886,
+      "branch_gcups": 8.342870075252254,
+      "main_repeats": [
+        7.06210679466161,
+        7.061630150656111
+      ],
+      "branch_repeats": [
+        8.34216846708784,
+        8.34357168341667
+      ],
+      "gain_pct": 18.139697837095014,
+      "conservative_pair_gain_pct": 18.125776197463537,
+      "axes": [
+        0,
+        1,
+        2
+      ],
+      "shell": "64x4",
+      "calibration_s": [
+        0.0,
+        0.0
+      ],
+      "field_tolerance_pass": true,
+      "monitor_tolerance_pass": true,
+      "cpml_mismatch_counts": [
+        0,
+        0
+      ],
+      "field_max_error_over_leaf_peak": 1.1812762361452047e-06,
+      "monitor_max_error_over_leaf_peak": 1.7103097815694966e-07,
+      "cpml_max_error_over_leaf_peak": 2.3706305801483017e-06,
+      "main_repeat_exact": true,
+      "branch_repeat_exact": true,
+      "source_file": "irregular-branch-1.json"
+    }
+  ],
+  "peak_temperature_c": 69.0,
+  "minimum_free_vram_mib": 14944.0,
+  "power_limits_w": [
+    370.0
+  ],
+  "peak_utilization_pct": 100.0
+}

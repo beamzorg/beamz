@@ -1,0 +1,7 @@
+one_step_012 exact complete-state parity
+one_step_120 exact complete-state parity
+one_step_201 exact complete-state parity
+cpml_pair_012 exact complete-state parity
+cpml_pair_120 exact complete-state parity
+cpml_pair_201 exact complete-state parity
+{'one_step_012': 6.675510149372893, 'one_step_120': 8.303287777256331, 'one_step_201': 7.156856950036714, 'cpml_pair_012': 5.735234607861008, 'cpml_pair_120': 6.173300375204898, 'cpml_pair_201': 6.182665953285666}

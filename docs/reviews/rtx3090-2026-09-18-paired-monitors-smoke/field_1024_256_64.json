@@ -1,0 +1,326 @@
+{
+  "case": {
+    "steps": 256,
+    "presteps": 0,
+    "pml": 12,
+    "material": "binary",
+    "source": "mode",
+    "monitors": 2,
+    "frequencies": 3,
+    "monitor_type": "field",
+    "name": "field_1024_256_64",
+    "shape": [
+      1024,
+      256,
+      64
+    ]
+  },
+  "correctness_reference": "auto_one_step",
+  "variants": {
+    "one_step": {
+      "cuda_flags": 128,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 1
+        }
+      ],
+      "compile_s": 1.0910997251048684,
+      "samples_s": [
+        0.8414071120787412,
+        0.8376566939987242,
+        0.8182600848376751,
+        0.8326347509864718,
+        0.8376515540294349,
+        0.8346063059289008
+      ],
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 5.1367284900751,
+      "paired_speedups": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "median_paired_speedup": 1.0
+    },
+    "single": {
+      "cuda_flags": 65664,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 2.483523687813431,
+      "samples_s": [
+        0.8142591079231352,
+        0.8294900869950652,
+        0.8294448810629547,
+        0.8154903061222285,
+        0.8300417209975421,
+        0.8294867910444736
+      ],
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 5.177991798232265,
+      "paired_speedups": [
+        1.0333407436176554,
+        1.0098453340572684,
+        0.9865153231026684,
+        1.0210234808869372,
+        1.0091680126906721,
+        1.0061719064603558
+      ],
+      "median_paired_speedup": 1.0095066733739704
+    },
+    "single_z16": {
+      "cuda_flags": 65664,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 2.4236355549655855,
+      "samples_s": [
+        0.8212335191201419,
+        0.8114405549131334,
+        0.8298179099801928,
+        0.8290813888888806,
+        0.811021390138194,
+        0.8066735488828272
+      ],
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 5.261267223273694,
+      "paired_speedups": [
+        1.0245649897244977,
+        1.0323081449735987,
+        0.9860718538326154,
+        1.0042859026209157,
+        1.0328353409849071,
+        1.0346270893408593
+      ],
+      "median_paired_speedup": 1.0284365673490483
+    }
+  },
+  "orders": [
+    [
+      "one_step",
+      "single_z16",
+      "single"
+    ],
+    [
+      "single",
+      "single_z16",
+      "one_step"
+    ],
+    [
+      "single",
+      "one_step",
+      "single_z16"
+    ],
+    [
+      "one_step",
+      "single",
+      "single_z16"
+    ],
+    [
+      "single_z16",
+      "one_step",
+      "single"
+    ],
+    [
+      "single_z16",
+      "single",
+      "one_step"
+    ]
+  ],
+  "seed": 37,
+  "setup_s": 14.776512748096138,
+  "warmups": 4,
+  "jax": "0.9.0",
+  "device": "cuda:0",
+  "source_sha256": "02f4aeb8031a26d2646c3f9dfb0b9693807ec1259631502fbc6cffb2acacfe70",
+  "extension_sha256": "5b710f9c0b641dd9c81d48422f21dc678dd295847d616cfc08a8c404dce36d5b",
+  "benchmark_sha256": "2412aefbd3c8c1bbebd7b404330647ae6fe239bbc35c3820fbae5edd092dc9ac",
+  "builder_sha256": "8ef0831a2267c4b2e0a3d478d877dd27c295ca65b77640f052c2e410c2edc6f6",
+  "field_shapes": {
+    "ex": [
+      1025,
+      257,
+      64
+    ],
+    "ey": [
+      1025,
+      256,
+      65
+    ],
+    "ez": [
+      1024,
+      257,
+      65
+    ],
+    "hx": [
+      1024,
+      256,
+      65
+    ],
+    "hy": [
+      1024,
+      257,
+      64
+    ],
+    "hz": [
+      1025,
+      256,
+      64
+    ]
+  },
+  "field_dtype": "float32",
+  "cpml_dtypes": [
+    "float32"
+  ],
+  "monitor_regions": [
+    {
+      "center": [
+        3.328e-06,
+        1.024e-05,
+        4.096e-05
+      ],
+      "size": [
+        0.0,
+        1.856e-05,
+        8e-05
+      ]
+    },
+    {
+      "center": [
+        3.8400000000000005e-06,
+        1.024e-05,
+        4.096e-05
+      ],
+      "size": [
+        0.0,
+        1.856e-05,
+        8e-05
+      ]
+    }
+  ],
+  "source_specs": 8
+}

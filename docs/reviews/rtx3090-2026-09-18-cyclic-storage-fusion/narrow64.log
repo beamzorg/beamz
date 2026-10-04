@@ -1,0 +1,7 @@
+canonical_queue exact complete-state parity
+canonical_fused exact complete-state parity
+permuted_queue exact complete-state parity
+permuted_fused exact complete-state parity
+permuted_fused_pad32 exact complete-state parity
+permuted_fused_pad64 exact complete-state parity
+{'canonical_queue': 6.75038380272026, 'canonical_fused': 5.573995391836733, 'permuted_queue': 8.380442494588738, 'permuted_fused': 8.31288448212583, 'permuted_fused_pad32': 8.105367507613696, 'permuted_fused_pad64': 8.104242691845476}

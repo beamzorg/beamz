@@ -1,0 +1,301 @@
+{
+  "study": "fusion",
+  "variants": {
+    "canonical_queue": [
+      [
+        0,
+        1,
+        2
+      ],
+      0,
+      "0"
+    ],
+    "canonical_fused": [
+      [
+        0,
+        1,
+        2
+      ],
+      0,
+      "1"
+    ],
+    "permuted_queue": [
+      [
+        1,
+        2,
+        0
+      ],
+      0,
+      "0"
+    ],
+    "permuted_fused": [
+      [
+        1,
+        2,
+        0
+      ],
+      0,
+      "1"
+    ],
+    "permuted_fused_pad32": [
+      [
+        1,
+        2,
+        0
+      ],
+      8192,
+      "1"
+    ],
+    "permuted_fused_pad64": [
+      [
+        1,
+        2,
+        0
+      ],
+      16384,
+      "1"
+    ]
+  },
+  "shape": [
+    1024,
+    256,
+    64
+  ],
+  "steps": 256,
+  "presteps": 0,
+  "material": "binary",
+  "pml": 12,
+  "precision": "fp32",
+  "source": "mode",
+  "monitors": 2,
+  "frequencies": 3,
+  "monitor_type": "mode",
+  "logical_cells": 16777216,
+  "conversion_cost_included": true,
+  "native_sha256": "7e719df5bbd30ebc90f9588fb17fe8c8c0dd03b59a8878a9b8a1ceea8e31555b",
+  "storage_sha256": "9ecc0fb03ba56429e3ad497cd5ce7092ec519aa3f45fb4211b25f0a47adef49c",
+  "state_sha256": [
+    "8d3ddda6707c99f9d70c6107dd5ad30b90019edf81c77698235c03b700e4df61",
+    "1543ff4d144cc3a3372f91185b607190b0984932a9404f7cf8d28753beb285ee",
+    "64d09fd44be95c12a9bc6146c88d36ac56347356be33d69a484b36c008ca2335",
+    "29a3ae0950feff40147f8c376b8592280f7ae7ceca6f17a42b11c77d23042441",
+    "b7a4942d3f58f73b585eb0c8cf75d0467810b42ec6cd1474a93fe730bf6f599c",
+    "94f45e5ec2c5cb846572e5f24cb2fddc1251d6867f33d9e3be3e650e1a08aafa",
+    "798906ebc982eac92d93e58d9582df43ecf5b8e17fb4f819eba6afe05bf0a50e",
+    "51506aa94bd9a2a2e69a1cb607cbb8770970f008748ff296f0258affe3a74c01",
+    "8b8fc8a00ffdaefe3454b64b7ca07d3f6e15b9e3fb35a3cf55450fa5277a0b03",
+    "57ebef59454d2f038a7089612562798f509a8d1539cbb21b1026fdd816307cc2",
+    "89bbf091c74fba58b5bbc48c538cf6889583ac544ce34c6127f1a782e3169f33",
+    "cb1fc1ca059bcab09f6436dbb5b0747bb3b2e069d55766e0c3f9458fc453ed05",
+    "72da2ea0a024ee3ad65a642ab0ed40ccd7d5c1500ac4db7883135a4c60582675",
+    "8b8fc8a00ffdaefe3454b64b7ca07d3f6e15b9e3fb35a3cf55450fa5277a0b03",
+    "51506aa94bd9a2a2e69a1cb607cbb8770970f008748ff296f0258affe3a74c01",
+    "620e31140115253053ec6b35a543c1dffb71d4c7de8414472b7f3a0600b75299",
+    "76492fe17e71037aa29e2233cf278dc1fd39af2a93ac26fd1e9d74a9c50a4ec2",
+    "7e2ed24fa4be5cef33593d8ea56c54d8470ff376c3fd0959507afcc97daf5b5b",
+    "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+    "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+    "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+    "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0",
+    "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0",
+    "f46913286d895f62d646314f400fc3d7a543cf34eb4ae56df87f43dc4582a36b",
+    "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0",
+    "de13e791b9cc5b6ac7fa173fd33ecbbe4a0d386b63052630246efda07fa5900b",
+    "a6ce59169462aa07e61cec08751473ba84b55dcecdf13acd7c2c40a635c7d492",
+    "6a8be7f6f12d448f5f2b8d085d1639a96c402326f1fc5a4e2e5f053faf1c9a1c",
+    "fa25a9962bc7fdb1705232befb5a59e0312f2f07d519e688e4f6695b4b3dd847",
+    "bf5e8ffa51a9e748985800c1d3d7f1a2a6ae7435136593ca8d9637e3f87c699c"
+  ],
+  "samples_s": {
+    "canonical_queue": [
+      0.6303102189995116,
+      0.6490930870004377,
+      0.6497389569994994,
+      0.6288746480004193,
+      0.6391607869991276,
+      0.6333620229997905,
+      0.6503444810005021,
+      0.6384723379997013,
+      0.6314271279989043,
+      0.6452237489993422,
+      0.6340382099988346,
+      0.6278027959997416
+    ],
+    "canonical_fused": [
+      0.7654310520010768,
+      0.7699266440013162,
+      0.7481804420003755,
+      0.7692771660003928,
+      0.7715760549999686,
+      0.7712799979999545,
+      0.7466123319991311,
+      0.7607309539998823,
+      0.7723422999988543,
+      0.7715289940006187,
+      0.7721307419997174,
+      0.7711464980002347
+    ],
+    "permuted_queue": [
+      0.5174112879994937,
+      0.5049713910011633,
+      0.5158234529990295,
+      0.5176962000005005,
+      0.5059889069998462,
+      0.50560176900035,
+      0.517382643000019,
+      0.5177350450012455,
+      0.5176710539999476,
+      0.5091742839995277,
+      0.4994010719983635,
+      0.497680529999343
+    ],
+    "permuted_fused": [
+      0.5174531859993294,
+      0.5107414419999259,
+      0.522756782000215,
+      0.51620956700026,
+      0.5095271259997389,
+      0.5228206829997362,
+      0.5046367420000024,
+      0.5232848609994107,
+      0.5097308780004823,
+      0.5065788100000645,
+      0.5171182279991626,
+      0.5233258569987811
+    ],
+    "permuted_fused_pad32": [
+      0.529896430000008,
+      0.5254134599999816,
+      0.5303688029998739,
+      0.5110170879997895,
+      0.529887050999605,
+      0.5302224590013793,
+      0.5238063690012495,
+      0.5307324450004671,
+      0.5191820159998315,
+      0.5298470760008058,
+      0.5310046529993997,
+      0.5306082509996486
+    ],
+    "permuted_fused_pad64": [
+      0.5310979900004895,
+      0.5087699279993103,
+      0.5303646570009732,
+      0.5295770390002872,
+      0.5306172790005803,
+      0.5237422310001421,
+      0.5304039500006184,
+      0.5297813920005865,
+      0.5267456950004998,
+      0.5304863940000359,
+      0.5297182130016154,
+      0.5301491800000804
+    ]
+  },
+  "timing_orders": [
+    [
+      "permuted_fused",
+      "permuted_fused_pad32",
+      "permuted_fused_pad64",
+      "canonical_queue",
+      "canonical_fused",
+      "permuted_queue"
+    ],
+    [
+      "permuted_fused_pad32",
+      "permuted_fused_pad64",
+      "canonical_queue",
+      "canonical_fused",
+      "permuted_queue",
+      "permuted_fused"
+    ],
+    [
+      "permuted_fused_pad64",
+      "canonical_queue",
+      "canonical_fused",
+      "permuted_queue",
+      "permuted_fused",
+      "permuted_fused_pad32"
+    ],
+    [
+      "canonical_queue",
+      "canonical_fused",
+      "permuted_queue",
+      "permuted_fused",
+      "permuted_fused_pad32",
+      "permuted_fused_pad64"
+    ],
+    [
+      "canonical_fused",
+      "permuted_queue",
+      "permuted_fused",
+      "permuted_fused_pad32",
+      "permuted_fused_pad64",
+      "canonical_queue"
+    ],
+    [
+      "permuted_queue",
+      "permuted_fused",
+      "permuted_fused_pad32",
+      "permuted_fused_pad64",
+      "canonical_queue",
+      "canonical_fused"
+    ],
+    [
+      "permuted_queue",
+      "canonical_fused",
+      "canonical_queue",
+      "permuted_fused_pad64",
+      "permuted_fused_pad32",
+      "permuted_fused"
+    ],
+    [
+      "permuted_fused",
+      "permuted_queue",
+      "canonical_fused",
+      "canonical_queue",
+      "permuted_fused_pad64",
+      "permuted_fused_pad32"
+    ],
+    [
+      "permuted_fused_pad32",
+      "permuted_fused",
+      "permuted_queue",
+      "canonical_fused",
+      "canonical_queue",
+      "permuted_fused_pad64"
+    ],
+    [
+      "permuted_fused_pad64",
+      "permuted_fused_pad32",
+      "permuted_fused",
+      "permuted_queue",
+      "canonical_fused",
+      "canonical_queue"
+    ],
+    [
+      "canonical_queue",
+      "permuted_fused_pad64",
+      "permuted_fused_pad32",
+      "permuted_fused",
+      "permuted_queue",
+      "canonical_fused"
+    ],
+    [
+      "canonical_fused",
+      "canonical_queue",
+      "permuted_fused_pad64",
+      "permuted_fused_pad32",
+      "permuted_fused",
+      "permuted_queue"
+    ]
+  ],
+  "median_gcups": {
+    "canonical_queue": 6.75038380272026,
+    "canonical_fused": 5.573995391836733,
+    "permuted_queue": 8.380442494588738,
+    "permuted_fused": 8.31288448212583,
+    "permuted_fused_pad32": 8.105367507613696,
+    "permuted_fused_pad64": 8.104242691845476
+  }
+}

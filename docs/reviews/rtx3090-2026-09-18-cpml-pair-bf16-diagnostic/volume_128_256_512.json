@@ -1,0 +1,342 @@
+{
+  "case": {
+    "steps": 256,
+    "presteps": 0,
+    "psi_precision": "bf16",
+    "pml": 12,
+    "material": "binary",
+    "source": "mode",
+    "monitors": 2,
+    "frequencies": 3,
+    "monitor_type": "mode",
+    "name": "volume_128_256_512",
+    "shape": [
+      128,
+      256,
+      512
+    ]
+  },
+  "correctness_reference": "fused_one_step",
+  "variants": {
+    "one_step": {
+      "cuda_flags": 4224,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 1
+        }
+      ],
+      "compile_s": 0.4287454219997926,
+      "samples_s": [
+        0.46602767800004585,
+        0.4661983689998124,
+        0.4656393179998304,
+        0.46634933399991496,
+        0.4660610469995845,
+        0.4667161870002019
+      ],
+      "correctness_reference": "auto_one_step",
+      "parity_gate": "BF16: rtol=3e-5, atol=max(3e-6,0.02*leaf_peak)",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "parity_passed": true,
+      "median_gcups": 9.214103332806195,
+      "paired_speedups": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "median_paired_speedup": 1.0
+    },
+    "single": {
+      "cuda_flags": 69760,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.13001232600026924,
+      "samples_s": [
+        0.46689832699985345,
+        0.4675744199998917,
+        0.46732008000026326,
+        0.4672962480003662,
+        0.4674025720000827,
+        0.467708261000098
+      ],
+      "correctness_reference": "auto_one_step",
+      "parity_gate": "BF16: rtol=3e-5, atol=max(3e-6,0.02*leaf_peak)",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "parity_passed": true,
+      "median_gcups": 9.189821786833964,
+      "paired_speedups": [
+        0.9981352492620779,
+        0.9970570438817427,
+        0.9964034029942991,
+        0.9979736323488511,
+        0.9971298296567825,
+        0.9978788614984591
+      ],
+      "median_paired_speedup": 0.9975043455776208
+    },
+    "cpml_pair": {
+      "cuda_flags": 594048,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.12451616099997409,
+      "samples_s": [
+        0.581055693000053,
+        0.5794967919996452,
+        0.5787376859998403,
+        0.5796685170003002,
+        0.5765736099997412,
+        0.5804204999999456
+      ],
+      "correctness_reference": "fused_one_step",
+      "parity_gate": "BF16: rtol=3e-5, atol=max(3e-6,0.02*leaf_peak)",
+      "parity_failures": [
+        {
+          "leaf_index": 13,
+          "error": "\nNot equal to tolerance rtol=3e-05, atol=1.14924e+07\n\nMismatched elements: 22 / 3158016 (0.000697%)\nFirst 5 mismatches are at indices:\n [5, 96, 175]: -164626432.0 (ACTUAL), -178257920.0 (DESIRED)\n [5, 106, 168]: -287309824.0 (ACTUAL), -274726912.0 (DESIRED)\n [5, 112, 182]: -93847552.0 (ACTUAL), -80740352.0 (DESIRED)\n [5, 114, 170]: -177209344.0 (ACTUAL), -190840832.0 (DESIRED)\n [5, 142, 170]: 177209344.0 (ACTUAL), 190840832.0 (DESIRED)\nMax absolute difference among violations: 1.3631488e+07\nMax relative difference among violations: 0.4063927\n ACTUAL: array([[[0., 0., 0., ..., 0., 0., 0.],\n        [0., 0., 0., ..., 0., 0., 0.],\n        [0., 0., 0., ..., 0., 0., 0.],...\n DESIRED: array([[[0., 0., 0., ..., 0., 0., 0.],\n        [0., 0., 0., ..., 0., 0., 0.],\n        [0., 0., 0., ..., 0., 0., 0.],..."
+        }
+      ],
+      "max_absolute_difference_by_leaf": [
+        366.9521484375,
+        623.783203125,
+        177.17578125,
+        2.1517181396484375,
+        1.467010498046875,
+        0.7984104156494141,
+        0.00390625,
+        5368709120.0,
+        3405774848.0,
+        4.81482486096809e-35,
+        2.407412430484045e-35,
+        3.814697265625e-06,
+        1.1920928955078125e-07,
+        13631488.0,
+        18546688.0,
+        3.944304526105059e-31,
+        1.88079096131566e-37,
+        0.0001220703125,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "parity_passed": false,
+      "median_gcups": 7.410448298708018,
+      "paired_speedups": [
+        0.8020361621342954,
+        0.8044882653985387,
+        0.8045774955805433,
+        0.8045103715709878,
+        0.8083287873681796,
+        0.8041001084562754
+      ],
+      "median_paired_speedup": 0.8044993184847633
+    }
+  },
+  "orders": [
+    [
+      "one_step",
+      "cpml_pair",
+      "single"
+    ],
+    [
+      "single",
+      "cpml_pair",
+      "one_step"
+    ],
+    [
+      "single",
+      "one_step",
+      "cpml_pair"
+    ],
+    [
+      "one_step",
+      "single",
+      "cpml_pair"
+    ],
+    [
+      "cpml_pair",
+      "one_step",
+      "single"
+    ],
+    [
+      "cpml_pair",
+      "single",
+      "one_step"
+    ]
+  ],
+  "seed": 37,
+  "setup_s": 9.549704698999903,
+  "warmups": 4,
+  "jax": "0.9.0",
+  "device": "cuda:0",
+  "source_sha256": "d92493e44029598fb09bce48b949da1e982ce1556bc10baa5e4b113798279eef",
+  "extension_sha256": "3db2008da0f09a8d7681f045c75e6723458429bfe18dbe9235034afbfa6f5c3f",
+  "benchmark_sha256": "92266483afe1845074595b2118d693123899901c0c1c65ed844c215f6287b28d",
+  "builder_sha256": "8ef0831a2267c4b2e0a3d478d877dd27c295ca65b77640f052c2e410c2edc6f6",
+  "field_shapes": {
+    "ex": [
+      129,
+      257,
+      512
+    ],
+    "ey": [
+      129,
+      256,
+      513
+    ],
+    "ez": [
+      128,
+      257,
+      513
+    ],
+    "hx": [
+      128,
+      256,
+      513
+    ],
+    "hy": [
+      128,
+      257,
+      512
+    ],
+    "hz": [
+      129,
+      256,
+      512
+    ]
+  },
+  "field_dtype": "float32",
+  "cpml_dtypes": [
+    "bfloat16"
+  ],
+  "monitor_regions": [
+    {
+      "center": [
+        2.6624e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    },
+    {
+      "center": [
+        3.0720000000000004e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    }
+  ],
+  "source_specs": 8
+}

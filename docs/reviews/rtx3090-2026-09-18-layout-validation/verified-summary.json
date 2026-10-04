@@ -1,0 +1,10 @@
+{
+  "runs": 51,
+  "shapes": 6,
+  "max_temp_c": 73.0,
+  "min_free_gib": 9.2158203125,
+  "max_utilization": 100.0,
+  "power_limits_w": [
+    370.0
+  ]
+}

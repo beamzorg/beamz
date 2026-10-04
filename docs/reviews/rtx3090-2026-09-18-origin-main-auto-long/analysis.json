@@ -1,0 +1,19 @@
+{
+  "main": 7.288851790884808,
+  "branch_auto": 8.556689147830152,
+  "choice": {
+    "axes": [
+      1,
+      2,
+      0
+    ],
+    "shell_tile": "64x4"
+  },
+  "calibration_s": 37.32535792300041,
+  "cpml_tolerance_failures": 773040,
+  "max_cpml_error_over_peak": 6.72021600267614e-05,
+  "change_percent": 17.394198610690093,
+  "max_temperature_c": 75.0,
+  "min_free_mib": 19023.0,
+  "branch_long_exact_parity": true
+}

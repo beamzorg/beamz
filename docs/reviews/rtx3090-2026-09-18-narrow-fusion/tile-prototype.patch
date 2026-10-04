@@ -1,0 +1,36 @@
+--- a/cuda/src/update.cu
++++ b/cuda/src/update.cu
+@@ -1439,13 +1439,13 @@
+   if (band) {
+     switch (tile) {
+       case 0:
+-        return EnqueueCpmlCoreTile<CpmlTile<32, 8, 8>, true>(stream, h, e,
++        return EnqueueCpmlCoreTile<CpmlTile<20, 12, 16>, true>(stream, h, e,
+                                                              groups, step);
+       case 1:
+-        return EnqueueCpmlCoreTile<CpmlTile<64, 4, 8>, true>(stream, h, e,
++        return EnqueueCpmlCoreTile<CpmlTile<40, 6, 16>, true>(stream, h, e,
+                                                              groups, step);
+       case 2:
+-        return EnqueueCpmlCoreTile<CpmlTile<32, 4, 8>, true>(stream, h, e,
++        return EnqueueCpmlCoreTile<CpmlTile<16, 16, 16>, true>(stream, h, e,
+                                                              groups, step);
+       default:
+         return cudaErrorInvalidValue;
+@@ -1453,13 +1453,13 @@
+   }
+   switch (tile) {
+     case 0:
+-      return EnqueueCpmlCoreTile<CpmlTile<32, 8, 8>>(stream, h, e, groups,
++      return EnqueueCpmlCoreTile<CpmlTile<20, 12, 16>>(stream, h, e, groups,
+                                                      step);
+     case 1:
+-      return EnqueueCpmlCoreTile<CpmlTile<64, 4, 8>>(stream, h, e, groups,
++      return EnqueueCpmlCoreTile<CpmlTile<40, 6, 16>>(stream, h, e, groups,
+                                                      step);
+     case 2:
+-      return EnqueueCpmlCoreTile<CpmlTile<32, 4, 8>>(stream, h, e, groups,
++      return EnqueueCpmlCoreTile<CpmlTile<16, 16, 16>>(stream, h, e, groups,
+                                                      step);
+     default:
+       return cudaErrorInvalidValue;

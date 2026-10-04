@@ -1,0 +1,6 @@
+BENCH shape=128x256x512 depth=2 unit_shift=1 variant=sweep tile=8x4x8 gcups=9.005657 samples_ms=238.5950,238.4179,238.5336,238.3432,237.9080,238.5009,
+BENCH shape=128x256x512 depth=2 unit_shift=1 variant=shared_wavefront tile=8x4x8 gcups=3.346934 samples_ms=641.5042,641.4498,641.7500,641.8145,641.9528,641.3804,
+PASS shape=128x256x512 depth=2 unit_shift=1 steps=128 split=128 shared=1 tile=8x4x8 fields/psi/DFT bitwise
+BENCH shape=128x256x512 depth=4 unit_shift=1 variant=sweep tile=8x4x8 gcups=9.012957 samples_ms=231.3677,238.3831,238.1494,238.1281,238.6820,238.5408,
+BENCH shape=128x256x512 depth=4 unit_shift=1 variant=shared_wavefront tile=8x4x8 gcups=4.370455 samples_ms=486.6722,491.4104,491.9839,485.8931,492.0072,491.3173,
+PASS shape=128x256x512 depth=4 unit_shift=1 steps=128 split=128 shared=1 tile=8x4x8 fields/psi/DFT bitwise

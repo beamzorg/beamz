@@ -1,0 +1,13 @@
+{
+  "output": "docs/reviews/rtx3090-2026-09-18-paired-monitors-smoke",
+  "cases": [
+    "volume_128_256_512",
+    "field_1024_256_64",
+    "volume_128_256_768"
+  ],
+  "study": "temporal_schedule",
+  "rounds": 6,
+  "seed": 37,
+  "profile": true,
+  "worker": null
+}

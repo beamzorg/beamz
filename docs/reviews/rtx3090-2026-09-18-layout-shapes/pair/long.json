@@ -1,0 +1,139 @@
+{
+  "source_sha256": "e8ecd60c7fb465a94afb271a204d76d7433cc1e1f83a58b01f3bf2f8a0189cde",
+  "benchmark_sha256": "8ef0831a2267c4b2e0a3d478d877dd27c295ca65b77640f052c2e410c2edc6f6",
+  "warmups": 4,
+  "cpml_core_fusion_env": "auto",
+  "field_padding_env": "none",
+  "cpml_tile_env": "auto",
+  "cpml_shell_tile_env": "64x4",
+  "temporal_steps_env": "2",
+  "source_root": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371",
+  "commit": "b0a5ff32d70755aa3c6f5d20e8ae9a5fdfe4ee7b",
+  "extension_sha256": "4633145baad805971297529c4e4a06a6edffd5039c2ad8f6fe1aad1a96ab5d54",
+  "device": "cuda:0",
+  "jax": "0.9.0",
+  "shape": [
+    128,
+    256,
+    512
+  ],
+  "steps": 1024,
+  "material": "binary",
+  "pml": 12,
+  "monitors": 2,
+  "frequencies": 3,
+  "in_place_experiment": false,
+  "source_specs": 8,
+  "setup_s": 13.255776182049885,
+  "compile_s": 0.4883401468396187,
+  "source": "mode",
+  "monitor_type": "mode",
+  "native_plans": [
+    {
+      "layout": 6,
+      "flags": 255,
+      "monitor_count": 2,
+      "coincident_source_group_mask": 432,
+      "disjoint_source_group_mask": 0,
+      "logical_shape": [
+        0,
+        0,
+        0
+      ],
+      "temporal_steps": 2
+    }
+  ],
+  "presteps": 0,
+  "conditioning_s": 0.0,
+  "public_samples_s": [],
+  "samples_s": [
+    3.702174451900646,
+    3.7050191978923976,
+    3.708948244806379,
+    3.707267261808738,
+    3.711151765892282
+  ],
+  "median_gcups": 4.634105925133144,
+  "field_dtype": "float32",
+  "field_shapes": {
+    "ex": [
+      129,
+      257,
+      512
+    ],
+    "ey": [
+      129,
+      256,
+      513
+    ],
+    "ez": [
+      128,
+      257,
+      513
+    ],
+    "hx": [
+      128,
+      256,
+      513
+    ],
+    "hy": [
+      128,
+      257,
+      512
+    ],
+    "hz": [
+      129,
+      256,
+      512
+    ]
+  },
+  "monitor_regions": [
+    {
+      "center": [
+        2.6624e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    },
+    {
+      "center": [
+        3.0720000000000004e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    }
+  ],
+  "cpml_dtypes": [
+    "float32"
+  ],
+  "h_coefficient_shapes": {
+    "h_decay_x": [],
+    "h_decay_y": [],
+    "h_decay_z": [],
+    "h_source_x": [],
+    "h_source_y": [],
+    "h_source_z": []
+  },
+  "e_coefficient_shapes": [
+    [
+      4243584
+    ],
+    [
+      4235328
+    ],
+    [
+      4218912
+    ]
+  ],
+  "gpu": "name, utilization.gpu [%], clocks.current.sm [MHz], clocks.current.memory [MHz], power.draw [W], power.limit [W], temperature.gpu, memory.used [MiB]\nNVIDIA GeForce RTX 3090, 100 %, 1830 MHz, 9501 MHz, 368.30 W, 370.00 W, 73, 14576 MiB"
+}

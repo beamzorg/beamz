@@ -1,0 +1,26 @@
+Traceback (most recent call last):
+  File "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/scripts/benchmark_cuda_cpml_tiles.py", line 425, in <module>
+    main()
+  File "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/scripts/benchmark_cuda_cpml_tiles.py", line 334, in main
+    worker(args, json.loads(args.worker))
+  File "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/scripts/benchmark_cuda_cpml_tiles.py", line 219, in worker
+    np.testing.assert_allclose(
+  File "/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/numpy/testing/_private/utils.py", line 1768, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+  File "/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/numpy/testing/_private/utils.py", line 983, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError: 
+Not equal to tolerance rtol=3e-05, atol=3.75775e-05
+
+Mismatched elements: 2 / 1597440 (0.000125%)
+Mismatch at indices:
+ [511, 9, 14]: 0.5000676512718201 (ACTUAL), 0.5000131130218506 (DESIRED)
+ [512, 9, 14]: -0.5000676512718201 (ACTUAL), -0.5000131130218506 (DESIRED)
+Max absolute difference among violations: 5.453825e-05
+Max relative difference among violations: 0.00010907
+ ACTUAL: array([[[0., 0., 0., ..., 0., 0., 0.],
+        [0., 0., 0., ..., 0., 0., 0.],
+        [0., 0., 0., ..., 0., 0., 0.],...
+ DESIRED: array([[[0., 0., 0., ..., 0., 0., 0.],
+        [0., 0., 0., ..., 0., 0., 0.],
+        [0., 0., 0., ..., 0., 0., 0.],...

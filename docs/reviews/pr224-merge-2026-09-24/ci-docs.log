@@ -1,0 +1,88 @@
+
+[31m │  ⚠  Warning from the Material for MkDocs team[0m
+[31m │[0m
+[31m │[0m  MkDocs 2.0, the underlying framework of Material for MkDocs,
+[31m │[0m  will introduce backward-incompatible changes, including:
+[31m │[0m
+[31m │  × [0mAll plugins will stop working – the plugin system has been removed
+[31m │  × [0mAll theme overrides will break – the theming system has been rewritten
+[31m │  × [0mNo migration path exists – existing projects cannot be upgraded
+[31m │  × [0mClosed contribution model – community members can't report bugs
+[31m │  × [0mCurrently unlicensed – unsuitable for production use
+[31m │[0m
+[31m │[0m  Our full analysis:
+[31m │[0m
+[31m │[0m  [4mhttps://squidfunk.github.io/mkdocs-material/blog/2026/02/18/mkdocs-2.0/[0m
+[0m
+INFO    -  Cleaning site directory
+INFO    -  Building documentation to directory: /home/quentinwach/.t3/worktrees/beamz/pr224-validation/site
+INFO    -  The following pages exist in the docs directory, but are not included in the "nav" configuration:
+  - raster-equivalence-validation.md
+  - reviews/README.md
+  - reviews/cpml-precision-default-comparison-2026-09-18.md
+  - reviews/cuda-autotuning-2026-09-18.md
+  - reviews/cuda-branch-summary-2026-09-18.md
+  - reviews/cuda-cpml-boundary-execution-2026-09-18.md
+  - reviews/cuda-cpml-tiles-and-bare-temporal-2026-09-18.md
+  - reviews/cuda-cpml-yface-study-2026-09-18.md
+  - reviews/cuda-cpu-fdtd-comparison-2026-09-18.md
+  - reviews/cuda-cyclic-storage-study-2026-09-18.md
+  - reviews/cuda-layout-prediction-2026-09-18.md
+  - reviews/cuda-layout-temporal-study-2026-09-18.md
+  - reviews/cuda-merge-validation-2026-09-24.md
+  - reviews/cuda-merged-cpml-study-2026-09-18.md
+  - reviews/cuda-narrow-domain-bottleneck-2026-09-18.md
+  - reviews/cuda-narrow-fusion-study-2026-09-18.md
+  - reviews/cuda-optimization-2026-09-17.md
+  - reviews/cuda-origin-main-comparison-2026-09-18.md
+  - reviews/cuda-performance-2026-09-17.md
+  - reviews/cuda-random-final-comparison-2026-09-18.md
+  - reviews/cuda-realistic-temporal-integration-2026-09-18.md
+  - reviews/cuda-shape-study-2026-09-18.md
+  - reviews/cuda-temporal-cpml-development-2026-09-18.md
+  - reviews/cuda-wavefront-probe-2026-09-18.md
+  - reviews/rtx3090-2026-09-18-realistic-integration-validation/fma-diagnostic.md
+INFO    -  Doc file 'reviews/cuda-autotuning-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-origin-main-auto-comparison/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-autotuning-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-autotune/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-autotuning-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-origin-main-auto-long/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpml-tiles-and-bare-temporal-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cpml-tiles-repeat/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpml-yface-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cpml-yface-options/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpml-yface-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cpml-yface-controls/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpml-yface-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cpml-yface-retained/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpu-fdtd-comparison-2026-09-18.md' contains an absolute link '/home/quentinwach/Code/FDTD/src/fdtd_sim.cc:3330', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpu-fdtd-comparison-2026-09-18.md' contains an absolute link '/home/quentinwach/Code/FDTD/src/fdtd_group_order.cc:100', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpu-fdtd-comparison-2026-09-18.md' contains an absolute link '/home/quentinwach/Code/FDTD/src/fdtd_block_program.h:213', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpu-fdtd-comparison-2026-09-18.md' contains an absolute link '/home/quentinwach/Code/FDTD/src/fdtd_kernel_body.inc:504', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpu-fdtd-comparison-2026-09-18.md' contains an absolute link '/home/quentinwach/Code/FDTD/src/fdtd_kernel_body.inc:185', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpu-fdtd-comparison-2026-09-18.md' contains an absolute link '/home/quentinwach/Code/FDTD/src/fdtd_sim.cc:7900', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpu-fdtd-comparison-2026-09-18.md' contains an absolute link '/home/quentinwach/Code/FDTD/src/fdtd_monitor.cc:99', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpu-fdtd-comparison-2026-09-18.md' contains an absolute link '/home/quentinwach/Code/FDTD/src/fdtd_sim_test.cc:770', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpu-fdtd-comparison-2026-09-18.md' contains an absolute link '/home/quentinwach/Code/FDTD/src/fdtd_benchmark.cc:229', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cpu-fdtd-comparison-2026-09-18.md' contains an absolute link '/home/quentinwach/Code/FDTD/src/fdtd_grid_layout.h:18', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cyclic-storage-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cyclic-storage/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cyclic-storage-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cyclic-storage-integrated/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-cyclic-storage-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cyclic-storage-fusion/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-layout-temporal-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-layouts/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-layout-temporal-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-layout-shapes/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-layout-temporal-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-layout-repeats/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-layout-temporal-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-layout-validation/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-merge-validation-2026-09-24.md' contains an unrecognized relative link 'pr224-merge-2026-09-24/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-merge-validation-2026-09-24.md' contains an unrecognized relative link 'rtx3090-2026-09-24-merge-before/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-merge-validation-2026-09-24.md' contains an unrecognized relative link 'rtx3090-2026-09-24-merge-main/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-merged-cpml-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cpml-full-y/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-merged-cpml-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cpml-half-y/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-merged-cpml-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cpml-half-y-ring/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-merged-cpml-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cpml-half-y-long-z/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-merged-cpml-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cpml-oriented-edges/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-merged-cpml-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cpml-general-y-aligned/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-narrow-domain-bottleneck-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-cpml-narrow-core/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-narrow-fusion-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-narrow-fusion/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-narrow-fusion-study-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-narrow-fusion-source-cull/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-optimization-2026-09-17.md' contains an unrecognized relative link 'rtx3090-2026-09-17/validation/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-origin-main-comparison-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-origin-main-comparison/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-random-final-comparison-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-random-final/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-realistic-temporal-integration-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-realistic-temporal-final/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-realistic-temporal-integration-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-realistic-temporal-final-tail/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-realistic-temporal-integration-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-realistic-temporal-profiles/', it was left as is.
+INFO    -  Doc file 'reviews/cuda-realistic-temporal-integration-2026-09-18.md' contains an unrecognized relative link 'rtx3090-2026-09-18-realistic-integration-validation/', it was left as is.
+INFO    -  Documentation built in 0.32 seconds

@@ -1,0 +1,38 @@
+[
+  {
+    "case": "narrow64",
+    "variant": "ordinary",
+    "repeat": 0,
+    "gcups": 8.311722440797634
+  },
+  {
+    "case": "narrow64",
+    "variant": "baseline",
+    "repeat": 1,
+    "gcups": 6.860486413281536
+  },
+  {
+    "case": "narrow64",
+    "variant": "full_y",
+    "repeat": 2,
+    "gcups": 5.986587828069003
+  },
+  {
+    "case": "narrow64",
+    "variant": "full_y",
+    "repeat": 3,
+    "gcups": 6.02904870565203
+  },
+  {
+    "case": "narrow64",
+    "variant": "baseline",
+    "repeat": 4,
+    "gcups": 6.832650716109272
+  },
+  {
+    "case": "narrow64",
+    "variant": "ordinary",
+    "repeat": 5,
+    "gcups": 8.310688011796106
+  }
+]

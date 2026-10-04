@@ -1,0 +1,85 @@
+{
+  "note": "Conservative combined H/E read/write footprint check for all incomparable DAG task pairs. No CUDA memory-order proof.",
+  "cases": [
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        8,
+        8
+      ],
+      "depth": 8,
+      "unit_shift": false,
+      "tasks": 450,
+      "unordered_pairs_checked": 54008
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "unit_shift": false,
+      "tasks": 180,
+      "unordered_pairs_checked": 6668
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "unit_shift": true,
+      "tasks": 180,
+      "unordered_pairs_checked": 6668
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 2,
+      "unit_shift": true,
+      "tasks": 810,
+      "unordered_pairs_checked": 193966
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 4,
+      "unit_shift": true,
+      "tasks": 810,
+      "unordered_pairs_checked": 193966
+    }
+  ]
+}

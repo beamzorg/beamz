@@ -1,0 +1,12 @@
+Compile jax_fp32
+Compile jax_bf16
+Compile cuda_streamed_fp32
+Compile cuda_streamed_bf16
+jax_fp32 3.914619181362545
+jax_bf16 3.7056778143598015
+cuda_streamed_fp32 6.852448707368759
+cuda_streamed_bf16 7.600777099101085
+Accuracy jax_fp32
+Accuracy jax_bf16
+Accuracy cuda_streamed_fp32
+Accuracy cuda_streamed_bf16

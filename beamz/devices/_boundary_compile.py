@@ -7,17 +7,21 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
-from beamz.const import EPS_0, MU_0
+from beamz._region_array import SeparableMask, tiles
+from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.design.discretization import MaterialGrid
 from beamz.devices.boundaries import (
     PEC,
     PML,
     Absorber,
+    Periodic,
     edges_for_dimension,
     normalize_boundaries,
+    periodic_storage_axes,
 )
 from beamz.lattice import component_axis_offsets_3d
 
@@ -71,6 +75,7 @@ class BoundaryData:
     profiles: Mapping[str, Any] | None
     masks: Mapping[str, Any]
     metallic_edges: frozenset[str]
+    periodic_axes: frozenset[int]
 
 
 class _ComponentSupport:
@@ -83,10 +88,18 @@ class _ComponentSupport:
 class _BoundaryGrid:
     """Mutable material workspace without allocating solver field arrays."""
 
-    def __init__(self, material_grid, component_shapes) -> None:
-        self.permittivity = jnp.asarray(material_grid.permittivity)
-        self.conductivity = jnp.asarray(material_grid.conductivity)
-        self.permeability = jnp.asarray(material_grid.permeability)
+    def __init__(self, material_grid, component_shapes, *, region_setup=False) -> None:
+        self.region_setup = region_setup
+
+        def array(value):
+            if not region_setup:
+                return jnp.asarray(value)
+            source = np.asarray(value)
+            return np.asarray(source, dtype=jax.dtypes.canonicalize_dtype(source.dtype))
+
+        self.permittivity = array(material_grid.permittivity)
+        self.conductivity = array(material_grid.conductivity)
+        self.permeability = array(material_grid.permeability)
         self.polarization_2d = material_grid.polarization or "tm"
         # Preserve the established uniform profile algebra exactly; stretched grids
         # opt into physical-coordinate grading.
@@ -96,8 +109,7 @@ class _BoundaryGrid:
             else None
         )
         self.yee_materials = {
-            name: jnp.asarray(value)
-            for name, value in material_grid.yee_materials.items()
+            name: array(value) for name, value in material_grid.yee_materials.items()
         }
         for component, shape in component_shapes.items():
             setattr(self, component, _ComponentSupport(shape))
@@ -107,6 +119,8 @@ def resolve_metallic_edges(boundaries, is_3d: bool) -> frozenset[str]:
     """Apply boundary precedence and return walls that remain metallic."""
     metallic: set[str] = set()
     for boundary in normalize_boundaries(boundaries):
+        if isinstance(boundary, Periodic):
+            continue
         edges = edges_for_dimension(boundary.edges, bool(is_3d))
         if isinstance(boundary, PEC):
             metallic.update(edges)
@@ -116,13 +130,22 @@ def resolve_metallic_edges(boundaries, is_3d: bool) -> frozenset[str]:
 
 
 def compile_metallic_masks(
-    component_shapes, material_shape, boundaries, *, polarization_2d: str = "tm"
-) -> dict[str, jnp.ndarray]:
+    component_shapes,
+    material_shape,
+    boundaries,
+    *,
+    polarization_2d: str = "tm",
+    region_setup=False,
+) -> dict[str, jnp.ndarray | SeparableMask]:
     """Compile boundary specifications into component-aligned PEC masks."""
-    masks = {
-        name: np.zeros(tuple(component_shapes[name]), dtype=bool)
-        for name in _COMPONENTS
-    }
+    masks = (
+        {}
+        if region_setup
+        else {
+            name: np.zeros(tuple(component_shapes[name]), dtype=bool)
+            for name in _COMPONENTS
+        }
+    )
     is_3d = len(material_shape) == 3
     metallic_edges = resolve_metallic_edges(boundaries, is_3d)
     wall_specs = (
@@ -151,6 +174,16 @@ def compile_metallic_masks(
             }
         )
     )
+    if region_setup:
+        profiles = {
+            name: [np.zeros(n, bool) for n in component_shapes[name]]
+            for name in _COMPONENTS
+        }
+        for edge in metallic_edges:
+            axis, index, components = wall_specs[edge]
+            for component in components:
+                profiles[component][axis][index] = True
+        return {name: SeparableMask(values) for name, values in profiles.items()}
     for edge in metallic_edges:
         axis, index, components = wall_specs[edge]
         selection: list[slice | int] = [slice(None)] * len(material_shape)
@@ -253,12 +286,10 @@ class _AbsorberCompiler:
             )
         alpha_max = self.spec.alpha_max
         if self.spec.formulation == "cpml" and alpha_max is None:
-            # Convert a conservative normalized CFS alpha into the solver's
-            # conductivity-like units so default CPML keeps a nonzero CFS shift.
-            alpha_normalized = self.spec._DEFAULT_CPML_ALPHA_NORMALIZED
-            if getattr(fields.permittivity, "ndim", 0) == 3:
-                alpha_normalized = self.spec._DEFAULT_3D_CPML_ALPHA_NORMALIZED
-            alpha_max = 2.0 * EPS_0 * alpha_normalized / max(float(dt), 1e-30)
+            # Use the physical layer transit time so mesh/timestep refinement
+            # preserves the shift. Zero-thickness layers have no active samples.
+            thickness = self._physical_thickness() or float(resolution)
+            alpha_max = 0.1 * EPS_0 * LIGHT_SPEED / thickness
         return float(sigma_max), None if alpha_max is None else float(alpha_max)
 
     def _pml_material_variation_edges(self, fields, pml_data):
@@ -341,6 +372,10 @@ class _AbsorberCompiler:
             source_arr = np.asarray(source)
             if source_arr.ndim == 0:
                 continue
+            if getattr(fields, "region_setup", False):
+                counts = self._pml_material_edge_counts(fields.permittivity, pml_data)
+                if not _extrusion_changes_material(source_arr, counts):
+                    continue
             material = np.array(source_arr, copy=True)
             for _edge, axis, side, count in self._pml_material_edge_counts(
                 material, pml_data
@@ -360,9 +395,19 @@ class _AbsorberCompiler:
                 material[tuple(dst_sel)] = np.expand_dims(
                     material[tuple(ref_sel)], axis=axis
                 )
-            setattr(fields, attr, jnp.asarray(material, dtype=source_arr.dtype))
+            setattr(
+                fields,
+                attr,
+                material
+                if getattr(fields, "region_setup", False)
+                else jnp.asarray(material, dtype=source_arr.dtype),
+            )
         for name, source in getattr(fields, "yee_materials", {}).items():
             source_arr = np.asarray(source)
+            if getattr(fields, "region_setup", False):
+                counts = self._pml_material_edge_counts(fields.permittivity, pml_data)
+                if not _extrusion_changes_material(source_arr, counts):
+                    continue
             material = np.array(source_arr, copy=True)
             for _edge, axis, side, count in self._pml_material_edge_counts(
                 np.asarray(fields.permittivity), pml_data
@@ -382,7 +427,11 @@ class _AbsorberCompiler:
                 material[tuple(destination)] = np.expand_dims(
                     material[tuple(reference)], axis=axis
                 )
-            fields.yee_materials[name] = jnp.asarray(material, dtype=source_arr.dtype)
+            fields.yee_materials[name] = (
+                material
+                if getattr(fields, "region_setup", False)
+                else jnp.asarray(material, dtype=source_arr.dtype)
+            )
 
     @staticmethod
     def _pml_edge_material_varies(material, axis: int, side: str, count: int) -> bool:
@@ -829,6 +878,31 @@ def compile_absorber_regions(
     )
 
 
+def _extrusion_changes_material(material, edge_counts):
+    """Check exact CPML extension without a full-volume copy or slab scratch."""
+    for _edge, axis, side, count in edge_counts:
+        if count <= 0 or count >= material.shape[axis]:
+            continue
+        slab = [slice(None)] * material.ndim
+        slab[axis] = (
+            slice(0, count)
+            if side == "low"
+            else slice(material.shape[axis] - count, None)
+        )
+        reference = [slice(None)] * material.ndim
+        reference[axis] = (
+            slice(count, count + 1)
+            if side == "low"
+            else slice(material.shape[axis] - count - 1, material.shape[axis] - count)
+        )
+        values = material[tuple(slab)]
+        ref = np.broadcast_to(material[tuple(reference)], values.shape)
+        for tile in tiles(values.shape, values.dtype):
+            if not np.array_equal(values[tile], ref[tile], equal_nan=True):
+                return True
+    return False
+
+
 def lower_boundaries(
     material_grid: MaterialGrid,
     component_shapes,
@@ -837,10 +911,14 @@ def lower_boundaries(
     dt: float,
     *,
     polarization_2d: str = "tm",
+    plane_2d: str = "xy",
+    region_setup=False,
 ) -> BoundaryData:
     """Lower the complete boundary tuple once for Simulation compilation."""
     boundaries = normalize_boundaries(boundaries)
-    workspace = _BoundaryGrid(material_grid, component_shapes)
+    workspace = _BoundaryGrid(
+        material_grid, component_shapes, region_setup=region_setup
+    )
     profiles: Mapping[str, Any] | None = None
     for boundary in boundaries:
         if not isinstance(boundary, (PML, Absorber)):
@@ -868,6 +946,12 @@ def lower_boundaries(
             material_grid.shape,
             boundaries,
             polarization_2d=polarization_2d,
+            region_setup=region_setup,
         ),
         resolve_metallic_edges(boundaries, len(material_grid.shape) == 3),
+        periodic_storage_axes(
+            boundaries,
+            is_3d=len(material_grid.shape) == 3,
+            plane_2d=plane_2d,
+        ),
     )

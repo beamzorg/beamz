@@ -1,0 +1,19 @@
+-------------
+Diff Coverage
+Diff: origin/main...HEAD, staged and unstaged changes
+-------------
+beamz/simulation/_cuda_abi.py (100%)
+beamz/simulation/backend.py (86.1%): Missing lines 74,78,80,82,86
+beamz/simulation/compile.py (88.2%): Missing lines 913,946
+beamz/simulation/cuda/runtime.py (91.1%): Missing lines 426,432,466-467,470-471,480,546,642,682,696,930
+beamz/simulation/cuda/storage.py (100%)
+beamz/simulation/cuda/tuning.py (88.2%): Missing lines 170,183,185-186,188-192,227,229-231,236-237,248-252,259-260,282,284,291,296,307,309,354,360
+beamz/simulation/execute.py (55.6%): Missing lines 627,632,634,652
+beamz/simulation/kernels.py (100%)
+beamz/simulation/model.py (100%)
+-------------
+Total:   575 lines
+Missing: 53 lines
+Coverage: 90%
+-------------
+

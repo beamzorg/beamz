@@ -1,0 +1,58 @@
+{
+  "main_commit": "c5fe0d8833ac6539241ae9d3c98445e5a7305786",
+  "branch_head": "b0a5ff32d70755aa3c6f5d20e8ae9a5fdfe4ee7b",
+  "cases": [
+    [
+      "narrow",
+      [
+        1024,
+        256,
+        64
+      ],
+      "binary",
+      [
+        "main",
+        "branch_default",
+        "branch_layout",
+        "branch_layout",
+        "branch_default",
+        "main"
+      ]
+    ],
+    [
+      "wide",
+      [
+        128,
+        256,
+        512
+      ],
+      "binary",
+      [
+        "main",
+        "branch_default",
+        "branch_default",
+        "main"
+      ]
+    ],
+    [
+      "irregular",
+      [
+        257,
+        193,
+        341
+      ],
+      "smooth",
+      [
+        "main",
+        "branch_default",
+        "branch_default",
+        "main"
+      ]
+    ]
+  ],
+  "build": "CUDA 13.3.73, Release, SM86, fast math OFF, GNU 16.1.1, --allow-unsupported-compiler",
+  "branch_native_source_difference": "retained source differs from working tree only by two explanatory comment lines in temporal_cpml.cuh",
+  "main_source_sha256": "f356b249b2458637953e27a7bcd4dc7e474d25548f7aa811d0c0a87d07e5697f",
+  "branch_source_sha256": "bd1b774366c9d2cc6fbc1f013e55907baa63222e441dfdbb0256dd6c496c1854",
+  "branch_working_diff": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/docs/reviews/rtx3090-2026-09-18-origin-main-comparison/branch-working.diff"
+}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal, Mapping
@@ -271,6 +272,20 @@ def linear_interpolation_plan(source, target):
     return low.astype(np.int32), high.astype(np.int32), weight_low, weight_high
 
 
+def sampling_coordinates(indices, shape):
+    """Decode static global indices before JAX can narrow them to 32 bits.
+
+    Large sharded domains need wide host flat indices even when each dimension
+    and each local native buffer fits 32-bit addressing. Coordinates stay small.
+    """
+    if isinstance(indices, np.ndarray) or math.prod(shape) > np.iinfo(np.int32).max:
+        return tuple(
+            jnp.asarray(value, dtype=jnp.int32)
+            for value in np.unravel_index(np.asarray(indices), shape)
+        )
+    return jnp.unravel_index(indices, shape)
+
+
 def _component_plane_plan_3d(
     component: str,
     *,
@@ -334,7 +349,7 @@ def _component_plane_plan_3d(
             (index_map["z"], index_map["y"], index_map["x"]),
             dims=field_shape,
         ),
-        dtype=np.int32,
+        dtype=np.int64 if math.prod(field_shape) > np.iinfo(np.int32).max else np.int32,
     )
     combined_weights = np.prod(np.stack(weights), axis=0).astype(np.float32)
     nonzero = np.abs(combined_weights) > 4.0 * np.finfo(np.float32).eps
@@ -352,18 +367,6 @@ def _component_plane_plan_3d(
         flat_indices = np.take_along_axis(flat_indices, order, axis=1)
         combined_weights = np.take_along_axis(combined_weights, order, axis=1)
     return flat_indices, combined_weights
-
-
-def plane_sample_area(coordinates, fallback_step: float) -> float:
-    def step(values):
-        values = np.asarray(values, dtype=np.float64).reshape(-1)
-        if values.size > 1:
-            spacing = float(np.median(np.abs(np.diff(values))))
-            if np.isfinite(spacing) and spacing > 0.0:
-                return spacing * float(values.size) / float(values.size - 1)
-        return float(fallback_step)
-
-    return float(step(coordinates[0]) * step(coordinates[1]))
 
 
 @dataclass(frozen=True, slots=True)
@@ -423,18 +426,32 @@ def compile_yee_plane_quadrature_3d(
             grid=grid,
         )
     if grid is None:
-        sample_area = plane_sample_area(coordinates, float(resolution))
+        # These samples are cell centers inside the requested aperture, not
+        # endpoint samples. An N/(N-1) endpoint correction overcounts its area.
+        axis0, axis1 = plane_axes_3d(normal_axis)
+        positions = {"x": 0, "y": 1, "z": 2}
+        count = int(coordinates[0].size * coordinates[1].size)
+        sample_area = float(size[positions[axis0]] * size[positions[axis1]]) / max(
+            count, 1
+        )
         integration_weights = np.empty((0,), dtype=np.float64)
     else:
         axis0, axis1 = plane_axes_3d(normal_axis)
         interval0 = region.axis_interval(axis0)
         interval1 = region.axis_interval(axis1)
-        widths0 = np.asarray(grid.cell_widths(axis0))[
-            int(interval0.start) : int(interval0.stop)
-        ]
-        widths1 = np.asarray(grid.cell_widths(axis1))[
-            int(interval1.start) : int(interval1.stop)
-        ]
+
+        def clipped_widths(axis, interval):
+            edges = np.asarray(grid.axis_edges(axis))
+            i = {"x": 0, "y": 1, "z": 2}[axis]
+            lower = float(center[i]) - float(size[i]) / 2
+            upper = float(center[i]) + float(size[i]) / 2
+            widths = np.maximum(
+                0.0, np.minimum(edges[1:], upper) - np.maximum(edges[:-1], lower)
+            )
+            return widths[int(interval.start) : int(interval.stop)]
+
+        widths0 = clipped_widths(axis0, interval0)
+        widths1 = clipped_widths(axis1, interval1)
         integration_weights = (widths0[:, None] * widths1[None, :]).reshape(-1)
         sample_area = float(np.mean(integration_weights))
     return YeePlaneQuadrature(
@@ -521,7 +538,12 @@ def metric_adjacent_difference(array, axis, inverse_distance):
 
 
 def _pad_with_boundary_ghosts(
-    array, axis, metallic_edges, *, logical_size: int | None = None
+    array,
+    axis,
+    metallic_edges,
+    *,
+    logical_size: int | None = None,
+    periodic: bool = False,
 ):
     logical_size = int(array.shape[axis]) if logical_size is None else int(logical_size)
     if logical_size <= 0 or logical_size > int(array.shape[axis]):
@@ -540,19 +562,31 @@ def _pad_with_boundary_ghosts(
     low_edge, high_edge = (("front", "back"), ("bottom", "top"), ("left", "right"))[
         axis
     ]
-    low = (
-        zero if low_edge in metallic_edges else jnp.take(physical, jnp.array([0]), axis)
-    )
-    high = (
-        zero
-        if high_edge in metallic_edges
-        else jnp.take(physical, jnp.array([logical_size - 1]), axis)
-    )
+    if periodic:
+        low = jnp.take(physical, jnp.array([logical_size - 1]), axis)
+        high = jnp.take(physical, jnp.array([0]), axis)
+    else:
+        low = (
+            zero
+            if low_edge in metallic_edges
+            else jnp.take(physical, jnp.array([0]), axis)
+        )
+        high = (
+            zero
+            if high_edge in metallic_edges
+            else jnp.take(physical, jnp.array([logical_size - 1]), axis)
+        )
     return jnp.concatenate((low, physical, high, storage_padding), axis=axis)
 
 
 def build_h_boundary_views_for_e_3d(
-    hx, hy, hz, metallic_edges=frozenset(), *, logical_shapes=None
+    hx,
+    hy,
+    hz,
+    metallic_edges=frozenset(),
+    *,
+    logical_shapes=None,
+    periodic_axes=frozenset(),
 ):
     """Create the six ghost-padded H views consumed by the 3D E curl."""
     return {
@@ -563,6 +597,7 @@ def build_h_boundary_views_for_e_3d(
             logical_size=(
                 None if logical_shapes is None else logical_shapes[component][axis]
             ),
+            periodic=axis in periodic_axes,
         )
         for name, component, field, axis in (
             ("hz_y", "Hz", hz, 1),
@@ -1071,13 +1106,21 @@ def build_material_coefficients(fields):
     """Collocate every material array once before runtime execution."""
 
     total_sigma = _total_conductivity(fields)
+    # Only the artificial sponge loss has a matched magnetic counterpart.
+    # Material.conductivity describes electric current, not magnetic loss.
+    # CPML applies its damping through the auxiliary fields instead.
+    magnetic_sigma = (
+        total_sigma - fields.conductivity
+        if fields.has_pml and not fields.has_cpml
+        else jnp.zeros((), dtype=jnp.asarray(total_sigma).dtype)
+    )
     if fields.permittivity.ndim == 3:
         e_terms = tuple(
             _material_slice_for_e_3d(fields.permittivity, total_sigma, axis)
             for axis in "xyz"
         )
         sigma_m = _magnetic_conductivity_terms_3d(
-            total_sigma,
+            magnetic_sigma,
             fields.permeability,
             fields.Hx.shape,
             fields.Hy.shape,
@@ -1116,11 +1159,14 @@ def build_material_coefficients(fields):
         else (inactive_eps, inactive_sig, region)
         for component in ("Ex", "Ey", "Ez")
     )
-    if jnp.asarray(total_sigma).ndim == 0 and float(jnp.asarray(total_sigma)) == 0.0:
-        sigma_m = (total_sigma,) * 3
+    if jnp.asarray(magnetic_sigma).ndim == 0 and float(magnetic_sigma) == 0.0:
+        sigma_m = (magnetic_sigma,) * 3
     else:
         base = (
-            jnp.asarray(total_sigma) * jnp.asarray(fields.permeability) * MU_0 / EPS_0
+            jnp.asarray(magnetic_sigma)
+            * jnp.asarray(fields.permeability)
+            * MU_0
+            / EPS_0
         )
         active_h = ("Hx", "Hy") if polarization == "tm" else ("Hz",)
         sigma_m = tuple(
@@ -1170,4 +1216,4 @@ def material_for_component(materials, component: str):
 def component_material_at(fields, component: str, index):
     materials = getattr(fields, "materials", fields)
     material = material_for_component(materials, component)
-    return material if jnp.asarray(material).ndim == 0 else material[index]
+    return material if material.ndim == 0 else material[index]

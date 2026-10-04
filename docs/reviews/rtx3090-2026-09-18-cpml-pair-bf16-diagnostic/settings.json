@@ -1,0 +1,14 @@
+{
+  "output": "docs/reviews/rtx3090-2026-09-18-cpml-pair-bf16-diagnostic",
+  "cases": [
+    "volume_128_256_512",
+    "aspect_1024_256_64"
+  ],
+  "study": "cpml_temporal",
+  "rounds": 6,
+  "seed": 37,
+  "profile": false,
+  "diagnostic": true,
+  "psi_precision": "bf16",
+  "worker": null
+}

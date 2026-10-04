@@ -6,6 +6,7 @@ import sys
 import textwrap
 
 import numpy as np
+import pytest
 
 from beamz import PML, Design, Material, Simulation
 from beamz.simulation.model import ShardingConfig
@@ -315,7 +316,8 @@ for name in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz"):
     )
 
 
-def test_cpu_fake_device_sharded_cpml_uses_slab_auxiliaries():
+@pytest.mark.parametrize("axis", ("x", "y", "z"))
+def test_cpu_fake_device_sharded_cpml_uses_slab_auxiliaries(axis):
     code = r"""
 import os
 import numpy as np
@@ -338,7 +340,8 @@ def make_sim():
         sources=[],
         monitors=[],
         boundaries=[PML(thickness=1.0, formulation="cpml")],
-        time=np.arange(3, dtype=float) * 1e-18,
+        # Use a physical Courant number so CPML changes exceed parity tolerance.
+        time=np.arange(3, dtype=float) * 1e-9,
         resolution=1.0,
     )
 
@@ -354,7 +357,9 @@ def seed_state(sim, seed):
 
 
 assert jax.local_device_count("cpu") >= 2
-cfg = ShardingConfig(enabled=True, axis="z", num_devices=2, backend="cpu")
+cfg = ShardingConfig(
+    enabled=True, axis=os.environ["BEAMZ_TEST_SHARD_AXIS"], num_devices=2, backend="cpu"
+)
 reference = make_sim()
 sharded = make_sim()
 reference_state = seed_state(reference, 9012)
@@ -380,6 +385,7 @@ for name in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz"):
     np.testing.assert_allclose(got, ref, atol=2e-6, rtol=2e-6)
 """
     env = os.environ.copy()
+    env["BEAMZ_TEST_SHARD_AXIS"] = axis
     env["XLA_FLAGS"] = "--xla_force_host_platform_device_count=2"
     env.setdefault("JAX_PLATFORMS", "cpu")
     subprocess.run(

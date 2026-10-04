@@ -1,0 +1,8 @@
+# Preserve raw tool output (including CRLF CSV and diff context) and collapse
+# generated evidence in reviews. Markdown reports remain ordinary review text.
+*.json -whitespace linguist-generated=true
+*.log -whitespace linguist-generated=true
+*.csv -whitespace linguist-generated=true
+*.txt -whitespace linguist-generated=true
+*.patch -whitespace linguist-generated=true
+*.diff -whitespace linguist-generated=true

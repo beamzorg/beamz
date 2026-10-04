@@ -1,0 +1,26 @@
+{
+  "ordinary": {
+    "path": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/cpml-oriented-edges-build/_cuda.cpython-311-x86_64-linux-gnu.so",
+    "sha256": "67c79d29763d441eb6902c23aee322c2baf5abbd11b5640557cd1162f7cb989d"
+  },
+  "edges": {
+    "path": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/cpml-oriented-edges-build/_cuda.cpython-311-x86_64-linux-gnu.so",
+    "sha256": "67c79d29763d441eb6902c23aee322c2baf5abbd11b5640557cd1162f7cb989d"
+  },
+  "pad32": {
+    "path": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/cpml-oriented-edges-build/_cuda.cpython-311-x86_64-linux-gnu.so",
+    "sha256": "67c79d29763d441eb6902c23aee322c2baf5abbd11b5640557cd1162f7cb989d"
+  },
+  "pad64": {
+    "path": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/cpml-oriented-edges-build/_cuda.cpython-311-x86_64-linux-gnu.so",
+    "sha256": "67c79d29763d441eb6902c23aee322c2baf5abbd11b5640557cd1162f7cb989d"
+  },
+  "old": {
+    "path": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/cpml-half-y-long-z-build/_cuda.cpython-311-x86_64-linux-gnu.so",
+    "sha256": "2d2ea814c9c28cdeb413960499275a2b53e92de8b1414a36d08ada65225c075a"
+  },
+  "baseline": {
+    "path": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/cpml-yface-retained-build/_cuda.cpython-311-x86_64-linux-gnu.so",
+    "sha256": "eb1bf52294a94b5840cb1ec81b88669027f5a4f6c98d5595a5b83d6763c1d8d7"
+  }
+}

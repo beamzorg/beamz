@@ -114,6 +114,26 @@ _TOLERANCES = {
         ),
         relative_floor=1e-12,
     ),
+    "bend_neff": Tolerance(
+        name="bend_neff",
+        absolute=3e-5,
+        relative=0.0,
+        rationale=(
+            "25 nm bent-slab grid: 12.5/25/50 nm refinement gives near-second-order "
+            "phase convergence; includes five-decimal reference rounding. "
+            "See docs/bent-waveguide-modes.md."
+        ),
+    ),
+    "bend_loss": Tolerance(
+        name="bend_loss",
+        absolute=0.0,
+        relative=0.02,
+        rationale=(
+            "Two-percent relative loss gate for the published R=50..200 um TE "
+            "slabs at 25 nm, supported by mesh and PML/domain refinement. "
+            "This is not a general radiation-loss accuracy guarantee."
+        ),
+    ),
     "sparameter_reciprocity": Tolerance(
         name="sparameter_reciprocity",
         absolute=1e-3,

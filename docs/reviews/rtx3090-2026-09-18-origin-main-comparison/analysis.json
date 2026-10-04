@@ -1,0 +1,324 @@
+{
+  "performance": {
+    "narrow-main": {
+      "mean_process_median_gcups": 7.230167034205504,
+      "process_medians_gcups": [
+        7.299073650949283,
+        7.161260417461725
+      ]
+    },
+    "narrow-branch_default": {
+      "mean_process_median_gcups": 6.647772876696443,
+      "process_medians_gcups": [
+        6.636093755767505,
+        6.659451997625382
+      ],
+      "change_vs_main_percent": -8.05505813010664
+    },
+    "narrow-branch_layout": {
+      "mean_process_median_gcups": 8.367315358793105,
+      "process_medians_gcups": [
+        8.349451469792424,
+        8.385179247793786
+      ],
+      "change_vs_main_percent": 15.727829235587754
+    },
+    "wide-main": {
+      "mean_process_median_gcups": 8.231175108276911,
+      "process_medians_gcups": [
+        8.076938565196766,
+        8.385411651357057
+      ]
+    },
+    "wide-branch_default": {
+      "mean_process_median_gcups": 8.565536282834906,
+      "process_medians_gcups": [
+        8.395427021576799,
+        8.735645544093014
+      ],
+      "change_vs_main_percent": 4.062131714605055
+    },
+    "irregular-main": {
+      "mean_process_median_gcups": 6.964636128068313,
+      "process_medians_gcups": [
+        6.962898144591495,
+        6.9663741115451305
+      ]
+    },
+    "irregular-branch_default": {
+      "mean_process_median_gcups": 8.244324651671365,
+      "process_medians_gcups": [
+        8.242712521731882,
+        8.245936781610848
+      ],
+      "change_vs_main_percent": 18.374090190379853
+    }
+  },
+  "numerical_comparison": {
+    "narrow-main-1": {
+      "exact": true,
+      "failed_leaves": [],
+      "max_field_error_over_leaf_peak": 0.0,
+      "max_cpml_error_over_leaf_peak": 0.0,
+      "max_dft_error_over_leaf_peak": 0.0
+    },
+    "narrow-main-2": {
+      "exact": true,
+      "failed_leaves": [],
+      "max_field_error_over_leaf_peak": 0.0,
+      "max_cpml_error_over_leaf_peak": 0.0,
+      "max_dft_error_over_leaf_peak": 0.0
+    },
+    "narrow-branch_default-1": {
+      "exact": false,
+      "failed_leaves": [
+        {
+          "index": 6,
+          "shape": [
+            1024,
+            24,
+            65
+          ],
+          "mismatch_count": 56,
+          "max_abs_error": 5.817413330078125e-05,
+          "reference_scale": 11.525832176208496
+        },
+        {
+          "index": 16,
+          "shape": [
+            1024,
+            257,
+            24
+          ],
+          "mismatch_count": 16,
+          "max_abs_error": 15744.0,
+          "reference_scale": 4870950912.0
+        }
+      ],
+      "max_field_error_over_leaf_peak": 1.2317310696038125e-06,
+      "max_cpml_error_over_leaf_peak": 7.857837332862045e-06,
+      "max_dft_error_over_leaf_peak": 3.179715703208834e-07
+    },
+    "narrow-branch_default-2": {
+      "exact": false,
+      "failed_leaves": [
+        {
+          "index": 6,
+          "shape": [
+            1024,
+            24,
+            65
+          ],
+          "mismatch_count": 56,
+          "max_abs_error": 5.817413330078125e-05,
+          "reference_scale": 11.525832176208496
+        },
+        {
+          "index": 16,
+          "shape": [
+            1024,
+            257,
+            24
+          ],
+          "mismatch_count": 16,
+          "max_abs_error": 15744.0,
+          "reference_scale": 4870950912.0
+        }
+      ],
+      "max_field_error_over_leaf_peak": 1.2317310696038125e-06,
+      "max_cpml_error_over_leaf_peak": 7.857837332862045e-06,
+      "max_dft_error_over_leaf_peak": 3.179715703208834e-07
+    },
+    "narrow-branch_layout-1": {
+      "exact": false,
+      "failed_leaves": [
+        {
+          "index": 6,
+          "shape": [
+            1024,
+            24,
+            65
+          ],
+          "mismatch_count": 56,
+          "max_abs_error": 5.817413330078125e-05,
+          "reference_scale": 11.525832176208496
+        },
+        {
+          "index": 16,
+          "shape": [
+            1024,
+            257,
+            24
+          ],
+          "mismatch_count": 16,
+          "max_abs_error": 15744.0,
+          "reference_scale": 4870950912.0
+        }
+      ],
+      "max_field_error_over_leaf_peak": 1.2317310696038125e-06,
+      "max_cpml_error_over_leaf_peak": 7.857837332862045e-06,
+      "max_dft_error_over_leaf_peak": 3.179715703208834e-07
+    },
+    "narrow-branch_layout-2": {
+      "exact": false,
+      "failed_leaves": [
+        {
+          "index": 6,
+          "shape": [
+            1024,
+            24,
+            65
+          ],
+          "mismatch_count": 56,
+          "max_abs_error": 5.817413330078125e-05,
+          "reference_scale": 11.525832176208496
+        },
+        {
+          "index": 16,
+          "shape": [
+            1024,
+            257,
+            24
+          ],
+          "mismatch_count": 16,
+          "max_abs_error": 15744.0,
+          "reference_scale": 4870950912.0
+        }
+      ],
+      "max_field_error_over_leaf_peak": 1.2317310696038125e-06,
+      "max_cpml_error_over_leaf_peak": 7.857837332862045e-06,
+      "max_dft_error_over_leaf_peak": 3.179715703208834e-07
+    },
+    "wide-main-1": {
+      "exact": true,
+      "failed_leaves": [],
+      "max_field_error_over_leaf_peak": 0.0,
+      "max_cpml_error_over_leaf_peak": 0.0,
+      "max_dft_error_over_leaf_peak": 0.0
+    },
+    "wide-main-2": {
+      "exact": true,
+      "failed_leaves": [],
+      "max_field_error_over_leaf_peak": 0.0,
+      "max_cpml_error_over_leaf_peak": 0.0,
+      "max_dft_error_over_leaf_peak": 0.0
+    },
+    "wide-branch_default-1": {
+      "exact": false,
+      "failed_leaves": [
+        {
+          "index": 6,
+          "shape": [
+            128,
+            24,
+            513
+          ],
+          "mismatch_count": 68,
+          "max_abs_error": 5.7220458984375e-05,
+          "reference_scale": 11.436366081237793
+        },
+        {
+          "index": 8,
+          "shape": [
+            24,
+            257,
+            512
+          ],
+          "mismatch_count": 4,
+          "max_abs_error": 319488.0,
+          "reference_scale": 214428827648.0
+        },
+        {
+          "index": 13,
+          "shape": [
+            24,
+            257,
+            512
+          ],
+          "mismatch_count": 36,
+          "max_abs_error": 1264.0,
+          "reference_scale": 566588736.0
+        }
+      ],
+      "max_field_error_over_leaf_peak": 9.642003250068339e-07,
+      "max_cpml_error_over_leaf_peak": 8.292682811799568e-06,
+      "max_dft_error_over_leaf_peak": 0.0
+    },
+    "wide-branch_default-2": {
+      "exact": false,
+      "failed_leaves": [
+        {
+          "index": 6,
+          "shape": [
+            128,
+            24,
+            513
+          ],
+          "mismatch_count": 68,
+          "max_abs_error": 5.7220458984375e-05,
+          "reference_scale": 11.436366081237793
+        },
+        {
+          "index": 8,
+          "shape": [
+            24,
+            257,
+            512
+          ],
+          "mismatch_count": 4,
+          "max_abs_error": 319488.0,
+          "reference_scale": 214428827648.0
+        },
+        {
+          "index": 13,
+          "shape": [
+            24,
+            257,
+            512
+          ],
+          "mismatch_count": 36,
+          "max_abs_error": 1264.0,
+          "reference_scale": 566588736.0
+        }
+      ],
+      "max_field_error_over_leaf_peak": 9.642003250068339e-07,
+      "max_cpml_error_over_leaf_peak": 8.292682811799568e-06,
+      "max_dft_error_over_leaf_peak": 0.0
+    },
+    "irregular-main-1": {
+      "exact": true,
+      "failed_leaves": [],
+      "max_field_error_over_leaf_peak": 0.0,
+      "max_cpml_error_over_leaf_peak": 0.0,
+      "max_dft_error_over_leaf_peak": 0.0
+    },
+    "irregular-main-2": {
+      "exact": true,
+      "failed_leaves": [],
+      "max_field_error_over_leaf_peak": 0.0,
+      "max_cpml_error_over_leaf_peak": 0.0,
+      "max_dft_error_over_leaf_peak": 0.0
+    },
+    "irregular-branch_default-1": {
+      "exact": false,
+      "failed_leaves": [],
+      "max_field_error_over_leaf_peak": 8.074456701064546e-07,
+      "max_cpml_error_over_leaf_peak": 2.183899371740682e-06,
+      "max_dft_error_over_leaf_peak": 1.1039719697101003e-07
+    },
+    "irregular-branch_default-2": {
+      "exact": false,
+      "failed_leaves": [],
+      "max_field_error_over_leaf_peak": 8.074456701064546e-07,
+      "max_cpml_error_over_leaf_peak": 2.183899371740682e-06,
+      "max_dft_error_over_leaf_peak": 1.1039719697101003e-07
+    }
+  },
+  "identical_inputs_all_runs": true,
+  "narrow_branch_layout_exact": true,
+  "max_temperature_c": 69.0,
+  "min_free_mib": 19008.0,
+  "power_limits_w": [
+    370.0
+  ]
+}

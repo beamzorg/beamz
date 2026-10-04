@@ -8,6 +8,7 @@ import json
 import platform
 import subprocess
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import jax
@@ -24,7 +25,8 @@ from tests.performance.h100_workloads import H100_WORKLOADS
 
 
 def _block(state) -> None:
-    state.ez.block_until_ready()
+    # Include every field, CPML recurrence and monitor accumulator on all ranks.
+    jax.block_until_ready(state)
 
 
 def _git_commit() -> str:
@@ -77,7 +79,9 @@ def _time_call(callable_):
     return value, time.perf_counter() - started
 
 
-def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
+def run_benchmark(
+    args: argparse.Namespace, *, final_state_callback=None
+) -> BenchmarkRecord:
     visible_devices = jax.devices()
     if not visible_devices:
         raise RuntimeError("JAX reported no execution devices")
@@ -101,25 +105,34 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
         shape_zyx=None if args.shape is None else tuple(args.shape),
         timesteps=args.timesteps,
     )
-    sim = workload.build()
-    sim.clear_compiled_cache()
-    program = sim.compile(
-        num_steps=workload.timesteps,
-        sharding=sharding,
-        backend=args.backend,
+    setup_device = (
+        jax.default_device(jax.devices("cpu")[0])
+        if getattr(args, "host_setup", False)
+        else nullcontext()
     )
-    state = initial_program_state(
-        program,
-        t=float(sim.time[0]),
-        current_step=0,
-        monitor_steps=workload.timesteps,
-    )
+    with setup_device:
+        sim = workload.build()
+        sim.clear_compiled_cache()
+        program = sim.compile(
+            num_steps=workload.timesteps,
+            sharding=sharding,
+            backend=args.backend,
+        )
+        state = initial_program_state(
+            program,
+            t=float(sim.time[0]),
+            current_step=0,
+            monitor_steps=workload.timesteps,
+        )
     state = sharding_runtime.prepare_state(
         program,
         state,
         replicated_fields=(*monitor_runtime.MONITOR_FIELDS, "t", "current_step"),
     )
     coefficients = sharding_runtime.place_tree(program, program.coefficients)
+    if getattr(args, "host_setup", False) and args.devices == 1:
+        state = jax.device_put(state, visible_devices[0])
+        coefficients = jax.device_put(coefficients, visible_devices[0])
     execution_devices = _array_devices(state.ex)
     if not execution_devices:
         raise RuntimeError("could not determine devices used by the benchmark state")
@@ -135,10 +148,21 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
     # One unreported launch primes allocator and clocks before the measured samples.
     warm_state = executable(state, coefficients)
     _block(warm_state)
+    del warm_state
     kernel_samples = tuple(
-        _time_call(lambda: executable(state, coefficients))[1]
+        _time_call(
+            lambda state=state, coefficients=coefficients, executable=executable: (
+                executable(state, coefficients)
+            )
+        )[1]
         for _ in range(args.samples)
     )
+    cpml_psi_precision = (
+        str(state.cpml_psi_h_terms[0].dtype) if state.cpml_psi_h_terms else "float32"
+    )
+    # Public runs own their input placement. Do not keep a second simulation's
+    # standalone benchmark inputs alive while measuring their allocator peak.
+    del state, coefficients, executable, lowered, scan
 
     # Public-path latency includes input placement, state allocation and result decode.
     warm_run = sim.advance(
@@ -147,8 +171,10 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
         backend=args.backend,
     )
     _block(warm_run.state)
-    end_to_end_samples = tuple(
-        _time_call(
+    del warm_run
+    end_to_end_samples = []
+    for sample in range(args.samples):
+        result, elapsed = _time_call(
             lambda: (
                 sim.advance(
                     num_steps=workload.timesteps,
@@ -156,13 +182,21 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
                     backend=args.backend,
                 ).state
             )
-        )[1]
-        for _ in range(args.samples)
-    )
-    memory_fallback = sim.memory_estimate(
-        num_steps=workload.timesteps,
-        sharding=sharding,
-    )["total_bytes"]
+        )
+        end_to_end_samples.append(elapsed)
+        if sample == args.samples - 1 and final_state_callback is not None:
+            final_state_callback(result)
+        del result
+    peak_memory = _peak_memory_bytes(execution_devices, 0)
+    if not peak_memory:
+        # H100 allocator statistics are authoritative. Building a second default
+        # backend plan just for an unused fallback can allocate the global grid
+        # on GPU 0 and OOM after every timed sample already succeeded.
+        with setup_device:
+            peak_memory = sim.memory_estimate(
+                num_steps=workload.timesteps,
+                sharding=sharding,
+            )["total_bytes"]
     features = workload.feature_labels
     cuda_component_version = None
     cuda_abi_version = None
@@ -172,9 +206,6 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
             raise RuntimeError(status.reason or "CUDA component unavailable")
         cuda_component_version = status.extension_version
         cuda_abi_version = status.abi_version
-    cpml_psi_precision = (
-        str(state.cpml_psi_h_terms[0].dtype) if state.cpml_psi_h_terms else "float32"
-    )
     return BenchmarkRecord(
         beamz_commit=_git_commit(),
         beamz_version=beamz.__version__,
@@ -194,8 +225,8 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkRecord:
         trace_lower_s=trace_lower_s,
         compile_s=compile_s,
         warm_runtime_samples_s=kernel_samples,
-        warm_end_to_end_samples_s=end_to_end_samples,
-        peak_memory_bytes=_peak_memory_bytes(execution_devices, memory_fallback),
+        warm_end_to_end_samples_s=tuple(end_to_end_samples),
+        peak_memory_bytes=peak_memory,
         cpml_psi_precision=cpml_psi_precision,
         cuda_component_version=cuda_component_version,
         cuda_abi_version=cuda_abi_version,
@@ -211,7 +242,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--samples", type=int, default=5)
     parser.add_argument(
         "--backend",
-        choices=("auto", "jax", "cuda", "cuda_streamed", "cuda_hopper"),
+        choices=("auto", "jax", "cuda", "cuda_streamed"),
         default="auto",
     )
     parser.add_argument(
@@ -226,6 +257,7 @@ def _parser() -> argparse.ArgumentParser:
         default="auto",
     )
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--host-setup", action="store_true")
     parser.add_argument(
         "--allow-cpu",
         action="store_true",

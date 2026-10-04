@@ -1,0 +1,9 @@
+Simulation runtime: 2.61 s
+GCUPS: 6.580
+one_step_012 exact complete-state parity
+one_step_120 exact complete-state parity
+one_step_201 exact complete-state parity
+cpml_pair_012 exact complete-state parity
+cpml_pair_120 exact complete-state parity
+cpml_pair_201 exact complete-state parity
+{'one_step_012': 6.390800386633846, 'one_step_120': 7.973697765855873, 'one_step_201': 6.884978530967403, 'cpml_pair_012': 5.4393837986085884, 'cpml_pair_120': 5.846721634531965, 'cpml_pair_201': 5.943461431566451}

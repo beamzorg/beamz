@@ -42,9 +42,12 @@ The public package exports:
 `RasterOptions` has three choices: `quality` (`fast`, `balanced`, or
 `reference`), `smoothing` (`volume`, `farjadpour_diagonal`, or
 `farjadpour_full`), and `components` (`all`, `two_dimensional_tm`, or
-`two_dimensional_te`). Standalone rasterization defaults to `farjadpour_full`.
-Adaptive
-tolerances and threading remain internal. Farjadpour modes use the generalized
+`two_dimensional_te`). Standalone and design rasterization both default to
+`farjadpour_diagonal`. This changes the previous standalone default of
+`farjadpour_full`; set `smoothing="farjadpour_full"` explicitly to retain that
+policy. Intrinsic off-diagonal material coefficients require `farjadpour_full`
+or `volume`; diagonal smoothing rejects them instead of discarding them.
+Adaptive tolerances and threading remain internal. Farjadpour modes use the generalized
 local-interface tensor transform for permittivity and permeability;
 conductivity remains volume averaged.
 
@@ -69,21 +72,30 @@ smoothing. Equal material-table entries are treated as one physical material.
 Polygon Boolean operations use the `geo` integer overlay lattice (approximately
 29 bits per XY half-extent). Input axis coordinates within a scale-derived
 clipping-roundoff tolerance are restored after each operation to keep aligned
-faces aligned. This is a
-clipping precision limit, independent of the adaptive quality preset; features
-below that XY precision are not resolved. Regression tolerances of `2e-6` on
-float32 constitutive outputs cover clipping and output roundoff for the tested
+faces aligned. This is a clipping precision limit, independent of the adaptive quality preset. If distinct
+input axis coordinates are closer than the restoration tolerance can distinguish,
+the rasterizer retains the original geometry and uses the planar partition or
+adaptive path instead of allowing the Boolean union to erase thin layers.
+Regression tolerances of `2e-6` on float32 constitutive outputs cover clipping and output roundoff for the tested
 geometries, rather than promising a universal fraction-error bound.
 
-Corners, non-coplanar mesh patches, unresolved geometry, and overlaps involving
-unsupported curved/tapered/mesh unions still fall back to tensor volume
-averaging. Identical fully occluded primitives are removed before adaptive
+Corners, multiple nonparallel exposed interfaces, unresolved geometry, and
+unsupported curved/tapered overlaps still fall back to tensor volume averaging. Identical fully occluded primitives are removed before adaptive
 integration; an unrelated curved object does not disable exact extrusion
 integration elsewhere. Adaptive disagreement remains an estimate, not a strict
 error bound. Summary diagnostics count sampled supports across all requested
 components and cells, not physical-cell percentages, and do not allocate dense
 diagnostic fields. Scene hashes retain the original input representation;
 cached results from the older ownership algorithm are invalidated.
+
+The original-geometry fallback shares a boundary roundoff policy between
+single-object and planar multi-object interface classification. Its
+normal-evidence query is inset by eight machine epsilons
+times the larger of each axis's support width and endpoint magnitudes. Including
+coordinate magnitude keeps the inset representable after translation. An inset
+that would collapse an axis is not applied. This avoids spurious corners from
+rounding at support edges; material-volume integration and partition planes
+retain their original coordinates.
 
 Compile once when rasterizing one scene on several grids:
 
@@ -194,6 +206,85 @@ Meshes must be closed, consistently oriented, manifold, nondegenerate, and free
 of self-intersections. `inspect_mesh()` and scene compilation share the same
 native scale-aware validity predicate.
 
+Connected triangle meshes use exact polyhedral overlap integration for a
+single candidate object, as boxes and extruded polygons do. Mesh resolution
+still determines how closely a triangulated curved surface matches the
+original CAD geometry. Multiple objects also use exact integration when all
+surfaces crossing a sampling volume lie on parallel planes. This includes
+adjacent core/cladding regions and overlapping planar layers; each interval's
+material is selected using object priority and ID. Explicit cladding therefore
+matches the equivalent background material at a shared planar interface.
+Scene JSON preserves floating-point coordinates exactly, so loading a scene
+does not move grid-aligned faces by a rounding step.
+Nonparallel planar junctions also receive exact volume fractions when the local
+arrangement has at most 12 distinct planes and 256 convex pieces. They retain
+volume averaging rather than inventing one interface normal. This path also
+handles simple disconnected/nested shells with parity containment, independent
+of shell winding. Each shell is validated separately, so opposite signed volumes
+do not cancel the validity check. More complex arrangements and curved analytic
+interfaces retain adaptive integration; their results depend on `quality`.
+The complexity cap bounds partition work; it is not an accuracy guarantee for
+adaptive results. Check diagnostics and convergence when that fallback is used.
+Exact partitions retain distinct geometric planes and cut coordinates. A robust
+orientation predicate recognizes coplanar triangle faces even when their rounded
+plane equations differ; it does not use a distance tolerance that could erase
+thin layers on stretched grids. Distinct near-coincident planes can still add
+partition work and reach the existing cap.
+Adaptive integration compares octant occupancy with an independent parent-center
+sample. An octant checkerboard subset is not a valid convergence check for
+axis-invariant extrusions. The estimator remains a sampling estimate, not a
+rigorous bound on geometric or electromagnetic error.
+
+Each imported physical region has its own compact vertex array and bounds.
+Faces that only touch a sampling-volume boundary do not disable interface
+smoothing. Cached results from the earlier rasterization policy are invalidated.
+
+When comparing import routes, use the same physical XYZ grid edges, materials,
+`smoothing`, and dimensional `components` (including polarization in 2D).
+Gmsh coordinates become `(points - coordinate_origin) * unit_scale`, with
+`coordinate_origin=(0, 0, 0)` and `unit_scale=1.0` by default. The origin is in
+file units and is subtracted before scaling to allow explicit alignment and
+recentering. It cannot recover precision already lost in the source file;
+use `1e-9` for nanometres or `1e-6` for micrometres. The GDSFactory scene adapter
+defaults to micrometres. The higher-level GDS design importer translates to a
+local design origin and reports `world_origin`; account for that translation
+when comparing with a mesh. Scalar design rasterization rounds the domain up
+to whole cells and extends structures ending on its high boundary through that
+padding. Direct scene rasterization uses exactly the supplied grid and geometry.
+For equivalence comparisons, choose extents divisible by the spacing or explicitly
+match the padded geometry. These coordinate policies are not inferred from meshes.
+
+`from_mesh()` accepts first-order `triangle` and `tetra` cells. Unsupported
+surface/volume types, including `triangle6`, `tetra10`, quads and hexahedra,
+raise `ValueError` with conversion guidance. Higher-order cells must first be
+tessellated to the desired geometric accuracy; corner-only linearization is
+no longer implicit. Vertex/line annotations are ignored. Surface cells alongside
+tetrahedra must refer to tetrahedral faces and are treated as annotations;
+standalone surface geometry mixed into a volume file is rejected rather than
+lost. Volume materials come from volume physical tags.
+
+Tetrahedral extraction rejects duplicate and degenerate elements, faces shared
+by more than two cells, and same-sided cells sharing a face. Native validation
+then checks the extracted surface. These checks do not constitute a complete
+volumetric mesh-overlap validator.
+
+Use `priorities={"core": 10, "cladding": 0}` to specify ownership of overlapping
+regions independently of tag order. Keys may be physical names or integer tags;
+names take precedence if both are supplied. Larger priorities win, followed by
+object ID on ties. Unspecified priorities preserve increasing physical-tag
+order for compatibility; unknown keys and non-integer/out-of-range values are
+rejected. Materials still require explicit mappings.
+
+```python
+scene = from_mesh(
+    "device.msh",
+    materials={"core": core_material, "cladding": cladding_material},
+    priorities={"core": 10, "cladding": 0},
+    coordinate_origin=(1000, 2000, 0),  # source-file coordinates
+    unit_scale=1e-9,
+)
+```
+
 ## Development
 
 ```bash
@@ -204,6 +295,9 @@ env -u CONDA_PREFIX uv run maturin develop
 uv run pytest tests/unit/raster \
   tests/integration/test_native_design_rasterization.py
 ```
+
+Measured import comparisons, analytical checks, negative controls, and rerun
+commands are recorded in the [equivalence validation report](../../../docs/raster-equivalence-validation.md).
 
 ### Spatial ownership inspection
 

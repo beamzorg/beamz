@@ -1,0 +1,8 @@
+Simulation runtime: 2.67 s
+GCUPS: 6.435
+ordinary64 exact full-state parity
+ordinary32 exact full-state parity
+20x12x16 exact full-state parity
+40x6x16 exact full-state parity
+16x16x16 exact full-state parity
+{'ordinary64': 6.509135668763085, 'ordinary32': 6.900971592217477, '20x12x16': 6.105215917424466, '40x6x16': 6.675250465876234, '16x16x16': 5.4893184347694275}

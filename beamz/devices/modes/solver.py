@@ -8,6 +8,7 @@ from typing import Literal, cast
 import numpy as np
 import xarray as xr
 
+from ._bend import bend_materials
 from ._scipy import solve_diagonal_scipy_reference, solve_tensorial_scipy_reference
 from .constants import C_0
 from .models import BoundaryCondition, BoundarySpec, Materials, PmlSpec
@@ -51,12 +52,20 @@ def solve_grid(
     normal_axis: Literal[0, 1, 2] = 2,
     normal_coordinate: float = 0.0,
     krylov_dim: int | None = None,
+    bend_radius: float | None = None,
+    bend_axis: Literal["x", "y"] = "x",
 ) -> Result:
     """Solve modes from rasterized material components and grid edges.
 
     This is the core API Beamz should target: geometry and materials are already
     sampled on a two-dimensional mode-plane grid. Coordinates are in microns and
-    frequencies are in Hz, matching the rest of BeamZ.
+    frequencies are in Hz. ``bend_radius=None`` preserves straight solves.
+    A finite signed radius (microns) bends in the local ``bend_axis``/propagation
+    plane, with reference arc length at that transverse coordinate's zero.
+    Positive radius places the curvature center at coordinate -R; negative
+    radius reverses the bend. The entire grid must satisfy 1 + coordinate/R > 0.
+    Material tensors are expressed in the local frame and must follow the bend.
+    Returned fields are physical components at the reference cross-section.
     """
     material_grid = Materials.from_components(
         eps_xx=eps_xx,
@@ -96,6 +105,8 @@ def solve_grid(
         direction=direction,
         components=components,
         krylov_dim=krylov_dim,
+        bend_radius=bend_radius,
+        bend_axis=bend_axis,
     )
 
 
@@ -111,6 +122,8 @@ def _solve_materials(
     direction: Literal["+", "-"] = "+",
     components: Sequence[str] | None = None,
     krylov_dim: int | None = None,
+    bend_radius: float | None = None,
+    bend_axis: Literal["x", "y"] = "x",
 ) -> Result:
     """Solve modes for an already-rasterized material tensor grid.
 
@@ -145,6 +158,12 @@ def _solve_materials(
     if unknown:
         raise ValueError(f"unknown field component(s): {', '.join(sorted(unknown))}")
 
+    bend_metric = None
+    if bend_radius is not None:
+        material_grid, bend_metric = bend_materials(
+            material_grid, bend_radius, bend_axis
+        )
+
     # Accumulate raw NumPy rows first. Building xarray objects once at the end
     # keeps component filtering and frequency stacking simple.
     n_rows = []
@@ -167,6 +186,11 @@ def _solve_materials(
             boundary_spec=boundary_spec,
             material_grid=material_grid,
         )
+        if bend_metric is not None:
+            # Coordinate fields obey E'_z=h E_z and H'_z=h H_z. Transverse
+            # fields (and hence cross-section power normalization) are unchanged.
+            fields["Ez"] = fields["Ez"] / bend_metric[..., None]
+            fields["Hz"] = fields["Hz"] / bend_metric[..., None]
         # The solver uses local coordinates where local z is the propagation
         # normal. Convert field labels back to the global x/y/z axes requested
         # by the material grid before exposing them.
@@ -199,6 +223,11 @@ def _solve_materials(
             "pml": pml_spec.as_dict(),
             "boundary": boundary_spec.as_dict(),
             "normal_axis": material_grid.grid.normal_axis,
+            **(
+                {"bend_radius": float(bend_radius), "bend_axis": bend_axis}
+                if bend_radius is not None
+                else {}
+            ),
         },
     )
 

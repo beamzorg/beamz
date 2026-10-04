@@ -1,0 +1,104 @@
+[
+  {
+    "seconds": 0.01605529700009356,
+    "free_mib": 23522.0,
+    "temperature_c": 66.0,
+    "power_w": 317.26
+  },
+  {
+    "seconds": 1.0354046560005372,
+    "free_mib": 22162.0,
+    "temperature_c": 70.0,
+    "power_w": 221.5
+  },
+  {
+    "seconds": 2.053250336000019,
+    "free_mib": 22139.0,
+    "temperature_c": 71.0,
+    "power_w": 329.35
+  },
+  {
+    "seconds": 3.07253976300035,
+    "free_mib": 22064.0,
+    "temperature_c": 72.0,
+    "power_w": 367.74
+  },
+  {
+    "seconds": 4.091229034000207,
+    "free_mib": 22100.0,
+    "temperature_c": 71.0,
+    "power_w": 364.43
+  },
+  {
+    "seconds": 5.109436022000409,
+    "free_mib": 22117.0,
+    "temperature_c": 72.0,
+    "power_w": 368.62
+  },
+  {
+    "seconds": 6.127116092000506,
+    "free_mib": 22122.0,
+    "temperature_c": 72.0,
+    "power_w": 364.57
+  },
+  {
+    "seconds": 7.14417732200036,
+    "free_mib": 22151.0,
+    "temperature_c": 72.0,
+    "power_w": 369.72
+  },
+  {
+    "seconds": 8.162478807000298,
+    "free_mib": 22174.0,
+    "temperature_c": 72.0,
+    "power_w": 364.1
+  },
+  {
+    "seconds": 9.17818345500018,
+    "free_mib": 22174.0,
+    "temperature_c": 67.0,
+    "power_w": 350.66
+  },
+  {
+    "seconds": 10.195969684000374,
+    "free_mib": 22210.0,
+    "temperature_c": 71.0,
+    "power_w": 239.57
+  },
+  {
+    "seconds": 11.213463414999751,
+    "free_mib": 22210.0,
+    "temperature_c": 72.0,
+    "power_w": 327.14
+  },
+  {
+    "seconds": 12.229260285999771,
+    "free_mib": 22210.0,
+    "temperature_c": 72.0,
+    "power_w": 365.41
+  },
+  {
+    "seconds": 13.2453366310001,
+    "free_mib": 22220.0,
+    "temperature_c": 72.0,
+    "power_w": 358.89
+  },
+  {
+    "seconds": 14.262710728000457,
+    "free_mib": 22220.0,
+    "temperature_c": 72.0,
+    "power_w": 364.91
+  },
+  {
+    "seconds": 15.280630195999947,
+    "free_mib": 22219.0,
+    "temperature_c": 73.0,
+    "power_w": 362.45
+  },
+  {
+    "seconds": 16.298152160000427,
+    "free_mib": 22219.0,
+    "temperature_c": 72.0,
+    "power_w": 362.91
+  }
+]

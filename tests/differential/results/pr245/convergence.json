@@ -1,0 +1,157 @@
+{
+  "wavelength_nm": 1550,
+  "source_bandwidth_nm": 20,
+  "power_unit": "percent of incident power",
+  "note": "Retained RTX3090 fields reprojected without the extra modal normal-interpolation correction. Published samples include figure digitizations. Equal nominal PPW does not imply equal realized meshes. These sweeps do not establish complete mesh convergence.",
+  "devices": {
+    "mmi2x2": {
+      "target_mode": "MMI cross TE0",
+      "published_value_basis": "Values at 6 and 15 cells per wavelength are stated in Section 3.3; remaining values are digitized to approximately 0.001 from Fig. 12(a).",
+      "published": [
+        {
+          "ppw": 6,
+          "lumerical": 37.6,
+          "tidy3d": 35.8
+        },
+        {
+          "ppw": 10,
+          "lumerical": 45.9,
+          "tidy3d": 46.0
+        },
+        {
+          "ppw": 15,
+          "lumerical": 48.3,
+          "tidy3d": 47.9
+        },
+        {
+          "ppw": 20,
+          "lumerical": 48.6,
+          "tidy3d": 48.4
+        },
+        {
+          "ppw": 25,
+          "lumerical": 48.9,
+          "tidy3d": 48.9
+        }
+      ],
+      "beamz": [
+        {
+          "run_id": "mmi-6",
+          "ppw": 6,
+          "power": 37.445827348504075
+        },
+        {
+          "run_id": "mmi-10",
+          "ppw": 10,
+          "power": 45.98651281963782
+        },
+        {
+          "run_id": "mmi-15-reused",
+          "ppw": 15,
+          "power": 48.03766045775782
+        },
+        {
+          "run_id": "mmi-20-headroom",
+          "ppw": 20,
+          "power": 48.53491658361998
+        }
+      ]
+    },
+    "mode_converter": {
+      "target_mode": "Mode converter TE1",
+      "published_value_basis": "Values at 6 cells per wavelength are stated in Section 3.4; remaining values are digitized to approximately 0.001 from Fig. 16(a).",
+      "published": [
+        {
+          "ppw": 6,
+          "lumerical": 96.7,
+          "tidy3d": 35.699999999999996
+        },
+        {
+          "ppw": 10,
+          "lumerical": 51.2,
+          "tidy3d": 26.0
+        },
+        {
+          "ppw": 15,
+          "lumerical": 44.3,
+          "tidy3d": 49.2
+        },
+        {
+          "ppw": 20,
+          "lumerical": 48.1,
+          "tidy3d": 47.9
+        },
+        {
+          "ppw": 25,
+          "lumerical": 51.2,
+          "tidy3d": 43.1
+        }
+      ],
+      "beamz": [
+        {
+          "run_id": "converter-6",
+          "ppw": 6,
+          "power": 21.841635971954805
+        },
+        {
+          "run_id": "converter-10",
+          "ppw": 10,
+          "power": 28.97010328165821
+        },
+        {
+          "run_id": "converter-15-final-headroom",
+          "ppw": 15,
+          "power": 45.85897955117647
+        }
+      ]
+    },
+    "polarization_splitter_rotator": {
+      "target_mode": "Polarization splitter-rotator TE0",
+      "published_value_basis": "Values at 6 and 15 cells per wavelength are stated in Section 3.5; remaining values are digitized to approximately 0.001 from Fig. 21(a).",
+      "published": [
+        {
+          "ppw": 6,
+          "lumerical": 14.7,
+          "tidy3d": 5.1
+        },
+        {
+          "ppw": 10,
+          "lumerical": 0.0,
+          "tidy3d": 62.0
+        },
+        {
+          "ppw": 15,
+          "lumerical": 94.0,
+          "tidy3d": 90.10000000000001
+        },
+        {
+          "ppw": 20,
+          "lumerical": 94.8,
+          "tidy3d": 95.0
+        },
+        {
+          "ppw": 25,
+          "lumerical": 94.89999999999999,
+          "tidy3d": 95.0
+        }
+      ],
+      "beamz": [
+        {
+          "run_id": "psr-6",
+          "ppw": 6,
+          "power": 82.46909335957623
+        },
+        {
+          "run_id": "psr-10",
+          "ppw": 10,
+          "power": 88.13053128749338
+        },
+        {
+          "run_id": "psr-15-headroom",
+          "ppw": 15,
+          "power": 90.84588875244383
+        }
+      ]
+    }
+  }
+}

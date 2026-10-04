@@ -1,0 +1,15 @@
+{
+  "steps": 1025,
+  "shape": [
+    1024,
+    256,
+    64
+  ],
+  "complete_state_bitwise_equal": true,
+  "reference": "narrow_long-branch_auto-1.json",
+  "canonical_axes": [
+    0,
+    1,
+    2
+  ]
+}

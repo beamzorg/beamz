@@ -1,0 +1,17 @@
+{
+  "python": "/home/quentinwach/Code/.venv-cuda-pr233/bin/python",
+  "source_root": null,
+  "output": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/docs/reviews/rtx3090-2026-09-18-layout-shapes/pair",
+  "cases": [
+    "irregular_71_479_503",
+    "long"
+  ],
+  "seed": 19,
+  "samples": 5,
+  "padding": "none",
+  "tile": "auto",
+  "temporal_steps": 2,
+  "fusion": "auto",
+  "shell_tile": "64x4",
+  "dry_run": false
+}

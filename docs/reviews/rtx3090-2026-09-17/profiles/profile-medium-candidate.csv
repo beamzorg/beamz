@@ -1,0 +1,54 @@
+Generating SQLite file .cache/perf/profile-medium-candidate.sqlite from .cache/perf/profile-medium-candidate.nsys-rep
+Processing [.cache/perf/profile-medium-candidate.sqlite] with [/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/nsight/usr/lib/nsight-systems/target-linux-x64/reports/cuda_gpu_kern_sum.py]... 
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+44.2,514563558,1024,502503.5,484490.0,480618,990038,85892.9,"void <unnamed>::UpdateCombinedCpmlQueue<(int)1, (int)0, (bool)1, (bool)0, (int)64, (int)4, (int)64, (int)4>(BeamzLaunch, int, int, int, int, int, int, int, int, int, int, int)"
+40.7,474194337,1024,463080.4,449866.0,446570,951669,72102.5,"void <unnamed>::UpdateCombinedCpmlQueue<(int)0, (int)0, (bool)0, (bool)0, (int)64, (int)4, (int)64, (int)4>(BeamzLaunch, int, int, int, int, int, int, int, int, int, int, int)"
+11.3,131356482,1024,128277.8,125059.0,120899,610797,35038.7,"void <unnamed>::AccumulateDftGroups<(bool)0, (bool)1>(<unnamed>::DftFields, BeamzDftGroupLaunch, int)"
+0.7,8117902,123,65999.2,1536.0,1248,246725,106860.4,wrapped_subtract
+0.5,6401666,2048,3125.8,3105.0,2944,3904,76.7,"<unnamed>::ApplySourcePhase(<unnamed>::SourcePhasePlan, int, int)"
+0.5,6065374,168,36103.4,1664.0,1376,163524,66114.0,loop_dynamic_slice_fusion
+0.5,5326228,194,27454.8,1376.0,1184,205732,54476.4,loop_multiply_fusion
+0.5,5250061,117,44872.3,1728.0,1216,204164,67292.9,loop_divide_fusion
+0.2,2819222,1024,2753.1,2752.0,2656,3648,65.8,"<unnamed>::PrepareDftPhases(<unnamed>::DftFields, BeamzDftGroupLaunch, int)"
+0.1,1531008,60,25516.8,1440.0,1184,243781,61877.7,wrapped_add
+0.1,1407680,24,58653.3,2160.0,1504,201476,82458.4,wrapped_transpose
+0.1,1373048,87,15782.2,1792.0,1248,83138,30280.7,loop_select_fusion
+0.1,1189882,75,15865.1,1408.0,1248,122210,39270.2,wrapped_divide
+0.1,1125560,70,16079.4,1376.0,1248,182052,46344.7,wrapped_concatenate
+0.1,672172,129,5210.6,1344.0,1184,39937,11009.2,wrapped_broadcast
+0.1,590762,78,7573.9,1280.0,1216,82690,21547.0,loop_subtract_fusion
+0.0,554925,52,10671.6,1312.0,1184,82178,25951.4,loop_add_fusion
+0.0,156195,4,39048.8,39057.0,38912,39169,139.5,loop_broadcast_fusion_4
+0.0,155812,4,38953.0,38897.0,38849,39169,146.4,loop_broadcast_fusion_5
+0.0,155396,4,38849.0,38849.0,38721,38977,107.7,loop_broadcast_fusion_3
+0.0,154979,4,38744.8,38736.5,38657,38849,88.0,loop_broadcast_fusion_2
+0.0,154881,4,38720.3,38672.0,38625,38912,130.4,loop_broadcast_fusion_1
+0.0,154116,4,38529.0,38497.0,38465,38657,86.7,loop_broadcast_fusion
+0.0,121379,84,1445.0,1376.0,1344,2016,158.8,wrapped_select
+0.0,108513,73,1486.5,1440.0,1184,1792,222.0,wrapped_multiply
+0.0,104770,72,1455.1,1408.0,1312,1920,169.1,loop_power_fusion
+0.0,95232,72,1322.7,1248.0,1184,1760,139.7,wrapped_maximum
+0.0,71906,54,1331.6,1280.0,1184,1760,158.9,loop_minimum_fusion
+0.0,43776,30,1459.2,1424.0,1184,1792,203.4,loop_maximum_fusion
+0.0,41536,4,10384.0,10304.0,10272,10656,183.8,loop_broadcast_fusion_8
+0.0,40160,30,1338.7,1248.0,1184,1728,192.2,loop_compare_fusion
+0.0,35521,4,8880.3,8608.5,8480,9824,632.1,loop_broadcast_fusion_7
+0.0,24481,15,1632.1,1632.0,1504,2080,146.1,loop_and_fusion
+0.0,23296,4,5824.0,5760.0,5632,6144,227.8,loop_broadcast_fusion_9
+0.0,23106,4,5776.5,5776.0,5665,5889,99.5,loop_broadcast_fusion_10
+0.0,22944,4,5736.0,5776.0,5600,5792,91.9,loop_broadcast_fusion_6
+0.0,22785,4,5696.3,5696.5,5568,5824,104.5,loop_broadcast_fusion_11
+0.0,18049,12,1504.1,1504.0,1248,1760,235.2,wrapped_exponential
+0.0,17664,12,1472.0,1472.0,1216,1728,234.8,wrapped_negate
+0.0,14368,12,1197.3,1120.0,1088,1408,144.7,wrapped_iota
+0.0,13728,6,2288.0,2320.0,2016,2656,234.9,wrapped_pad
+0.0,13152,6,2192.0,2240.0,1856,2336,180.7,wrapped_dynamic_slice
+0.0,12416,6,2069.3,2048.0,1920,2304,127.5,loop_pad_fusion
+0.0,5760,4,1440.0,1456.0,1312,1536,113.9,loop_broadcast_fusion_12
+0.0,4992,4,1248.0,1248.0,1216,1280,26.1,loop_add_fusion_1
+0.0,4800,3,1600.0,1664.0,1408,1728,169.3,loop_complex_fusion
+0.0,4736,3,1578.7,1664.0,1280,1792,266.5,input_concatenate_fusion
+0.0,3936,4,984.0,992.0,960,992,16.0,loop_broadcast_fusion_13
+0.0,1888,1,1888.0,1888.0,1888,1888,0.0,input_reduce_fusion
+0.0,1696,1,1696.0,1696.0,1696,1696,0.0,wrapped_real
+

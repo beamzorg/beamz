@@ -35,7 +35,11 @@ def test_cuda_abi_layout_relationships_are_explicit():
     assert layout["temporal_psi_workspace_input"] == (
         layout["temporal_field_workspace_input"] + layout["field_count"]
     )
-    assert layout["monitor_current_step_input"] == layout["monitor_input_count"] - 1
+    assert layout["monitor_elapsed_steps_input"] == layout["monitor_input_count"] - 1
+    assert (
+        layout["monitor_current_step_input"] + 1
+        == layout["monitor_elapsed_steps_input"]
+    )
     assert {
         layout["source_group_coefficients_input"],
         layout["source_group_waveforms_input"],

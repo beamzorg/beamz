@@ -1,0 +1,10 @@
+{
+  "output": "docs/reviews/rtx3090-2026-09-18-realistic-ring-constant-smoke",
+  "cases": [
+    "volume_128_256_512"
+  ],
+  "study": "temporal",
+  "rounds": 6,
+  "seed": 37,
+  "worker": null
+}

@@ -1,0 +1,10 @@
+Installed 3 packages in 173ms
+/home/quentinwach/.t3/worktrees/beamz/pr224-validation/beamz/design/gds.py
+  /home/quentinwach/.t3/worktrees/beamz/pr224-validation/beamz/design/gds.py:87:12 - error: "get_active_pdk" is not a known attribute of module "gdsfactory" (reportAttributeAccessIssue)
+  /home/quentinwach/.t3/worktrees/beamz/pr224-validation/beamz/design/gds.py:99:19 - error: "get_component" is not a known attribute of module "gdsfactory" (reportAttributeAccessIssue)
+  /home/quentinwach/.t3/worktrees/beamz/pr224-validation/beamz/design/gds.py:486:24 - error: "read" is not a known attribute of module "gdsfactory" (reportAttributeAccessIssue)
+  /home/quentinwach/.t3/worktrees/beamz/pr224-validation/beamz/design/gds.py:517:18 - error: "Component" is not a known attribute of module "gdsfactory" (reportAttributeAccessIssue)
+  /home/quentinwach/.t3/worktrees/beamz/pr224-validation/beamz/design/gds.py:520:19 - error: "Component" is not a known attribute of module "gdsfactory" (reportAttributeAccessIssue)
+  /home/quentinwach/.t3/worktrees/beamz/pr224-validation/beamz/design/gds.py:522:22 - error: "boolean" is not a known attribute of module "gdsfactory" (reportAttributeAccessIssue)
+  /home/quentinwach/.t3/worktrees/beamz/pr224-validation/beamz/design/gds.py:538:20 - error: "Component" is not a known attribute of module "gdsfactory" (reportAttributeAccessIssue)
+7 errors, 0 warnings, 0 informations

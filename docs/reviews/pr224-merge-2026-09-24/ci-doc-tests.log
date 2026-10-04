@@ -1,0 +1,12 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=3332283313
+rootdir: /home/quentinwach/.t3/worktrees/beamz/pr224-validation
+configfile: pytest.ini
+plugins: randomly-5.0.0, hypothesis-6.168.0, cov-7.1.0
+collected 2 items
+
+tests/docs/test_compact_model_examples.py .                              [ 50%]
+tests/docs/test_getting_started.py .                                     [100%]
+
+============================== 2 passed in 2.87s ===============================

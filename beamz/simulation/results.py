@@ -175,12 +175,20 @@ def _analysis_function(module: str, name: str):
 
 @dataclass(frozen=True, slots=True)
 class MaterialRegion:
-    """Detached material neighborhood retained for deferred analysis."""
+    """Detached material neighborhood retained for deferred analysis.
+
+    Tensor and Yee coefficients preserve the material model used by mode sources
+    and propagation. Rebuilding them from scalar permittivity loses interface
+    smoothing and anisotropy. All arrays use the same global ``origin``; Yee
+    arrays may include an extra upper sample for node-aligned components.
+    """
 
     permittivity: np.ndarray
     permeability: np.ndarray
     origin: tuple[int, ...]
     full_shape: tuple[int, ...]
+    material_tensors: Mapping[str, np.ndarray] = field(default_factory=dict)
+    yee_materials: Mapping[str, np.ndarray] = field(default_factory=dict)
 
     def __post_init__(self):
         object.__setattr__(self, "permittivity", readonly_array(self.permittivity))
@@ -189,6 +197,43 @@ class MaterialRegion:
         object.__setattr__(
             self, "full_shape", tuple(int(value) for value in self.full_shape)
         )
+        for name in ("material_tensors", "yee_materials"):
+            object.__setattr__(self, name, immutable_snapshot(getattr(self, name)))
+
+
+def _snapshot_material_region(runtime_fields, crop, origin):
+    """Keep the coefficients used by the source's 3D mode solve, including halos."""
+    permittivity = np.asarray(runtime_fields.permittivity)
+    permeability = np.asarray(runtime_fields.permeability)
+    material_grid = runtime_fields.material_grid
+    tensors = {}
+    yee = {}
+    if permittivity.ndim == 3:
+        tensors = {
+            name: np.asarray(values)[(slice(None), *crop)]
+            for name, values in material_grid.tensors.items()
+            if name in {"epsilon", "mu"}
+        }
+        if material_grid.uses_direct_yee_materials:
+            # Node-aligned components have one more sample than the voxel grid.
+            # Keep that upper sample so local mode crops retain their Yee support.
+            component_crop = tuple(
+                slice(index.start, None if index.stop is None else index.stop + 1)
+                for index in crop
+            )
+            yee = {
+                name: np.asarray(values)[component_crop]
+                for name, values in material_grid.yee_materials.items()
+                if name in {"eps_x", "eps_y", "eps_z", "mu_hx", "mu_hy", "mu_hz"}
+            }
+    return MaterialRegion(
+        permittivity[crop],
+        permeability if permeability.ndim == 0 else permeability[crop],
+        tuple(origin),
+        permittivity.shape,
+        material_tensors=tensors,
+        yee_materials=yee,
+    )
 
 
 def material_region_for_monitor(simulation, monitor: _Monitor, *, runtime_fields):
@@ -197,7 +242,6 @@ def material_region_for_monitor(simulation, monitor: _Monitor, *, runtime_fields
         return None
     axis = monitor.plane_normal
     permittivity = np.asarray(runtime_fields.permittivity)
-    permeability = np.asarray(runtime_fields.permeability)
     full_shape = tuple(int(value) for value in permittivity.shape)
 
     grid = runtime_fields.geometry
@@ -263,15 +307,7 @@ def material_region_for_monitor(simulation, monitor: _Monitor, *, runtime_fields
     crop[dim] = slice(start, stop)
     origin = [0] * permittivity.ndim
     origin[dim] = start
-    permeability_region = (
-        permeability if permeability.ndim == 0 else permeability[tuple(crop)]
-    )
-    return MaterialRegion(
-        permittivity[tuple(crop)],
-        permeability_region,
-        tuple(origin),
-        full_shape,
-    )
+    return _snapshot_material_region(runtime_fields, tuple(crop), origin)
 
 
 @dataclass(frozen=True, slots=True)
@@ -502,11 +538,8 @@ class SimulationMetadata:
                 (1, 1) if component is None else tuple(int(v) for v in component.shape)
             )
         materials = (
-            MaterialRegion(
-                np.asarray(fields.permittivity),
-                np.asarray(fields.permeability),
-                (0,) * len(grid_shape),
-                grid_shape,
+            _snapshot_material_region(
+                fields, (slice(None),) * len(grid_shape), (0,) * len(grid_shape)
             )
             if store_full_materials
             else None
@@ -1261,6 +1294,7 @@ class SimulationResults:
         store_full_materials: bool = False,
         source_launch_powers: tuple[float | None, ...] = (),
         performance: SimulationPerformance | None = None,
+        completed_steps: int | None = None,
     ) -> "SimulationResults":
         """Detach canonical analysis outputs from completed runtime buffers.
 
@@ -1278,6 +1312,9 @@ class SimulationResults:
             Calibrated launched powers corresponding to simulation sources.
         performance : SimulationPerformance, optional
             Execution statistics measured around the compiled simulation executable.
+        completed_steps : int, optional
+            Number of acquired steps, including continuation history. Source DFT
+            normalization uses this elapsed window rather than the future run horizon.
 
         Returns
         -------
@@ -1307,6 +1344,13 @@ class SimulationResults:
             runtime_fields=runtime_fields,
             store_full_materials=store_full_materials,
         )
+        if completed_steps is not None:
+            metadata = replace(
+                metadata,
+                time=_array_snapshot(
+                    simulation.time[: int(completed_steps)], dtype=float
+                ),
+            )
         monitor_results_dict = {
             name: replace(
                 result,

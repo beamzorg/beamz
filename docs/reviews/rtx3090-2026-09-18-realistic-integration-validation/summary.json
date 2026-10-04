@@ -1,0 +1,27 @@
+{
+  "cases": 17,
+  "shapes": 12,
+  "variants": 51,
+  "timings": 306,
+  "native_sha256": "f306491d5fbf657fcc1b7f866525428bdb83beeba36f515e90023f4fd7671198",
+  "source_sha256": "fc8b92cf00c30eb809e5e1577fa9aa3166804cca5c7ba0a52a84ff02af444e7b",
+  "exact_optimized_comparisons": 33,
+  "numerical_optimized_comparisons": 1,
+  "min_free_mib": 5377.0,
+  "max_temperature_c": 79.0,
+  "power_limits_w": [
+    370.0
+  ],
+  "max_gpu_utilization": 100.0,
+  "validation": {
+    "hardware_passed": 166,
+    "hardware_skipped_h100": 2,
+    "hardware_deselected_lossy": 2,
+    "unit_passed": 33,
+    "standalone_memcheck_errors": 0,
+    "standalone_racecheck_errors": 0,
+    "standalone_racecheck_warnings": 0,
+    "pipeline_memcheck_tests_passed": 2,
+    "pipeline_memcheck_errors": 0
+  }
+}

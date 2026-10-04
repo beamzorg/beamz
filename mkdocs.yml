@@ -9,9 +9,11 @@ theme:
 
 nav:
   - Getting Started: getting-started.md
+  - Material Library: material-library.md
   - GDSFactory Components: gdsfactory.md
   - Migrating to v0.5: migrating-to-v0.5.md
   - Automatic Graded Meshing: graded-meshing.md
+  - Circular-Bend Modes: bent-waveguide-modes.md
   - Topology Optimization: inverse-design.md
   - Inverse Design Workflow: inverse-design-workflow.md
   - Inverse Design Roadmap: inverse-design-roadmap.md

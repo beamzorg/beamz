@@ -1,0 +1,11 @@
+{
+  "configurations": 63,
+  "cases": 21,
+  "shapes": 14,
+  "max_temp": 78.0,
+  "min_free_gib": 5.482421875,
+  "power_limits": [
+    370.0
+  ],
+  "all_tile_outputs_identical": true
+}

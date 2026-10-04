@@ -1,0 +1,14 @@
+{
+  "baseline": {
+    "path": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/cpml-yface-retained-build/_cuda.cpython-311-x86_64-linux-gnu.so",
+    "sha256": "eb1bf52294a94b5840cb1ec81b88669027f5a4f6c98d5595a5b83d6763c1d8d7"
+  },
+  "full_y": {
+    "path": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/cpml-full-y-build/_cuda.cpython-311-x86_64-linux-gnu.so",
+    "sha256": "ef273006815ee87bfb526fd3bb5060a96c263aa1fd76582ccc936261224ec447"
+  },
+  "ordinary": {
+    "path": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/cpml-full-y-build/_cuda.cpython-311-x86_64-linux-gnu.so",
+    "sha256": "ef273006815ee87bfb526fd3bb5060a96c263aa1fd76582ccc936261224ec447"
+  }
+}

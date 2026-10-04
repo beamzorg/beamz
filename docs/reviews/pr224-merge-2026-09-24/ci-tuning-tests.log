@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+Using --randomly-seed=3813571372
+rootdir: /home/quentinwach/.t3/worktrees/beamz/pr224-validation
+configfile: pytest.ini
+plugins: randomly-5.0.0, hypothesis-6.168.0, cov-7.1.0
+collected 22 items
+
+tests/unit/test_cuda_tuning.py ......................                    [100%]
+
+============================== 22 passed in 0.51s ==============================

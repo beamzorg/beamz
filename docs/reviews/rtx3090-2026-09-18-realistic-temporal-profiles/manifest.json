@@ -1,0 +1,28 @@
+[
+  {
+    "name": "volume_128_256_512",
+    "shape": [
+      128,
+      256,
+      512
+    ]
+  },
+  {
+    "name": "aspect_64_256_1024",
+    "shape": [
+      64,
+      256,
+      1024
+    ]
+  },
+  {
+    "name": "field_eleven_frequencies",
+    "shape": [
+      1024,
+      256,
+      64
+    ],
+    "monitor_type": "field",
+    "frequencies": 11
+  }
+]

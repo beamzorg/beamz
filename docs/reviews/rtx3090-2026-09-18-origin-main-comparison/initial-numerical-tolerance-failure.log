@@ -1,0 +1,27 @@
+Traceback (most recent call last):
+  File "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/scripts/benchmark_cuda_revision.py", line 131, in <module>
+    main()
+  File "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/scripts/benchmark_cuda_revision.py", line 100, in main
+    np.testing.assert_allclose(actual, expected, rtol=3e-5,
+  File "/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/numpy/testing/_private/utils.py", line 1768, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+  File "/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/numpy/testing/_private/utils.py", line 983, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError: 
+Not equal to tolerance rtol=3e-05, atol=1.15258e-05
+
+Mismatched elements: 56 / 1597440 (0.00351%)
+First 5 mismatches are at indices:
+ [510, 10, 7]: 0.028681093826889992 (ACTUAL), 0.028663262724876404 (DESIRED)
+ [510, 10, 18]: 0.936258852481842 (ACTUAL), 0.9362190961837769 (DESIRED)
+ [510, 10, 19]: 1.0305641889572144 (ACTUAL), 1.0306097269058228 (DESIRED)
+ [510, 13, 7]: 0.028681093826889992 (ACTUAL), 0.028663262724876404 (DESIRED)
+ [510, 13, 18]: 0.936258852481842 (ACTUAL), 0.9362190961837769 (DESIRED)
+Max absolute difference among violations: 4.553795e-05
+Max relative difference among violations: 0.00062209
+ ACTUAL: array([[[0., 0., 0., ..., 0., 0., 0.],
+        [0., 0., 0., ..., 0., 0., 0.],
+        [0., 0., 0., ..., 0., 0., 0.],...
+ DESIRED: memmap([[[0., 0., 0., ..., 0., 0., 0.],
+         [0., 0., 0., ..., 0., 0., 0.],
+         [0., 0., 0., ..., 0., 0., 0.],...

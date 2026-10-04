@@ -1,5 +1,8 @@
 # BeamZ on RunPod
 
+For the unpushed CUDA optimization branch, including native extensions and the
+RTX3090-to-H100 benchmark workflow, use the [H100 JupyterLab setup](H100.md).
+
 This image provides a reproducible BeamZ notebook and development environment
 for RunPod GPU Pods. It installs the dependencies locked by the repository plus
 CUDA-enabled JAX, JupyterLab, and an IPython kernel.

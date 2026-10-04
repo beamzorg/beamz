@@ -1,0 +1,116 @@
+[
+  {
+    "seconds": 0.033559911000338616,
+    "free_mib": 23592.0,
+    "temperature_c": 53.0,
+    "power_w": 32.09
+  },
+  {
+    "seconds": 1.0509772860004887,
+    "free_mib": 22381.0,
+    "temperature_c": 62.0,
+    "power_w": 202.02
+  },
+  {
+    "seconds": 2.0686317950003286,
+    "free_mib": 22379.0,
+    "temperature_c": 64.0,
+    "power_w": 311.29
+  },
+  {
+    "seconds": 3.0852608220002367,
+    "free_mib": 22379.0,
+    "temperature_c": 65.0,
+    "power_w": 336.92
+  },
+  {
+    "seconds": 4.102589029000228,
+    "free_mib": 22379.0,
+    "temperature_c": 65.0,
+    "power_w": 339.3
+  },
+  {
+    "seconds": 5.1191374050004015,
+    "free_mib": 22379.0,
+    "temperature_c": 67.0,
+    "power_w": 333.67
+  },
+  {
+    "seconds": 6.135928294999758,
+    "free_mib": 22379.0,
+    "temperature_c": 66.0,
+    "power_w": 348.62
+  },
+  {
+    "seconds": 7.152880988000106,
+    "free_mib": 22379.0,
+    "temperature_c": 68.0,
+    "power_w": 336.72
+  },
+  {
+    "seconds": 8.170922952000183,
+    "free_mib": 22379.0,
+    "temperature_c": 67.0,
+    "power_w": 339.22
+  },
+  {
+    "seconds": 9.185901566000211,
+    "free_mib": 22379.0,
+    "temperature_c": 63.0,
+    "power_w": 321.53
+  },
+  {
+    "seconds": 10.203677251000045,
+    "free_mib": 22379.0,
+    "temperature_c": 67.0,
+    "power_w": 265.99
+  },
+  {
+    "seconds": 11.22123073000057,
+    "free_mib": 22379.0,
+    "temperature_c": 67.0,
+    "power_w": 316.11
+  },
+  {
+    "seconds": 12.238112650000403,
+    "free_mib": 22379.0,
+    "temperature_c": 68.0,
+    "power_w": 342.67
+  },
+  {
+    "seconds": 13.25544500399974,
+    "free_mib": 22325.0,
+    "temperature_c": 68.0,
+    "power_w": 340.7
+  },
+  {
+    "seconds": 14.271721349000472,
+    "free_mib": 22343.0,
+    "temperature_c": 69.0,
+    "power_w": 339.6
+  },
+  {
+    "seconds": 15.288291564000247,
+    "free_mib": 22351.0,
+    "temperature_c": 68.0,
+    "power_w": 350.15
+  },
+  {
+    "seconds": 16.305492241000138,
+    "free_mib": 22356.0,
+    "temperature_c": 69.0,
+    "power_w": 344.07
+  },
+  {
+    "seconds": 17.32261323900002,
+    "free_mib": 22355.0,
+    "temperature_c": 68.0,
+    "power_w": 343.48
+  },
+  {
+    "seconds": 18.347521129000597,
+    "free_mib": 23571.0,
+    "temperature_c": 64.0,
+    "power_w": 324.35
+  }
+]

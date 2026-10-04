@@ -1,0 +1,1550 @@
+[
+  {
+    "fusion": "0",
+    "tile": "64x4",
+    "leaves": [
+      {
+        "name": "ex",
+        "leaf": 0,
+        "maxabs": 4.625,
+        "scale": 14958727.0,
+        "relative_max": 3.0918406359043786e-07,
+        "failures": 0,
+        "relative_l2": 2.6387663753754795e-07
+      },
+      {
+        "name": "ey",
+        "leaf": 0,
+        "maxabs": 6.0,
+        "scale": 28044472.0,
+        "relative_max": 2.1394590705790432e-07,
+        "failures": 0,
+        "relative_l2": 2.240387327902257e-07
+      },
+      {
+        "name": "ez",
+        "leaf": 0,
+        "maxabs": 3.5,
+        "scale": 9294531.0,
+        "relative_max": 3.7656553084819447e-07,
+        "failures": 0,
+        "relative_l2": 4.2312171388945957e-07
+      },
+      {
+        "name": "hx",
+        "leaf": 0,
+        "maxabs": 0.05078125,
+        "scale": 63584.66015625,
+        "relative_max": 7.986399530203119e-07,
+        "failures": 0,
+        "relative_l2": 3.258722441816909e-07
+      },
+      {
+        "name": "hy",
+        "leaf": 0,
+        "maxabs": 0.033203125,
+        "scale": 26232.291015625,
+        "relative_max": 1.2657348525229037e-06,
+        "failures": 2,
+        "relative_l2": 6.394094004895955e-07
+      },
+      {
+        "name": "hz",
+        "leaf": 0,
+        "maxabs": 0.0625,
+        "scale": 304356.8125,
+        "relative_max": 2.0535107949982228e-07,
+        "failures": 0,
+        "relative_l2": 1.8569254656687173e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 0,
+        "maxabs": 245760.0,
+        "scale": 414507335680.0,
+        "relative_max": 5.928966241256751e-07,
+        "failures": 0,
+        "relative_l2": 2.9751288653715686e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 1,
+        "maxabs": 1638400.0,
+        "scale": 2193876320256.0,
+        "relative_max": 7.468060003532094e-07,
+        "failures": 0,
+        "relative_l2": 3.3243597176114743e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 2,
+        "maxabs": 983040.0,
+        "scale": 1046912237568.0,
+        "relative_max": 9.38989883510793e-07,
+        "failures": 0,
+        "relative_l2": 3.9168127342355314e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 3,
+        "maxabs": 1703936.0,
+        "scale": 3327316459520.0,
+        "relative_max": 5.121051816771917e-07,
+        "failures": 0,
+        "relative_l2": 4.6111583235250627e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 4,
+        "maxabs": 2621440.0,
+        "scale": 9926247186432.0,
+        "relative_max": 2.640917509673945e-07,
+        "failures": 0,
+        "relative_l2": 2.9687191736948186e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 5,
+        "maxabs": 524288.0,
+        "scale": 1261035585536.0,
+        "relative_max": 4.1575987705148916e-07,
+        "failures": 0,
+        "relative_l2": 1.3769989261553924e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 0,
+        "maxabs": 1536.0,
+        "scale": 4988562944.0,
+        "relative_max": 3.0790430375293266e-07,
+        "failures": 0,
+        "relative_l2": 1.352074936403096e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 1,
+        "maxabs": 4608.0,
+        "scale": 4239493888.0,
+        "relative_max": 1.0869221944258644e-06,
+        "failures": 0,
+        "relative_l2": 4.106423982909577e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 2,
+        "maxabs": 5632.0,
+        "scale": 6679296000.0,
+        "relative_max": 8.4320263692461e-07,
+        "failures": 0,
+        "relative_l2": 3.280252202211282e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 3,
+        "maxabs": 24576.0,
+        "scale": 61122158592.0,
+        "relative_max": 4.020800404653353e-07,
+        "failures": 0,
+        "relative_l2": 3.3319666177204497e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 4,
+        "maxabs": 12288.0,
+        "scale": 18965934080.0,
+        "relative_max": 6.478984872650153e-07,
+        "failures": 0,
+        "relative_l2": 5.191255413997073e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 5,
+        "maxabs": 1056.0,
+        "scale": 1600298752.0,
+        "relative_max": 6.598767878061809e-07,
+        "failures": 0,
+        "relative_l2": 2.8197427717769553e-07
+      },
+      {
+        "name": "powers",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "timestamps",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_flux_re",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_flux_im",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_phase_re",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 1.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_phase_im",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "dft_vec_re",
+        "leaf": 0,
+        "maxabs": 7.62939453125e-05,
+        "scale": 36.561622619628906,
+        "relative_max": 2.0867220830494524e-06,
+        "failures": 0,
+        "relative_l2": 2.3599651453239795e-06
+      },
+      {
+        "name": "dft_vec_im",
+        "leaf": 0,
+        "maxabs": 6.866455078125e-05,
+        "scale": 55.75551986694336,
+        "relative_max": 1.2315292000704708e-06,
+        "failures": 0,
+        "relative_l2": 8.375389879684893e-07
+      },
+      {
+        "name": "dft_weight_sum",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 65.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "t",
+        "leaf": 0,
+        "maxabs": 1.6940658945086007e-21,
+        "scale": 9.513614871478442e-15,
+        "relative_max": 1.7806752926139192e-07,
+        "failures": 0,
+        "relative_l2": 1.7806752926139192e-07
+      }
+    ]
+  },
+  {
+    "fusion": "0",
+    "tile": "32x8",
+    "leaves": [
+      {
+        "name": "ex",
+        "leaf": 0,
+        "maxabs": 4.625,
+        "scale": 14958727.0,
+        "relative_max": 3.0918406359043786e-07,
+        "failures": 0,
+        "relative_l2": 2.6387663753754795e-07
+      },
+      {
+        "name": "ey",
+        "leaf": 0,
+        "maxabs": 6.0,
+        "scale": 28044472.0,
+        "relative_max": 2.1394590705790432e-07,
+        "failures": 0,
+        "relative_l2": 2.240387327902257e-07
+      },
+      {
+        "name": "ez",
+        "leaf": 0,
+        "maxabs": 3.5,
+        "scale": 9294531.0,
+        "relative_max": 3.7656553084819447e-07,
+        "failures": 0,
+        "relative_l2": 4.2312171388945957e-07
+      },
+      {
+        "name": "hx",
+        "leaf": 0,
+        "maxabs": 0.05078125,
+        "scale": 63584.66015625,
+        "relative_max": 7.986399530203119e-07,
+        "failures": 0,
+        "relative_l2": 3.258722441816909e-07
+      },
+      {
+        "name": "hy",
+        "leaf": 0,
+        "maxabs": 0.033203125,
+        "scale": 26232.291015625,
+        "relative_max": 1.2657348525229037e-06,
+        "failures": 2,
+        "relative_l2": 6.394094004895955e-07
+      },
+      {
+        "name": "hz",
+        "leaf": 0,
+        "maxabs": 0.0625,
+        "scale": 304356.8125,
+        "relative_max": 2.0535107949982228e-07,
+        "failures": 0,
+        "relative_l2": 1.8569254656687173e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 0,
+        "maxabs": 245760.0,
+        "scale": 414507335680.0,
+        "relative_max": 5.928966241256751e-07,
+        "failures": 0,
+        "relative_l2": 2.9751288653715686e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 1,
+        "maxabs": 1638400.0,
+        "scale": 2193876320256.0,
+        "relative_max": 7.468060003532094e-07,
+        "failures": 0,
+        "relative_l2": 3.3243597176114743e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 2,
+        "maxabs": 983040.0,
+        "scale": 1046912237568.0,
+        "relative_max": 9.38989883510793e-07,
+        "failures": 0,
+        "relative_l2": 3.9168127342355314e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 3,
+        "maxabs": 1703936.0,
+        "scale": 3327316459520.0,
+        "relative_max": 5.121051816771917e-07,
+        "failures": 0,
+        "relative_l2": 4.6111583235250627e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 4,
+        "maxabs": 2621440.0,
+        "scale": 9926247186432.0,
+        "relative_max": 2.640917509673945e-07,
+        "failures": 0,
+        "relative_l2": 2.9687191736948186e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 5,
+        "maxabs": 524288.0,
+        "scale": 1261035585536.0,
+        "relative_max": 4.1575987705148916e-07,
+        "failures": 0,
+        "relative_l2": 1.3769989261553924e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 0,
+        "maxabs": 1536.0,
+        "scale": 4988562944.0,
+        "relative_max": 3.0790430375293266e-07,
+        "failures": 0,
+        "relative_l2": 1.352074936403096e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 1,
+        "maxabs": 4608.0,
+        "scale": 4239493888.0,
+        "relative_max": 1.0869221944258644e-06,
+        "failures": 0,
+        "relative_l2": 4.106423982909577e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 2,
+        "maxabs": 5632.0,
+        "scale": 6679296000.0,
+        "relative_max": 8.4320263692461e-07,
+        "failures": 0,
+        "relative_l2": 3.280252202211282e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 3,
+        "maxabs": 24576.0,
+        "scale": 61122158592.0,
+        "relative_max": 4.020800404653353e-07,
+        "failures": 0,
+        "relative_l2": 3.3319666177204497e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 4,
+        "maxabs": 12288.0,
+        "scale": 18965934080.0,
+        "relative_max": 6.478984872650153e-07,
+        "failures": 0,
+        "relative_l2": 5.191255413997073e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 5,
+        "maxabs": 1056.0,
+        "scale": 1600298752.0,
+        "relative_max": 6.598767878061809e-07,
+        "failures": 0,
+        "relative_l2": 2.8197427717769553e-07
+      },
+      {
+        "name": "powers",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "timestamps",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_flux_re",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_flux_im",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_phase_re",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 1.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_phase_im",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "dft_vec_re",
+        "leaf": 0,
+        "maxabs": 7.62939453125e-05,
+        "scale": 36.561622619628906,
+        "relative_max": 2.0867220830494524e-06,
+        "failures": 0,
+        "relative_l2": 2.3599651453239795e-06
+      },
+      {
+        "name": "dft_vec_im",
+        "leaf": 0,
+        "maxabs": 6.866455078125e-05,
+        "scale": 55.75551986694336,
+        "relative_max": 1.2315292000704708e-06,
+        "failures": 0,
+        "relative_l2": 8.375389879684893e-07
+      },
+      {
+        "name": "dft_weight_sum",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 65.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "t",
+        "leaf": 0,
+        "maxabs": 1.6940658945086007e-21,
+        "scale": 9.513614871478442e-15,
+        "relative_max": 1.7806752926139192e-07,
+        "failures": 0,
+        "relative_l2": 1.7806752926139192e-07
+      }
+    ]
+  },
+  {
+    "fusion": "0",
+    "tile": "32x4",
+    "leaves": [
+      {
+        "name": "ex",
+        "leaf": 0,
+        "maxabs": 4.625,
+        "scale": 14958727.0,
+        "relative_max": 3.0918406359043786e-07,
+        "failures": 0,
+        "relative_l2": 2.6387663753754795e-07
+      },
+      {
+        "name": "ey",
+        "leaf": 0,
+        "maxabs": 6.0,
+        "scale": 28044472.0,
+        "relative_max": 2.1394590705790432e-07,
+        "failures": 0,
+        "relative_l2": 2.240387327902257e-07
+      },
+      {
+        "name": "ez",
+        "leaf": 0,
+        "maxabs": 3.5,
+        "scale": 9294531.0,
+        "relative_max": 3.7656553084819447e-07,
+        "failures": 0,
+        "relative_l2": 4.2312171388945957e-07
+      },
+      {
+        "name": "hx",
+        "leaf": 0,
+        "maxabs": 0.05078125,
+        "scale": 63584.66015625,
+        "relative_max": 7.986399530203119e-07,
+        "failures": 0,
+        "relative_l2": 3.258722441816909e-07
+      },
+      {
+        "name": "hy",
+        "leaf": 0,
+        "maxabs": 0.033203125,
+        "scale": 26232.291015625,
+        "relative_max": 1.2657348525229037e-06,
+        "failures": 2,
+        "relative_l2": 6.394094004895955e-07
+      },
+      {
+        "name": "hz",
+        "leaf": 0,
+        "maxabs": 0.0625,
+        "scale": 304356.8125,
+        "relative_max": 2.0535107949982228e-07,
+        "failures": 0,
+        "relative_l2": 1.8569254656687173e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 0,
+        "maxabs": 245760.0,
+        "scale": 414507335680.0,
+        "relative_max": 5.928966241256751e-07,
+        "failures": 0,
+        "relative_l2": 2.9751288653715686e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 1,
+        "maxabs": 1638400.0,
+        "scale": 2193876320256.0,
+        "relative_max": 7.468060003532094e-07,
+        "failures": 0,
+        "relative_l2": 3.3243597176114743e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 2,
+        "maxabs": 983040.0,
+        "scale": 1046912237568.0,
+        "relative_max": 9.38989883510793e-07,
+        "failures": 0,
+        "relative_l2": 3.9168127342355314e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 3,
+        "maxabs": 1703936.0,
+        "scale": 3327316459520.0,
+        "relative_max": 5.121051816771917e-07,
+        "failures": 0,
+        "relative_l2": 4.6111583235250627e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 4,
+        "maxabs": 2621440.0,
+        "scale": 9926247186432.0,
+        "relative_max": 2.640917509673945e-07,
+        "failures": 0,
+        "relative_l2": 2.9687191736948186e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 5,
+        "maxabs": 524288.0,
+        "scale": 1261035585536.0,
+        "relative_max": 4.1575987705148916e-07,
+        "failures": 0,
+        "relative_l2": 1.3769989261553924e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 0,
+        "maxabs": 1536.0,
+        "scale": 4988562944.0,
+        "relative_max": 3.0790430375293266e-07,
+        "failures": 0,
+        "relative_l2": 1.352074936403096e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 1,
+        "maxabs": 4608.0,
+        "scale": 4239493888.0,
+        "relative_max": 1.0869221944258644e-06,
+        "failures": 0,
+        "relative_l2": 4.106423982909577e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 2,
+        "maxabs": 5632.0,
+        "scale": 6679296000.0,
+        "relative_max": 8.4320263692461e-07,
+        "failures": 0,
+        "relative_l2": 3.280252202211282e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 3,
+        "maxabs": 24576.0,
+        "scale": 61122158592.0,
+        "relative_max": 4.020800404653353e-07,
+        "failures": 0,
+        "relative_l2": 3.3319666177204497e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 4,
+        "maxabs": 12288.0,
+        "scale": 18965934080.0,
+        "relative_max": 6.478984872650153e-07,
+        "failures": 0,
+        "relative_l2": 5.191255413997073e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 5,
+        "maxabs": 1056.0,
+        "scale": 1600298752.0,
+        "relative_max": 6.598767878061809e-07,
+        "failures": 0,
+        "relative_l2": 2.8197427717769553e-07
+      },
+      {
+        "name": "powers",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "timestamps",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_flux_re",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_flux_im",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_phase_re",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 1.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_phase_im",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "dft_vec_re",
+        "leaf": 0,
+        "maxabs": 7.62939453125e-05,
+        "scale": 36.561622619628906,
+        "relative_max": 2.0867220830494524e-06,
+        "failures": 0,
+        "relative_l2": 2.3599651453239795e-06
+      },
+      {
+        "name": "dft_vec_im",
+        "leaf": 0,
+        "maxabs": 6.866455078125e-05,
+        "scale": 55.75551986694336,
+        "relative_max": 1.2315292000704708e-06,
+        "failures": 0,
+        "relative_l2": 8.375389879684893e-07
+      },
+      {
+        "name": "dft_weight_sum",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 65.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "t",
+        "leaf": 0,
+        "maxabs": 1.6940658945086007e-21,
+        "scale": 9.513614871478442e-15,
+        "relative_max": 1.7806752926139192e-07,
+        "failures": 0,
+        "relative_l2": 1.7806752926139192e-07
+      }
+    ]
+  },
+  {
+    "fusion": "1",
+    "tile": "64x4",
+    "leaves": [
+      {
+        "name": "ex",
+        "leaf": 0,
+        "maxabs": 5.8125,
+        "scale": 14958727.0,
+        "relative_max": 3.885691609987935e-07,
+        "failures": 0,
+        "relative_l2": 2.729724225781191e-07
+      },
+      {
+        "name": "ey",
+        "leaf": 0,
+        "maxabs": 6.0,
+        "scale": 28044472.0,
+        "relative_max": 2.1394590705790432e-07,
+        "failures": 0,
+        "relative_l2": 2.1561243862513344e-07
+      },
+      {
+        "name": "ez",
+        "leaf": 0,
+        "maxabs": 4.5,
+        "scale": 9294531.0,
+        "relative_max": 4.841556825191072e-07,
+        "failures": 0,
+        "relative_l2": 4.2396089293252626e-07
+      },
+      {
+        "name": "hx",
+        "leaf": 0,
+        "maxabs": 0.03125,
+        "scale": 63584.66015625,
+        "relative_max": 4.914707403201919e-07,
+        "failures": 0,
+        "relative_l2": 3.0453800163202046e-07
+      },
+      {
+        "name": "hy",
+        "leaf": 0,
+        "maxabs": 0.044921875,
+        "scale": 26232.291015625,
+        "relative_max": 1.7124648004721638e-06,
+        "failures": 1,
+        "relative_l2": 6.313924455288587e-07
+      },
+      {
+        "name": "hz",
+        "leaf": 0,
+        "maxabs": 0.078125,
+        "scale": 304356.8125,
+        "relative_max": 2.5668884937477784e-07,
+        "failures": 0,
+        "relative_l2": 2.0091110846957684e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 0,
+        "maxabs": 278528.0,
+        "scale": 414507335680.0,
+        "relative_max": 6.719495073424318e-07,
+        "failures": 0,
+        "relative_l2": 2.930292504349454e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 1,
+        "maxabs": 1245184.0,
+        "scale": 2193876320256.0,
+        "relative_max": 5.675725602684391e-07,
+        "failures": 0,
+        "relative_l2": 3.379061642865035e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 2,
+        "maxabs": 884736.0,
+        "scale": 1046912237568.0,
+        "relative_max": 8.450908951597137e-07,
+        "failures": 0,
+        "relative_l2": 3.9872450841401515e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 3,
+        "maxabs": 2097152.0,
+        "scale": 3327316459520.0,
+        "relative_max": 6.302833005257744e-07,
+        "failures": 0,
+        "relative_l2": 4.667816940996409e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 4,
+        "maxabs": 3145728.0,
+        "scale": 9926247186432.0,
+        "relative_max": 3.169101011608734e-07,
+        "failures": 0,
+        "relative_l2": 2.98855823559253e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 5,
+        "maxabs": 425984.0,
+        "scale": 1261035585536.0,
+        "relative_max": 3.3780490010433493e-07,
+        "failures": 0,
+        "relative_l2": 1.344687676834705e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 0,
+        "maxabs": 1536.0,
+        "scale": 4988562944.0,
+        "relative_max": 3.0790430375293266e-07,
+        "failures": 0,
+        "relative_l2": 1.32231153383913e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 1,
+        "maxabs": 5120.0,
+        "scale": 4239493888.0,
+        "relative_max": 1.2076913271398495e-06,
+        "failures": 0,
+        "relative_l2": 4.206801136012014e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 2,
+        "maxabs": 6144.0,
+        "scale": 6679296000.0,
+        "relative_max": 9.198574220995745e-07,
+        "failures": 0,
+        "relative_l2": 3.2460058165471896e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 3,
+        "maxabs": 24576.0,
+        "scale": 61122158592.0,
+        "relative_max": 4.020800404653353e-07,
+        "failures": 0,
+        "relative_l2": 3.346190368751902e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 4,
+        "maxabs": 10240.0,
+        "scale": 18965934080.0,
+        "relative_max": 5.399154060541794e-07,
+        "failures": 0,
+        "relative_l2": 5.138369735272585e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 5,
+        "maxabs": 1216.0,
+        "scale": 1600298752.0,
+        "relative_max": 7.598581192919658e-07,
+        "failures": 0,
+        "relative_l2": 2.862263734129504e-07
+      },
+      {
+        "name": "powers",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "timestamps",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_flux_re",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_flux_im",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_phase_re",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 1.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_phase_im",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "dft_vec_re",
+        "leaf": 0,
+        "maxabs": 7.62939453125e-05,
+        "scale": 36.561622619628906,
+        "relative_max": 2.0867220830494524e-06,
+        "failures": 0,
+        "relative_l2": 2.3734921740385955e-06
+      },
+      {
+        "name": "dft_vec_im",
+        "leaf": 0,
+        "maxabs": 6.866455078125e-05,
+        "scale": 55.75551986694336,
+        "relative_max": 1.2315292000704708e-06,
+        "failures": 0,
+        "relative_l2": 8.323571374234245e-07
+      },
+      {
+        "name": "dft_weight_sum",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 65.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "t",
+        "leaf": 0,
+        "maxabs": 1.6940658945086007e-21,
+        "scale": 9.513614871478442e-15,
+        "relative_max": 1.7806752926139192e-07,
+        "failures": 0,
+        "relative_l2": 1.7806752926139192e-07
+      }
+    ]
+  },
+  {
+    "fusion": "1",
+    "tile": "32x8",
+    "leaves": [
+      {
+        "name": "ex",
+        "leaf": 0,
+        "maxabs": 5.8125,
+        "scale": 14958727.0,
+        "relative_max": 3.885691609987935e-07,
+        "failures": 0,
+        "relative_l2": 2.729724225781191e-07
+      },
+      {
+        "name": "ey",
+        "leaf": 0,
+        "maxabs": 6.0,
+        "scale": 28044472.0,
+        "relative_max": 2.1394590705790432e-07,
+        "failures": 0,
+        "relative_l2": 2.1561243862513344e-07
+      },
+      {
+        "name": "ez",
+        "leaf": 0,
+        "maxabs": 4.5,
+        "scale": 9294531.0,
+        "relative_max": 4.841556825191072e-07,
+        "failures": 0,
+        "relative_l2": 4.2396089293252626e-07
+      },
+      {
+        "name": "hx",
+        "leaf": 0,
+        "maxabs": 0.03125,
+        "scale": 63584.66015625,
+        "relative_max": 4.914707403201919e-07,
+        "failures": 0,
+        "relative_l2": 3.0453800163202046e-07
+      },
+      {
+        "name": "hy",
+        "leaf": 0,
+        "maxabs": 0.044921875,
+        "scale": 26232.291015625,
+        "relative_max": 1.7124648004721638e-06,
+        "failures": 1,
+        "relative_l2": 6.313924455288587e-07
+      },
+      {
+        "name": "hz",
+        "leaf": 0,
+        "maxabs": 0.078125,
+        "scale": 304356.8125,
+        "relative_max": 2.5668884937477784e-07,
+        "failures": 0,
+        "relative_l2": 2.0091110846957684e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 0,
+        "maxabs": 278528.0,
+        "scale": 414507335680.0,
+        "relative_max": 6.719495073424318e-07,
+        "failures": 0,
+        "relative_l2": 2.930292504349454e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 1,
+        "maxabs": 1245184.0,
+        "scale": 2193876320256.0,
+        "relative_max": 5.675725602684391e-07,
+        "failures": 0,
+        "relative_l2": 3.379061642865035e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 2,
+        "maxabs": 884736.0,
+        "scale": 1046912237568.0,
+        "relative_max": 8.450908951597137e-07,
+        "failures": 0,
+        "relative_l2": 3.9872450841401515e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 3,
+        "maxabs": 2097152.0,
+        "scale": 3327316459520.0,
+        "relative_max": 6.302833005257744e-07,
+        "failures": 0,
+        "relative_l2": 4.667816940996409e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 4,
+        "maxabs": 3145728.0,
+        "scale": 9926247186432.0,
+        "relative_max": 3.169101011608734e-07,
+        "failures": 0,
+        "relative_l2": 2.98855823559253e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 5,
+        "maxabs": 425984.0,
+        "scale": 1261035585536.0,
+        "relative_max": 3.3780490010433493e-07,
+        "failures": 0,
+        "relative_l2": 1.344687676834705e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 0,
+        "maxabs": 1536.0,
+        "scale": 4988562944.0,
+        "relative_max": 3.0790430375293266e-07,
+        "failures": 0,
+        "relative_l2": 1.32231153383913e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 1,
+        "maxabs": 5120.0,
+        "scale": 4239493888.0,
+        "relative_max": 1.2076913271398495e-06,
+        "failures": 0,
+        "relative_l2": 4.206801136012014e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 2,
+        "maxabs": 6144.0,
+        "scale": 6679296000.0,
+        "relative_max": 9.198574220995745e-07,
+        "failures": 0,
+        "relative_l2": 3.2460058165471896e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 3,
+        "maxabs": 24576.0,
+        "scale": 61122158592.0,
+        "relative_max": 4.020800404653353e-07,
+        "failures": 0,
+        "relative_l2": 3.346190368751902e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 4,
+        "maxabs": 10240.0,
+        "scale": 18965934080.0,
+        "relative_max": 5.399154060541794e-07,
+        "failures": 0,
+        "relative_l2": 5.138369735272585e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 5,
+        "maxabs": 1216.0,
+        "scale": 1600298752.0,
+        "relative_max": 7.598581192919658e-07,
+        "failures": 0,
+        "relative_l2": 2.862263734129504e-07
+      },
+      {
+        "name": "powers",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "timestamps",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_flux_re",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_flux_im",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_phase_re",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 1.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_phase_im",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "dft_vec_re",
+        "leaf": 0,
+        "maxabs": 7.62939453125e-05,
+        "scale": 36.561622619628906,
+        "relative_max": 2.0867220830494524e-06,
+        "failures": 0,
+        "relative_l2": 2.3734921740385955e-06
+      },
+      {
+        "name": "dft_vec_im",
+        "leaf": 0,
+        "maxabs": 6.866455078125e-05,
+        "scale": 55.75551986694336,
+        "relative_max": 1.2315292000704708e-06,
+        "failures": 0,
+        "relative_l2": 8.323571374234245e-07
+      },
+      {
+        "name": "dft_weight_sum",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 65.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "t",
+        "leaf": 0,
+        "maxabs": 1.6940658945086007e-21,
+        "scale": 9.513614871478442e-15,
+        "relative_max": 1.7806752926139192e-07,
+        "failures": 0,
+        "relative_l2": 1.7806752926139192e-07
+      }
+    ]
+  },
+  {
+    "fusion": "1",
+    "tile": "32x4",
+    "leaves": [
+      {
+        "name": "ex",
+        "leaf": 0,
+        "maxabs": 5.8125,
+        "scale": 14958727.0,
+        "relative_max": 3.885691609987935e-07,
+        "failures": 0,
+        "relative_l2": 2.729724225781191e-07
+      },
+      {
+        "name": "ey",
+        "leaf": 0,
+        "maxabs": 6.0,
+        "scale": 28044472.0,
+        "relative_max": 2.1394590705790432e-07,
+        "failures": 0,
+        "relative_l2": 2.1561243862513344e-07
+      },
+      {
+        "name": "ez",
+        "leaf": 0,
+        "maxabs": 4.5,
+        "scale": 9294531.0,
+        "relative_max": 4.841556825191072e-07,
+        "failures": 0,
+        "relative_l2": 4.2396089293252626e-07
+      },
+      {
+        "name": "hx",
+        "leaf": 0,
+        "maxabs": 0.03125,
+        "scale": 63584.66015625,
+        "relative_max": 4.914707403201919e-07,
+        "failures": 0,
+        "relative_l2": 3.0453800163202046e-07
+      },
+      {
+        "name": "hy",
+        "leaf": 0,
+        "maxabs": 0.044921875,
+        "scale": 26232.291015625,
+        "relative_max": 1.7124648004721638e-06,
+        "failures": 1,
+        "relative_l2": 6.313924455288587e-07
+      },
+      {
+        "name": "hz",
+        "leaf": 0,
+        "maxabs": 0.078125,
+        "scale": 304356.8125,
+        "relative_max": 2.5668884937477784e-07,
+        "failures": 0,
+        "relative_l2": 2.0091110846957684e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 0,
+        "maxabs": 278528.0,
+        "scale": 414507335680.0,
+        "relative_max": 6.719495073424318e-07,
+        "failures": 0,
+        "relative_l2": 2.930292504349454e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 1,
+        "maxabs": 1245184.0,
+        "scale": 2193876320256.0,
+        "relative_max": 5.675725602684391e-07,
+        "failures": 0,
+        "relative_l2": 3.379061642865035e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 2,
+        "maxabs": 884736.0,
+        "scale": 1046912237568.0,
+        "relative_max": 8.450908951597137e-07,
+        "failures": 0,
+        "relative_l2": 3.9872450841401515e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 3,
+        "maxabs": 2097152.0,
+        "scale": 3327316459520.0,
+        "relative_max": 6.302833005257744e-07,
+        "failures": 0,
+        "relative_l2": 4.667816940996409e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 4,
+        "maxabs": 3145728.0,
+        "scale": 9926247186432.0,
+        "relative_max": 3.169101011608734e-07,
+        "failures": 0,
+        "relative_l2": 2.98855823559253e-07
+      },
+      {
+        "name": "cpml_psi_h_terms",
+        "leaf": 5,
+        "maxabs": 425984.0,
+        "scale": 1261035585536.0,
+        "relative_max": 3.3780490010433493e-07,
+        "failures": 0,
+        "relative_l2": 1.344687676834705e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 0,
+        "maxabs": 1536.0,
+        "scale": 4988562944.0,
+        "relative_max": 3.0790430375293266e-07,
+        "failures": 0,
+        "relative_l2": 1.32231153383913e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 1,
+        "maxabs": 5120.0,
+        "scale": 4239493888.0,
+        "relative_max": 1.2076913271398495e-06,
+        "failures": 0,
+        "relative_l2": 4.206801136012014e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 2,
+        "maxabs": 6144.0,
+        "scale": 6679296000.0,
+        "relative_max": 9.198574220995745e-07,
+        "failures": 0,
+        "relative_l2": 3.2460058165471896e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 3,
+        "maxabs": 24576.0,
+        "scale": 61122158592.0,
+        "relative_max": 4.020800404653353e-07,
+        "failures": 0,
+        "relative_l2": 3.346190368751902e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 4,
+        "maxabs": 10240.0,
+        "scale": 18965934080.0,
+        "relative_max": 5.399154060541794e-07,
+        "failures": 0,
+        "relative_l2": 5.138369735272585e-07
+      },
+      {
+        "name": "cpml_psi_e_terms",
+        "leaf": 5,
+        "maxabs": 1216.0,
+        "scale": 1600298752.0,
+        "relative_max": 7.598581192919658e-07,
+        "failures": 0,
+        "relative_l2": 2.862263734129504e-07
+      },
+      {
+        "name": "powers",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "timestamps",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_flux_re",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_flux_im",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_phase_re",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 1.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "freq_phase_im",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 0.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "dft_vec_re",
+        "leaf": 0,
+        "maxabs": 7.62939453125e-05,
+        "scale": 36.561622619628906,
+        "relative_max": 2.0867220830494524e-06,
+        "failures": 0,
+        "relative_l2": 2.3734921740385955e-06
+      },
+      {
+        "name": "dft_vec_im",
+        "leaf": 0,
+        "maxabs": 6.866455078125e-05,
+        "scale": 55.75551986694336,
+        "relative_max": 1.2315292000704708e-06,
+        "failures": 0,
+        "relative_l2": 8.323571374234245e-07
+      },
+      {
+        "name": "dft_weight_sum",
+        "leaf": 0,
+        "maxabs": 0.0,
+        "scale": 65.0,
+        "relative_max": 0.0,
+        "failures": 0,
+        "relative_l2": 0.0
+      },
+      {
+        "name": "t",
+        "leaf": 0,
+        "maxabs": 1.6940658945086007e-21,
+        "scale": 9.513614871478442e-15,
+        "relative_max": 1.7806752926139192e-07,
+        "failures": 0,
+        "relative_l2": 1.7806752926139192e-07
+      }
+    ]
+  }
+]

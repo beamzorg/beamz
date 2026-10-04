@@ -1,0 +1,37 @@
+[  4%] Building CXX object CMakeFiles/nanobind-static.dir/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/nanobind/src/nb_internals.cpp.o
+[  9%] Building CXX object CMakeFiles/nanobind-static.dir/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/nanobind/src/nb_func.cpp.o
+[ 14%] Building CXX object CMakeFiles/nanobind-static.dir/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/nanobind/src/nb_type.cpp.o
+[ 19%] Building CXX object CMakeFiles/nanobind-static.dir/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/nanobind/src/nb_enum.cpp.o
+[ 23%] Building CXX object CMakeFiles/nanobind-static.dir/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/nanobind/src/nb_ndarray.cpp.o
+[ 28%] Building CXX object CMakeFiles/nanobind-static.dir/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/nanobind/src/nb_static_property.cpp.o
+[ 33%] Building CXX object CMakeFiles/nanobind-static.dir/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/nanobind/src/nb_datetime.cpp.o
+[ 38%] Building CXX object CMakeFiles/nanobind-static.dir/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/nanobind/src/common.cpp.o
+[ 42%] Building CXX object CMakeFiles/nanobind-static.dir/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/nanobind/src/error.cpp.o
+[ 47%] Building CXX object CMakeFiles/nanobind-static.dir/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/nanobind/src/trampoline.cpp.o
+[ 52%] Building CXX object CMakeFiles/nanobind-static.dir/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/nanobind/src/implicit.cpp.o
+[ 57%] Linking CXX static library libnanobind-static.a
+[ 57%] Built target nanobind-static
+[ 61%] Building CXX object CMakeFiles/_cuda.dir/src/extension.cc.o
+[ 66%] Building CXX object CMakeFiles/_cuda.dir/src/ffi_handler.cc.o
+[ 71%] Building CUDA object CMakeFiles/_cuda.dir/src/graph.cu.o
+[ 76%] Building CUDA object CMakeFiles/_cuda.dir/src/io.cu.o
+In file included from /home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/jaxlib/include/xla/ffi/api/ffi.h:49,
+                 from /home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/origin-main-comparison-source/src/ffi_handler.cc:8:
+/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/jaxlib/include/xla/ffi/api/api.h: In function ‘std::ostream& operator<<(std::ostream&, XLA_FFI_ExecutionStage)’:
+/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/jaxlib/include/xla/ffi/api/api.h:193:1: warning: control reaches end of non-void function [-Wreturn-type]
+  193 | }
+      | ^
+/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/jaxlib/include/xla/ffi/api/api.h: In function ‘std::ostream& operator<<(std::ostream&, XLA_FFI_AttrType)’:
+/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/jaxlib/include/xla/ffi/api/api.h:179:1: warning: control reaches end of non-void function [-Wreturn-type]
+  179 | }
+      | ^
+/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/jaxlib/include/xla/ffi/api/api.h: In function ‘std::ostream& operator<<(std::ostream&, XLA_FFI_DataType)’:
+/home/quentinwach/Code/.venv-cuda-pr233/lib/python3.11/site-packages/jaxlib/include/xla/ffi/api/api.h:166:1: warning: control reaches end of non-void function [-Wreturn-type]
+  166 | }
+      | ^
+[ 80%] Building CUDA object CMakeFiles/_cuda.dir/src/program.cu.o
+[ 85%] Building CUDA object CMakeFiles/_cuda.dir/src/update.cu.o
+[ 90%] Building CUDA object CMakeFiles/_cuda.dir/src/hopper.cu.o
+[ 95%] Linking CUDA device code CMakeFiles/_cuda.dir/cmake_device_link.o
+[100%] Linking CXX shared module _cuda.cpython-311-x86_64-linux-gnu.so
+[100%] Built target _cuda

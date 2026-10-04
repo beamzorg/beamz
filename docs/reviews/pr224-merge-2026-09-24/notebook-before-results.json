@@ -1,0 +1,69 @@
+{
+  "backend": "cuda_streamed",
+  "grid_shape": [
+    180,
+    77,
+    56
+  ],
+  "steps": 12605,
+  "nfreqs": 17,
+  "broadband_profiles": 7,
+  "extension_version": "0.18.0",
+  "arrays": {
+    "single_flux": [
+      17
+    ],
+    "single_amps": [
+      17,
+      2,
+      3
+    ],
+    "single_mode_flux": [
+      17
+    ],
+    "single_ey": [
+      1,
+      13860
+    ],
+    "broadband_flux": [
+      17
+    ],
+    "broadband_amps": [
+      17,
+      2,
+      3
+    ],
+    "broadband_mode_flux": [
+      17
+    ],
+    "broadband_ey": [
+      1,
+      13860
+    ],
+    "junction_flux": [
+      17
+    ],
+    "junction_amps": [
+      17,
+      2,
+      3
+    ],
+    "junction_mode_flux": [
+      17
+    ],
+    "junction_ey": [
+      1,
+      16020
+    ],
+    "neffs": [
+      1,
+      3
+    ],
+    "profile_freqs": [
+      7
+    ],
+    "freqs": [
+      17
+    ]
+  }
+}

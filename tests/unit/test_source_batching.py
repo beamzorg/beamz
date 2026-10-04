@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 from beamz.devices.sources.compiler import CompiledSourceSpec, batch_slab_specs
 from beamz.simulation.execute import _apply_batched_slabs, _apply_specs
@@ -59,3 +60,20 @@ def test_source_batch_selects_largest_exact_shape_group_stably():
     assert batch.max_sizes == (1, 2, 2)
     assert batch.starts_tuple == ((0, 0, 0), (2, 0, 0))
     assert rest == (second,)
+
+
+@pytest.mark.parametrize("source_count", [1, 2, 3])
+def test_source_slabs_preserve_overlap_and_dynamic_slice_clamping(source_count):
+    specs = tuple(
+        _slab((3, -1, 3), (2, 2, 2), float(index + 1)) for index in range(source_count)
+    )
+    batch, rest = batch_slab_specs(specs)
+    assert not rest
+    original = jnp.arange(64, dtype=jnp.float32).reshape((4, 4, 4))
+    result = _apply_batched_slabs(
+        original, jnp.asarray(0), batch, dense_single_slab=False
+    )
+    # dynamic_slice normalizes negative indices before clamping each origin.
+    expected = np.asarray(original).copy()
+    expected[2:4, 2:4, 2:4] += sum(range(1, source_count + 1))
+    np.testing.assert_array_equal(result, expected)

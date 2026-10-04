@@ -1,0 +1,325 @@
+{
+  "case": {
+    "steps": 256,
+    "presteps": 0,
+    "pml": 12,
+    "material": "binary",
+    "source": "mode",
+    "monitors": 2,
+    "frequencies": 3,
+    "monitor_type": "mode",
+    "name": "volume_128_256_512",
+    "shape": [
+      128,
+      256,
+      512
+    ]
+  },
+  "variants": {
+    "one_step": {
+      "cuda_flags": 128,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 1
+        }
+      ],
+      "compile_s": 0.4831393810454756,
+      "samples_s": [
+        0.501901128096506,
+        0.507099020993337,
+        0.5156156430020928,
+        0.50784986699,
+        0.5090337668079883,
+        0.5108425470534712
+      ],
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 8.447313248534842,
+      "paired_speedups": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "median_paired_speedup": 1.0
+    },
+    "pair_64x4": {
+      "cuda_flags": 65664,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.1420736510772258,
+      "samples_s": [
+        0.5804195827804506,
+        0.5796215471345931,
+        0.5805748640559614,
+        0.5812871779780835,
+        0.5803144529927522,
+        0.5618485601153225
+      ],
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 7.400433111516338,
+      "paired_speedups": [
+        0.8647212171791162,
+        0.8748795200941422,
+        0.8881122399959652,
+        0.8736643198573144,
+        0.8771688593707071,
+        0.9092175068467169
+      ],
+      "median_paired_speedup": 0.8760241897324246
+    },
+    "pair_32x8": {
+      "cuda_flags": 196736,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.1368058871012181,
+      "samples_s": [
+        0.5717534890864044,
+        0.5663054371252656,
+        0.5689333828631788,
+        0.582560305017978,
+        0.5836355478968471,
+        0.5837798991706222
+      ],
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_gcups": 7.441593989323175,
+      "paired_speedups": [
+        0.8778278360810454,
+        0.89545144324858,
+        0.9062847400643597,
+        0.8717550142286602,
+        0.872177454992779,
+        0.8750601858324116
+      ],
+      "median_paired_speedup": 0.8764440109567285
+    }
+  },
+  "orders": [
+    [
+      "one_step",
+      "pair_32x8",
+      "pair_64x4"
+    ],
+    [
+      "pair_64x4",
+      "pair_32x8",
+      "one_step"
+    ],
+    [
+      "pair_64x4",
+      "one_step",
+      "pair_32x8"
+    ],
+    [
+      "one_step",
+      "pair_64x4",
+      "pair_32x8"
+    ],
+    [
+      "pair_32x8",
+      "one_step",
+      "pair_64x4"
+    ],
+    [
+      "pair_32x8",
+      "pair_64x4",
+      "one_step"
+    ]
+  ],
+  "seed": 37,
+  "setup_s": 13.831864814972505,
+  "warmups": 4,
+  "jax": "0.9.0",
+  "device": "cuda:0",
+  "source_sha256": "f1eb084a9b847dfd4b16d010e6bdfa7663f1c926e670088ce7e3e1476a058829",
+  "extension_sha256": "8d91fd0e35eca2687274ef32891b645c4cb57ce3896bbb579e1f3c13ef1e5aa3",
+  "benchmark_sha256": "dfdb1308ad73712ac5c7f7e8e460e78b0d43c24409f43209786e3e426edf4066",
+  "builder_sha256": "8ef0831a2267c4b2e0a3d478d877dd27c295ca65b77640f052c2e410c2edc6f6",
+  "field_shapes": {
+    "ex": [
+      129,
+      257,
+      512
+    ],
+    "ey": [
+      129,
+      256,
+      513
+    ],
+    "ez": [
+      128,
+      257,
+      513
+    ],
+    "hx": [
+      128,
+      256,
+      513
+    ],
+    "hy": [
+      128,
+      257,
+      512
+    ],
+    "hz": [
+      129,
+      256,
+      512
+    ]
+  },
+  "field_dtype": "float32",
+  "cpml_dtypes": [
+    "float32"
+  ],
+  "monitor_regions": [
+    {
+      "center": [
+        2.6624e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    },
+    {
+      "center": [
+        3.0720000000000004e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    }
+  ],
+  "source_specs": 8
+}

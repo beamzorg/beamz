@@ -1,0 +1,111 @@
+{
+  "cases": {
+    "narrow": {
+      "main": 7.282921160028712,
+      "branch_auto": 8.55536363095517,
+      "choice": {
+        "axes": [
+          1,
+          2,
+          0
+        ],
+        "shell_tile": "64x4"
+      },
+      "calibration_s": 37.2534289940013,
+      "numerical_failures_vs_main": [
+        {
+          "index": 6,
+          "shape": [
+            1024,
+            24,
+            65
+          ],
+          "mismatch_count": 56,
+          "max_abs_error": 5.817413330078125e-05,
+          "reference_scale": 11.525832176208496
+        },
+        {
+          "index": 16,
+          "shape": [
+            1024,
+            257,
+            24
+          ],
+          "mismatch_count": 16,
+          "max_abs_error": 15744.0,
+          "reference_scale": 4870950912.0
+        }
+      ],
+      "change_percent": 17.47159474841058
+    },
+    "wide": {
+      "main": 8.38551120063094,
+      "branch_auto": 8.77210433418829,
+      "choice": {
+        "axes": [
+          0,
+          1,
+          2
+        ],
+        "shell_tile": "64x4"
+      },
+      "calibration_s": 33.51591278900014,
+      "numerical_failures_vs_main": [
+        {
+          "index": 6,
+          "shape": [
+            128,
+            24,
+            513
+          ],
+          "mismatch_count": 68,
+          "max_abs_error": 5.7220458984375e-05,
+          "reference_scale": 11.436366081237793
+        },
+        {
+          "index": 8,
+          "shape": [
+            24,
+            257,
+            512
+          ],
+          "mismatch_count": 4,
+          "max_abs_error": 319488.0,
+          "reference_scale": 214428827648.0
+        },
+        {
+          "index": 13,
+          "shape": [
+            24,
+            257,
+            512
+          ],
+          "mismatch_count": 36,
+          "max_abs_error": 1264.0,
+          "reference_scale": 566588736.0
+        }
+      ],
+      "change_percent": 4.6102512334401435
+    },
+    "irregular": {
+      "main": 6.96525214200963,
+      "branch_auto": 8.277105491346395,
+      "choice": {
+        "axes": [
+          0,
+          1,
+          2
+        ],
+        "shell_tile": "64x4"
+      },
+      "calibration_s": 35.53903222300141,
+      "numerical_failures_vs_main": [],
+      "change_percent": 18.83425499307576
+    }
+  },
+  "max_temperature_c": 73.0,
+  "min_free_mib": 19009.0,
+  "power_limits_w": [
+    370.0
+  ]
+}

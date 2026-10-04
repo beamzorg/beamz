@@ -1,0 +1,1414 @@
+{
+  "note": "Integer version oracle, not numerical or GPU race validation.",
+  "cases": [
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        8,
+        8
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 450,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        8,
+        8
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 450,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        8,
+        8
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 450,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        8,
+        8
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 450,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        2,
+        1,
+        2
+      ],
+      "nodes": 180,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        2,
+        1,
+        2
+      ],
+      "nodes": 180,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        2,
+        1,
+        2
+      ],
+      "nodes": 180,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        2,
+        1,
+        2
+      ],
+      "nodes": 180,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        4,
+        2,
+        4
+      ],
+      "nodes": 180,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        4,
+        2,
+        4
+      ],
+      "nodes": 180,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        4,
+        2,
+        4
+      ],
+      "nodes": 180,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        4,
+        2,
+        4
+      ],
+      "nodes": 180,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        8,
+        8,
+        8
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 450,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        8,
+        8,
+        8
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 450,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        8,
+        8,
+        8
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 450,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        8,
+        8,
+        8
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 450,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        2,
+        1,
+        2
+      ],
+      "nodes": 180,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        2,
+        1,
+        2
+      ],
+      "nodes": 180,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        2,
+        1,
+        2
+      ],
+      "nodes": 180,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        2,
+        1,
+        2
+      ],
+      "nodes": 180,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        4,
+        2,
+        4
+      ],
+      "nodes": 180,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        4,
+        2,
+        4
+      ],
+      "nodes": 180,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        4,
+        2,
+        4
+      ],
+      "nodes": 180,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        4,
+        2,
+        4
+      ],
+      "nodes": 180,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        8,
+        8,
+        8
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 450,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        8,
+        8,
+        8
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 450,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        8,
+        8,
+        8
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 450,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        8,
+        8,
+        8
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 450,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        2,
+        1,
+        2
+      ],
+      "nodes": 162,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        2,
+        1,
+        2
+      ],
+      "nodes": 162,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        2,
+        1,
+        2
+      ],
+      "nodes": 162,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        2,
+        1,
+        2
+      ],
+      "nodes": 162,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        4,
+        2,
+        4
+      ],
+      "nodes": 162,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        4,
+        2,
+        4
+      ],
+      "nodes": 162,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        4,
+        2,
+        4
+      ],
+      "nodes": 162,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        4,
+        2,
+        4
+      ],
+      "nodes": 162,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 180,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 180,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 180,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        16,
+        8,
+        16
+      ],
+      "depth": 8,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 180,
+      "cell_timesteps": 798312
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 2,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 199578
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 2,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 199578
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 2,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 199578
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 2,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 199578
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        29,
+        31,
+        37
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 2,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 199578
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 2,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 199578
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 2,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 199578
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 2,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 199578
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        37,
+        29,
+        31
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 810,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 2,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 825,
+      "cell_timesteps": 199578
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 2,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 825,
+      "cell_timesteps": 199578
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 2,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 825,
+      "cell_timesteps": 199578
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 2,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 825,
+      "cell_timesteps": 199578
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 0,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 825,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 1,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 825,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 2,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 825,
+      "cell_timesteps": 399156
+    },
+    {
+      "shape": [
+        31,
+        37,
+        29
+      ],
+      "tile": [
+        8,
+        4,
+        8
+      ],
+      "depth": 4,
+      "passes": 3,
+      "seed": 3,
+      "shift": [
+        1,
+        1,
+        1
+      ],
+      "nodes": 825,
+      "cell_timesteps": 399156
+    }
+  ],
+  "rejected_missing_temporal_edge": "((1, 0, 0, 0), 0)"
+}

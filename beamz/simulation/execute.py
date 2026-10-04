@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import pathlib
 import platform
@@ -10,10 +11,12 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from time import perf_counter
+from typing import cast
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax.core import Tracer
 
 from beamz._helpers import (
     _finish_inline_progress,
@@ -27,16 +30,20 @@ from beamz.devices.sources.compiler import (
     batch_slab_specs,
 )
 from beamz.simulation.backend import CUDA_BF16_PSI
+from beamz.simulation.boundary_masks import compact_boundary_masks
 from beamz.simulation.model import (
     AutoTermination,
     CompiledProgram,
     SimulationState,
     UpdateCoefficients,
+    _copy_initial_field,
 )
+from beamz.simulation.preparation_trace import trace_preparation
 
 from . import kernels as update_runtime
 from . import observe as monitor_runtime
 from . import sharding as sharding_runtime
+from .memory import cuda_capacity_schedule
 from .results import (
     MonitorResults,
     RunTermination,
@@ -273,12 +280,12 @@ def _selected_monitor_names(program: CompiledProgram, policy: AutoTermination):
 
 
 def _monitor_vectors(
-    results: SimulationResults, names: tuple[str, ...]
+    monitors: dict[str, MonitorResults], names: tuple[str, ...]
 ) -> dict[tuple[str, str, int], np.ndarray]:
     """Return one raw DFT convergence vector per monitor, component, and frequency."""
     values = {}
     for name in names:
-        monitor = results.monitors[name]
+        monitor = monitors[name]
         fields = monitor._raw_dft_fields or monitor.dft_fields
         for component in sorted(fields):
             field = np.asarray(fields[component], dtype=np.complex128)
@@ -350,7 +357,15 @@ def _complete_converged_dft_weights(
         total_weight = _configured_dft_weight_sum(simulation, spec)
         weights = np.full(result.dft_weight_sum.shape, total_weight, dtype=np.float64)
         monitors[name] = replace(result, dft_weight_sum=weights)
-    return replace(results, monitors=monitors)
+    # The DFT denominator now covers the configured window. Source spectra
+    # must use that same window, including its negligible unsimulated tail.
+    # Actual executed steps remain available in the termination report.
+    completed = replace(
+        results,
+        monitors=monitors,
+        metadata=replace(results.metadata, time=np.asarray(simulation.time)),
+    )
+    return completed.renormalize(results.normalization_source)
 
 
 def compiled_source_batches(
@@ -418,9 +433,27 @@ def _apply_batched_slabs(
             )
             dense_coeff = jnp.pad(group.coeffs[0], pad_width)
             return arr + (dense_coeff * amp).astype(arr.dtype)
-        patch = (group.coeffs[0] * amp).astype(arr.dtype)
-        cur = jax.lax.dynamic_slice(arr, starts_0, group.max_sizes)
-        return jax.lax.dynamic_update_slice(arr, cur + patch, starts_0)
+    if group.n <= 2:
+        # Static scatter-add keeps a small source plane local to its field shard.
+        # A dynamic read/modify/write can gather the entire distributed field.
+        out = arr
+        for index, starts in enumerate(group.starts_tuple):
+            clamped_starts = tuple(
+                min(
+                    max(start if start >= 0 else start + int(arr.shape[axis]), 0),
+                    int(arr.shape[axis]) - group.max_sizes[axis],
+                )
+                for axis, start in enumerate(starts)
+            )
+            region = tuple(
+                slice(start, start + size)
+                for start, size in zip(clamped_starts, group.max_sizes, strict=True)
+            )
+            patch = (group.coeffs[index] * group.waveforms[index, safe_idx]).astype(
+                out.dtype
+            )
+            out = out.at[region].add(patch)
+        return out
 
     def body(i, out):
         # Carry prior additions so overlapping slabs accumulate rather than overwrite.
@@ -440,6 +473,8 @@ def apply_source_phase(
     timing: str,
     *,
     dense_single_slab: bool,
+    sharding_plan=None,
+    local_single_owner: bool = False,
 ) -> SimulationState:
     # Apply sources in their scheduled leapfrog phase so amplitude normalization
     # matches field time.
@@ -449,12 +484,25 @@ def apply_source_phase(
         value = getattr(eng, field_name)
         batch, rest = batches[(timing, component)]
         if batch is not None:
-            value = _apply_batched_slabs(
-                value,
-                abs_step,
-                batch,
-                dense_single_slab=dense_single_slab,
-            )
+            use_local = sharding_plan is not None and sharding_plan.layout.enabled
+            if use_local:
+                from beamz.simulation.distributed_sources import (
+                    apply_batched_slabs,
+                    requires_local_injection,
+                )
+
+                use_local = local_single_owner or requires_local_injection(
+                    value, batch, sharding_plan
+                )
+            if use_local:
+                value = apply_batched_slabs(value, abs_step, batch, sharding_plan)
+            else:
+                value = _apply_batched_slabs(
+                    value,
+                    abs_step,
+                    batch,
+                    dense_single_slab=dense_single_slab,
+                )
         if rest:
             value = _apply_specs(value, abs_step, rest)
         updates[field_name] = value.astype(getattr(eng, field_name).dtype)
@@ -471,7 +519,7 @@ def forward_step(
     coeffs: UpdateCoefficients,
     program,
     update_kernel: update_runtime.StepUpdateKernel,
-    time_origin,
+    observation_time=None,
 ):
     """Advance one compiled timestep."""
     cfg = ctx.config
@@ -485,7 +533,19 @@ def forward_step(
         ctx.source_batches,
         "pre_e",
         dense_single_slab=cfg.source_single_slab_dense,
+        sharding_plan=program.sharding,
+        local_single_owner=cfg.backend == "cuda_streamed",
     )
+    if ctx.boundary.periodic_axes:
+        ex, ey, ez = update_runtime.apply_post_source_boundaries(
+            (state.ex, state.ey, state.ez),
+            (metallic.ex_mask, metallic.ey_mask, metallic.ez_mask),
+            components=("Ex", "Ey", "Ez"),
+            periodic_axes=ctx.boundary.periodic_axes,
+            material_shape=ctx.boundary.material_shape,
+            logical_shapes=ctx.boundary.logical_component_shapes,
+        )
+        state = state._replace(ex=ex, ey=ey, ez=ez)
     state = update_kernel.update_h(state, ctx, coeffs)
 
     # 2. H-phase sources may overwrite constrained cells, so reapply the compiled masks
@@ -496,16 +556,39 @@ def forward_step(
         ctx.source_batches,
         "h",
         dense_single_slab=cfg.source_single_slab_dense,
+        sharding_plan=program.sharding,
+        local_single_owner=cfg.backend == "cuda_streamed",
     )
-    cuda_owns_pec = cfg.backend == "cuda_streamed" and not program.sources
-    if not cuda_owns_pec:
+    kernel_owns_pec = (
+        cfg.backend == "cuda_streamed"
+        and not cfg.sharding.enabled
+        and not program.sources
+    )
+    if (
+        update_kernel.kind in {"cuda_streamed_sharded", "jax_local_cpml"}
+        and ctx.boundary.cpml.enabled
+        and not coeffs.e_inverse_offdiagonal.size
+    ):
+        from beamz.simulation.distributed_sources import sources_are_interior
+
+        # These kernels already constrain their output. Interior source patches
+        # cannot undo that, so avoid six redundant full-volume mask passes.
+        kernel_owns_pec = sources_are_interior(
+            state, ctx.source_batches, program.sharding
+        )
+    if not kernel_owns_pec:
         hx, hy, hz = update_runtime.apply_post_source_boundaries(
             (state.hx, state.hy, state.hz),
             (metallic.hx_mask, metallic.hy_mask, metallic.hz_mask),
+            components=("Hx", "Hy", "Hz"),
+            periodic_axes=ctx.boundary.periodic_axes,
+            material_shape=ctx.boundary.material_shape,
+            logical_shapes=ctx.boundary.logical_component_shapes,
         )
         state = state._replace(hx=hx, hy=hy, hz=hz)
 
     # 3. Advance E, inject its sources, and restore its masks before observation.
+    old_e_state = state
     state = update_kernel.update_e(state, ctx, coeffs)
     state = apply_source_phase(
         state,
@@ -513,18 +596,33 @@ def forward_step(
         ctx.source_batches,
         "e",
         dense_single_slab=cfg.source_single_slab_dense,
+        sharding_plan=program.sharding,
+        local_single_owner=cfg.backend == "cuda_streamed",
     )
-    if not cuda_owns_pec:
+    from beamz.simulation.dispersion import update_dispersion
+
+    if program.dispersion is not None:
+        state = update_dispersion(old_e_state, state, program.dispersion)
+    if not kernel_owns_pec:
         ex, ey, ez = update_runtime.apply_post_source_boundaries(
             (state.ex, state.ey, state.ez),
             (metallic.ex_mask, metallic.ey_mask, metallic.ez_mask),
+            components=("Ex", "Ey", "Ez"),
+            periodic_axes=ctx.boundary.periodic_axes,
+            material_shape=ctx.boundary.material_shape,
+            logical_shapes=ctx.boundary.logical_component_shapes,
         )
         state = state._replace(ex=ex, ey=ey, ez=ez)
 
     # 4. Observe only fully constrained end-of-step fields, then advance both clocks.
-    # Repeated float32 additions drift by a significant optical phase on long
-    # fine-grid runs. Derive observation time from the integer step counter.
-    t_phys = time_origin + (state.current_step + 1) * ctx.dt_scalar
+    # Derive the default from the absolute source index, retaining explicit
+    # observation times for streamed schedules.
+    t_phys = (
+        jnp.asarray(cfg.t0, dtype=jnp.float32)
+        + (state.current_step + 1).astype(jnp.float32) * ctx.dt_scalar
+        if observation_time is None
+        else observation_time
+    )
     state = monitor_runtime.update_monitors(
         program,
         state,
@@ -538,35 +636,78 @@ def forward_step(
         state.hy,
         state.hz,
     )
+    if cfg.backend == "jax" and cfg.is_3d and not cfg.sharding.enabled:
+        # Keep a common field layout across scan iterations. Recent JAX can
+        # otherwise choose conflicting stencil/monitor layouts and insert copies.
+        # JAX < 0.7 names the device-local type DeviceLocalLayout; its Layout
+        # pairs a device-local layout with sharding instead.
+        try:
+            from jax.experimental import layout
+            from jax.experimental.layout import with_layout_constraint
+        except ImportError:
+            pass
+        else:
+            layout_type = getattr(layout, "DeviceLocalLayout", layout.Layout)
+            state = state._replace(
+                **{
+                    name: with_layout_constraint(
+                        getattr(state, name), layout_type((0, 1, 2))
+                    )
+                    for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+                }
+            )
     return state._replace(
         t=t_phys,
         current_step=state.current_step + jnp.array(1, dtype=jnp.int32),
     )
 
 
-def build_step_context(program):
-    """Bind the ordinary source and boundary plan for a single JAX timestep."""
+class _BoundedCompileScan:
+    """Apply compiler options only when this scan owns the compilation.
+
+    JAX rejects per-jit options inside jit/grad/vmap. Under a transformation,
+    trace the scan body normally and let the enclosing executable own its policy.
+    """
+
+    def __init__(self, body, compiled):
+        self.body = body
+        self.compiled = compiled
+
+    def __call__(self, *arguments):
+        if any(isinstance(value, Tracer) for value in jax.tree.leaves(arguments)):
+            return self.body(*arguments)
+        return self.compiled(*arguments)
+
+    def __getattr__(self, name):
+        return getattr(self.compiled, name)
+
+
+def build_step_context(program, *, donate_state: bool = False):
+    """Bind the shared source, boundary, and memory plan for one timestep."""
     cfg = program.config
+    boundary = program.boundary
+    if cfg.backend == "jax" or cfg.sharding.enabled:
+        boundary = compact_boundary_masks(boundary)
     return update_runtime.CompiledStepContext(
         config=cfg,
-        boundary=program.boundary,
+        boundary=boundary,
         source_batches=compiled_source_batches(program.sources),
         metrics=program.metrics,
         resolution=float(cfg.resolution),
         dt=float(cfg.dt),
         dt_scalar=jnp.asarray(cfg.dt, dtype=jnp.float32),
         is_3d=cfg.is_3d,
+        sharding_plan=program.sharding,
+        low_memory=cuda_capacity_schedule(program, donate_state=donate_state),
     )
 
 
 def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None):
-    """Build a compiled scan, optionally rematerializing chunks for reverse AD.
+    """Build the compiled scan, optionally rematerializing chunks for reverse AD.
 
-    ``checkpoint_interval`` bounds the inner reverse-mode history while keeping
-    chunk-boundary states. It applies to the JAX backend and preserves the exact
-    timestep, CPML, source, and monitor transition used by ordinary execution.
+    Checkpointed JAX execution uses the ordinary timestep, source, boundary,
+    dispersion, and absolute observation-clock transition.
     """
-
     if checkpoint_interval is not None:
         if (
             isinstance(checkpoint_interval, bool)
@@ -580,19 +721,20 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
 
     # 1. Pull immutable configuration out of the program before tracing. These values
     # select shapes and kernels, so they should remain static for executable reuse.
-    # Trainable material values can be supplied through run_scan's coefficient
-    # argument without rebuilding the fixed geometry/source/monitor plan.
-
+    # Material coefficients remain dynamic inputs across optimization steps.
     cfg = program.config
-    dt_scalar = jnp.asarray(cfg.dt, dtype=jnp.float32)
-
-    # 2. Batch sources once; monitors are already canonical executable plans.
-    step_context = build_step_context(program)
+    step_context = build_step_context(program, donate_state=donate_state)
+    boundary = step_context.boundary
+    dt_scalar = step_context.dt_scalar
     source_batches = step_context.source_batches
 
-    # 3. Assemble the shared step context and select the specialized update kernel before
-    # JIT compilation begins.
     update_kernel = update_runtime.select_update_kernel(step_context)
+    from beamz.simulation import distributed_monitors, jax_sharding
+
+    local_jax_cpml = jax_sharding.supported(program)
+    local_dft = distributed_monitors.supported(program)
+    if local_jax_cpml:
+        update_kernel = jax_sharding.select_kernel()
     graph_source_groups = tuple(
         source_batches[(timing, component)][0]
         for timing, components in SOURCE_PHASE_COMPONENTS.items()
@@ -613,6 +755,7 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
     packed_graph_monitors = None
     if (
         cfg.backend == "cuda_streamed"
+        and not cfg.sharding.enabled
         and graph_monitors_supported
         and not bool(jax.config.read("jax_enable_x64"))
     ):
@@ -621,16 +764,94 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
         packed_graph_monitors = pack_dft_monitors(program.monitors)
     cuda_multi_step = (
         cfg.backend == "cuda_streamed"
+        and not cfg.sharding.enabled
         and (not program.monitors or packed_graph_monitors is not None)
         and (not program.sources or source_groups_supported)
     )
+    native_graph_calls = None
+    if cfg.cuda_storage_axes != (0, 1, 2) and not step_context.low_memory:
+        if not (
+            cuda_multi_step
+            and cfg.is_3d
+            and cfg.metric_kind == "isotropic_uniform"
+            and boundary.cpml.enabled
+        ):
+            raise ValueError(
+                "CUDA storage-axis permutations require a 3D uniform-grid CPML "
+                "native graph with supported slab sources and DFT monitors"
+            )
+        from beamz.simulation.cuda import (
+            run_program_steps,
+            run_source_group_steps,
+            run_steps,
+        )
+        from beamz.simulation.cuda.storage import wrap_native_calls
+
+        native_graph_calls = wrap_native_calls(
+            run_steps, run_program_steps, run_source_group_steps, cfg.cuda_storage_axes
+        )
 
     def run_scan(
         state: SimulationState,
         coeffs: UpdateCoefficients,
+        dispersion_coefficients=None,
     ):
-        # Preserve an explicit continuation clock, anchoring it once per run.
-        time_origin = state.t - state.current_step * dt_scalar
+        runtime_program = program
+        if dispersion_coefficients is not None:
+            runtime_program = replace(
+                program,
+                dispersion=replace(
+                    program.dispersion,
+                    coefficients=tuple(
+                        (record[0], *values)
+                        for record, values in zip(
+                            program.dispersion.coefficients,
+                            dispersion_coefficients,
+                            strict=True,
+                        )
+                    ),
+                ),
+            )
+        # Normal continuations keep one absolute integer clock. Explicit states
+        # may intentionally supply a different time origin; preserve that API
+        # contract without accumulating rounding at ordinary chunk boundaries.
+        t0 = jnp.asarray(cfg.t0, dtype=jnp.float32)
+        grid_time = t0 + dt_scalar * state.current_step.astype(jnp.float32)
+        clock_tolerance = jnp.finfo(jnp.float32).eps * jnp.maximum(
+            jnp.abs(grid_time), jnp.finfo(jnp.float32).tiny
+        )
+        on_grid = jnp.abs(state.t - grid_time) <= clock_tolerance
+        observation_origin = cast(jax.Array, jnp.where(on_grid, t0, state.t))
+        observation_offset = cast(jax.Array, jnp.where(on_grid, state.current_step, 0))
+        if local_dft:
+            state = distributed_monitors.scan_local_dft(state, program)
+        local_cuda_cpml = (
+            cfg.backend == "cuda_streamed" and program.sharding.layout.enabled
+        )
+        if local_cuda_cpml or local_jax_cpml:
+            from beamz.simulation.distributed import scan_local_cpml
+
+            state = scan_local_cpml(state, program)
+        # Compute differentiable material scales once per invocation. Expressing
+        # the lossy update as an increment avoids a field-sized division each step.
+        if (
+            cfg.backend == "jax"
+            and cfg.is_3d
+            and boundary.cpml.enabled
+            and cfg.metric_kind == "isotropic_uniform"
+            and not coeffs.e_inverse_offdiagonal.size
+        ):
+            dt_mu, dt_eps = dt_scalar / MU_0, dt_scalar / EPS_0
+            scales = {}
+            for component in "xyz":
+                sigma_h = getattr(coeffs, f"h_sigma_m_{component}")
+                sigma_e = getattr(coeffs, f"e_conductivity_{component}")
+                epsilon = getattr(coeffs, f"e_permittivity_{component}")
+                scales[f"h_source_{component}"] = dt_mu / (1 + 0.5 * dt_mu * sigma_h)
+                scales[f"e_source_{component}"] = dt_eps / (
+                    epsilon + 0.5 * dt_eps * sigma_e
+                )
+            coeffs = coeffs._replace(**scales)
         # 4. Run the same transition through scan or fori_loop. The choice changes the
         # lowering strategy, not timestep semantics.
         if cuda_multi_step:
@@ -640,13 +861,19 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
                 run_steps,
             )
 
+            if native_graph_calls is not None:
+                run_steps, run_program_steps, run_source_group_steps = (
+                    native_graph_calls
+                )
+
             def advance_native_chunk(chunk_state, chunk_steps: int, elapsed_steps):
                 elapsed_steps = jnp.asarray(elapsed_steps, dtype=jnp.int32)
                 chunk_state = chunk_state._replace(
-                    # Derive clocks from the immutable run origin. Incrementally
-                    # accumulating float32 chunk times would perturb long-run DFT
-                    # phases relative to one unbounded native launch.
-                    t=state.t + dt_scalar * elapsed_steps,
+                    # Derive clocks from the simulation origin, including across
+                    # separate advance() calls and automatic-termination chunks.
+                    t=observation_origin
+                    + dt_scalar
+                    * (observation_offset + elapsed_steps).astype(jnp.float32),
                     current_step=state.current_step + elapsed_steps,
                 )
                 chunk_out = (
@@ -659,6 +886,8 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
                         graph_source_groups,
                         packed_graph_monitors,
                         chunk_steps,
+                        observation_origin=observation_origin,
+                        observation_step_offset=observation_offset + elapsed_steps,
                     )
                     if program.monitors
                     else run_source_group_steps(
@@ -673,7 +902,9 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
                     chunk_steps, dtype=jnp.int32
                 )
                 return chunk_out._replace(
-                    t=state.t + dt_scalar * completed_steps,
+                    t=observation_origin
+                    + dt_scalar
+                    * (observation_offset + completed_steps).astype(jnp.float32),
                     current_step=state.current_step + completed_steps,
                 )
 
@@ -702,41 +933,52 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
                     )
         elif checkpoint_interval is not None:
 
-            def step(carry, _unused):
+            def step(carry, step_index):
                 return forward_step(
                     carry,
                     ctx=step_context,
                     coeffs=coeffs,
-                    program=program,
+                    program=runtime_program,
                     update_kernel=update_kernel,
-                    time_origin=time_origin,
+                    observation_time=observation_origin
+                    + dt_scalar
+                    * (observation_offset + step_index + 1).astype(jnp.float32),
                 ), None
 
-            def chunk(carry, _unused):
-                return jax.lax.scan(
-                    jax.checkpoint(step), carry, None, length=checkpoint_interval
-                )[0], None
+            def chunk(carry, chunk_index):
+                indices = chunk_index * checkpoint_interval + jnp.arange(
+                    checkpoint_interval, dtype=jnp.int32
+                )
+                return jax.lax.scan(jax.checkpoint(step), carry, indices)[0], None
 
             chunks, tail = divmod(cfg.num_steps, checkpoint_interval)
             scan_out, _ = jax.lax.scan(
-                jax.checkpoint(chunk), state, None, length=chunks
+                jax.checkpoint(chunk), state, jnp.arange(chunks, dtype=jnp.int32)
             )
             if tail:
                 scan_out, _ = jax.lax.scan(
-                    jax.checkpoint(step), scan_out, None, length=tail
+                    jax.checkpoint(step),
+                    scan_out,
+                    jnp.arange(
+                        chunks * checkpoint_interval, cfg.num_steps, dtype=jnp.int32
+                    ),
                 )
+        # Every observation uses the simulation origin and absolute integer
+        # step, including continuation calls, as native CUDA does.
         elif cfg.loop_kind == "scan":
 
-            def _scan_body(carry, _unused):
+            def _scan_body(carry, step_index):
                 # Emit no per-step output because final state and explicit buffers hold results.
                 return (
                     forward_step(
                         carry,
                         ctx=step_context,
                         coeffs=coeffs,
-                        program=program,
+                        program=runtime_program,
                         update_kernel=update_kernel,
-                        time_origin=time_origin,
+                        observation_time=observation_origin
+                        + dt_scalar
+                        * (observation_offset + step_index + 1).astype(jnp.float32),
                     ),
                     None,
                 )
@@ -744,8 +986,7 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
             scan_out, _ = jax.lax.scan(
                 _scan_body,
                 state,
-                xs=None,
-                length=cfg.num_steps,
+                xs=jnp.arange(cfg.num_steps, dtype=jnp.int32),
             )
         else:
             scan_out = jax.lax.fori_loop(
@@ -755,11 +996,18 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
                     c,
                     ctx=step_context,
                     coeffs=coeffs,
-                    program=program,
+                    program=runtime_program,
                     update_kernel=update_kernel,
-                    time_origin=time_origin,
+                    observation_time=observation_origin
+                    + dt_scalar * (observation_offset + _i + 1).astype(jnp.float32),
                 ),
                 state,
+            )
+        if local_cuda_cpml or local_jax_cpml:
+            scan_out = scan_local_cpml(scan_out, program, assemble=True)
+        if local_dft:
+            scan_out = distributed_monitors.scan_local_dft(
+                scan_out, program, assemble=True
             )
         return scan_out
 
@@ -767,6 +1015,20 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
     # preserves its input state; callers may opt into the lower-memory variant when
     # they no longer need that continuation value.
     donate_argnums = (0,) if donate_state else ()
+    # Empirical fusion autotuning allocates full-sized trial inputs/outputs during
+    # compilation, outside executable.memory_analysis(). Use default emitters for
+    # both FDTD backends so an otherwise fitting run can compile near capacity.
+    if "compiler_options" in inspect.signature(jax.jit).parameters:
+        return _BoundedCompileScan(
+            run_scan,
+            jax.jit(
+                run_scan,
+                donate_argnums=donate_argnums,
+                compiler_options={"xla_gpu_autotune_level": 0},
+            ),
+        )
+    # Older supported JAX releases lack per-executable options. Preserve their
+    # existing behavior without changing process-wide XLA_FLAGS after startup.
     return jax.jit(run_scan, donate_argnums=donate_argnums)
 
 
@@ -859,6 +1121,7 @@ def clear_execution_cache() -> None:
     _EXECUTION_CACHES.clear()
 
 
+@trace_preparation("initial_state")
 def initial_program_state(
     program: CompiledProgram,
     *,
@@ -878,18 +1141,38 @@ def initial_program_state(
         psi_dtype = jnp.bfloat16
 
     def field(name):
+        if continuation is None and layout.enabled:
+            value = getattr(program.grid, name)
+            if isinstance(value, np.ndarray) and all(
+                stride == 0 for stride in value.strides
+            ):
+                shape = layout.padded_shapes[name]
+                target = sharding_runtime._array_sharding(
+                    program,
+                    jax.ShapeDtypeStruct(shape, value.dtype),
+                    program.sharding.mesh,
+                )
+                return jax.jit(
+                    lambda: jnp.zeros(shape, dtype=value.dtype), out_shardings=target
+                )()
         # Fresh runs use the compiled lattice; continuations supply evolved canonical
         # arrays without reconstructing a mutable field container.
         return (
-            jnp.array(getattr(program.grid, name))
+            _copy_initial_field(getattr(program.grid, name))
             if continuation is None
             else getattr(continuation, name.lower())
         )
 
+    def field_dtype(name):
+        # Query metadata without copying two additional full fields just to
+        # choose the CPML dtype during fresh-state construction.
+        owner = program.grid if continuation is None else continuation
+        return getattr(owner, name if continuation is None else name.lower()).dtype
+
     def zeros(shape, dtype):
         shape = tuple(int(value) for value in shape)
         return (
-            np.zeros(shape, dtype=np.dtype(dtype))
+            np.broadcast_to(np.zeros((), dtype=np.dtype(dtype)), shape)
             if layout.enabled
             else jnp.zeros(shape, dtype=dtype)
         )
@@ -899,13 +1182,23 @@ def initial_program_state(
         dtype = dtype if psi_dtype is None else psi_dtype
         shapes = tuple(term.slab.shape for term in terms)
         if len(old) == len(shapes) and all(
-            tuple(value.shape) == shape
-            for value, shape in zip(old, shapes, strict=True)
+            tuple(value.shape)
+            in (shape, sharding_runtime.logical_cpml_shape(layout, term))
+            for value, shape, term in zip(old, shapes, terms, strict=True)
         ):
-            if all(np.dtype(value.dtype) == np.dtype(dtype) for value in old):
-                return old
-            converter = np.asarray if layout.enabled else jnp.asarray
-            return tuple(converter(value, dtype=dtype) for value in old)
+            return tuple(
+                sharding_runtime._pad_high_to_shape(
+                    # Host-created setup slabs stay on the host, but evolved
+                    # device slabs must not round-trip through NumPy at every
+                    # continuation boundary.
+                    (np.asarray if isinstance(value, np.ndarray) else jnp.asarray)(
+                        value, dtype=dtype
+                    ),
+                    shape,
+                    pad_value=0.0,
+                )
+                for value, shape in zip(old, shapes, strict=True)
+            )
         return tuple(zeros(shape, dtype) for shape in shapes)
 
     old_h = () if continuation is None else continuation.cpml_psi_h_terms
@@ -938,15 +1231,20 @@ def initial_program_state(
         monitor_values = {
             name: getattr(continuation, name) for name in monitor_runtime.MONITOR_FIELDS
         }
+    from beamz.simulation.dispersion import initial_polarization
+
     return SimulationState(
+        polarization=initial_polarization(program.dispersion, continuation)
+        if program.dispersion is not None
+        else (),
         ex=field("Ex"),
         ey=field("Ey"),
         ez=field("Ez"),
         hx=field("Hx"),
         hy=field("Hy"),
         hz=field("Hz"),
-        cpml_psi_h_terms=restore_psi(old_h, cpml.h_terms, field("Hx").dtype),
-        cpml_psi_e_terms=restore_psi(old_e, cpml.e_terms, field("Ez").dtype),
+        cpml_psi_h_terms=restore_psi(old_h, cpml.h_terms, field_dtype("Hx")),
+        cpml_psi_e_terms=restore_psi(old_e, cpml.e_terms, field_dtype("Ez")),
         **monitor_values,
         t=jnp.asarray(t, dtype=jnp.float32),
         current_step=jnp.asarray(current_step, dtype=jnp.int32),
@@ -993,7 +1291,18 @@ def run_program(
     compiled_scan = (
         cache.compiled_scan_donating if donate_state else cache.compiled_scan
     ) or build_program_scan(program, donate_state=donate_state)
-    return compiled_scan(state, coeffs)
+    return compiled_scan(*_execution_arguments(program, state, coeffs))
+
+
+def _execution_arguments(program, state, coeffs):
+    """Keep grid-sized ADE arrays out of the compiled loop's constant payload."""
+    if program.dispersion is not None and program.dispersion.coefficients:
+        return (
+            state,
+            coeffs,
+            tuple(record[1:] for record in program.dispersion.coefficients),
+        )
+    return state, coeffs
 
 
 def compile_program_execution(
@@ -1027,7 +1336,9 @@ def _compiled_program_execution(
     ) or build_program_scan(program, donate_state=donate_state)
     if ready:
         return compiled_scan
-    compiled = compiled_scan.lower(state, coeffs).compile()
+    compiled = compiled_scan.lower(
+        *_execution_arguments(program, state, coeffs)
+    ).compile()
     if donate_state:
         cache.compiled_scan_donating = compiled
         cache.executable_donating_ready = True
@@ -1150,7 +1461,7 @@ def _run_program_state_timed(
         program, state, coeffs, donate_state=donate_state
     )
     started = perf_counter()
-    state = executable(state, coeffs)
+    state = executable(*_execution_arguments(program, state, coeffs))
     state.ez.block_until_ready()
     runtime_s = max(perf_counter() - started, np.finfo(float).tiny)
     return sharding_runtime.crop_state(program, state), runtime_s
@@ -1187,7 +1498,9 @@ def compiled_xla_memory_analysis(
     coeffs = sharding_runtime.place_tree(program, program.coefficients)
     cache = execution_cache(program)
     compiled_scan = cache.compiled_scan or build_program_scan(program)
-    compiled = compiled_scan.lower(state, coeffs).compile()
+    compiled = compiled_scan.lower(
+        *_execution_arguments(program, state, coeffs)
+    ).compile()
     analysis = getattr(compiled, "memory_analysis", lambda: None)()
     if analysis is None:
         return {"available": False}
@@ -1250,6 +1563,7 @@ def run_simulation_program(
         simulation,
         runtime_fields=program.grid,
         monitor_results=_decode_monitor_results(simulation, program, state),
+        completed_steps=int(state.current_step),
         store_full_materials=store_full_materials,
         source_launch_powers=_compiled_source_launch_powers(
             program, len(simulation.sources)
@@ -1346,6 +1660,7 @@ def run_simulation_with_progress(
         simulation,
         runtime_fields=program.grid,
         monitor_results=_decode_monitor_results(simulation, program, state),
+        completed_steps=int(state.current_step),
         store_full_materials=store_full_materials,
         source_launch_powers=_compiled_source_launch_powers(
             program, len(simulation.sources)
@@ -1377,6 +1692,10 @@ def run_until_terminated(
         backend=backend,
         progress=progress,
     )
+    if first_program.grid.material_grid.dispersion:
+        raise ValueError(
+            "Automatic energy termination does not yet include dispersive material energy. Use a fixed run_time and check spectral convergence with advance()."
+        )
     monitor_names = _selected_monitor_names(first_program, policy)
     monitor_tolerance = (
         None if policy.monitor_change is None else float(policy.monitor_change)
@@ -1397,7 +1716,8 @@ def run_until_terminated(
     source_decay = _source_residual(source_activity, 0)
     successful_checks = growth_checks = 0
     reason = "time_limit"
-    last_run: SimulationRun | None = None
+    monitor_results: dict[str, MonitorResults] | None = None
+    program = first_program
     runtime_s = 0.0
     compiling = progress and not program_is_compiled(first_program, donate_state=True)
     if compiling:
@@ -1420,20 +1740,18 @@ def run_until_terminated(
                     progress=False,
                 )
             )
-            last_run = run_simulation_program(
-                simulation,
-                program,
-                state,
-                progress=False,
-                store_full_materials=store_full_materials,
-                monitor_steps=remaining,
-                donate_state=True,
-                performance=performance,
-                report_performance=False,
-            )
-            state = last_run.state
-            if last_run.results.performance is not None:
-                runtime_s += last_run.results.performance.runtime_s
+            if performance:
+                state, elapsed = _run_program_state_timed(
+                    program, state, monitor_steps=remaining, donate_state=True
+                )
+                runtime_s += elapsed
+            else:
+                state = _run_program_state(
+                    program, state, monitor_steps=remaining, donate_state=True
+                )
+            # Convergence uses raw acquisitions. Building a durable result here
+            # repeatedly normalizes the full source record and copies metadata.
+            monitor_results = _decode_monitor_results(simulation, program, state)
             current_step = int(state.current_step)
             if progress:
                 if compiling:
@@ -1449,7 +1767,7 @@ def run_until_terminated(
                 )
 
             energy, max_field, fields_finite = _field_diagnostics(state, terms)
-            current_monitor = _monitor_vectors(last_run.results, monitor_names)
+            current_monitor = _monitor_vectors(monitor_results, monitor_names)
             monitors_finite = all(
                 np.isfinite(value).all() for value in current_monitor.values()
             )
@@ -1501,7 +1819,7 @@ def run_until_terminated(
         if progress:
             _finish_inline_progress()
 
-    if last_run is None:
+    if monitor_results is None:
         raise RuntimeError("Automatic termination executed no simulation steps.")
     report = RunTermination(
         reason=reason,
@@ -1516,7 +1834,15 @@ def run_until_terminated(
         max_field=max_field,
         consecutive_checks=successful_checks,
     )
-    results = last_run.results
+    results = SimulationResults.from_run(
+        simulation,
+        runtime_fields=program.grid,
+        monitor_results=monitor_results,
+        store_full_materials=store_full_materials,
+        source_launch_powers=_compiled_source_launch_powers(
+            program, len(simulation.sources)
+        ),
+    )
     if reason == "converged":
         results = _complete_converged_dft_weights(results, simulation, first_program)
     stats = (

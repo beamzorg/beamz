@@ -16,7 +16,12 @@ pub(crate) struct ResolvedExtrusions {
 }
 
 impl ResolvedExtrusions {
+    #[cfg(test)]
     pub(crate) fn build(scene: &Scene) -> Option<Self> {
+        Self::build_with_identity(scene, false)
+    }
+
+    pub(crate) fn build_with_identity(scene: &Scene, preserve: bool) -> Option<Self> {
         let mut inputs = Vec::new();
         let mut heights = Vec::new();
         for object in &scene.objects {
@@ -39,11 +44,15 @@ impl ResolvedExtrusions {
                 continue;
             }
             // Material table aliases do not introduce physical boundaries.
-            let material_id = scene
-                .materials
-                .iter()
-                .position(|material| *material == scene.materials[object.material_id])
-                .unwrap();
+            let material_id = if preserve {
+                object.material_id
+            } else {
+                scene
+                    .materials
+                    .iter()
+                    .position(|material| *material == scene.materials[object.material_id])
+                    .unwrap()
+            };
             inputs.push((
                 object,
                 MultiPolygon(vec![polygon]),
@@ -58,14 +67,27 @@ impl ResolvedExtrusions {
                 .iter()
                 .flat_map(|(_, polygon, ..)| polygon.coords_iter()),
         );
+        // The overlay lattice cannot distinguish arbitrarily close input
+        // coordinates. Preserve thin layers through the original exact planar
+        // partition path instead of silently deleting them during Boolean ops.
+        if coordinates.axes.iter().any(|axis| {
+            axis.windows(2)
+                .any(|pair| pair[1] - pair[0] <= 2.0 * coordinates.tolerance)
+        }) {
+            return None;
+        }
         inputs.sort_by_key(|(object, ..)| (object.priority, object.id));
         heights.sort_by(f64::total_cmp);
         heights.dedup();
-        let background = scene
-            .materials
-            .iter()
-            .position(|material| *material == scene.materials[scene.background_material])
-            .unwrap();
+        let background = if preserve {
+            scene.background_material
+        } else {
+            scene
+                .materials
+                .iter()
+                .position(|material| *material == scene.materials[scene.background_material])
+                .unwrap()
+        };
         let empty = MultiPolygon::<f64>(vec![]);
         let mut layers = Vec::new();
         for height in heights.windows(2) {

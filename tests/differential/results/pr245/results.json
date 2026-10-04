@@ -1,0 +1,1173 @@
+{
+  "description": "Retained RTX3090 passive-SOI fields reprojected after withdrawing the extra modal normal-interpolation correction. Meshes, fields, source records, decay measurements and simulation runtimes are unchanged.",
+  "source_head_before_cleanup": "6069c57c0f96d5a64de8950178556050a6c1eefd",
+  "hardware": "Local NVIDIA GeForce RTX 3090; float32 fields; cuda_streamed",
+  "protocol": {
+    "wavelength_um": 1.55,
+    "bandwidth_nm": 20,
+    "frequency_samples": 6,
+    "field_decay_gate": 1e-05,
+    "selected_output_bound": 1.02,
+    "geometry": "Pinned reference polygons and ports; no acceptance thresholds changed",
+    "material_limit": "Nondispersive indices evaluated at 1550 nm; commercial references use fitted dispersive models",
+    "modal_projection": "Established power-normalized modal basis without extra normal-interpolation factors"
+  },
+  "runs": [
+    {
+      "device": "mmi2x2",
+      "ppw": 6,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "24e4508f2d0826a01b20b6ef018072fc17238a5a",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        458,
+        86,
+        27
+      ],
+      "cells": 1063476,
+      "run_time_ps": 3.40235377102115,
+      "backend": "cuda_streamed",
+      "termination": {
+        "reason": "converged",
+        "steps": 24216,
+        "time": 3.4025378001234508e-12,
+        "converged": true,
+        "field_decay": 2.14106263369631e-09,
+        "monitor_change": null,
+        "source_decay": 0.0,
+        "energy": 2.580824343567656e-22,
+        "peak_energy": 1.2053941360473633e-13,
+        "max_field": 2737.129638671875,
+        "consecutive_checks": 1
+      },
+      "performance": {
+        "runtime_s": 5.672817340353504,
+        "cells": 1063476,
+        "steps": 24216
+      },
+      "reference": {
+        "same_ppw_range": [
+          0.358,
+          0.376
+        ],
+        "same_ppw_agreement": true,
+        "converged_range": [
+          0.478,
+          0.49
+        ],
+        "reference_eligible": false,
+        "reference_agreement": null,
+        "mesh_convergence_established": false
+      },
+      "selected_output_max": 0.8152143710085662,
+      "peak_host_rss_mib": 2923.6484375,
+      "peak_jax_device_bytes_in_use": 527710464,
+      "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
+      "monitor_data_sha256": "468a523ae26da47c45ca65f78a5739d733802b59a473b887308fbcd34eae472f",
+      "maximum_input_reflection": 0.0023044356909905253,
+      "source_record_hashes": {
+        "source_time_s": "a98bc1008d2ed153794c135b2821e3f18e46d7c0ddc00197452e7eda5c650a67",
+        "source_signal": "15b97cc955eed6fc1118fc531d24a91035f2c88c5ddca29428907890d368412d",
+        "source_quadrature": "c667bd97a47bc0b62ef50ff2f84f21b1f5ad87d88d23f3768b17991323f834dc"
+      },
+      "power_at_1550nm": {
+        "o3": 0.37445827348504074,
+        "o4": 0.42474226575596175
+      },
+      "sampled_wavelength_um": 1.55,
+      "field_decay_passed": true,
+      "selected_output_passed": true,
+      "run_id": "mmi-6",
+      "raw_directory": "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/mmi-6",
+      "compact_spectra_sha256": "3197f9381ac9e05a49d4b7acaa04c864b9fb036f043d94243d31fe6091f3b0c0",
+      "published_same_ppw": {
+        "lumerical": 0.376,
+        "tidy3d": 0.358,
+        "source": "prose"
+      },
+      "target_mode_power": 0.37445827348504074,
+      "spectra_file": "spectra/mmi-6.npz",
+      "analysis": {
+        "commit": "a7e67c96145b12e3cc06936fdbc67fccec8116fe",
+        "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/reprojected/mmi-6",
+        "projection": "established power-normalized basis; no extra normal-interpolation factors",
+        "previous_corrected_projection_power_error": 0.0
+      }
+    },
+    {
+      "device": "mmi2x2",
+      "ppw": 10,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        763,
+        139,
+        43
+      ],
+      "cells": 4560451,
+      "run_time_ps": 3.40235377102115,
+      "backend": "cuda_streamed",
+      "termination": {
+        "reason": "converged",
+        "steps": 40313,
+        "time": 3.402411815831008e-12,
+        "converged": true,
+        "field_decay": 9.742280117354056e-10,
+        "monitor_change": null,
+        "source_decay": 0.0,
+        "energy": 1.1327994286602916e-22,
+        "peak_energy": 1.162766226196289e-13,
+        "max_field": 2316.216064453125,
+        "consecutive_checks": 1
+      },
+      "performance": {
+        "runtime_s": 34.00392565818038,
+        "cells": 4560451,
+        "steps": 40313
+      },
+      "reference": {
+        "same_ppw_range": [
+          0.459,
+          0.46
+        ],
+        "same_ppw_agreement": true,
+        "converged_range": [
+          0.478,
+          0.49
+        ],
+        "reference_eligible": false,
+        "reference_agreement": null,
+        "mesh_convergence_established": false
+      },
+      "selected_output_max": 0.961640630661927,
+      "peak_host_rss_mib": 4899.765625,
+      "peak_jax_device_bytes_in_use": 2122257152,
+      "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
+      "monitor_data_sha256": "b5c722aaf440652c508bd496e9bc9f841546ab58b454a0e3ca2b0a9ee031fcab",
+      "maximum_input_reflection": 0.0005574626215397446,
+      "source_record_hashes": {
+        "source_time_s": "8e790b9222582d35597f76ea6bd2eebd3a7c921817c75bb28e2d2f725dded476",
+        "source_signal": "72aa42742c6a907e5e1c5cd7c22dd2e31736d45085a95e494a087d2c0e540565",
+        "source_quadrature": "f4fa69b1045c58e42b323263d989d21a599624c44adf054ee4e88df045d0f0e5"
+      },
+      "power_at_1550nm": {
+        "o3": 0.45986512819637815,
+        "o4": 0.49166123185505795
+      },
+      "sampled_wavelength_um": 1.55,
+      "field_decay_passed": true,
+      "selected_output_passed": true,
+      "run_id": "mmi-10",
+      "raw_directory": "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/mmi-10",
+      "compact_spectra_sha256": "de76cc508568712ab1880fc1059bbf03ba0dc9f1d81a6681ccd40b71fc693ffe",
+      "published_same_ppw": {
+        "lumerical": 0.459,
+        "tidy3d": 0.46,
+        "source": "figure_digitized"
+      },
+      "target_mode_power": 0.45986512819637815,
+      "spectra_file": "spectra/mmi-10.npz",
+      "analysis": {
+        "commit": "a7e67c96145b12e3cc06936fdbc67fccec8116fe",
+        "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/reprojected/mmi-10",
+        "projection": "established power-normalized basis; no extra normal-interpolation factors",
+        "previous_corrected_projection_power_error": 0.0
+      }
+    },
+    {
+      "device": "mmi2x2",
+      "ppw": 15,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "d91731cd36853ee356692fc9d1da9c8421e2351d",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        1144,
+        207,
+        63
+      ],
+      "cells": 14918904,
+      "run_time_ps": 3.40235377102115,
+      "backend": "cuda_streamed",
+      "termination": {
+        "reason": "converged",
+        "steps": 61792,
+        "time": 3.4023881802236478e-12,
+        "converged": true,
+        "field_decay": 6.275807560016679e-10,
+        "monitor_change": null,
+        "source_decay": 0.0,
+        "energy": 7.208074521258822e-23,
+        "peak_energy": 1.1485493225097657e-13,
+        "max_field": 2102.97021484375,
+        "consecutive_checks": 1
+      },
+      "performance": {
+        "runtime_s": 172.1941161050927,
+        "cells": 14918904,
+        "steps": 61792
+      },
+      "reference": {
+        "same_ppw_range": [
+          0.479,
+          0.483
+        ],
+        "same_ppw_agreement": true,
+        "converged_range": [
+          0.478,
+          0.49
+        ],
+        "reference_eligible": true,
+        "reference_agreement": true,
+        "mesh_convergence_established": false
+      },
+      "selected_output_max": 0.9748291970007192,
+      "peak_host_rss_mib": 10634.78125,
+      "peak_jax_device_bytes_in_use": 5142538752,
+      "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
+      "monitor_data_sha256": "c6778a323cc1b07616d4cb9db4d1a346749680d07e7e0119409fc65164365318",
+      "maximum_input_reflection": 0.00013624017157931788,
+      "source_record_hashes": {
+        "source_time_s": "80236793eb5bc7f182b81bbdfbe724661c9638ec46af7e5eecc6dd266e456f28",
+        "source_signal": "3e94be5dcee0a424f0bd88d6ac671f26457427a187e92ece99fcecf85f5d92fb",
+        "source_quadrature": "b593645ba06b1e7ee3aa882d70c0f52af7ff24c5266b64d591441fde20fdcc86"
+      },
+      "power_at_1550nm": {
+        "o3": 0.48037660457757825,
+        "o4": 0.4872996151272943
+      },
+      "sampled_wavelength_um": 1.55,
+      "field_decay_passed": true,
+      "selected_output_passed": true,
+      "run_id": "mmi-15-reused",
+      "raw_directory": "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/mmi-15-reused",
+      "compact_spectra_sha256": "2787e4891743664ec3cbfe8a4c9da9674e7e98ed1a4ecdceada8d8224ff83e47",
+      "published_same_ppw": {
+        "lumerical": 0.483,
+        "tidy3d": 0.479,
+        "source": "prose_and_figure_digitized"
+      },
+      "target_mode_power": 0.48037660457757825,
+      "spectra_file": "spectra/mmi-15-reused.npz",
+      "analysis": {
+        "commit": "a7e67c96145b12e3cc06936fdbc67fccec8116fe",
+        "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/reprojected/mmi-15-reused",
+        "projection": "established power-normalized basis; no extra normal-interpolation factors",
+        "previous_corrected_projection_power_error": 0.0
+      }
+    },
+    {
+      "device": "mmi2x2",
+      "ppw": 20,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "652d0d064d48bea1388e46c9fda6998101a42be7",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        1526,
+        275,
+        84
+      ],
+      "cells": 35250600,
+      "run_time_ps": 3.40235377102115,
+      "backend": "cuda_streamed",
+      "termination": {
+        "reason": "converged",
+        "steps": 80507,
+        "time": 3.402405310617973e-12,
+        "converged": true,
+        "field_decay": 5.164330843275384e-10,
+        "monitor_change": null,
+        "source_decay": 0.0,
+        "energy": 5.890461622470866e-23,
+        "peak_energy": 1.1406050079345703e-13,
+        "max_field": 2013.3748779296875,
+        "consecutive_checks": 1
+      },
+      "performance": {
+        "runtime_s": 519.451762996614,
+        "cells": 35250600,
+        "steps": 80507
+      },
+      "reference": {
+        "same_ppw_range": [
+          0.484,
+          0.486
+        ],
+        "same_ppw_agreement": true,
+        "converged_range": [
+          0.478,
+          0.49
+        ],
+        "reference_eligible": true,
+        "reference_agreement": true,
+        "mesh_convergence_established": false
+      },
+      "selected_output_max": 0.9773859894564791,
+      "peak_host_rss_mib": 19052.296875,
+      "peak_jax_device_bytes_in_use": 11720537344,
+      "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
+      "monitor_data_sha256": "4953eac99e059f9bed674eec355f4aacc5567898185b240506c6cff3d9d964d9",
+      "maximum_input_reflection": 0.00011922242946692047,
+      "source_record_hashes": {
+        "source_time_s": "e095d9832895a6165efab34940f63bb863f3d9be7c5aa6a578f81fd92377ed9a",
+        "source_signal": "72d9b67254cb26b63e7f95b8cb9212077ac498f8e157165d52d9d770cf1bb571",
+        "source_quadrature": "944fba41f8fb3b13a79e03fb754d1f626a073ad4c5a766829811703367c2e910"
+      },
+      "power_at_1550nm": {
+        "o3": 0.4853491658361998,
+        "o4": 0.48623654739613464
+      },
+      "sampled_wavelength_um": 1.55,
+      "field_decay_passed": true,
+      "selected_output_passed": true,
+      "run_id": "mmi-20-headroom",
+      "raw_directory": "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/mmi-20-headroom",
+      "compact_spectra_sha256": "fd44d1a7de45a75ec75da033fe37b3c6d2a223d9d5832b5db87c01b099131655",
+      "published_same_ppw": {
+        "lumerical": 0.486,
+        "tidy3d": 0.484,
+        "source": "figure_digitized"
+      },
+      "target_mode_power": 0.4853491658361998,
+      "spectra_file": "spectra/mmi-20-headroom.npz",
+      "analysis": {
+        "commit": "a7e67c96145b12e3cc06936fdbc67fccec8116fe",
+        "patch_sha256": "6eba83bf11777f2f2b8e0442a9505c64359d726b01f77231c8c318f10876a7de",
+        "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/reprojected/mmi-20-headroom",
+        "projection": "established power-normalized basis; no extra normal-interpolation factors",
+        "previous_corrected_projection_power_error": 0.0,
+        "patch_scope": "Notebook execution harness only; production projection and reprojection script clean."
+      }
+    },
+    {
+      "device": "mode_converter",
+      "ppw": 6,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "24e4508f2d0826a01b20b6ef018072fc17238a5a",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        971,
+        123,
+        27
+      ],
+      "cells": 3224691,
+      "run_time_ps": 7.204984456280084,
+      "backend": "cuda_streamed",
+      "termination": {
+        "reason": "converged",
+        "steps": 61005,
+        "time": 7.205108905339319e-12,
+        "converged": true,
+        "field_decay": 2.495313986971247e-07,
+        "monitor_change": null,
+        "source_decay": 0.0,
+        "energy": 3.032283300021662e-20,
+        "peak_energy": 1.2151910805029293e-13,
+        "max_field": 31779.34765625,
+        "consecutive_checks": 1
+      },
+      "performance": {
+        "runtime_s": 35.64574587577954,
+        "cells": 3224691,
+        "steps": 61005
+      },
+      "reference": {
+        "same_ppw_range": [
+          0.357,
+          0.967
+        ],
+        "same_ppw_agreement": false,
+        "converged_range": [
+          0.429,
+          0.514
+        ],
+        "reference_eligible": false,
+        "reference_agreement": null,
+        "mesh_convergence_established": false
+      },
+      "selected_output_max": 1.0018424786939522,
+      "peak_host_rss_mib": 4984.52734375,
+      "peak_jax_device_bytes_in_use": 1796484864,
+      "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
+      "monitor_data_sha256": "44cb5df18eda372f48890192956a01ab7993393a254dff7070d06e6a61e46973",
+      "maximum_input_reflection": 0.09249799605208024,
+      "source_record_hashes": {
+        "source_time_s": "9e3bbb14cfd03c4ae2246ee723f808117d0bf0e60cc60c16f96843be750cfe06",
+        "source_signal": "1520168fdba1d3100f740449fc937509ab86fbd3d750b7573a6dea28f7d0ac27",
+        "source_quadrature": "9d0ca72c38eb55f1fa3f65c44e1c461bbe6610189c82d0487e84084d2186f4e8"
+      },
+      "power_at_1550nm": {
+        "o4": 0.781708824462276,
+        "conversion": 0.21841635971954806,
+        "crosstalk": 3.767294230923257e-05
+      },
+      "sampled_wavelength_um": 1.55,
+      "field_decay_passed": true,
+      "selected_output_passed": true,
+      "run_id": "converter-6",
+      "raw_directory": "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/converter-6",
+      "compact_spectra_sha256": "9bc3193296973154b1025857467fc9f3f9a51484a95b1c5ca7ecb5773994534c",
+      "published_same_ppw": {
+        "lumerical": 0.967,
+        "tidy3d": 0.357
+      },
+      "target_mode_power": 0.21841635971954806,
+      "spectra_file": "spectra/converter-6.npz",
+      "analysis": {
+        "commit": "a7e67c96145b12e3cc06936fdbc67fccec8116fe",
+        "patch_sha256": "6eba83bf11777f2f2b8e0442a9505c64359d726b01f77231c8c318f10876a7de",
+        "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/reprojected/converter-6",
+        "projection": "established power-normalized basis; no extra normal-interpolation factors",
+        "previous_corrected_projection_power_error": 0.0,
+        "patch_scope": "Notebook execution harness only; production projection and reprojection script clean."
+      }
+    },
+    {
+      "device": "mode_converter",
+      "ppw": 10,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        1616,
+        200,
+        43
+      ],
+      "cells": 13897600,
+      "run_time_ps": 7.204984456280084,
+      "backend": "cuda_streamed",
+      "termination": {
+        "reason": "converged",
+        "steps": 85448,
+        "time": 7.205055128911564e-12,
+        "converged": true,
+        "field_decay": 4.067890935810258e-08,
+        "monitor_change": null,
+        "source_decay": 0.0,
+        "energy": 4.753784090236876e-21,
+        "peak_energy": 1.1686114906347653e-13,
+        "max_field": 12912.6201171875,
+        "consecutive_checks": 1
+      },
+      "performance": {
+        "runtime_s": 208.75028898089658,
+        "cells": 13897600,
+        "steps": 85448
+      },
+      "reference": {
+        "same_ppw_range": [
+          0.26,
+          0.512
+        ],
+        "same_ppw_agreement": true,
+        "converged_range": [
+          0.429,
+          0.514
+        ],
+        "reference_eligible": false,
+        "reference_agreement": null,
+        "mesh_convergence_established": false
+      },
+      "selected_output_max": 1.004418912892816,
+      "peak_host_rss_mib": 12230.4140625,
+      "peak_jax_device_bytes_in_use": 7456303104,
+      "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
+      "monitor_data_sha256": "7455f7e726ede93cb63db7e4a8e482f81212d10e750ee7d9824c8c3e579ffa54",
+      "maximum_input_reflection": 0.06294203716167192,
+      "source_record_hashes": {
+        "source_time_s": "c794931880f18c7d57abc5121cef048dace7462fd2903b563cf6558ef32cbbe2",
+        "source_signal": "a00633b3f44c97854f581f217141c865416c61b0e43930f6d3ac4771a6cad4db",
+        "source_quadrature": "5e419f699e64a7a21fcf058009db5b969ea43123e0ffacfde917545972a15b12"
+      },
+      "power_at_1550nm": {
+        "o4": 0.707950563781504,
+        "conversion": 0.2897010328165821,
+        "crosstalk": 0.00015735686755431982
+      },
+      "sampled_wavelength_um": 1.55,
+      "field_decay_passed": true,
+      "selected_output_passed": true,
+      "run_id": "converter-10",
+      "raw_directory": "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/converter-10",
+      "compact_spectra_sha256": "18204664e6c7fe1b03c430f755e3812f37deee2f95d6ed4e3706053aa80c0d3b",
+      "published_same_ppw": {
+        "lumerical": 0.512,
+        "tidy3d": 0.26
+      },
+      "target_mode_power": 0.2897010328165821,
+      "spectra_file": "spectra/converter-10.npz",
+      "analysis": {
+        "commit": "a7e67c96145b12e3cc06936fdbc67fccec8116fe",
+        "patch_sha256": "6eba83bf11777f2f2b8e0442a9505c64359d726b01f77231c8c318f10876a7de",
+        "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/reprojected/converter-10",
+        "projection": "established power-normalized basis; no extra normal-interpolation factors",
+        "previous_corrected_projection_power_error": 0.0,
+        "patch_scope": "Notebook execution harness only; production projection and reprojection script clean."
+      }
+    },
+    {
+      "device": "mode_converter",
+      "ppw": 15,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "c5907b6e5b635fd63c25e673feab462aadf6ad6f",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        2424,
+        300,
+        63
+      ],
+      "cells": 45813600,
+      "run_time_ps": 7.204984456280084,
+      "backend": "cuda_streamed",
+      "termination": {
+        "reason": "converged",
+        "steps": 139228,
+        "time": 7.205028674378555e-12,
+        "converged": true,
+        "field_decay": 1.1940939820851276e-08,
+        "monitor_change": null,
+        "source_decay": 0.0,
+        "energy": 1.3674731617138602e-21,
+        "peak_energy": 1.145197264394531e-13,
+        "max_field": 4972.6318359375,
+        "consecutive_checks": 1
+      },
+      "performance": {
+        "runtime_s": 1107.6525372241158,
+        "cells": 45813600,
+        "steps": 139228
+      },
+      "reference": {
+        "same_ppw_range": [
+          0.443,
+          0.492
+        ],
+        "same_ppw_agreement": true,
+        "converged_range": [
+          0.429,
+          0.514
+        ],
+        "reference_eligible": true,
+        "reference_agreement": true,
+        "mesh_convergence_established": false
+      },
+      "selected_output_max": 1.0003881096829412,
+      "peak_host_rss_mib": 25652.4453125,
+      "peak_jax_device_bytes_in_use": 17063682816,
+      "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
+      "monitor_data_sha256": "b0cce99ea001d2e1e95c3242f431bf70dc591e14d60e79f4092fc98f661485e4",
+      "maximum_input_reflection": 0.04149955946753213,
+      "source_record_hashes": {
+        "source_time_s": "52f886ba446ff9911f81166d4df30b4214f6f855d274f35dceef948a0bee3a74",
+        "source_signal": "428a1ee778b0ae6f607fbc23113b2c915db902f0869d3bd069962361020b40e6",
+        "source_quadrature": "3b3d0473fd53450c1c07256694d35f1087280d8b52be9f7f2419893ebe2dd52e"
+      },
+      "power_at_1550nm": {
+        "o4": 0.5413300469212495,
+        "conversion": 0.45858979551176465,
+        "crosstalk": 0.00019264840972951363
+      },
+      "sampled_wavelength_um": 1.55,
+      "field_decay_passed": true,
+      "selected_output_passed": true,
+      "run_id": "converter-15-final-headroom",
+      "raw_directory": "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/converter-15-final-headroom",
+      "compact_spectra_sha256": "4e5f63e2ede21c816e5bef2eb767f222400e752658c14e9709ac82f037b3ab19",
+      "published_same_ppw": {
+        "lumerical": 0.443,
+        "tidy3d": 0.492
+      },
+      "target_mode_power": 0.45858979551176465,
+      "spectra_file": "spectra/converter-15-final-headroom.npz",
+      "analysis": {
+        "commit": "f39a95ac35138653ebefd640be7c5bd714b4cc8e",
+        "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/reprojected/converter-15-final-headroom",
+        "projection": "established power-normalized basis; no extra normal-interpolation factors",
+        "previous_corrected_projection_power_error": 0.0
+      }
+    },
+    {
+      "device": "polarization_splitter_rotator",
+      "ppw": 6,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "24e4508f2d0826a01b20b6ef018072fc17238a5a",
+      "working_tree_patch_sha256": "53568b4a3453f413f2ac86fd64bb30a7d289c3e455410b331599100fbaea1769",
+      "grid_shape": [
+        986,
+        109,
+        31
+      ],
+      "cells": 3331694,
+      "run_time_ps": 7.32476732286574,
+      "backend": "cuda_streamed",
+      "termination": {
+        "reason": "converged",
+        "steps": 53249,
+        "time": 7.324946205145011e-12,
+        "converged": true,
+        "field_decay": 1.1233221081315045e-08,
+        "monitor_change": null,
+        "source_decay": 0.0,
+        "energy": 1.2992537381575926e-21,
+        "peak_energy": 1.156617259424126e-13,
+        "max_field": 5797.9580078125,
+        "consecutive_checks": 1
+      },
+      "performance": {
+        "runtime_s": 32.866296313586645,
+        "cells": 3331694,
+        "steps": 53249
+      },
+      "reference": {
+        "same_ppw_range": [
+          0.051,
+          0.147
+        ],
+        "same_ppw_agreement": false,
+        "converged_range": [
+          0.946,
+          0.952
+        ],
+        "reference_eligible": false,
+        "reference_agreement": null,
+        "mesh_convergence_established": false
+      },
+      "selected_output_max": 0.8252836714857185,
+      "peak_host_rss_mib": 4389.26953125,
+      "peak_jax_device_bytes_in_use": 1556975360,
+      "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
+      "monitor_data_sha256": "e43a3e8278370154150fd1f57923cb83ded9220b6069ed5419b5cf943146c989",
+      "maximum_input_reflection": 0.0010074740681880819,
+      "source_record_hashes": {
+        "source_time_s": "10ce5346f3bae8f92a6b06cffe11567a74797b6e9c179efa551a29a1d6b79187",
+        "source_signal": "c29a97ec087a16052c6d6d6052ae8f0a2eff41b40514584da05a853012af422b",
+        "source_quadrature": "6032cb72304c8107c0616719e06347a983ccb40b51d695b01a93f883eb0aed6f"
+      },
+      "power_at_1550nm": {
+        "o3": 0.0005705340711681182,
+        "conversion": 0.8246909335957624,
+        "crosstalk": 2.118901271288569e-05
+      },
+      "sampled_wavelength_um": 1.55,
+      "field_decay_passed": true,
+      "selected_output_passed": true,
+      "run_id": "psr-6",
+      "raw_directory": "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/psr-6",
+      "compact_spectra_sha256": "419be6adde6b4fbce070b1e7dcdff8005b40c1c8e5f59115d745a47c894d2c21",
+      "published_same_ppw": {
+        "lumerical": 0.147,
+        "tidy3d": 0.051
+      },
+      "target_mode_power": 0.8246909335957624,
+      "spectra_file": "spectra/psr-6.npz",
+      "source_patch_file": "source-patches/psr-6.patch.gz",
+      "analysis": {
+        "commit": "f39a95ac35138653ebefd640be7c5bd714b4cc8e",
+        "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/reprojected/psr-6",
+        "projection": "established power-normalized basis; no extra normal-interpolation factors",
+        "previous_corrected_projection_power_error": 0.0
+      }
+    },
+    {
+      "device": "polarization_splitter_rotator",
+      "ppw": 10,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        1642,
+        179,
+        49
+      ],
+      "cells": 14401982,
+      "run_time_ps": 7.32476732286574,
+      "backend": "cuda_streamed",
+      "termination": {
+        "reason": "converged",
+        "steps": 87731,
+        "time": 7.324868142588592e-12,
+        "converged": true,
+        "field_decay": 9.462032774930572e-09,
+        "monitor_change": null,
+        "source_decay": 0.0,
+        "energy": 1.080297486530421e-21,
+        "peak_energy": 1.1417181827911686e-13,
+        "max_field": 5741.896484375,
+        "consecutive_checks": 1
+      },
+      "performance": {
+        "runtime_s": 234.95320788922254,
+        "cells": 14401982,
+        "steps": 87731
+      },
+      "reference": {
+        "same_ppw_range": [
+          0.0,
+          0.62
+        ],
+        "same_ppw_agreement": false,
+        "converged_range": [
+          0.946,
+          0.952
+        ],
+        "reference_eligible": false,
+        "reference_agreement": null,
+        "mesh_convergence_established": false
+      },
+      "selected_output_max": 0.8996854285641985,
+      "peak_host_rss_mib": 9812.58984375,
+      "peak_jax_device_bytes_in_use": 6650090496,
+      "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
+      "monitor_data_sha256": "ceefb73f87971e9f83e56e25029daad031ada261524c3f828f5cac0991346ffb",
+      "maximum_input_reflection": 9.8264288719555e-05,
+      "source_record_hashes": {
+        "source_time_s": "5aa5e86d80c58038c63873685365c231be3142709a1aca86ad24d4f884f1db2d",
+        "source_signal": "11209b37999e4b9ee16db20c5e23538ffc10c3c3c560198d24954a36dd71d707",
+        "source_quadrature": "90d756d320aa8ad269f22de112a24899939afad272e0c9ad337d7f3989c31ed1"
+      },
+      "power_at_1550nm": {
+        "o3": 0.0006609672114817734,
+        "conversion": 0.8813053128749339,
+        "crosstalk": 1.4211118409732365e-05
+      },
+      "sampled_wavelength_um": 1.55,
+      "field_decay_passed": true,
+      "selected_output_passed": true,
+      "run_id": "psr-10",
+      "raw_directory": "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/psr-10",
+      "compact_spectra_sha256": "03613f4945b6a865ea79d1385dca6401934d1f33f3784367a2d62ba916f7c863",
+      "published_same_ppw": {
+        "lumerical": 0.0,
+        "tidy3d": 0.62
+      },
+      "target_mode_power": 0.8813053128749339,
+      "spectra_file": "spectra/psr-10.npz",
+      "analysis": {
+        "commit": "f39a95ac35138653ebefd640be7c5bd714b4cc8e",
+        "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/reprojected/psr-10",
+        "projection": "established power-normalized basis; no extra normal-interpolation factors",
+        "previous_corrected_projection_power_error": 0.0
+      }
+    },
+    {
+      "device": "polarization_splitter_rotator",
+      "ppw": 15,
+      "options": {
+        "run_time_ps": null,
+        "monitor_offset_um": null,
+        "boundary_thickness_um": 1.0,
+        "transverse_span_um": null,
+        "source_profiles": null,
+        "wavelength_step_nm": null,
+        "exact_center": true,
+        "smoothing": "farjadpour_diagonal",
+        "port_extension_policy": "reference"
+      },
+      "frozen_grid": null,
+      "commit": "652d0d064d48bea1388e46c9fda6998101a42be7",
+      "working_tree_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "grid_shape": [
+        2464,
+        268,
+        72
+      ],
+      "cells": 47545344,
+      "run_time_ps": 7.32476732286574,
+      "backend": "cuda_streamed",
+      "termination": {
+        "reason": "converged",
+        "steps": 133876,
+        "time": 7.324811764075623e-12,
+        "converged": true,
+        "field_decay": 8.457353968932049e-09,
+        "monitor_change": null,
+        "source_decay": 0.0,
+        "energy": 9.613248626094682e-22,
+        "peak_energy": 1.1366733213968332e-13,
+        "max_field": 5677.88134765625,
+        "consecutive_checks": 1
+      },
+      "performance": {
+        "runtime_s": 1044.3381430925801,
+        "cells": 47545344,
+        "steps": 133876
+      },
+      "reference": {
+        "same_ppw_range": [
+          0.901,
+          0.94
+        ],
+        "same_ppw_agreement": true,
+        "converged_range": [
+          0.946,
+          0.952
+        ],
+        "reference_eligible": false,
+        "reference_agreement": null,
+        "mesh_convergence_established": false
+      },
+      "selected_output_max": 0.9171162805312303,
+      "peak_host_rss_mib": 24010.87890625,
+      "peak_jax_device_bytes_in_use": 15609045248,
+      "device_memory_scope": "JAX allocator only; excludes native CUDA allocations",
+      "monitor_data_sha256": "11c98a5b64e76811938530ed85f75e4e72c51567b75024971c70f78def5df9a1",
+      "maximum_input_reflection": 6.290752143103642e-05,
+      "source_record_hashes": {
+        "source_time_s": "b32ea92f4eb5592abc0d41e12fc4c05ff689b6806c9b0f7ca9ef84f51b73f73c",
+        "source_signal": "9d2d2ba88772eb622f5c1c32890b1a9ba070cb62362faa5c8a3ac7e45e566a63",
+        "source_quadrature": "88ad5f2ebb697db5b67191123f8ea84e93272f756c4b3a8cce556715b3ac3896"
+      },
+      "power_at_1550nm": {
+        "o3": 0.0006829028508633301,
+        "conversion": 0.9084588875244383,
+        "crosstalk": 0.0007825849439818993
+      },
+      "sampled_wavelength_um": 1.55,
+      "field_decay_passed": true,
+      "selected_output_passed": true,
+      "run_id": "psr-15-headroom",
+      "raw_directory": "/home/quentinwach/.t3/worktrees/beamz/t3code-f89970d7/validation-artifacts/pr245-main-refresh/psr-15-headroom",
+      "compact_spectra_sha256": "341046c5e1671bf856ce4e5d2c0d9e40dcf7bfbd9952238c86147d5afabdee36",
+      "published_same_ppw": {
+        "lumerical": 0.94,
+        "tidy3d": 0.901
+      },
+      "target_mode_power": 0.9084588875244383,
+      "spectra_file": "spectra/psr-15-headroom.npz",
+      "analysis": {
+        "commit": "f39a95ac35138653ebefd640be7c5bd714b4cc8e",
+        "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/reprojected/psr-15-headroom",
+        "projection": "established power-normalized basis; no extra normal-interpolation factors",
+        "previous_corrected_projection_power_error": 0.0
+      }
+    }
+  ],
+  "material_preparation_reuse_control": {
+    "before_commit": "65a3ff695b2f3f3d1fdfa10790cc397aea38506b",
+    "after_commit": "d91731cd36853ee356692fc9d1da9c8421e2351d",
+    "before_run": "mmi-15",
+    "after_run": "mmi-15-reused",
+    "identical_raw_monitor_artifact": true,
+    "monitor_data_sha256": "c6778a323cc1b07616d4cb9db4d1a346749680d07e7e0119409fc65164365318",
+    "before_host_rss_mib": 10248.6640625,
+    "after_host_rss_mib": 10634.78125,
+    "before_jax_peak_bytes": 6783459584,
+    "after_jax_peak_bytes": 5142538752,
+    "jax_peak_reduction_fraction": 0.2419002887362084,
+    "before_runtime_s": 172.23119140369818,
+    "after_runtime_s": 172.1941161050927,
+    "before_wall_s": 347.3020668029785,
+    "after_wall_s": 259.75833678245544,
+    "notes": [
+      "Same RTX 3090, geometry, source record, frequencies, and configured duration.",
+      "Raw artifact hashes include all retained complex DFT fields and modal diagnostics.",
+      "One sample per revision; descriptive timing, not a controlled repeated performance gate.",
+      "JAX allocation statistics omit native CUDA allocations; host peak did not improve."
+    ]
+  },
+  "analysis_control": {
+    "previous_projection_commit": "a0ef9b8625d098ac99c602095b9ef8fed082e1e9",
+    "verified_runs": 10,
+    "maximum_previous_corrected_power_reconstruction_error": 0.0,
+    "new_fdtd_runs": false,
+    "raw_monitor_flux_and_grid_arrays_unchanged": true
+  },
+  "validation": {
+    "cpu": {
+      "passed": 63,
+      "hardware_deselected": 3,
+      "runtime_s": 37.09,
+      "files": [
+        "tests/differential/test_mmi2x2.py",
+        "tests/differential/test_mode_conversion.py",
+        "tests/unit/test_passive_soi_experiments.py",
+        "tests/unit/test_passive_soi_layout.py",
+        "tests/unit/test_dense_preparation_reuse.py",
+        "tests/integration/test_monitor_clock.py",
+        "tests/integration/test_mode_source_integration.py",
+        "tests/integration/test_modal_sparams.py",
+        "tests/unit/modes/test_public_contracts.py",
+        "tests/validation/invariants/test_automatic_termination.py"
+      ]
+    },
+    "cuda": {
+      "passed": 7,
+      "deselected": 351,
+      "runtime_s": 14.7,
+      "command": "pytest -q tests/hardware/test_cuda_backends.py -k 'continuation_preserves_absolute_dft_clock or matches_jax_complete_state or matches_jax_on_nonuniform_grids'"
+    },
+    "notebooks": {
+      "modal": {
+        "source_notebook_sha256": "8022c0ccbeda914218f1455744174b761e602bebd58eaea4bb56981253e21574",
+        "runs": {
+          "cuda": {
+            "backend": "cuda_streamed",
+            "executing_commit": "a7e67c96145b12e3cc06936fdbc67fccec8116fe",
+            "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/notebooks/modal-cuda",
+            "arrays_sha256": "50432163bd0b3879c14797533cf21ffc24f43fa3143bf6e02ffdfde73a3b93ef",
+            "all_code_cells_completed": true,
+            "code_cells": 15,
+            "raw_fields_and_flux_bitwise_unchanged_from_corrected_run": true
+          },
+          "jax": {
+            "backend": "jax",
+            "executing_commit": "f39a95ac35138653ebefd640be7c5bd714b4cc8e",
+            "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/notebooks/modal-jax",
+            "arrays_sha256": "9826824c90a521169aa609b37101f68fd6da40ceb5a53c1a17752b504d6e6974",
+            "all_code_cells_completed": true,
+            "code_cells": 15,
+            "raw_fields_and_flux_bitwise_unchanged_from_corrected_run": true
+          }
+        },
+        "observables": {
+          "wavelength_um": 1.55,
+          "effective_indices": [
+            2.3221257144434118,
+            1.5339739992604229,
+            1.3666551619248322
+          ],
+          "single_profile_forward_powers_W": [
+            0.999566935755172,
+            1.0126683903373756e-07,
+            5.586668564198479e-09
+          ],
+          "broadband_forward_powers_W": [
+            0.9999991712377092,
+            1.0134150973812726e-07,
+            5.5907732486018e-09
+          ],
+          "junction_forward_powers_W": [
+            0.7108461446410926,
+            1.0042588527144409e-15,
+            0.24955501377047612
+          ]
+        },
+        "comparison_rule": "abs(candidate-reference) <= 1e-6 * max(abs(reference_array)) + 3e-5 * abs(reference); same peak-scaled rule as the previous modal notebook review, with no fixed absolute floor.",
+        "comparisons": {
+          "previous_cuda": {
+            "passed_arrays": 34,
+            "total_arrays": 37,
+            "all_arrays_pass": false,
+            "raw_and_forward_power_arrays_pass": true,
+            "failed_arrays": {
+              "plotted_mode_power_b_single": {
+                "shape": [
+                  17,
+                  3
+                ],
+                "bitwise_equal": false,
+                "maximum_absolute_error": 6.397090035806501e-09,
+                "peak_relative_error": 1.4664911494551492e-05,
+                "passed": false
+              },
+              "plotted_mode_power_b_bb": {
+                "shape": [
+                  17,
+                  3
+                ],
+                "bitwise_equal": false,
+                "maximum_absolute_error": 4.5406320872568105e-09,
+                "peak_relative_error": 1.0194674625619116e-05,
+                "passed": false
+              },
+              "plotted_unresolved_bb": {
+                "shape": [
+                  17
+                ],
+                "bitwise_equal": false,
+                "maximum_absolute_error": 3.736364562190175e-08,
+                "peak_relative_error": 4.6631984783589305e-05,
+                "passed": false
+              }
+            }
+          },
+          "jax_cuda": {
+            "passed_arrays": 36,
+            "total_arrays": 37,
+            "all_arrays_pass": false,
+            "raw_and_forward_power_arrays_pass": true,
+            "failed_arrays": {
+              "plotted_mode_power_b_bb": {
+                "shape": [
+                  17,
+                  3
+                ],
+                "bitwise_equal": false,
+                "maximum_absolute_error": 8.719421346243834e-09,
+                "peak_relative_error": 1.9577039068162905e-05,
+                "passed": false
+              }
+            }
+          }
+        },
+        "no_correction_control_all_37_arrays_bitwise_equal": true
+      },
+      "cosine": {
+        "source_notebook_sha256": "bed0e48aa08fffc2fc4d8feb6bb36617f8102663f127fb1a6d59b16dc5e82b51",
+        "runs": {
+          "cuda": {
+            "backend": "cuda_streamed",
+            "executing_commit": "f39a95ac35138653ebefd640be7c5bd714b4cc8e",
+            "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/notebooks/cosine-cuda",
+            "arrays_sha256": "342b8a6365a094eb88f0d7d799909fdf7dc7a930382b5d4b7849586b3f3cb083",
+            "all_code_cells_completed": true,
+            "code_cells": 11,
+            "raw_fields_and_flux_bitwise_unchanged_from_corrected_run": true
+          },
+          "jax": {
+            "backend": "jax",
+            "executing_commit": "f39a95ac35138653ebefd640be7c5bd714b4cc8e",
+            "raw_directory": "/home/quentinwach/beamz/beamz-pr245-cleanup-20261008/validation-artifacts/pr245-interpolation-removal/notebooks/cosine-jax",
+            "arrays_sha256": "6119837e6b5e866038ceac7901d5f94f02f0a9c9b2411c3c4035715ee8b18873",
+            "all_code_cells_completed": true,
+            "code_cells": 11,
+            "raw_fields_and_flux_bitwise_unchanged_from_corrected_run": true
+          }
+        },
+        "observables": {
+          "wavelength_um": 1.31,
+          "through_power": 0.9724092473026187,
+          "cross_power": 0.001181228563316708,
+          "transmission_db": -0.1215091980669032,
+          "crosstalk_db": -29.155151400878335
+        },
+        "comparison_rule": "abs(candidate-reference) <= 1e-6 * max(abs(reference_array)) + 3e-5 * abs(reference); same peak-scaled rule as the previous modal notebook review, with no fixed absolute floor.",
+        "comparisons": {
+          "previous_cuda": {
+            "passed_arrays": 10,
+            "total_arrays": 10,
+            "all_arrays_pass": true,
+            "raw_and_forward_power_arrays_pass": true,
+            "failed_arrays": {}
+          },
+          "jax_cuda": {
+            "passed_arrays": 10,
+            "total_arrays": 10,
+            "all_arrays_pass": true,
+            "raw_and_forward_power_arrays_pass": true,
+            "failed_arrays": {}
+          }
+        }
+      }
+    },
+    "artifacts": {
+      "verified_spectra": 10,
+      "compact_hashes_match": true,
+      "finite_arrays": true,
+      "valid_incident_signal": true,
+      "center_powers_match_complex_s_parameters": true,
+      "source_patch_hashes_match": true,
+      "previous_corrected_projection_reproduced_on_all_ten_runs": true,
+      "report_links_resolve": true,
+      "figure_data_match_retained_spectra_and_published_manifests": true
+    },
+    "scope": "Focused withdrawal checks, full notebook executions on both GPU backends, and reanalysis of ten retained device field runs. No new passive-SOI FDTD campaign.",
+    "ruff": "All eight affected Python files pass check and format; whitespace checks pass."
+  }
+}

@@ -1,0 +1,129 @@
+"""Experimental cyclic storage transform around the existing native graph.
+
+No simulation is rebuilt and no mode is solved again. Sources and monitor
+sample order stay physically identical. Only right-handed cyclic axis orders
+are supported. All transposes and coefficient repacking are inside the timed
+compiled invocation, not silently excluded from its cost.
+"""
+from dataclasses import replace
+import math
+
+import jax.numpy as jnp
+import numpy as np
+
+
+def wrap_program_call(original, axes):
+    axes = tuple(axes)
+    assert axes in ((0, 1, 2), (1, 2, 0), (2, 0, 1))
+    inverse_axes = tuple(axes.index(a) for a in range(3))
+    components = tuple(2 - axes[2-c] for c in range(3))
+    inverse_components = tuple(components.index(c) for c in range(3))
+    terms = tuple(2*c+k for c in components for k in range(2))
+    inverse_terms = tuple(terms.index(t) for t in range(6))
+    six_components = (*components, *(3+c for c in components))
+
+    def transpose(value):
+        return jnp.transpose(value, axes) if getattr(value, 'ndim', 0) == 3 else value
+
+    def permute_fields(state, order, spatial):
+        return {
+            phase+'xyz'[c]: jnp.transpose(getattr(state, phase+'xyz'[old]), spatial)
+            for phase in ('h', 'e') for c,old in enumerate(order)
+        }
+
+    def repack(value, shape):
+        # Four unsigned byte IDs per little-endian int32. Keep the lookup table
+        # unchanged and remove old tail bytes before transposing logical cells.
+        raw = value.astype(jnp.uint32)
+        unpacked = ((raw[:,None] >> (8*jnp.arange(4, dtype=jnp.uint32))) & 255).reshape(-1)
+        unpacked = unpacked[:math.prod(shape)].reshape(shape).transpose(axes).reshape(-1)
+        padded = jnp.pad(unpacked, (0, -unpacked.size % 4)).reshape(-1,4)
+        return (padded[:,0] | (padded[:,1] << 8) | (padded[:,2] << 16) | (padded[:,3] << 24)).astype(jnp.int32)
+
+    def call(state, ctx, coeffs, groups, monitors, nsteps):
+        if axes == (0,1,2):
+            return original(state,ctx,coeffs,groups,monitors,nsteps)
+        assert ctx.is_3d and ctx.config.metric_kind == 'isotropic_uniform'
+        assert ctx.boundary.cpml.enabled
+        assert coeffs.e_inverse_offdiagonal.size == 0
+        assert monitors is not None
+        # Monitor arenas are ragged in point/frequency count. Preserve their
+        # canonical offsets and spatial sample order; only component lanes move.
+        counts = np.asarray(monitors[4])
+        dft_order = np.arange(state.dft_vec_re.size)
+        for frequencies, points, _, offset, _ in counts:
+            count = 6*int(frequencies)*int(points)
+            old = np.arange(int(offset), int(offset)+count).reshape(6,-1)
+            dft_order[int(offset):int(offset)+count] = old[np.asarray(six_components)].reshape(-1)
+        inverse_dft = np.argsort(dft_order)
+        new_state = state._replace(
+            **permute_fields(state, components, axes),
+            cpml_psi_h_terms=tuple(transpose(state.cpml_psi_h_terms[t]) for t in terms),
+            cpml_psi_e_terms=tuple(transpose(state.cpml_psi_e_terms[t]) for t in terms),
+            dft_vec_re=state.dft_vec_re[dft_order],
+            dft_vec_im=state.dft_vec_im[dft_order],
+        )
+
+        def boundary_terms(old_terms):
+            result=[]
+            for new_index, old_index in enumerate(terms):
+                term=old_terms[old_index]
+                component=term.component[0]+'xyz'[new_index//2]
+                axis=inverse_axes[term.axis]
+                assert axis == (1,0,0,2,2,1)[new_index]
+                assert term.sign == (1 if new_index%2 == 0 else -1)
+                result.append(replace(term, component=component, axis=axis,
+                    a=transpose(term.a), b=transpose(term.b), inv_kappa=transpose(term.inv_kappa),
+                    slab=term.slab._replace(axis=axis, shape=tuple(term.slab.shape[a] for a in axes))))
+            return tuple(result)
+
+        faces=(('front','back'),('bottom','top'),('left','right'))
+        old_cpml=ctx.boundary.cpml
+        new_edges=frozenset(faces[new][side] for new,old in enumerate(axes)
+            for side in range(2) if faces[old][side] in old_cpml.metallic_edges)
+        cpml=replace(old_cpml, metallic_edges=new_edges,
+            h_terms=boundary_terms(old_cpml.h_terms), e_terms=boundary_terms(old_cpml.e_terms))
+        new_ctx=replace(ctx, boundary=replace(ctx.boundary, cpml=cpml),
+            metrics=ctx.metrics._replace(**{
+                f'{kind}_{"xyz"[c]}':getattr(ctx.metrics,f'{kind}_{"xyz"[old]}')
+                for kind in ('e_to_h','h_to_e') for c,old in enumerate(components)}))
+        material={}
+        for phase in ('h','e'):
+            for c,old in enumerate(components):
+                decay=getattr(coeffs,f'{phase}_decay_{"xyz"[old]}')
+                source=getattr(coeffs,f'{phase}_source_{"xyz"[old]}')
+                if phase == 'e' and source.ndim == 1 and source.dtype == jnp.int32:
+                    shape=getattr(state,'e'+'xyz'[old]).shape
+                    source=repack(source,shape)
+                else:
+                    source=transpose(source)
+                material[f'{phase}_decay_{"xyz"[c]}']=transpose(decay)
+                material[f'{phase}_source_{"xyz"[c]}']=source
+        new_coeffs=coeffs._replace(**material)
+        new_groups=[]
+        for phase in range(3):
+            for old in components:
+                group=groups[3*phase+old]
+                new_groups.append(None if group is None else replace(group,
+                    coeffs=group.coeffs.transpose((0,*(1+a for a in axes))),
+                    starts=group.starts[:,axes],
+                    starts_tuple=tuple(tuple(start[a] for a in axes) for start in group.starts_tuple),
+                    max_sizes=tuple(group.max_sizes[a] for a in axes)))
+        new_indices=[]
+        for old in six_components:
+            name=('ex','ey','ez','hx','hy','hz')[old]
+            shape=getattr(state,name).shape
+            flat=monitors[0][:,old]
+            coord=(flat//(shape[1]*shape[2]), (flat//shape[2])%shape[1], flat%shape[2])
+            remapped=(coord[axes[0]]*shape[axes[1]]+coord[axes[1]])*shape[axes[2]]+coord[axes[2]]
+            new_indices.append(jnp.where((flat>=0)&(flat<math.prod(shape)),remapped,-1))
+        new_monitors=(jnp.stack(new_indices,axis=1), monitors[1][:,six_components],
+            monitors[2], monitors[3][:,six_components], *monitors[4:])
+        result=original(new_state,new_ctx,new_coeffs,tuple(new_groups),new_monitors,nsteps)
+        return result._replace(
+            **permute_fields(result,inverse_components,inverse_axes),
+            cpml_psi_h_terms=tuple(jnp.transpose(result.cpml_psi_h_terms[t],inverse_axes) for t in inverse_terms),
+            cpml_psi_e_terms=tuple(jnp.transpose(result.cpml_psi_e_terms[t],inverse_axes) for t in inverse_terms),
+            dft_vec_re=result.dft_vec_re[inverse_dft],
+            dft_vec_im=result.dft_vec_im[inverse_dft])
+    return call

@@ -1,0 +1,1010 @@
+{
+  "shape": [
+    128,
+    96,
+    256
+  ],
+  "material": "binary",
+  "steps": 256,
+  "accuracy_steps": 4096,
+  "cpml_cells": 12,
+  "orders": [
+    [
+      "cuda_streamed_bf16",
+      "jax_fp32",
+      "jax_bf16",
+      "cuda_streamed_fp32"
+    ],
+    [
+      "jax_fp32",
+      "cuda_streamed_bf16",
+      "cuda_streamed_fp32",
+      "jax_bf16"
+    ],
+    [
+      "cuda_streamed_fp32",
+      "cuda_streamed_bf16",
+      "jax_fp32",
+      "jax_bf16"
+    ],
+    [
+      "jax_fp32",
+      "jax_bf16",
+      "cuda_streamed_fp32",
+      "cuda_streamed_bf16"
+    ],
+    [
+      "cuda_streamed_fp32",
+      "jax_bf16",
+      "jax_fp32",
+      "cuda_streamed_bf16"
+    ],
+    [
+      "jax_bf16",
+      "cuda_streamed_fp32",
+      "cuda_streamed_bf16",
+      "jax_fp32"
+    ],
+    [
+      "jax_bf16",
+      "jax_fp32",
+      "cuda_streamed_bf16",
+      "cuda_streamed_fp32"
+    ],
+    [
+      "cuda_streamed_bf16",
+      "cuda_streamed_fp32",
+      "jax_bf16",
+      "jax_fp32"
+    ]
+  ],
+  "warmups": 2,
+  "variants": {
+    "jax_fp32": {
+      "compile_s": 9.301943749000202,
+      "samples_s": [
+        0.25266447000012704,
+        0.23290972399991006,
+        0.2388167360004445,
+        0.23800775200015778,
+        0.23428072200022143,
+        0.23974097699920094,
+        0.23807437699997536,
+        0.23512796800059732
+      ],
+      "psi_dtype": "float32",
+      "field_dtype": "float32",
+      "state_bytes": 103315736,
+      "median_gcups": 3.383056489397336,
+      "errors_vs_backend_fp32": {
+        "ex": {
+          "reference_peak": 13501992.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "ey": {
+          "reference_peak": 16167901.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "ez": {
+          "reference_peak": 9659020.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "hx": {
+          "reference_peak": 69361.953125,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "hy": {
+          "reference_peak": 34097.328125,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "hz": {
+          "reference_peak": 101684.3984375,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_h_0": {
+          "reference_peak": 7143588864.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_h_1": {
+          "reference_peak": 2858521344.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_h_2": {
+          "reference_peak": 1022785472.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_h_3": {
+          "reference_peak": 70657638400.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_h_4": {
+          "reference_peak": 640883752960.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_h_5": {
+          "reference_peak": 8288242688.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_e_0": {
+          "reference_peak": 31627742.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_e_1": {
+          "reference_peak": 8896614.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_e_2": {
+          "reference_peak": 9165881.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_e_3": {
+          "reference_peak": 10888122368.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_e_4": {
+          "reference_peak": 915507200.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_e_5": {
+          "reference_peak": 9150291.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "dft": {
+          "reference_peak": 410914528.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "mode_0": {
+          "reference_peak": 0.9925465833293087,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "mode_1": {
+          "reference_peak": 1.0099087612012192,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        }
+      },
+      "mode_power_errors_vs_backend_fp32": {
+        "mode_0_forward": {
+          "reference_peak": 0.9851487200786843,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "mode_0_backward": {
+          "reference_peak": 0.0014836248552430311,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "mode_1_forward": {
+          "reference_peak": 1.0199157059509811,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "mode_1_backward": {
+          "reference_peak": 0.0032986800372454836,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        }
+      }
+    },
+    "jax_bf16": {
+      "compile_s": 1.0666387829996893,
+      "samples_s": [
+        0.2530497520001518,
+        0.2560679039997922,
+        0.254976178999641,
+        0.2552059299996472,
+        0.25021261800065986,
+        0.25591444699966814,
+        0.2545565839991468,
+        0.2513119969999025
+      ],
+      "psi_dtype": "bfloat16",
+      "field_dtype": "float32",
+      "state_bytes": 89854232,
+      "median_gcups": 3.1609601049419305,
+      "errors_vs_backend_fp32": {
+        "ex": {
+          "reference_peak": 13501992.0,
+          "max_absolute_error": 14916.5859375,
+          "relative_peak_error": 0.0011047692768222644,
+          "relative_l2_error": 0.0013346445585890496
+        },
+        "ey": {
+          "reference_peak": 16167901.0,
+          "max_absolute_error": 24489.330078125,
+          "relative_peak_error": 0.0015146882751276743,
+          "relative_l2_error": 0.0017912153164475132
+        },
+        "ez": {
+          "reference_peak": 9659020.0,
+          "max_absolute_error": 19541.587890625,
+          "relative_peak_error": 0.0020231439515214795,
+          "relative_l2_error": 0.0025795434102377263
+        },
+        "hx": {
+          "reference_peak": 69361.953125,
+          "max_absolute_error": 198.04751586914062,
+          "relative_peak_error": 0.002855275939422166,
+          "relative_l2_error": 0.0016719356483038714
+        },
+        "hy": {
+          "reference_peak": 34097.328125,
+          "max_absolute_error": 193.182373046875,
+          "relative_peak_error": 0.005665616154399928,
+          "relative_l2_error": 0.003432504710079112
+        },
+        "hz": {
+          "reference_peak": 101684.3984375,
+          "max_absolute_error": 347.84759521484375,
+          "relative_peak_error": 0.003420855121925584,
+          "relative_l2_error": 0.002519551668376275
+        },
+        "psi_h_0": {
+          "reference_peak": 7143588864.0,
+          "max_absolute_error": 31046858752.0,
+          "relative_peak_error": 4.346115005086609,
+          "relative_l2_error": 0.935467168112933
+        },
+        "psi_h_1": {
+          "reference_peak": 2858521344.0,
+          "max_absolute_error": 11904647168.0,
+          "relative_peak_error": 4.164617204271608,
+          "relative_l2_error": 1.7388772578133904
+        },
+        "psi_h_2": {
+          "reference_peak": 1022785472.0,
+          "max_absolute_error": 14398212096.0,
+          "relative_peak_error": 14.077450736414058,
+          "relative_l2_error": 3.573884340000803
+        },
+        "psi_h_3": {
+          "reference_peak": 70657638400.0,
+          "max_absolute_error": 263972700160.0,
+          "relative_peak_error": 3.735940036173074,
+          "relative_l2_error": 4.213803057606255
+        },
+        "psi_h_4": {
+          "reference_peak": 640883752960.0,
+          "max_absolute_error": 255232278528.0,
+          "relative_peak_error": 0.39825050541409185,
+          "relative_l2_error": 0.7088037500152296
+        },
+        "psi_h_5": {
+          "reference_peak": 8288242688.0,
+          "max_absolute_error": 27736780800.0,
+          "relative_peak_error": 3.346521312673223,
+          "relative_l2_error": 1.0962092759368236
+        },
+        "psi_e_0": {
+          "reference_peak": 31627742.0,
+          "max_absolute_error": 89436464.0,
+          "relative_peak_error": 2.827785303168339,
+          "relative_l2_error": 1.4591473657239509
+        },
+        "psi_e_1": {
+          "reference_peak": 8896614.0,
+          "max_absolute_error": 46408252.0,
+          "relative_peak_error": 5.216394911592208,
+          "relative_l2_error": 1.6446559704509889
+        },
+        "psi_e_2": {
+          "reference_peak": 9165881.0,
+          "max_absolute_error": 61992968.0,
+          "relative_peak_error": 6.763448925422445,
+          "relative_l2_error": 1.7939166451673119
+        },
+        "psi_e_3": {
+          "reference_peak": 10888122368.0,
+          "max_absolute_error": 2248207872.0,
+          "relative_peak_error": 0.206482605174189,
+          "relative_l2_error": 0.22246650079854177
+        },
+        "psi_e_4": {
+          "reference_peak": 915507200.0,
+          "max_absolute_error": 1306411264.0,
+          "relative_peak_error": 1.4269808735529332,
+          "relative_l2_error": 1.348950419532328
+        },
+        "psi_e_5": {
+          "reference_peak": 9150291.0,
+          "max_absolute_error": 93751480.0,
+          "relative_peak_error": 10.24573753993179,
+          "relative_l2_error": 2.534986699700264
+        },
+        "dft": {
+          "reference_peak": 410914528.0,
+          "max_absolute_error": 63718.9453125,
+          "relative_peak_error": 0.00015506617792909966,
+          "relative_l2_error": 0.00012613921036291214
+        },
+        "mode_0": {
+          "reference_peak": 0.9925465833293087,
+          "max_absolute_error": 0.00013940430147698504,
+          "relative_peak_error": 0.00014045114236289024,
+          "relative_l2_error": 0.00013333322382815072
+        },
+        "mode_1": {
+          "reference_peak": 1.0099087612012192,
+          "max_absolute_error": 0.0001586829147259939,
+          "relative_peak_error": 0.0001571259908046061,
+          "relative_l2_error": 0.0001349926937110141
+        }
+      },
+      "mode_power_errors_vs_backend_fp32": {
+        "mode_0_forward": {
+          "reference_peak": 0.9851487200786843,
+          "max_absolute_error": 7.867872532019149e-05,
+          "relative_peak_error": 7.9864820119654e-05,
+          "relative_l2_error": 4.8859418636996164e-05
+        },
+        "mode_0_backward": {
+          "reference_peak": 0.0014836248552430311,
+          "max_absolute_error": 7.597223223889272e-06,
+          "relative_peak_error": 0.005120717138865119,
+          "relative_l2_error": 0.005431559957655299
+        },
+        "mode_1_forward": {
+          "reference_peak": 1.0199157059509811,
+          "max_absolute_error": 5.762854795610117e-05,
+          "relative_peak_error": 5.6503245924983236e-05,
+          "relative_l2_error": 3.33604407369201e-05
+        },
+        "mode_1_backward": {
+          "reference_peak": 0.0032986800372454836,
+          "max_absolute_error": 1.0184106607901214e-05,
+          "relative_peak_error": 0.003087327807763165,
+          "relative_l2_error": 0.0028648142888520844
+        }
+      }
+    },
+    "cuda_streamed_fp32": {
+      "compile_s": 0.8939730339998277,
+      "samples_s": [
+        0.10421216400027333,
+        0.10632985099982761,
+        0.10803424200003064,
+        0.10827628500010178,
+        0.10556809399986378,
+        0.10799805399983597,
+        0.10857137899984082,
+        0.10568882999996276
+      ],
+      "psi_dtype": "float32",
+      "field_dtype": "float32",
+      "state_bytes": 103315736,
+      "median_gcups": 7.514713196130612,
+      "errors_vs_backend_fp32": {
+        "ex": {
+          "reference_peak": 13501989.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "ey": {
+          "reference_peak": 16167900.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "ez": {
+          "reference_peak": 9659033.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "hx": {
+          "reference_peak": 69361.9765625,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "hy": {
+          "reference_peak": 34097.32421875,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "hz": {
+          "reference_peak": 101684.359375,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_h_0": {
+          "reference_peak": 7143602176.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_h_1": {
+          "reference_peak": 2858449152.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_h_2": {
+          "reference_peak": 1022794304.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_h_3": {
+          "reference_peak": 70651232256.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_h_4": {
+          "reference_peak": 640873922560.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_h_5": {
+          "reference_peak": 8287524864.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_e_0": {
+          "reference_peak": 31628382.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_e_1": {
+          "reference_peak": 8896627.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_e_2": {
+          "reference_peak": 9165928.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_e_3": {
+          "reference_peak": 10888054784.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_e_4": {
+          "reference_peak": 915495232.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "psi_e_5": {
+          "reference_peak": 9150935.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "dft": {
+          "reference_peak": 410891040.0,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "mode_0": {
+          "reference_peak": 0.9925513934265707,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "mode_1": {
+          "reference_peak": 1.0099065993675647,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        }
+      },
+      "mode_power_errors_vs_backend_fp32": {
+        "mode_0_forward": {
+          "reference_peak": 0.9851582685930272,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "mode_0_backward": {
+          "reference_peak": 0.0014828267604471168,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "mode_1_forward": {
+          "reference_peak": 1.0199113394461587,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        },
+        "mode_1_backward": {
+          "reference_peak": 0.0032954920532396316,
+          "max_absolute_error": 0.0,
+          "relative_peak_error": 0.0,
+          "relative_l2_error": 0.0
+        }
+      },
+      "errors_vs_jax_fp32": {
+        "ex": {
+          "reference_peak": 13501992.0,
+          "max_absolute_error": 27.0,
+          "relative_peak_error": 1.9997049324277485e-06,
+          "relative_l2_error": 1.7893271125930576e-06
+        },
+        "ey": {
+          "reference_peak": 16167901.0,
+          "max_absolute_error": 12.0,
+          "relative_peak_error": 7.422113730162004e-07,
+          "relative_l2_error": 1.7434817210692852e-06
+        },
+        "ez": {
+          "reference_peak": 9659020.0,
+          "max_absolute_error": 13.0,
+          "relative_peak_error": 1.345892233373572e-06,
+          "relative_l2_error": 2.375403255392787e-06
+        },
+        "hx": {
+          "reference_peak": 69361.953125,
+          "max_absolute_error": 0.05078125,
+          "relative_peak_error": 7.321196666490207e-07,
+          "relative_l2_error": 1.991688484422816e-06
+        },
+        "hy": {
+          "reference_peak": 34097.328125,
+          "max_absolute_error": 0.0625,
+          "relative_peak_error": 1.8329881969307529e-06,
+          "relative_l2_error": 3.2106758967644094e-06
+        },
+        "hz": {
+          "reference_peak": 101684.3984375,
+          "max_absolute_error": 0.0810546875,
+          "relative_peak_error": 7.971201948922382e-07,
+          "relative_l2_error": 2.3829806572949897e-06
+        },
+        "psi_h_0": {
+          "reference_peak": 7143588864.0,
+          "max_absolute_error": 545536.0,
+          "relative_peak_error": 7.636721686899142e-05,
+          "relative_l2_error": 4.6620269972714856e-05
+        },
+        "psi_h_1": {
+          "reference_peak": 2858521344.0,
+          "max_absolute_error": 537984.0,
+          "relative_peak_error": 0.0001882035973351123,
+          "relative_l2_error": 0.00011557911095490489
+        },
+        "psi_h_2": {
+          "reference_peak": 1022785472.0,
+          "max_absolute_error": 433408.0,
+          "relative_peak_error": 0.000423752597064656,
+          "relative_l2_error": 0.00020822516065025987
+        },
+        "psi_h_3": {
+          "reference_peak": 70657638400.0,
+          "max_absolute_error": 12923264.0,
+          "relative_peak_error": 0.00018289974435375413,
+          "relative_l2_error": 0.00021800862186734872
+        },
+        "psi_h_4": {
+          "reference_peak": 640883752960.0,
+          "max_absolute_error": 16908288.0,
+          "relative_peak_error": 2.6382768984089553e-05,
+          "relative_l2_error": 3.6168432719733136e-05
+        },
+        "psi_h_5": {
+          "reference_peak": 8288242688.0,
+          "max_absolute_error": 823808.0,
+          "relative_peak_error": 9.939477293452535e-05,
+          "relative_l2_error": 5.5743490658136874e-05
+        },
+        "psi_e_0": {
+          "reference_peak": 31627742.0,
+          "max_absolute_error": 3538.0,
+          "relative_peak_error": 0.00011186381879553716,
+          "relative_l2_error": 8.097100127864462e-05
+        },
+        "psi_e_1": {
+          "reference_peak": 8896614.0,
+          "max_absolute_error": 1380.25,
+          "relative_peak_error": 0.00015514329384190434,
+          "relative_l2_error": 8.735935710311146e-05
+        },
+        "psi_e_2": {
+          "reference_peak": 9165881.0,
+          "max_absolute_error": 2208.0,
+          "relative_peak_error": 0.00024089337402482096,
+          "relative_l2_error": 9.383360229333025e-05
+        },
+        "psi_e_3": {
+          "reference_peak": 10888122368.0,
+          "max_absolute_error": 158080.0,
+          "relative_peak_error": 1.4518573052098894e-05,
+          "relative_l2_error": 1.4164772055699728e-05
+        },
+        "psi_e_4": {
+          "reference_peak": 915507200.0,
+          "max_absolute_error": 87808.0,
+          "relative_peak_error": 9.59118617526984e-05,
+          "relative_l2_error": 8.316578408775437e-05
+        },
+        "psi_e_5": {
+          "reference_peak": 9150291.0,
+          "max_absolute_error": 2378.765625,
+          "relative_peak_error": 0.00025996611747101814,
+          "relative_l2_error": 0.00012394305124158934
+        },
+        "dft": {
+          "reference_peak": 410914528.0,
+          "max_absolute_error": 406814.375,
+          "relative_peak_error": 0.0009900218835776963,
+          "relative_l2_error": 0.0007470301843257619
+        },
+        "mode_0": {
+          "reference_peak": 0.9925465833293087,
+          "max_absolute_error": 0.0010674923899151995,
+          "relative_peak_error": 0.0010755086036712748,
+          "relative_l2_error": 0.0010665076450471363
+        },
+        "mode_1": {
+          "reference_peak": 1.0099087612012192,
+          "max_absolute_error": 0.00017355746491722014,
+          "relative_peak_error": 0.0001718545987370038,
+          "relative_l2_error": 0.00015011755808526825
+        }
+      }
+    },
+    "cuda_streamed_bf16": {
+      "compile_s": 0.6897174839996296,
+      "samples_s": [
+        0.10156016799919598,
+        0.09831773499990959,
+        0.1012111840000216,
+        0.09777108199978102,
+        0.10097104499982379,
+        0.10100390600018727,
+        0.10060016099942004,
+        0.09963939000044775
+      ],
+      "psi_dtype": "bfloat16",
+      "field_dtype": "float32",
+      "state_bytes": 89854232,
+      "median_gcups": 7.99029170865824,
+      "errors_vs_backend_fp32": {
+        "ex": {
+          "reference_peak": 13501989.0,
+          "max_absolute_error": 18916.509765625,
+          "relative_peak_error": 0.0014010165291665547,
+          "relative_l2_error": 0.0014045286811293681
+        },
+        "ey": {
+          "reference_peak": 16167900.0,
+          "max_absolute_error": 36681.46875,
+          "relative_peak_error": 0.0022687837474254543,
+          "relative_l2_error": 0.002031034100297893
+        },
+        "ez": {
+          "reference_peak": 9659033.0,
+          "max_absolute_error": 28555.78515625,
+          "relative_peak_error": 0.0029563813640816838,
+          "relative_l2_error": 0.002890760215626094
+        },
+        "hx": {
+          "reference_peak": 69361.9765625,
+          "max_absolute_error": 173.26998901367188,
+          "relative_peak_error": 0.002498054375044279,
+          "relative_l2_error": 0.001753332793848587
+        },
+        "hy": {
+          "reference_peak": 34097.32421875,
+          "max_absolute_error": 147.38174438476562,
+          "relative_peak_error": 0.004322384461585432,
+          "relative_l2_error": 0.0032296163045545034
+        },
+        "hz": {
+          "reference_peak": 101684.359375,
+          "max_absolute_error": 343.9432373046875,
+          "relative_peak_error": 0.0033824595977073046,
+          "relative_l2_error": 0.0025244051934018145
+        },
+        "psi_h_0": {
+          "reference_peak": 7143602176.0,
+          "max_absolute_error": 26375999488.0,
+          "relative_peak_error": 3.6922548090113576,
+          "relative_l2_error": 0.9415996176286505
+        },
+        "psi_h_1": {
+          "reference_peak": 2858449152.0,
+          "max_absolute_error": 11904647168.0,
+          "relative_peak_error": 4.1647223843987415,
+          "relative_l2_error": 1.7591267499661034
+        },
+        "psi_h_2": {
+          "reference_peak": 1022794304.0,
+          "max_absolute_error": 13162990592.0,
+          "relative_peak_error": 12.86963619226413,
+          "relative_l2_error": 3.5675211593301768
+        },
+        "psi_h_3": {
+          "reference_peak": 70651232256.0,
+          "max_absolute_error": 212816609280.0,
+          "relative_peak_error": 3.0122136937240285,
+          "relative_l2_error": 3.967046523437199
+        },
+        "psi_h_4": {
+          "reference_peak": 640873922560.0,
+          "max_absolute_error": 237795082240.0,
+          "relative_peak_error": 0.3710481482693456,
+          "relative_l2_error": 0.6533567183537116
+        },
+        "psi_h_5": {
+          "reference_peak": 8287524864.0,
+          "max_absolute_error": 35969130496.0,
+          "relative_peak_error": 4.340153554440063,
+          "relative_l2_error": 1.1071177944459765
+        },
+        "psi_e_0": {
+          "reference_peak": 31628382.0,
+          "max_absolute_error": 128676752.0,
+          "relative_peak_error": 4.068395025708239,
+          "relative_l2_error": 1.4889142760324463
+        },
+        "psi_e_1": {
+          "reference_peak": 8896627.0,
+          "max_absolute_error": 37134468.0,
+          "relative_peak_error": 4.173994031670654,
+          "relative_l2_error": 1.6302057707138011
+        },
+        "psi_e_2": {
+          "reference_peak": 9165928.0,
+          "max_absolute_error": 54687296.0,
+          "relative_peak_error": 5.966367617114164,
+          "relative_l2_error": 1.8060935337178505
+        },
+        "psi_e_3": {
+          "reference_peak": 10888054784.0,
+          "max_absolute_error": 2552193024.0,
+          "relative_peak_error": 0.23440302924912249,
+          "relative_l2_error": 0.2291517321273086
+        },
+        "psi_e_4": {
+          "reference_peak": 915495232.0,
+          "max_absolute_error": 1163057792.0,
+          "relative_peak_error": 1.270413816857541,
+          "relative_l2_error": 1.2203305445324122
+        },
+        "psi_e_5": {
+          "reference_peak": 9150935.0,
+          "max_absolute_error": 82860752.0,
+          "relative_peak_error": 9.054894609130105,
+          "relative_l2_error": 2.558011654463976
+        },
+        "dft": {
+          "reference_peak": 410891040.0,
+          "max_absolute_error": 58507.82421875,
+          "relative_peak_error": 0.00014239255306893527,
+          "relative_l2_error": 0.00011235693555720127
+        },
+        "mode_0": {
+          "reference_peak": 0.9925513934265707,
+          "max_absolute_error": 0.00011519344905414121,
+          "relative_peak_error": 0.00011605791883124615,
+          "relative_l2_error": 0.00010420396864571589
+        },
+        "mode_1": {
+          "reference_peak": 1.0099065993675647,
+          "max_absolute_error": 0.00013025910813779727,
+          "relative_peak_error": 0.00012898134166007988,
+          "relative_l2_error": 0.00011055236389023489
+        }
+      },
+      "mode_power_errors_vs_backend_fp32": {
+        "mode_0_forward": {
+          "reference_peak": 0.9851582685930272,
+          "max_absolute_error": 3.529367010823847e-05,
+          "relative_peak_error": 3.582538078743815e-05,
+          "relative_l2_error": 2.8973013966212713e-05
+        },
+        "mode_0_backward": {
+          "reference_peak": 0.0014828267604471168,
+          "max_absolute_error": 6.181033893771647e-06,
+          "relative_peak_error": 0.004168412695700123,
+          "relative_l2_error": 0.0037330850293143926
+        },
+        "mode_1_forward": {
+          "reference_peak": 1.0199113394461587,
+          "max_absolute_error": 4.213523111906703e-05,
+          "relative_peak_error": 4.131264109873283e-05,
+          "relative_l2_error": 2.9992905005655797e-05
+        },
+        "mode_1_backward": {
+          "reference_peak": 0.0032954920532396316,
+          "max_absolute_error": 6.419605665691341e-06,
+          "relative_peak_error": 0.0019479960995143506,
+          "relative_l2_error": 0.0017846887011388857
+        }
+      },
+      "errors_vs_jax_fp32": {
+        "ex": {
+          "reference_peak": 13501992.0,
+          "max_absolute_error": 18916.35546875,
+          "relative_peak_error": 0.0014010047901635552,
+          "relative_l2_error": 0.001404533640320634
+        },
+        "ey": {
+          "reference_peak": 16167901.0,
+          "max_absolute_error": 36680.20703125,
+          "relative_peak_error": 0.002268705568598546,
+          "relative_l2_error": 0.002031008290962181
+        },
+        "ez": {
+          "reference_peak": 9659020.0,
+          "max_absolute_error": 28554.8046875,
+          "relative_peak_error": 0.0029562838349542707,
+          "relative_l2_error": 0.0028907256271862875
+        },
+        "hx": {
+          "reference_peak": 69361.953125,
+          "max_absolute_error": 173.28150939941406,
+          "relative_peak_error": 0.002498221309990167,
+          "relative_l2_error": 0.001753384953246985
+        },
+        "hy": {
+          "reference_peak": 34097.328125,
+          "max_absolute_error": 147.38551330566406,
+          "relative_peak_error": 0.004322494500605803,
+          "relative_l2_error": 0.0032296615389050026
+        },
+        "hz": {
+          "reference_peak": 101684.3984375,
+          "max_absolute_error": 343.9468994140625,
+          "relative_peak_error": 0.0033824943127875057,
+          "relative_l2_error": 0.0025244392955004035
+        },
+        "psi_h_0": {
+          "reference_peak": 7143588864.0,
+          "max_absolute_error": 26376114176.0,
+          "relative_peak_error": 3.6922777441633015,
+          "relative_l2_error": 0.9415999145481856
+        },
+        "psi_h_1": {
+          "reference_peak": 2858521344.0,
+          "max_absolute_error": 11904772096.0,
+          "relative_peak_error": 4.164660907985859,
+          "relative_l2_error": 1.759125022145531
+        },
+        "psi_h_2": {
+          "reference_peak": 1022785472.0,
+          "max_absolute_error": 13162990592.0,
+          "relative_peak_error": 12.869747324686285,
+          "relative_l2_error": 3.5675211160140567
+        },
+        "psi_h_3": {
+          "reference_peak": 70657638400.0,
+          "max_absolute_error": 212810203136.0,
+          "relative_peak_error": 3.0118499281176088,
+          "relative_l2_error": 3.9669676235456794
+        },
+        "psi_h_4": {
+          "reference_peak": 640883752960.0,
+          "max_absolute_error": 237792100352.0,
+          "relative_peak_error": 0.37103780405374315,
+          "relative_l2_error": 0.6533471517981828
+        },
+        "psi_h_5": {
+          "reference_peak": 8288242688.0,
+          "max_absolute_error": 35969064960.0,
+          "relative_peak_error": 4.339769757475518,
+          "relative_l2_error": 1.1071175937532653
+        },
+        "psi_e_0": {
+          "reference_peak": 31627742.0,
+          "max_absolute_error": 128677264.0,
+          "relative_peak_error": 4.068493539627331,
+          "relative_l2_error": 1.4889151065823991
+        },
+        "psi_e_1": {
+          "reference_peak": 8896614.0,
+          "max_absolute_error": 37135072.0,
+          "relative_peak_error": 4.174068021833925,
+          "relative_l2_error": 1.6302057813604436
+        },
+        "psi_e_2": {
+          "reference_peak": 9165881.0,
+          "max_absolute_error": 54687036.0,
+          "relative_peak_error": 5.966369844862704,
+          "relative_l2_error": 1.8060930853937824
+        },
+        "psi_e_3": {
+          "reference_peak": 10888122368.0,
+          "max_absolute_error": 2552151040.0,
+          "relative_peak_error": 0.2343977183339459,
+          "relative_l2_error": 0.22915137799807603
+        },
+        "psi_e_4": {
+          "reference_peak": 915507200.0,
+          "max_absolute_error": 1163065984.0,
+          "relative_peak_error": 1.2704061573737486,
+          "relative_l2_error": 1.2203225795351595
+        },
+        "psi_e_5": {
+          "reference_peak": 9150291.0,
+          "max_absolute_error": 82861240.0,
+          "relative_peak_error": 9.055585226743062,
+          "relative_l2_error": 2.558011727544253
+        },
+        "dft": {
+          "reference_peak": 410914528.0,
+          "max_absolute_error": 390495.25,
+          "relative_peak_error": 0.0009503077243353148,
+          "relative_l2_error": 0.0007170601987984792
+        },
+        "mode_0": {
+          "reference_peak": 0.9925465833293087,
+          "max_absolute_error": 0.0010526381566075896,
+          "relative_peak_error": 0.0010605428241732646,
+          "relative_l2_error": 0.001053129960699779
+        },
+        "mode_1": {
+          "reference_peak": 1.0099087612012192,
+          "max_absolute_error": 0.00016295682415941098,
+          "relative_peak_error": 0.0001613579666004528,
+          "relative_l2_error": 0.00016398147785283722
+        }
+      }
+    }
+  },
+  "device": "cuda:0",
+  "jax": "0.9.0",
+  "note": "BF16 auxiliary storage only; FP32 fields, coefficients and arithmetic. Backward modal power is not isolated absorber reflectivity.",
+  "native_sha256": "9bdcbc7dcd7c61bd2f9110113d054e774eb77197348f23c1f2a86be18409ba92",
+  "source_sha256": "ba3bc43a87f9fc50bca45b68992a84b698d67b198f205a586d4459d0074d1aad",
+  "benchmark_sha256": "3a132b1011d3cbeeadd2eee0386e928585bd636a8c831624a5f2a29e4ae89920"
+}

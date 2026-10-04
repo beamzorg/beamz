@@ -1,0 +1,26 @@
+[
+  {
+    "case": "narrow_long",
+    "variant": "main",
+    "repeat": 1,
+    "median_gcups": 7.290989363662584
+  },
+  {
+    "case": "narrow_long",
+    "variant": "branch_auto",
+    "repeat": 1,
+    "median_gcups": 8.55731670521493
+  },
+  {
+    "case": "narrow_long",
+    "variant": "branch_auto",
+    "repeat": 2,
+    "median_gcups": 8.556061590445372
+  },
+  {
+    "case": "narrow_long",
+    "variant": "main",
+    "repeat": 2,
+    "median_gcups": 7.286714218107031
+  }
+]

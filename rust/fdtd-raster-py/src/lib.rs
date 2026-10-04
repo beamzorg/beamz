@@ -1,6 +1,6 @@
 use fdtd_raster_core::{
     Grid, IntegrationOptions, OutputComponents, Quality, RasterResult, Scene, SmoothingMode,
-    TensorArray, TriangleMesh, rasterize_prevalidated,
+    TensorArray, TriangleMesh, interface_samples, rasterize_prevalidated,
 };
 use numpy::{PyArray1, PyArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -27,12 +27,51 @@ impl NativeCompiledScene {
         &self.scene_hash
     }
 
+    #[pyo3(signature = (grid_edges, quality, components, staircase_materials = Vec::new(), periodic_axes = [false; 3]))]
+    fn interface_samples(
+        &self,
+        py: Python<'_>,
+        grid_edges: (Vec<f64>, Vec<f64>, Vec<f64>),
+        quality: &str,
+        components: &str,
+        staircase_materials: Vec<usize>,
+        periodic_axes: [bool; 3],
+    ) -> PyResult<Py<PyAny>> {
+        let (x, y, z) = grid_edges;
+        let grid = Grid::new(x, y, z).map_err(value_error)?;
+        let mut options = integration_options(quality, "farjadpour_diagonal", components)?;
+        if staircase_materials
+            .iter()
+            .any(|&id| id >= self.scene.materials.len())
+        {
+            return Err(value_error("staircase material ID is out of range"));
+        }
+        options.staircase_materials = staircase_materials;
+        options.periodic_axes = periodic_axes;
+        let samples = py.detach(|| interface_samples(&self.scene, &grid, &options));
+        let result = PyDict::new(py);
+        for sample in samples {
+            let record = PyDict::new(py);
+            record.set_item("indices", PyArray1::from_vec(py, sample.indices))?;
+            record.set_item("fractions", PyArray1::from_vec(py, sample.fractions))?;
+            record.set_item(
+                "normal_squared",
+                PyArray1::from_vec(py, sample.normal_squared),
+            )?;
+            result.set_item(sample.component, record)?;
+        }
+        Ok(result.into_any().unbind())
+    }
+
     #[pyo3(signature = (
         grid_edges,
         quality = "balanced",
         smoothing = "volume",
         components = "all",
+        staircase_materials = Vec::new(),
+        periodic_axes = [false; 3],
     ))]
+    #[allow(clippy::too_many_arguments)] // Python API keeps explicit backward-compatible options.
     fn rasterize(
         &self,
         py: Python<'_>,
@@ -40,10 +79,20 @@ impl NativeCompiledScene {
         quality: &str,
         smoothing: &str,
         components: &str,
+        staircase_materials: Vec<usize>,
+        periodic_axes: [bool; 3],
     ) -> PyResult<NativeRasterResult> {
         let (x_edges, y_edges, z_edges) = grid_edges;
         let grid = Grid::new(x_edges, y_edges, z_edges).map_err(value_error)?;
-        let options = integration_options(quality, smoothing, components)?;
+        let mut options = integration_options(quality, smoothing, components)?;
+        if staircase_materials
+            .iter()
+            .any(|&id| id >= self.scene.materials.len())
+        {
+            return Err(value_error("staircase material ID is out of range"));
+        }
+        options.staircase_materials = staircase_materials;
+        options.periodic_axes = periodic_axes;
         let result = py
             .detach(|| rasterize_prevalidated(&self.scene, &grid, &options))
             .map_err(value_error)?;

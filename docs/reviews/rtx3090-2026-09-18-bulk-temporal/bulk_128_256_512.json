@@ -1,0 +1,227 @@
+{
+  "shape": [
+    128,
+    256,
+    512
+  ],
+  "steps": 256,
+  "cpu_oracle": false,
+  "variants": [
+    {
+      "name": "separate",
+      "depth": 1,
+      "gcups": 10.0800508,
+      "shared_bytes": 0,
+      "registers": 0,
+      "local_bytes": 0,
+      "active_blocks_per_sm": 0,
+      "max_abs_error": 0,
+      "samples_ms": [
+        425.632782,
+        426.553345,
+        424.063995,
+        426.280945,
+        425.890808,
+        426.901489
+      ]
+    },
+    {
+      "name": "ring1_32x8x8",
+      "depth": 1,
+      "gcups": 12.5231889,
+      "shared_bytes": 7128,
+      "registers": 56,
+      "local_bytes": 0,
+      "active_blocks_per_sm": 4,
+      "max_abs_error": 0,
+      "samples_ms": [
+        341.084167,
+        344.838135,
+        331.487244,
+        344.914948,
+        345.911285,
+        335.209473
+      ]
+    },
+    {
+      "name": "ring1_32x8x16",
+      "depth": 1,
+      "gcups": 12.0491867,
+      "shared_bytes": 7128,
+      "registers": 56,
+      "local_bytes": 0,
+      "active_blocks_per_sm": 4,
+      "max_abs_error": 0,
+      "samples_ms": [
+        357.049347,
+        356.10318,
+        356.46463,
+        356.483063,
+        343.677948,
+        356.441101
+      ]
+    },
+    {
+      "name": "ring2_32x8x8",
+      "depth": 2,
+      "gcups": 15.5022775,
+      "shared_bytes": 24528,
+      "registers": 55,
+      "local_bytes": 0,
+      "active_blocks_per_sm": 4,
+      "max_abs_error": 0,
+      "samples_ms": [
+        274.720764,
+        278.181885,
+        274.782196,
+        280.89447,
+        275.926025,
+        285.189117
+      ]
+    },
+    {
+      "name": "ring2_32x8x16",
+      "depth": 2,
+      "gcups": 15.8280704,
+      "shared_bytes": 24528,
+      "registers": 55,
+      "local_bytes": 0,
+      "active_blocks_per_sm": 4,
+      "max_abs_error": 0,
+      "samples_ms": [
+        273.357819,
+        274.75354,
+        267.58963,
+        269.585419,
+        272.807922,
+        269.894653
+      ]
+    },
+    {
+      "name": "ring2_32x8x32",
+      "depth": 2,
+      "gcups": 14.5925127,
+      "shared_bytes": 24528,
+      "registers": 55,
+      "local_bytes": 0,
+      "active_blocks_per_sm": 4,
+      "max_abs_error": 0,
+      "samples_ms": [
+        293.932037,
+        295.669769,
+        293.363708,
+        294.877197,
+        289.846283,
+        294.721527
+      ]
+    },
+    {
+      "name": "ring2_64x4x16",
+      "depth": 2,
+      "gcups": 14.570335,
+      "shared_bytes": 28560,
+      "registers": 55,
+      "local_bytes": 0,
+      "active_blocks_per_sm": 3,
+      "max_abs_error": 0,
+      "samples_ms": [
+        293.168121,
+        294.772736,
+        300.69043,
+        300.386292,
+        293.154816,
+        294.776825
+      ]
+    },
+    {
+      "name": "ring2_16x8x16",
+      "depth": 2,
+      "gcups": 16.4876264,
+      "shared_bytes": 13008,
+      "registers": 55,
+      "local_bytes": 0,
+      "active_blocks_per_sm": 4,
+      "max_abs_error": 0,
+      "samples_ms": [
+        260.643829,
+        262.48703,
+        265.643005,
+        259.032074,
+        260.348938,
+        259.312653
+      ]
+    },
+    {
+      "name": "ring4_32x4x16",
+      "depth": 4,
+      "gcups": 9.47642577,
+      "shared_bytes": 49056,
+      "registers": 56,
+      "local_bytes": 0,
+      "active_blocks_per_sm": 2,
+      "max_abs_error": 0,
+      "samples_ms": [
+        455.117828,
+        451.324921,
+        453.359619,
+        452.589569,
+        453.406708,
+        453.093384
+      ]
+    },
+    {
+      "name": "ring4_32x4x32",
+      "depth": 4,
+      "gcups": 10.5222064,
+      "shared_bytes": 49056,
+      "registers": 56,
+      "local_bytes": 0,
+      "active_blocks_per_sm": 2,
+      "max_abs_error": 0,
+      "samples_ms": [
+        401.935364,
+        407.974915,
+        404.091919,
+        411.270142,
+        408.387573,
+        411.089905
+      ]
+    },
+    {
+      "name": "ring4_16x8x16",
+      "depth": 4,
+      "gcups": 10.2800309,
+      "shared_bytes": 40992,
+      "registers": 56,
+      "local_bytes": 0,
+      "active_blocks_per_sm": 2,
+      "max_abs_error": 0,
+      "samples_ms": [
+        402.438141,
+        418.602997,
+        416.164856,
+        416.991241,
+        421.33606,
+        422.151154
+      ]
+    },
+    {
+      "name": "ring8_8x4x32",
+      "depth": 8,
+      "gcups": 2.23948715,
+      "shared_bytes": 75840,
+      "registers": 56,
+      "local_bytes": 0,
+      "active_blocks_per_sm": 1,
+      "max_abs_error": 0,
+      "samples_ms": [
+        1912.67224,
+        1909.47839,
+        1928.00671,
+        1922.99829,
+        1909.25415,
+        1923.04431
+      ]
+    }
+  ]
+}

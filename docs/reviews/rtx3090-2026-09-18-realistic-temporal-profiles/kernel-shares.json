@@ -1,0 +1,124 @@
+[
+  {
+    "case": "aspect_64_256_1024",
+    "variant": "16x8x16",
+    "summed_gpu_ms": 1133.5944650000004,
+    "percent": {
+      "other": 0.4348031110049573,
+      "TemporalPairCore": 36.881322987052485,
+      "UpdateCombinedCpmlQueue": 53.43441139684822,
+      "ApplySource": 0.14746587528547883,
+      "TemporalPairBand": 8.761416014853246,
+      "PrepareDft": 0.061681140971343716,
+      "GatherDftPair": 0.21536652439459444,
+      "AccumulateDft": 0.06353294958969287
+    }
+  },
+  {
+    "case": "aspect_64_256_1024",
+    "variant": "one_step",
+    "summed_gpu_ms": 1057.5812069999997,
+    "percent": {
+      "other": 0.3723339611120756,
+      "UpdateCombinedCpmlQueue": 57.186264278994486,
+      "ApplySource": 0.24215360324571253,
+      "FusedCpmlCore": 41.65667109854385,
+      "PrepareDft": 0.13655499837186508,
+      "AccumulateDft": 0.4060220597320059
+    }
+  },
+  {
+    "case": "aspect_64_256_1024",
+    "variant": "single",
+    "summed_gpu_ms": 1060.251481999999,
+    "percent": {
+      "other": 0.4656906482871583,
+      "UpdateCombinedCpmlQueue": 57.205122020286844,
+      "ApplySource": 0.24188704694496235,
+      "FusedCpmlCore": 41.71726090546512,
+      "PrepareDft": 0.06756208429426182,
+      "GatherDftPair": 0.2343265764942358,
+      "AccumulateDft": 0.06815071822743277
+    }
+  },
+  {
+    "case": "field_eleven_frequencies",
+    "variant": "16x8x16",
+    "summed_gpu_ms": 2354.8914439999994,
+    "percent": {
+      "other": 0.2653402141283589,
+      "TemporalPairCore": 24.167864826638684,
+      "UpdateCombinedCpmlQueue": 32.391645056229606,
+      "ApplySource": 0.07179558124888201,
+      "TemporalPairBand": 25.242825460790133,
+      "PrepareDft": 0.030088478252588216,
+      "GatherDftPair": 12.355804711989943,
+      "AccumulateDft": 5.474635670721813
+    }
+  },
+  {
+    "case": "field_eleven_frequencies",
+    "variant": "one_step",
+    "summed_gpu_ms": 2387.5207539999997,
+    "percent": {
+      "other": 0.4348985860166462,
+      "UpdateCombinedCpmlQueue": 54.18230781167902,
+      "PrepareDft": 0.06106460006923153,
+      "AccumulateDft": 45.32172900223512
+    }
+  },
+  {
+    "case": "field_eleven_frequencies",
+    "variant": "single",
+    "summed_gpu_ms": 1731.126515999999,
+    "percent": {
+      "other": 0.690084687028155,
+      "UpdateCombinedCpmlQueue": 75.04003335363385,
+      "PrepareDft": 0.04157368010646308,
+      "GatherDftPair": 16.766653755074262,
+      "AccumulateDft": 7.461654524157276
+    }
+  },
+  {
+    "case": "volume_128_256_512",
+    "variant": "16x8x16",
+    "summed_gpu_ms": 1145.7514169999993,
+    "percent": {
+      "other": 0.4003062908714695,
+      "TemporalPairCore": 49.60916814646192,
+      "UpdateCombinedCpmlQueue": 36.278270734183174,
+      "ApplySource": 0.14469927554974996,
+      "TemporalPairBand": 13.196937028095345,
+      "PrepareDft": 0.060087815715090684,
+      "GatherDftPair": 0.21223574013699015,
+      "AccumulateDft": 0.09829496898627893
+    }
+  },
+  {
+    "case": "volume_128_256_512",
+    "variant": "one_step",
+    "summed_gpu_ms": 1016.4683020000002,
+    "percent": {
+      "other": 0.3537573176580965,
+      "UpdateCombinedCpmlQueue": 41.7584270129065,
+      "ApplySource": 0.2531534918439591,
+      "FusedCpmlCore": 57.0711405223928,
+      "PrepareDft": 0.1449522820437148,
+      "AccumulateDft": 0.41856937315493437
+    }
+  },
+  {
+    "case": "volume_128_256_512",
+    "variant": "single",
+    "summed_gpu_ms": 1015.504217999999,
+    "percent": {
+      "other": 0.4567157789983699,
+      "UpdateCombinedCpmlQueue": 41.74509278109172,
+      "ApplySource": 0.25402848695996294,
+      "FusedCpmlCore": 57.11426912064288,
+      "PrepareDft": 0.0705356006704445,
+      "GatherDftPair": 0.2845746919388963,
+      "AccumulateDft": 0.07478353969771499
+    }
+  }
+]

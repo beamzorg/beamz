@@ -3,9 +3,10 @@ import warnings
 import numpy as np
 import pytest
 
-from beamz import EPS_0, MU_0, PML, Absorber
+from beamz import EPS_0, LIGHT_SPEED, MU_0, PML, Absorber
 from beamz.design.grid import RectilinearGrid
 from beamz.devices._boundary_compile import (
+    _AbsorberCompiler,
     compile_absorber_regions,
 )
 from tests.utils import compiled_grid
@@ -135,9 +136,17 @@ def test_pml_rejects_removed_sigma_formulation_alias():
         PML(formulation="sigma")
 
 
-def test_cpml_alpha_is_computed_when_omitted():
-    fields = _make_fields_2d()
-    design = _make_design_2d()
+@pytest.mark.parametrize(
+    "make_fields,make_design",
+    [(_make_fields_2d, _make_design_2d), (_make_fields_3d, _make_design_3d)],
+    ids=["2d", "3d"],
+)
+@pytest.mark.parametrize("dt", [2e-15, 1e-15])
+def test_cpml_auto_alpha_compiles_physical_thickness_default(
+    make_fields, make_design, dt
+):
+    fields = make_fields()
+    design = make_design()
     pml = PML(
         thickness=0.2,
         sigma_max=5.0,
@@ -145,11 +154,24 @@ def test_cpml_alpha_is_computed_when_omitted():
         formulation="cpml",
     )
 
-    payload = compile_absorber_regions(pml, fields, design, resolution=0.1, dt=2e-15)
+    payload = compile_absorber_regions(pml, fields, design, resolution=0.1, dt=dt)
+    explicit = PML(
+        thickness=0.2,
+        sigma_max=5.0,
+        alpha_max=0.1 * EPS_0 * LIGHT_SPEED / 0.2,
+        formulation="cpml",
+    )
+    expected = compile_absorber_regions(explicit, fields, design, resolution=0.1, dt=dt)
 
     assert pml.alpha_max is None
     assert float(np.max(np.asarray(payload["alpha_x"], dtype=np.float64))) > 0.0
     assert float(np.max(np.asarray(payload["alpha_y"], dtype=np.float64))) > 0.0
+    if fields.permittivity.ndim == 3:
+        assert float(np.max(np.asarray(payload["alpha_z"]))) > 0.0
+    # Check both diagnostic and staggered Yee profiles through the public compiler.
+    for key in expected:
+        if "alpha" in key:
+            np.testing.assert_allclose(payload[key], expected[key], rtol=1e-6, atol=0)
 
 
 def test_cpml_auto_sigma_uses_target_reflection_formula_directly():
@@ -167,20 +189,22 @@ def test_cpml_auto_sigma_uses_target_reflection_formula_directly():
     assert pml.sigma_max is None
     assert pml.alpha_max is None
     assert float(np.max(np.asarray(payload["sigma_x"], dtype=np.float64))) == pytest.approx(unscaled_sigma)  # fmt: skip
-    assert pytest.approx(0.1) == pml._DEFAULT_CPML_ALPHA_NORMALIZED
 
 
-def test_cpml_3d_auto_alpha_uses_tuned_default():
-    fields = _make_fields_3d()
-    design = _make_design_3d()
-    pml = PML(thickness=0.2, sigma_max=5.0, alpha_max=None, formulation="cpml")
-    dt = 2e-15
-
-    payload = compile_absorber_regions(pml, fields, design, resolution=0.1, dt=dt)
-
-    assert pml.alpha_max is None
-    assert float(np.max(np.asarray(payload["alpha_x"], dtype=np.float64))) > 0.0
-    assert pytest.approx(0.05) == pml._DEFAULT_3D_CPML_ALPHA_NORMALIZED
+@pytest.mark.parametrize("make_fields", [_make_fields_2d, _make_fields_3d])
+@pytest.mark.parametrize("alpha", [None, 0.0, 125.0])
+def test_cpml_alpha_preserves_physical_scale_under_refinement(make_fields, alpha):
+    fields = make_fields()
+    pml = PML(thickness=0.4e-6, alpha_max=alpha, formulation="cpml")
+    compiler = _AbsorberCompiler(pml)
+    dx = 1e-6 / 320
+    dt = 0.5 * dx / LIGHT_SPEED
+    reference = compiler._resolved_profile_params(fields, dx, dt)
+    for spacing, step in ((dx, dt / 2), (dx / 2, dt / 2)):
+        assert compiler._resolved_profile_params(fields, spacing, step) == reference
+    expected = 0.1 * EPS_0 * LIGHT_SPEED / pml.thickness if alpha is None else alpha
+    assert reference[1] == pytest.approx(expected)
+    assert pml.alpha_max == alpha
 
 
 def test_cpml_auto_parameters_do_not_leak_between_shared_pml_uses():
@@ -481,3 +505,20 @@ def test_cpml_grid_profiles_are_directional_and_identity_interior():
     np.testing.assert_allclose(y_sigma[3:-3], 0.0)
     np.testing.assert_allclose(y_kappa[3:-3], 1.0)
     np.testing.assert_allclose(y_alpha[3:-3], 0.0)
+
+
+@pytest.mark.parametrize("dimension", [2, 3])
+def test_cpml_physical_profile_is_invariant_under_time_step_refinement(dimension):
+    fields = _make_fields_2d() if dimension == 2 else _make_fields_3d()
+    design = _make_design_2d() if dimension == 2 else _make_design_3d()
+    boundary = PML(thickness=0.2, formulation="cpml")
+    coarse = compile_absorber_regions(
+        boundary, fields, design, resolution=0.1, dt=2e-15
+    )
+    refined = compile_absorber_regions(
+        boundary, fields, design, resolution=0.1, dt=2e-16
+    )
+    for name in coarse:
+        if name.startswith(("sigma_", "alpha_", "kappa_")):
+            np.testing.assert_array_equal(coarse[name], refined[name])
+    assert np.max(np.asarray(coarse["alpha_x"])) > 0

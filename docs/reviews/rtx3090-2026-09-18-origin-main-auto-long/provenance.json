@@ -1,0 +1,26 @@
+{
+  "main_commit": "c5fe0d8833ac6539241ae9d3c98445e5a7305786",
+  "branch_head": "b0a5ff32d70755aa3c6f5d20e8ae9a5fdfe4ee7b",
+  "cases": [
+    [
+      "narrow_long",
+      [
+        1024,
+        256,
+        64
+      ],
+      "binary",
+      [
+        "main",
+        "branch_auto",
+        "branch_auto",
+        "main"
+      ]
+    ]
+  ],
+  "build": "CUDA 13.3.73, Release, SM86, fast math OFF, GNU 16.1.1, --allow-unsupported-compiler",
+  "branch_native_source_difference": "retained source differs from working tree only by two explanatory comment lines in temporal_cpml.cuh",
+  "main_source_sha256": "f356b249b2458637953e27a7bcd4dc7e474d25548f7aa811d0c0a87d07e5697f",
+  "branch_source_sha256": "4b6052fc5254b8f7fe663f53be0629b45ee76e6c5d625b05ca758a023e2ba74e",
+  "branch_working_diff": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/docs/reviews/rtx3090-2026-09-18-origin-main-auto-long/branch-working.diff"
+}

@@ -1,0 +1,62 @@
+[
+  {
+    "refractive_index": 1.0,
+    "points_per_wavelength": 10,
+    "steps": 179,
+    "cpml_cells": 12,
+    "shape": [
+      261,
+      121
+    ],
+    "variants": {
+      "fp32": {
+        "reflected_energy_ratio": 1.1239098133327188e-07,
+        "reflection_db": -69.49268536759284
+      },
+      "bf16": {
+        "reflected_energy_ratio": 3.865936424014371e-07,
+        "reflection_db": -64.12745292295766
+      }
+    }
+  },
+  {
+    "refractive_index": 1.0,
+    "points_per_wavelength": 20,
+    "steps": 358,
+    "cpml_cells": 12,
+    "shape": [
+      521,
+      241
+    ],
+    "variants": {
+      "fp32": {
+        "reflected_energy_ratio": 2.282934305514581e-05,
+        "reflection_db": -46.41506585734035
+      },
+      "bf16": {
+        "reflected_energy_ratio": 2.322025876469489e-05,
+        "reflection_db": -46.341329448277236
+      }
+    }
+  },
+  {
+    "refractive_index": 1.5,
+    "points_per_wavelength": 15,
+    "steps": 402,
+    "cpml_cells": 12,
+    "shape": [
+      391,
+      181
+    ],
+    "variants": {
+      "fp32": {
+        "reflected_energy_ratio": 3.311023885985691e-07,
+        "reflection_db": -64.80037686202216
+      },
+      "bf16": {
+        "reflected_energy_ratio": 1.0459090115420676e-06,
+        "reflection_db": -59.805060951092585
+      }
+    }
+  }
+]

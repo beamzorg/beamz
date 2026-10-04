@@ -1,0 +1,4 @@
+Final CPU validation: tests/unit/test_cuda_runtime_contract.py and tests/unit/test_cuda_abi_schema.py: 32 passed in 3.76 s (pytest seed 2271628853).
+Final generated ABI check, ruff check of touched Python files, and git diff --check: passed.
+CUDA build: precise math, CUDA 13.3.73, SM80/86/89/90. Execution device: RTX3090 SM86.
+Compute Sanitizer pipeline run used --report-api-errors no to suppress existing XLA CUDA module-symbol probes; device memcheck remained enabled.

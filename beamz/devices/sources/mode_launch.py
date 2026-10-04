@@ -8,6 +8,7 @@ from typing import Any, Literal, cast
 
 import numpy as np
 
+from beamz._region_array import tiles
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.devices._immutable import readonly_array
 from beamz.devices._placement import (
@@ -71,6 +72,27 @@ _STORAGE_AXES_3D = ("z", "y", "x")
 _PUBLIC_AXIS_POSITION = {"x": 0, "y": 1, "z": 2}
 
 
+def _material_mirror_symmetric(material, axis):
+    """Test material mirror symmetry with bounded float64 scratch."""
+    scale = 1.0
+    for tile in tiles(material.shape, np.float64):
+        values = np.asarray(material[tile], dtype=float)
+        if not np.all(np.isfinite(values)):
+            return False
+        scale = max(scale, float(np.max(np.abs(values), initial=0)))
+    for tile in tiles(material.shape, np.float64):
+        reflected = list(tile)
+        region = tile[axis]
+        reflected[axis] = slice(
+            material.shape[axis] - region.stop, material.shape[axis] - region.start
+        )
+        left = np.asarray(material[tile], dtype=float)
+        right = np.flip(np.asarray(material[tuple(reflected)], dtype=float), axis=axis)
+        if not np.allclose(left, right, rtol=1e-7, atol=1e-7 * scale):
+            return False
+    return True
+
+
 def _centered_transverse_symmetry_axes(source, fields, grid, resolution):
     """Return transverse storage axes that are physically mirror symmetric."""
     permittivity = np.asarray(fields.permittivity)
@@ -99,7 +121,7 @@ def _centered_transverse_symmetry_axes(source, fields, grid, resolution):
     local[normal_position] = slice(
         max(0, plane - 1), min(permittivity.shape[normal_position], plane + 2)
     )
-    material = np.asarray(permittivity[tuple(local)], dtype=float)
+    material = permittivity[tuple(local)]
     symmetric = []
     for storage_position, axis in enumerate(_STORAGE_AXES_3D):
         if storage_position == normal_position:
@@ -128,13 +150,7 @@ def _centered_transverse_symmetry_axes(source, fields, grid, resolution):
             atol=tolerance,
         ):
             continue
-        material_scale = max(float(np.max(np.abs(material))), 1.0)
-        if not np.allclose(
-            material,
-            np.flip(material, axis=storage_position),
-            rtol=1e-7,
-            atol=1e-7 * material_scale,
-        ):
+        if not _material_mirror_symmetric(material, storage_position):
             continue
         symmetric.append(storage_position)
     return tuple(symmetric)
@@ -868,9 +884,7 @@ def _reconstructed_3d_launch_phasor_state(
 
 def _expand_3d_residuals(residuals, fields, components):
     expanded = {
-        component: np.zeros_like(
-            np.asarray(getattr(fields, component)), dtype=np.complex128
-        )
+        component: np.zeros(getattr(fields, component).shape, dtype=np.complex128)
         for component in components
     }
     for residual in residuals:
@@ -896,25 +910,58 @@ def _launch_power_diagnostics_3d(
     launched_power = None
     if dt is not None and float(dt) > 0.0 and residuals:
         try:
+            # The launch is local: one Yee update and a plane quadrature do not
+            # need complex fields spanning the simulation volume. Reuse the
+            # residual compiler's stagger-aware crop (including its halo).
+            context = planar_tfsf.local_3d_phasor_context(
+                field_profile, fields, resolution=float(resolution), max_shift=12
+            )
+            diagnostic_source = source
+            diagnostic_profile = field_profile
+            diagnostic_fields = fields
+            diagnostic_residuals = residuals
+            if context is not None:
+                diagnostic_profile, diagnostic_fields, slices = context
+                diagnostic_residuals = tuple(
+                    replace(
+                        residual,
+                        index=planar_tfsf.shift_3d_component_index_to_local(
+                            residual.index,
+                            slices[residual.component],
+                            getattr(fields, residual.component).shape,
+                        ),
+                    )
+                    for residual in residuals
+                )
+                origin = tuple(int(s.start or 0) for s in slices["Ex"])
+                diagnostic_source = replace(
+                    source,
+                    center=tuple(
+                        float(coord) - offset * float(resolution)
+                        for coord, offset in zip(
+                            source.center, reversed(origin), strict=True
+                        )
+                    ),
+                )
             state = _reconstructed_3d_launch_phasor_state(
-                field_profile,
-                residuals,
-                fields,
+                diagnostic_profile,
+                diagnostic_residuals,
+                diagnostic_fields,
                 resolution=float(resolution),
                 dt=float(dt),
             )
             profiles = planar_tfsf.deembed_3d_phasor_profiles(
-                field_profile,
+                diagnostic_profile,
                 state,
-                fields,
+                diagnostic_fields,
                 resolution=float(resolution),
                 t_e=float(dt),
                 t_h=0.5 * float(dt),
             )
             launched_power = _yee_plane_power_3d(
-                source,
-                replace(field_profile, components=profiles),
-                fields,
+                diagnostic_source,
+                replace(diagnostic_profile, components=profiles),
+                diagnostic_fields,
                 resolution=float(resolution),
             )
         except Exception:

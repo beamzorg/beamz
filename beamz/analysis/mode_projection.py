@@ -8,7 +8,6 @@ from beamz.analysis.modal_projection.diagnostics import (
     _modal_projection_reconstruction_diagnostics_from_matrix,
 )
 from beamz.analysis.modal_projection.geometry import (
-    _analysis_plane_sample_area,
     _modal_projection_plane_delay_s,
     _mode_components_for_port,
     _monitor_analysis_plane_3d,
@@ -264,9 +263,13 @@ def _build_discrete_port_projection_3d(
     else:
         width, height = size[0], size[1]
 
+    # The scalar raster alone cannot reproduce smoothed or anisotropic Yee
+    # coefficients. Use the same retained constitutive data as the source solve.
     discrete_mode = solve_mode_plane_3d(
         perm,
         permeability,
+        material_tensors=sim.materials.material_tensors,
+        yee_materials=sim.materials.yee_materials,
         frequency=frequency,
         resolution=sim.resolution,
         dt=sim.dt,
@@ -292,11 +295,8 @@ def _build_discrete_port_projection_3d(
     proj_components = tuple(parts.get("projection_components_3d", ()))
     if not proj_components:
         raise ValueError(f"Port axis {axis!r} has no 3D projection components.")
-    d_area = _analysis_plane_sample_area(
-        analysis_coords0,
-        analysis_coords1,
-        float(sim.resolution),
-    )
+    # Match the flux monitor's cell-center aperture quadrature.
+    d_area = width * height / max(analysis_coords0.size * analysis_coords1.size, 1)
     if grid is not None and grid.metric_kind != "isotropic_uniform":
         if snapped_region is None:
             raise RuntimeError("Rectilinear mode projection requires a snapped region.")

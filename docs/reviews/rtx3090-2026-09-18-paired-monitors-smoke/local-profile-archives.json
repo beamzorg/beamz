@@ -1,0 +1,110 @@
+[
+  {
+    "original": "field_1024_256_64/single_z16/plugins/profile/2026_09_18_02_55_51/omarchy.xplane.pb",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/field_1024_256_64/single_z16/plugins/profile/2026_09_18_02_55_51/omarchy.xplane.pb",
+    "bytes": 280976695,
+    "sha256": "892c4689c308380cc2d7fb862badebe36def11334cc7175feb8834b1a427aabb"
+  },
+  {
+    "original": "field_1024_256_64/single_z16/plugins/profile/2026_09_18_02_55_51/omarchy.trace.json.gz",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/field_1024_256_64/single_z16/plugins/profile/2026_09_18_02_55_51/omarchy.trace.json.gz",
+    "bytes": 76406,
+    "sha256": "1836f8f8ccb8a59bd18b931ecac26a6e9c3f0074d8aff972e5081031bc84aba0"
+  },
+  {
+    "original": "field_1024_256_64/single/plugins/profile/2026_09_18_02_55_49/omarchy.xplane.pb",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/field_1024_256_64/single/plugins/profile/2026_09_18_02_55_49/omarchy.xplane.pb",
+    "bytes": 280976687,
+    "sha256": "cd9abe804079b830b7bf6507f3a6ef5a20beece5d89efe8061d8a6c2cad293af"
+  },
+  {
+    "original": "field_1024_256_64/single/plugins/profile/2026_09_18_02_55_49/omarchy.trace.json.gz",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/field_1024_256_64/single/plugins/profile/2026_09_18_02_55_49/omarchy.trace.json.gz",
+    "bytes": 76816,
+    "sha256": "cb61caae602e5c457ca4b9d7b34d0d9c6b035cbb10d4ddc76d075d61438fb1a3"
+  },
+  {
+    "original": "field_1024_256_64/one_step/plugins/profile/2026_09_18_02_55_47/omarchy.xplane.pb",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/field_1024_256_64/one_step/plugins/profile/2026_09_18_02_55_47/omarchy.xplane.pb",
+    "bytes": 281035502,
+    "sha256": "728970ea6932dea666089183c0b85fa6356940eb6dccb70b8e68a01d7b52b89b"
+  },
+  {
+    "original": "field_1024_256_64/one_step/plugins/profile/2026_09_18_02_55_47/omarchy.trace.json.gz",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/field_1024_256_64/one_step/plugins/profile/2026_09_18_02_55_47/omarchy.trace.json.gz",
+    "bytes": 83286,
+    "sha256": "7b04a6f761796e07df4ee01dd278b1119cc21b0b5bca3ee03e4e80c5689689f6"
+  },
+  {
+    "original": "volume_128_256_512/single_z16/plugins/profile/2026_09_18_02_54_53/omarchy.xplane.pb",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/volume_128_256_512/single_z16/plugins/profile/2026_09_18_02_54_53/omarchy.xplane.pb",
+    "bytes": 2254228,
+    "sha256": "132e0095945a9f979e5a9acffe8f7892c670281f71ee8f66b0b15d39f928feb8"
+  },
+  {
+    "original": "volume_128_256_512/single_z16/plugins/profile/2026_09_18_02_54_53/omarchy.trace.json.gz",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/volume_128_256_512/single_z16/plugins/profile/2026_09_18_02_54_53/omarchy.trace.json.gz",
+    "bytes": 74009,
+    "sha256": "d6b01c5ca34536373081755012239cf8046909c0146787a09e4bc3ff311a0550"
+  },
+  {
+    "original": "volume_128_256_512/single/plugins/profile/2026_09_18_02_54_52/omarchy.xplane.pb",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/volume_128_256_512/single/plugins/profile/2026_09_18_02_54_52/omarchy.xplane.pb",
+    "bytes": 2254231,
+    "sha256": "130ed3287322fb96fcb2744437d551a4a98f9ea6796d89049a3287ec637a6532"
+  },
+  {
+    "original": "volume_128_256_512/single/plugins/profile/2026_09_18_02_54_52/omarchy.trace.json.gz",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/volume_128_256_512/single/plugins/profile/2026_09_18_02_54_52/omarchy.trace.json.gz",
+    "bytes": 73761,
+    "sha256": "09c310e82c47ee6116f941c18fff5bca05ae505f960c6606950fc1b0b7c7f254"
+  },
+  {
+    "original": "volume_128_256_512/one_step/plugins/profile/2026_09_18_02_54_51/omarchy.xplane.pb",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/volume_128_256_512/one_step/plugins/profile/2026_09_18_02_54_51/omarchy.xplane.pb",
+    "bytes": 2314813,
+    "sha256": "828f375703ac4eddc566848cbca6c6f9690d0698a0beabe9dcd0088558f406cb"
+  },
+  {
+    "original": "volume_128_256_512/one_step/plugins/profile/2026_09_18_02_54_51/omarchy.trace.json.gz",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/volume_128_256_512/one_step/plugins/profile/2026_09_18_02_54_51/omarchy.trace.json.gz",
+    "bytes": 84661,
+    "sha256": "7940871f8b60321cf7c030f155af637124030441b31a5129d4df34a599aba05b"
+  },
+  {
+    "original": "volume_128_256_768/single_z16/plugins/profile/2026_09_18_02_54_14/omarchy.xplane.pb",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/volume_128_256_768/single_z16/plugins/profile/2026_09_18_02_54_14/omarchy.xplane.pb",
+    "bytes": 2390489,
+    "sha256": "402271f147e1242f54513f4f64c55e1a8bc5a10932479a1153a83f5b68a79b40"
+  },
+  {
+    "original": "volume_128_256_768/single_z16/plugins/profile/2026_09_18_02_54_14/omarchy.trace.json.gz",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/volume_128_256_768/single_z16/plugins/profile/2026_09_18_02_54_14/omarchy.trace.json.gz",
+    "bytes": 74818,
+    "sha256": "ef5de97634e0f8d1598a6109b2ab49e532d7efd89473c7ac429243c93c8b1587"
+  },
+  {
+    "original": "volume_128_256_768/single/plugins/profile/2026_09_18_02_54_12/omarchy.xplane.pb",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/volume_128_256_768/single/plugins/profile/2026_09_18_02_54_12/omarchy.xplane.pb",
+    "bytes": 2390485,
+    "sha256": "b9b3281238b3831befd314055a3a9a8e12ce675149496d43f0dead94215c98c0"
+  },
+  {
+    "original": "volume_128_256_768/single/plugins/profile/2026_09_18_02_54_12/omarchy.trace.json.gz",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/volume_128_256_768/single/plugins/profile/2026_09_18_02_54_12/omarchy.trace.json.gz",
+    "bytes": 74309,
+    "sha256": "bd8732527149f3ab3470312db11d43ee7e22de8e45f4fa6eb042e2456d445d51"
+  },
+  {
+    "original": "volume_128_256_768/one_step/plugins/profile/2026_09_18_02_54_11/omarchy.xplane.pb",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/volume_128_256_768/one_step/plugins/profile/2026_09_18_02_54_11/omarchy.xplane.pb",
+    "bytes": 2451009,
+    "sha256": "b9d11bcd2f9c6f4e9097d8ddf36e1b129f0fde173b670077b379cae463dd4f35"
+  },
+  {
+    "original": "volume_128_256_768/one_step/plugins/profile/2026_09_18_02_54_11/omarchy.trace.json.gz",
+    "local_archive": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/realistic-profiler-raw/volume_128_256_768/one_step/plugins/profile/2026_09_18_02_54_11/omarchy.trace.json.gz",
+    "bytes": 84894,
+    "sha256": "ca936ae20f50ccec658fed54006c8716751062d8e831f170f44326c1266414db"
+  }
+]

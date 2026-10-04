@@ -1,0 +1,17 @@
+{
+  "python": "/home/quentinwach/Code/.venv-cuda-pr233/bin/python",
+  "source_root": ".cache/perf/realistic-ring-full",
+  "output": "docs/reviews/rtx3090-2026-09-19-ring-full",
+  "cases": [
+    "volume_128_256_512",
+    "aspect_1024_256_64"
+  ],
+  "seed": 19,
+  "samples": 5,
+  "padding": "none",
+  "tile": "auto",
+  "temporal_steps": 2,
+  "fusion": "auto",
+  "shell_tile": "64x4",
+  "dry_run": false
+}

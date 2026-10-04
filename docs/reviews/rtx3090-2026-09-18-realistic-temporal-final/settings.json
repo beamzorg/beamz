@@ -1,0 +1,27 @@
+{
+  "output": "docs/reviews/rtx3090-2026-09-18-realistic-temporal-final",
+  "cases": [
+    "aspect_64_256_1024",
+    "aspect_64_1024_256",
+    "aspect_256_64_1024",
+    "aspect_256_1024_64",
+    "aspect_1024_64_256",
+    "aspect_1024_256_64",
+    "volume_128_256_256",
+    "volume_128_256_512",
+    "volume_128_256_768",
+    "volume_256_256_256",
+    "irregular_97_289_593",
+    "irregular_71_479_503",
+    "long_short_x",
+    "developed_short_x",
+    "smooth",
+    "field_1024_256_64",
+    "field_eleven_frequencies"
+  ],
+  "study": "temporal_schedule",
+  "rounds": 6,
+  "seed": 37,
+  "profile": false,
+  "worker": null
+}

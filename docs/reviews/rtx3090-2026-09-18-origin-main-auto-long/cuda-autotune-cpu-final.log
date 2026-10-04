@@ -1,0 +1,15 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.0.2, pluggy-1.6.0
+Using --randomly-seed=1966490370
+rootdir: /home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371
+configfile: pytest.ini
+plugins: randomly-4.0.1, cov-7.0.0, hypothesis-6.161.2
+collected 139 items
+
+tests/unit/test_cuda_tuning.py .........                                 [  6%]
+tests/unit/test_execution_backend.py ..................................  [ 30%]
+tests/contracts/test_simulation_architecture_contracts.py .............. [ 41%]
+.....................................................                    [ 79%]
+tests/unit/test_cuda_runtime_contract.py .............................   [100%]
+
+============================= 139 passed in 10.37s =============================

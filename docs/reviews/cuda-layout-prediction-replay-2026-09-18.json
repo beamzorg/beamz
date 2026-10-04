@@ -1,0 +1,879 @@
+{
+  "note": "Retrospective replay, not independent held-out validation or new timings",
+  "profiles": 13,
+  "distinct_shapes": 5,
+  "worst_slowdown_from_fastest_pct": 0.44121010044551046,
+  "records": [
+    {
+      "source": "docs/reviews/rtx3090-2026-09-18-cyclic-storage/developed_smooth.json",
+      "shape": [
+        1024,
+        256,
+        64
+      ],
+      "selected": "120/64x4",
+      "measured_fastest": "120/64x4",
+      "selected_time_s": 0.5386418474990933,
+      "slowdown_from_fastest_pct": 0.0,
+      "throughput_gain_over_canonical_pct": 24.768374592525298,
+      "prediction": {
+        "model": "cpml12-queue-v1",
+        "choice": {
+          "axes": [
+            1,
+            2,
+            0
+          ],
+          "shell_tile": "64x4"
+        },
+        "logical_shape": [
+          1024,
+          256,
+          64
+        ],
+        "candidate_work": {
+          "012": {
+            "stored_shape": [
+              1024,
+              256,
+              64
+            ],
+            "shell_slots": 19264000,
+            "core_slots": 14848000,
+            "total_slots": 34112000,
+            "slots_per_cell": 2.033233642578125
+          },
+          "120": {
+            "stored_shape": [
+              256,
+              64,
+              1024
+            ],
+            "shell_slots": 9511168,
+            "core_slots": 9502720,
+            "total_slots": 19013888,
+            "slots_per_cell": 1.1333160400390625
+          },
+          "201": {
+            "stored_shape": [
+              64,
+              1024,
+              256
+            ],
+            "shell_slots": 11142400,
+            "core_slots": 10240000,
+            "total_slots": 21382400,
+            "slots_per_cell": 1.2744903564453125
+          }
+        },
+        "minimum_work_reduction": 0.25,
+        "best_work_reduction": 0.4426041275797373,
+        "reason": "Substantial reduction in CPML queue thread slots"
+      }
+    },
+    {
+      "source": "docs/reviews/rtx3090-2026-09-18-cyclic-storage/irregular.json",
+      "shape": [
+        257,
+        193,
+        341
+      ],
+      "selected": "012/64x4",
+      "measured_fastest": "012/64x4",
+      "selected_time_s": 0.5318604970007073,
+      "slowdown_from_fastest_pct": 0.0,
+      "throughput_gain_over_canonical_pct": 0.0,
+      "prediction": {
+        "model": "cpml12-queue-v1",
+        "choice": {
+          "axes": [
+            0,
+            1,
+            2
+          ],
+          "shell_tile": "64x4"
+        },
+        "logical_shape": [
+          257,
+          193,
+          341
+        ],
+        "candidate_work": {
+          "012": {
+            "stored_shape": [
+              257,
+              193,
+              341
+            ],
+            "shell_slots": 6951680,
+            "core_slots": 12824320,
+            "total_slots": 19776000,
+            "slots_per_cell": 1.1692130178294935
+          },
+          "120": {
+            "stored_shape": [
+              193,
+              341,
+              257
+            ],
+            "shell_slots": 7727360,
+            "core_slots": 13844480,
+            "total_slots": 21571840,
+            "slots_per_cell": 1.275388154658929
+          },
+          "201": {
+            "stored_shape": [
+              341,
+              257,
+              193
+            ],
+            "shell_slots": 8724224,
+            "core_slots": 14363904,
+            "total_slots": 23088128,
+            "slots_per_cell": 1.3650353870809884
+          }
+        },
+        "minimum_work_reduction": 0.25,
+        "best_work_reduction": 0.0,
+        "reason": "Canonical layout retained; no substantial proxy improvement"
+      }
+    },
+    {
+      "source": "docs/reviews/rtx3090-2026-09-18-cyclic-storage/narrow63.json",
+      "shape": [
+        1024,
+        256,
+        63
+      ],
+      "selected": "120/64x4",
+      "measured_fastest": "120/64x4",
+      "selected_time_s": 0.5083339519997025,
+      "slowdown_from_fastest_pct": 0.0,
+      "throughput_gain_over_canonical_pct": 22.53334988733984,
+      "prediction": {
+        "model": "cpml12-queue-v1",
+        "choice": {
+          "axes": [
+            1,
+            2,
+            0
+          ],
+          "shell_tile": "64x4"
+        },
+        "logical_shape": [
+          1024,
+          256,
+          63
+        ],
+        "candidate_work": {
+          "012": {
+            "stored_shape": [
+              1024,
+              256,
+              63
+            ],
+            "shell_slots": 17056000,
+            "core_slots": 14848000,
+            "total_slots": 31904000,
+            "slots_per_cell": 1.9318111359126984
+          },
+          "120": {
+            "stored_shape": [
+              256,
+              63,
+              1024
+            ],
+            "shell_slots": 9402368,
+            "core_slots": 9502720,
+            "total_slots": 18905088,
+            "slots_per_cell": 1.1447172619047619
+          },
+          "201": {
+            "stored_shape": [
+              63,
+              1024,
+              256
+            ],
+            "shell_slots": 11069440,
+            "core_slots": 9984000,
+            "total_slots": 21053440,
+            "slots_per_cell": 1.2748015873015872
+          }
+        },
+        "minimum_work_reduction": 0.25,
+        "best_work_reduction": 0.4074383149448345,
+        "reason": "Substantial reduction in CPML queue thread slots"
+      }
+    },
+    {
+      "source": "docs/reviews/rtx3090-2026-09-18-cyclic-storage/narrow64.json",
+      "shape": [
+        1024,
+        256,
+        64
+      ],
+      "selected": "120/64x4",
+      "measured_fastest": "120/64x4",
+      "selected_time_s": 0.5172610430008717,
+      "slowdown_from_fastest_pct": 0.0,
+      "throughput_gain_over_canonical_pct": 24.384318073973034,
+      "prediction": {
+        "model": "cpml12-queue-v1",
+        "choice": {
+          "axes": [
+            1,
+            2,
+            0
+          ],
+          "shell_tile": "64x4"
+        },
+        "logical_shape": [
+          1024,
+          256,
+          64
+        ],
+        "candidate_work": {
+          "012": {
+            "stored_shape": [
+              1024,
+              256,
+              64
+            ],
+            "shell_slots": 19264000,
+            "core_slots": 14848000,
+            "total_slots": 34112000,
+            "slots_per_cell": 2.033233642578125
+          },
+          "120": {
+            "stored_shape": [
+              256,
+              64,
+              1024
+            ],
+            "shell_slots": 9511168,
+            "core_slots": 9502720,
+            "total_slots": 19013888,
+            "slots_per_cell": 1.1333160400390625
+          },
+          "201": {
+            "stored_shape": [
+              64,
+              1024,
+              256
+            ],
+            "shell_slots": 11142400,
+            "core_slots": 10240000,
+            "total_slots": 21382400,
+            "slots_per_cell": 1.2744903564453125
+          }
+        },
+        "minimum_work_reduction": 0.25,
+        "best_work_reduction": 0.4426041275797373,
+        "reason": "Substantial reduction in CPML queue thread slots"
+      }
+    },
+    {
+      "source": "docs/reviews/rtx3090-2026-09-18-cyclic-storage/narrow65.json",
+      "shape": [
+        1024,
+        256,
+        65
+      ],
+      "selected": "120/64x4",
+      "measured_fastest": "120/64x4",
+      "selected_time_s": 0.5327333714994893,
+      "slowdown_from_fastest_pct": 0.0,
+      "throughput_gain_over_canonical_pct": 24.78940161551133,
+      "prediction": {
+        "model": "cpml12-queue-v1",
+        "choice": {
+          "axes": [
+            1,
+            2,
+            0
+          ],
+          "shell_tile": "64x4"
+        },
+        "logical_shape": [
+          1024,
+          256,
+          65
+        ],
+        "candidate_work": {
+          "012": {
+            "stored_shape": [
+              1024,
+              256,
+              65
+            ],
+            "shell_slots": 19264000,
+            "core_slots": 14848000,
+            "total_slots": 34112000,
+            "slots_per_cell": 2.001953125
+          },
+          "120": {
+            "stored_shape": [
+              256,
+              65,
+              1024
+            ],
+            "shell_slots": 9570560,
+            "core_slots": 10452992,
+            "total_slots": 20023552,
+            "slots_per_cell": 1.175135216346154
+          },
+          "201": {
+            "stored_shape": [
+              65,
+              1024,
+              256
+            ],
+            "shell_slots": 11215360,
+            "core_slots": 10496000,
+            "total_slots": 21711360,
+            "slots_per_cell": 1.2741887019230769
+          }
+        },
+        "minimum_work_reduction": 0.25,
+        "best_work_reduction": 0.41300562851782363,
+        "reason": "Substantial reduction in CPML queue thread slots"
+      }
+    },
+    {
+      "source": "docs/reviews/rtx3090-2026-09-18-cyclic-storage/wide.json",
+      "shape": [
+        128,
+        256,
+        512
+      ],
+      "selected": "012/64x4",
+      "measured_fastest": "201/64x4",
+      "selected_time_s": 0.5126044364988047,
+      "slowdown_from_fastest_pct": 0.07560103447401545,
+      "throughput_gain_over_canonical_pct": 0.0,
+      "prediction": {
+        "model": "cpml12-queue-v1",
+        "choice": {
+          "axes": [
+            0,
+            1,
+            2
+          ],
+          "shell_tile": "64x4"
+        },
+        "logical_shape": [
+          128,
+          256,
+          512
+        ],
+        "candidate_work": {
+          "012": {
+            "stored_shape": [
+              128,
+              256,
+              512
+            ],
+            "shell_slots": 6965504,
+            "core_slots": 12353536,
+            "total_slots": 19319040,
+            "slots_per_cell": 1.1515045166015625
+          },
+          "120": {
+            "stored_shape": [
+              256,
+              512,
+              128
+            ],
+            "shell_slots": 10969856,
+            "core_slots": 14491648,
+            "total_slots": 25461504,
+            "slots_per_cell": 1.5176239013671875
+          },
+          "201": {
+            "stored_shape": [
+              512,
+              128,
+              256
+            ],
+            "shell_slots": 8676608,
+            "core_slots": 12992512,
+            "total_slots": 21669120,
+            "slots_per_cell": 1.2915802001953125
+          }
+        },
+        "minimum_work_reduction": 0.25,
+        "best_work_reduction": 0.0,
+        "reason": "Canonical layout retained; no substantial proxy improvement"
+      }
+    },
+    {
+      "source": "docs/reviews/rtx3090-2026-09-18-autotune/narrow.json",
+      "shape": [
+        1024,
+        256,
+        64
+      ],
+      "selected": "120/64x4",
+      "measured_fastest": "120/64x4",
+      "selected_time_s": 0.5006627554994338,
+      "slowdown_from_fastest_pct": 0.0,
+      "throughput_gain_over_canonical_pct": 24.40981701919096,
+      "prediction": {
+        "model": "cpml12-queue-v1",
+        "choice": {
+          "axes": [
+            1,
+            2,
+            0
+          ],
+          "shell_tile": "64x4"
+        },
+        "logical_shape": [
+          1024,
+          256,
+          64
+        ],
+        "candidate_work": {
+          "012": {
+            "stored_shape": [
+              1024,
+              256,
+              64
+            ],
+            "shell_slots": 19264000,
+            "core_slots": 14848000,
+            "total_slots": 34112000,
+            "slots_per_cell": 2.033233642578125
+          },
+          "120": {
+            "stored_shape": [
+              256,
+              64,
+              1024
+            ],
+            "shell_slots": 9511168,
+            "core_slots": 9502720,
+            "total_slots": 19013888,
+            "slots_per_cell": 1.1333160400390625
+          },
+          "201": {
+            "stored_shape": [
+              64,
+              1024,
+              256
+            ],
+            "shell_slots": 11142400,
+            "core_slots": 10240000,
+            "total_slots": 21382400,
+            "slots_per_cell": 1.2744903564453125
+          }
+        },
+        "minimum_work_reduction": 0.25,
+        "best_work_reduction": 0.4426041275797373,
+        "reason": "Substantial reduction in CPML queue thread slots"
+      }
+    },
+    {
+      "source": "docs/reviews/rtx3090-2026-09-18-autotune/wide.json",
+      "shape": [
+        128,
+        256,
+        512
+      ],
+      "selected": "012/64x4",
+      "measured_fastest": "201/32x8",
+      "selected_time_s": 0.4891323729989381,
+      "slowdown_from_fastest_pct": 0.44121010044551046,
+      "throughput_gain_over_canonical_pct": 0.0,
+      "prediction": {
+        "model": "cpml12-queue-v1",
+        "choice": {
+          "axes": [
+            0,
+            1,
+            2
+          ],
+          "shell_tile": "64x4"
+        },
+        "logical_shape": [
+          128,
+          256,
+          512
+        ],
+        "candidate_work": {
+          "012": {
+            "stored_shape": [
+              128,
+              256,
+              512
+            ],
+            "shell_slots": 6965504,
+            "core_slots": 12353536,
+            "total_slots": 19319040,
+            "slots_per_cell": 1.1515045166015625
+          },
+          "120": {
+            "stored_shape": [
+              256,
+              512,
+              128
+            ],
+            "shell_slots": 10969856,
+            "core_slots": 14491648,
+            "total_slots": 25461504,
+            "slots_per_cell": 1.5176239013671875
+          },
+          "201": {
+            "stored_shape": [
+              512,
+              128,
+              256
+            ],
+            "shell_slots": 8676608,
+            "core_slots": 12992512,
+            "total_slots": 21669120,
+            "slots_per_cell": 1.2915802001953125
+          }
+        },
+        "minimum_work_reduction": 0.25,
+        "best_work_reduction": 0.0,
+        "reason": "Canonical layout retained; no substantial proxy improvement"
+      }
+    },
+    {
+      "source": "docs/reviews/rtx3090-2026-09-18-autotune/irregular.json",
+      "shape": [
+        257,
+        193,
+        341
+      ],
+      "selected": "012/64x4",
+      "measured_fastest": "012/64x4",
+      "selected_time_s": 0.5226009979996888,
+      "slowdown_from_fastest_pct": 0.0,
+      "throughput_gain_over_canonical_pct": 0.0,
+      "prediction": {
+        "model": "cpml12-queue-v1",
+        "choice": {
+          "axes": [
+            0,
+            1,
+            2
+          ],
+          "shell_tile": "64x4"
+        },
+        "logical_shape": [
+          257,
+          193,
+          341
+        ],
+        "candidate_work": {
+          "012": {
+            "stored_shape": [
+              257,
+              193,
+              341
+            ],
+            "shell_slots": 6951680,
+            "core_slots": 12824320,
+            "total_slots": 19776000,
+            "slots_per_cell": 1.1692130178294935
+          },
+          "120": {
+            "stored_shape": [
+              193,
+              341,
+              257
+            ],
+            "shell_slots": 7727360,
+            "core_slots": 13844480,
+            "total_slots": 21571840,
+            "slots_per_cell": 1.275388154658929
+          },
+          "201": {
+            "stored_shape": [
+              341,
+              257,
+              193
+            ],
+            "shell_slots": 8724224,
+            "core_slots": 14363904,
+            "total_slots": 23088128,
+            "slots_per_cell": 1.3650353870809884
+          }
+        },
+        "minimum_work_reduction": 0.25,
+        "best_work_reduction": 0.0,
+        "reason": "Canonical layout retained; no substantial proxy improvement"
+      }
+    },
+    {
+      "source": "docs/reviews/rtx3090-2026-09-18-origin-main-auto-comparison/irregular-branch_auto-1.json",
+      "shape": [
+        257,
+        193,
+        341
+      ],
+      "selected": "012/64x4",
+      "measured_fastest": "012/64x4",
+      "selected_time_s": 0.5223366974987584,
+      "slowdown_from_fastest_pct": 0.0,
+      "throughput_gain_over_canonical_pct": 0.0,
+      "prediction": {
+        "model": "cpml12-queue-v1",
+        "choice": {
+          "axes": [
+            0,
+            1,
+            2
+          ],
+          "shell_tile": "64x4"
+        },
+        "logical_shape": [
+          257,
+          193,
+          341
+        ],
+        "candidate_work": {
+          "012": {
+            "stored_shape": [
+              257,
+              193,
+              341
+            ],
+            "shell_slots": 6951680,
+            "core_slots": 12824320,
+            "total_slots": 19776000,
+            "slots_per_cell": 1.1692130178294935
+          },
+          "120": {
+            "stored_shape": [
+              193,
+              341,
+              257
+            ],
+            "shell_slots": 7727360,
+            "core_slots": 13844480,
+            "total_slots": 21571840,
+            "slots_per_cell": 1.275388154658929
+          },
+          "201": {
+            "stored_shape": [
+              341,
+              257,
+              193
+            ],
+            "shell_slots": 8724224,
+            "core_slots": 14363904,
+            "total_slots": 23088128,
+            "slots_per_cell": 1.3650353870809884
+          }
+        },
+        "minimum_work_reduction": 0.25,
+        "best_work_reduction": 0.0,
+        "reason": "Canonical layout retained; no substantial proxy improvement"
+      }
+    },
+    {
+      "source": "docs/reviews/rtx3090-2026-09-18-origin-main-auto-comparison/narrow-branch_auto-1.json",
+      "shape": [
+        1024,
+        256,
+        64
+      ],
+      "selected": "120/64x4",
+      "measured_fastest": "120/64x4",
+      "selected_time_s": 0.5011451774989837,
+      "slowdown_from_fastest_pct": 0.0,
+      "throughput_gain_over_canonical_pct": 24.3998923849859,
+      "prediction": {
+        "model": "cpml12-queue-v1",
+        "choice": {
+          "axes": [
+            1,
+            2,
+            0
+          ],
+          "shell_tile": "64x4"
+        },
+        "logical_shape": [
+          1024,
+          256,
+          64
+        ],
+        "candidate_work": {
+          "012": {
+            "stored_shape": [
+              1024,
+              256,
+              64
+            ],
+            "shell_slots": 19264000,
+            "core_slots": 14848000,
+            "total_slots": 34112000,
+            "slots_per_cell": 2.033233642578125
+          },
+          "120": {
+            "stored_shape": [
+              256,
+              64,
+              1024
+            ],
+            "shell_slots": 9511168,
+            "core_slots": 9502720,
+            "total_slots": 19013888,
+            "slots_per_cell": 1.1333160400390625
+          },
+          "201": {
+            "stored_shape": [
+              64,
+              1024,
+              256
+            ],
+            "shell_slots": 11142400,
+            "core_slots": 10240000,
+            "total_slots": 21382400,
+            "slots_per_cell": 1.2744903564453125
+          }
+        },
+        "minimum_work_reduction": 0.25,
+        "best_work_reduction": 0.4426041275797373,
+        "reason": "Substantial reduction in CPML queue thread slots"
+      }
+    },
+    {
+      "source": "docs/reviews/rtx3090-2026-09-18-origin-main-auto-comparison/wide-branch_auto-1.json",
+      "shape": [
+        128,
+        256,
+        512
+      ],
+      "selected": "012/64x4",
+      "measured_fastest": "201/32x8",
+      "selected_time_s": 0.489162899000803,
+      "slowdown_from_fastest_pct": 0.4188506287164051,
+      "throughput_gain_over_canonical_pct": 0.0,
+      "prediction": {
+        "model": "cpml12-queue-v1",
+        "choice": {
+          "axes": [
+            0,
+            1,
+            2
+          ],
+          "shell_tile": "64x4"
+        },
+        "logical_shape": [
+          128,
+          256,
+          512
+        ],
+        "candidate_work": {
+          "012": {
+            "stored_shape": [
+              128,
+              256,
+              512
+            ],
+            "shell_slots": 6965504,
+            "core_slots": 12353536,
+            "total_slots": 19319040,
+            "slots_per_cell": 1.1515045166015625
+          },
+          "120": {
+            "stored_shape": [
+              256,
+              512,
+              128
+            ],
+            "shell_slots": 10969856,
+            "core_slots": 14491648,
+            "total_slots": 25461504,
+            "slots_per_cell": 1.5176239013671875
+          },
+          "201": {
+            "stored_shape": [
+              512,
+              128,
+              256
+            ],
+            "shell_slots": 8676608,
+            "core_slots": 12992512,
+            "total_slots": 21669120,
+            "slots_per_cell": 1.2915802001953125
+          }
+        },
+        "minimum_work_reduction": 0.25,
+        "best_work_reduction": 0.0,
+        "reason": "Canonical layout retained; no substantial proxy improvement"
+      }
+    },
+    {
+      "source": "docs/reviews/rtx3090-2026-09-18-origin-main-auto-long/narrow_long-branch_auto-1.json",
+      "shape": [
+        1024,
+        256,
+        64
+      ],
+      "selected": "120/64x4",
+      "measured_fastest": "120/64x4",
+      "selected_time_s": 0.5010424265001348,
+      "slowdown_from_fastest_pct": 0.0,
+      "throughput_gain_over_canonical_pct": 24.497205028571646,
+      "prediction": {
+        "model": "cpml12-queue-v1",
+        "choice": {
+          "axes": [
+            1,
+            2,
+            0
+          ],
+          "shell_tile": "64x4"
+        },
+        "logical_shape": [
+          1024,
+          256,
+          64
+        ],
+        "candidate_work": {
+          "012": {
+            "stored_shape": [
+              1024,
+              256,
+              64
+            ],
+            "shell_slots": 19264000,
+            "core_slots": 14848000,
+            "total_slots": 34112000,
+            "slots_per_cell": 2.033233642578125
+          },
+          "120": {
+            "stored_shape": [
+              256,
+              64,
+              1024
+            ],
+            "shell_slots": 9511168,
+            "core_slots": 9502720,
+            "total_slots": 19013888,
+            "slots_per_cell": 1.1333160400390625
+          },
+          "201": {
+            "stored_shape": [
+              64,
+              1024,
+              256
+            ],
+            "shell_slots": 11142400,
+            "core_slots": 10240000,
+            "total_slots": 21382400,
+            "slots_per_cell": 1.2744903564453125
+          }
+        },
+        "minimum_work_reduction": 0.25,
+        "best_work_reduction": 0.4426041275797373,
+        "reason": "Substantial reduction in CPML queue thread slots"
+      }
+    }
+  ]
+}

@@ -1,0 +1,3222 @@
+diff --git i/beamz/simulation/_cuda_abi.py w/beamz/simulation/_cuda_abi.py
+index 0a96cc26..65516b1b 100644
+--- i/beamz/simulation/_cuda_abi.py
++++ w/beamz/simulation/_cuda_abi.py
+@@ -9,6 +9,13 @@ __all__ = [
+     "CUDA_STREAMED_TARGETS",
+     "CUDA_GRAPH_CACHE",
+     "CUDA_BF16_PSI",
++    "CUDA_FIELD_PAD32",
++    "CUDA_FIELD_PAD64",
++    "CUDA_FIELD_PAD_Y8",
++    "CUDA_TEMPORAL_PAIR",
++    "CUDA_SHELL32X8",
++    "CUDA_SHELL32X4",
++    "CUDA_CPML_PAIR",
+     "CUDA_DEFAULT_FLAGS",
+     "NATIVE_SCHEDULE_CPML",
+     "NATIVE_SCHEDULE_TEMPORAL",
+@@ -66,8 +73,8 @@ __all__ = [
+     "TEMPORAL_PSI_WORKSPACE_INPUT",
+ ]
+ 
+-CUDA_ABI_VERSION = 15
+-CUDA_COMPONENT_VERSION = "0.15.0"
++CUDA_ABI_VERSION = 18
++CUDA_COMPONENT_VERSION = "0.18.0"
+ CUDA_STREAMED_TARGET = "beamz_cuda_streamed"
+ CUDA_PROGRAM_TARGET = "beamz_cuda_program"
+ CUDA_HOPPER_TARGET = "beamz_cuda_hopper"
+@@ -81,6 +88,13 @@ CUDA_STREAMED_TARGETS = frozenset(
+ 
+ CUDA_GRAPH_CACHE = 1 << 7
+ CUDA_BF16_PSI = 1 << 12
++CUDA_FIELD_PAD32 = 1 << 13
++CUDA_FIELD_PAD64 = 1 << 14
++CUDA_FIELD_PAD_Y8 = 1 << 15
++CUDA_TEMPORAL_PAIR = 1 << 16
++CUDA_SHELL32X8 = 1 << 17
++CUDA_SHELL32X4 = 1 << 18
++CUDA_CPML_PAIR = 1 << 19
+ CUDA_DEFAULT_FLAGS = CUDA_GRAPH_CACHE
+ 
+ NATIVE_SCHEDULE_CPML = 1 << 0
+diff --git i/beamz/simulation/api.py w/beamz/simulation/api.py
+index b0527d2e..1812968f 100644
+--- i/beamz/simulation/api.py
++++ w/beamz/simulation/api.py
+@@ -1216,8 +1216,9 @@ class Simulation:
+         Returns
+         -------
+         CompiledProgram
+-            Immutable numerical plan. The backend executable itself is JIT-compiled
+-            lazily on first execution and cached outside the simulation value.
++            Immutable numerical plan. Executables are normally JIT-compiled lazily.
++            Eligible CUDA workloads may calibrate storage and shell tiles during
++            this call, without advancing the simulation's state.
+ 
+         Examples
+         --------
+@@ -1229,6 +1230,11 @@ class Simulation:
+         -----
+         Calling :meth:`compile` is optional. :meth:`run`, :meth:`advance`, and
+         :meth:`step` compile and reuse the appropriate plan automatically.
++        On RTX3090, large lossless CPML12 programs of at least 32 steps can perform
++        a first-use calibration and cache the selected layout. Set
++        ``BEAMZ_CUDA_AUTOTUNE=off`` to avoid this setup cost. Explicit CUDA
++        layout or kernel overrides take precedence over automatic selection.
++        Long runs calibrate one native chunk of at most 256 steps.
+         """
+         # Lower an immutable request and cache by every value that changes generated code or storage.
+         return compile_program(
+diff --git i/beamz/simulation/backend.py w/beamz/simulation/backend.py
+index 2ab8365d..24965f25 100644
+--- i/beamz/simulation/backend.py
++++ w/beamz/simulation/backend.py
+@@ -13,10 +13,17 @@ import jax
+ from beamz.simulation._cuda_abi import (
+     CUDA_ABI_VERSION,
+     CUDA_BF16_PSI,
++    CUDA_CPML_PAIR,
+     CUDA_DEFAULT_FLAGS,
++    CUDA_FIELD_PAD32,
++    CUDA_FIELD_PAD64,
++    CUDA_FIELD_PAD_Y8,
+     CUDA_GRAPH_CACHE,
+     CUDA_HOPPER_TARGET,
++    CUDA_SHELL32X4,
++    CUDA_SHELL32X8,
+     CUDA_STREAMED_TARGETS,
++    CUDA_TEMPORAL_PAIR,
+ )
+ 
+ ExecutionBackend = Literal[
+@@ -46,7 +53,7 @@ def _env_enabled(name: str, *, default: bool) -> bool:
+ 
+ 
+ def cuda_flags_from_env() -> int:
+-    """Snapshot CUDA cache and precision choices into one cacheable bitset."""
++    """Snapshot CUDA execution choices into one cacheable bitset."""
+     flags = CUDA_DEFAULT_FLAGS
+     if _env_enabled("BEAMZ_CUDA_DISABLE_GRAPH_CACHE", default=False):
+         flags &= ~CUDA_GRAPH_CACHE
+@@ -55,9 +62,41 @@ def cuda_flags_from_env() -> int:
+         flags |= CUDA_BF16_PSI
+     elif precision not in {"fp32", "float32", ""}:
+         raise ValueError("BEAMZ_CUDA_CPML_PSI_PRECISION must be 'fp32' or 'bf16'")
++    padding = os.environ.get("BEAMZ_CUDA_FIELD_PADDING", "none").lower()
++    layouts = {
++        "none": 0,
++        "32": CUDA_FIELD_PAD32,
++        "64": CUDA_FIELD_PAD64,
++        "32x8": CUDA_FIELD_PAD32 | CUDA_FIELD_PAD_Y8,
++        "64x8": CUDA_FIELD_PAD64 | CUDA_FIELD_PAD_Y8,
++    }
++    if padding not in layouts:
++        raise ValueError("BEAMZ_CUDA_FIELD_PADDING must be none, 32, 64, 32x8, or 64x8")
++    flags |= layouts[padding]
++    temporal_steps = os.environ.get("BEAMZ_CUDA_TEMPORAL_STEPS", "1")
++    if temporal_steps not in {"1", "2"}:
++        raise ValueError("BEAMZ_CUDA_TEMPORAL_STEPS must be 1 or 2")
++    if temporal_steps == "2":
++        flags |= CUDA_TEMPORAL_PAIR
++    if _env_enabled("BEAMZ_CUDA_CPML_TEMPORAL", default=False):
++        flags |= CUDA_TEMPORAL_PAIR | CUDA_CPML_PAIR
++    shell_tile = os.environ.get("BEAMZ_CUDA_CPML_SHELL_TILE", "64x4")
++    shell_tiles = {"64x4": 0, "32x8": CUDA_SHELL32X8, "32x4": CUDA_SHELL32X4}
++    if shell_tile not in shell_tiles:
++        raise ValueError("BEAMZ_CUDA_CPML_SHELL_TILE must be 64x4, 32x8, or 32x4")
++    flags |= shell_tiles[shell_tile]
+     return flags
+ 
+ 
++def cuda_storage_axes_from_env() -> tuple[int, int, int]:
++    """Snapshot an experimental, right-handed CUDA storage-axis order."""
++    value = os.environ.get("BEAMZ_CUDA_STORAGE_AXES", "012").strip()
++    orders = {"012": (0, 1, 2), "120": (1, 2, 0), "201": (2, 0, 1)}
++    if value not in orders:
++        raise ValueError("BEAMZ_CUDA_STORAGE_AXES must be 012, 120, or 201")
++    return orders[value]
++
++
+ def cuda_graph_cache_capacity_from_env() -> int:
+     """Snapshot the bounded native graph-cache target for a compiled program.
+ 
+diff --git i/beamz/simulation/compile.py w/beamz/simulation/compile.py
+index df82b62f..ab17ed7c 100644
+--- i/beamz/simulation/compile.py
++++ w/beamz/simulation/compile.py
+@@ -75,11 +75,13 @@ class CompiledProgramKey:
+     backend: str
+     cuda_flags: int
+     cuda_graph_cache_capacity: int
++    cuda_storage_axes: tuple[int, int, int]
+     sharding: ShardingToken
+     materials: HashToken
+     sources: tuple[HashToken, ...]
+     monitors: tuple[HashToken, ...]
+     boundaries: tuple[HashToken, ...]
++    cuda_tuning_policy: tuple = ()
+ 
+     @classmethod
+     def from_request(cls, request: SimulationRequest) -> CompiledProgramKey:
+@@ -97,6 +99,7 @@ class CompiledProgramKey:
+             request.run.backend,
+             request.run.cuda_flags,
+             request.run.cuda_graph_cache_capacity,
++            request.run.cuda_storage_axes,
+             request.run.sharding,
+             cache_token(request.materials),
+             tuple(cache_token(source) for source in request.sources),
+@@ -404,6 +407,7 @@ def _prepare_compilation(
+         sharding=effective_sharding,
+         cuda_flags=int(request.run.cuda_flags),
+         cuda_graph_cache_capacity=int(request.run.cuda_graph_cache_capacity),
++        cuda_storage_axes=request.run.cuda_storage_axes,
+     )
+     return _CompileSetup(
+         dt,
+@@ -830,6 +834,7 @@ def compile_program(
+         CudaBackendUnavailable,
+         cuda_flags_from_env,
+         cuda_graph_cache_capacity_from_env,
++        cuda_storage_axes_from_env,
+         normalize_backend,
+         resolve_backend,
+     )
+@@ -874,6 +879,11 @@ def compile_program(
+         else resolve_backend(requested_backend)
+     )
+     cuda_flags = cuda_flags_from_env() if resolved_backend != "jax" else 0
++    cuda_storage_axes = (
++        cuda_storage_axes_from_env() if resolved_backend != "jax" else (0, 1, 2)
++    )
++    if cuda_storage_axes != (0, 1, 2) and resolved_backend != "cuda_streamed":
++        raise ValueError("CUDA storage-axis permutations require cuda_streamed")
+     cuda_graph_cache_capacity = (
+         cuda_graph_cache_capacity_from_env() if resolved_backend != "jax" else 0
+     )
+@@ -892,9 +902,21 @@ def compile_program(
+             request.run,
+             cuda_flags=cuda_flags,
+             cuda_graph_cache_capacity=cuda_graph_cache_capacity,
++            cuda_storage_axes=cuda_storage_axes,
+         ),
+     )
+     signature = CompiledProgramKey.from_request(request)
++    tuning_policy = None
++    if resolved_backend == "cuda_streamed":
++        from .cuda.tuning import tuning_policy_from_env
++
++        tuning_policy = tuning_policy_from_env()
++        if (
++            metric_kind == "isotropic_uniform"
++            and steps >= 32
++            and np.prod(material_grid.shape) >= 8 * 1024 * 1024
++        ):
++            signature = replace(signature, cuda_tuning_policy=tuning_policy)
+     if cached := _PROGRAM_CACHE.get(signature):
+         _PROGRAM_CACHE.move_to_end(signature)
+         return cached
+@@ -903,6 +925,10 @@ def compile_program(
+     compile_factory = compile_factory or compile_simulation
+     with setup_context_factory(simulation.setup_device_resolved):
+         program = compile_factory(request)
++    if tuning_policy is not None:
++        from .cuda.tuning import select_program
++
++        program = select_program(program, signature, tuning_policy)
+     _PROGRAM_CACHE[signature] = program
+     if len(_PROGRAM_CACHE) > _MAX_COMPILED_PROGRAMS:
+         _PROGRAM_CACHE.popitem(last=False)
+diff --git i/beamz/simulation/cuda/runtime.py w/beamz/simulation/cuda/runtime.py
+index 5821f051..0623dfc6 100644
+--- i/beamz/simulation/cuda/runtime.py
++++ w/beamz/simulation/cuda/runtime.py
+@@ -53,6 +53,8 @@ class NativeSchedulePlan:
+     monitor_count: int = 0
+     coincident_source_group_mask: int = 0
+     disjoint_source_group_mask: int = 0
++    logical_shape: tuple[int, int, int] = (0, 0, 0)
++    temporal_steps: int = 1
+ 
+     @property
+     def uses_temporal_fields(self) -> bool:
+@@ -154,6 +156,10 @@ def _program_attributes(ctx, nsteps: int, plan: NativeSchedulePlan):
+         "coincident_source_group_mask": np.int32(plan.coincident_source_group_mask),
+         "disjoint_source_group_mask": np.int32(plan.disjoint_source_group_mask),
+         "schedule_flags": np.int32(plan.flags),
++        "logical_z": np.int32(plan.logical_shape[0]),
++        "logical_y": np.int32(plan.logical_shape[1]),
++        "logical_x": np.int32(plan.logical_shape[2]),
++        "temporal_steps": np.int32(plan.temporal_steps),
+     }
+ 
+ 
+@@ -397,9 +403,31 @@ def _replace_graph_outputs(state, outputs) -> SimulationState:
+     )
+ 
+ 
+-def _temporal_cpml_graph_io(state, ctx, coeffs):
++def _field_padding(ctx):
++    flags = ctx.config.cuda_flags
++    x = (
++        64
++        if flags & abi.CUDA_FIELD_PAD64
++        else 32
++        if flags & abi.CUDA_FIELD_PAD32
++        else 1
++    )
++    y = 8 if x > 1 and flags & abi.CUDA_FIELD_PAD_Y8 else 1
++    return y, x
++
++
++def _temporal_cpml_graph_io(state, ctx, coeffs, temporal_steps=1):
+     arguments, _, _ = _cpml_graph_io(state, ctx, coeffs)
+     fields = _fields(state)
++    py, px = _field_padding(ctx)
++    if px > 1:
++        fields = tuple(
++            jnp.pad(
++                value, ((0, 0), (0, -value.shape[1] % py), (0, -value.shape[2] % px))
++            )
++            for value in fields
++        )
++        arguments = (*fields, *arguments[_FIELD_COUNT:])
+     workspace = tuple(jnp.empty_like(value) for value in fields)
+     psi = (*state.cpml_psi_h_terms, *state.cpml_psi_e_terms)
+     psi_workspace = tuple(jnp.empty_like(value) for value in psi)
+@@ -431,15 +459,38 @@ def _temporal_cpml_graph_io(state, ctx, coeffs):
+             for index in range(2 * _CPML_TERM_COUNT)
+         }
+     )
+-    return (*arguments, *workspace, *psi_workspace), result_values, aliases
++    arguments = (*arguments, *workspace, *psi_workspace)
++    if temporal_steps == 2:
++        pair_fields = tuple(jnp.empty_like(value) for value in fields)
++        aliases.update(
++            {len(arguments) + i: len(result_values) + i for i in range(_FIELD_COUNT)}
++        )
++        arguments = (*arguments, *pair_fields)
++        result_values = (*result_values, *pair_fields)
++    return arguments, result_values, aliases
+ 
+ 
+-def _replace_temporal_cpml_outputs(state, outputs, nsteps):
++def _replace_temporal_cpml_outputs(
++    state, outputs, nsteps, temporal_steps=1, cpml_pair=False
++):
+     field_start = 0 if nsteps % 2 == 0 else _FIELD_COUNT
++    if temporal_steps == 2 and nsteps % 4 == 2:
++        field_start = 2 * _FIELD_COUNT + 4 * _CPML_TERM_COUNT
+     psi_start = 2 * _FIELD_COUNT
+-    if nsteps % 2:
++    psi_swaps = (
++        nsteps // 2 + nsteps % 2 if cpml_pair and temporal_steps == 2 else nsteps
++    )
++    if psi_swaps % 2:
+         psi_start += 2 * _CPML_TERM_COUNT
+-    return _replace_fields(state, outputs, field_start)._replace(
++    fields = tuple(
++        value[tuple(slice(0, n) for n in original.shape)]
++        for value, original in zip(
++            outputs[field_start : field_start + _FIELD_COUNT],
++            _fields(state),
++            strict=True,
++        )
++    )
++    return _replace_fields(state, fields)._replace(
+         cpml_psi_h_terms=outputs[psi_start : psi_start + _CPML_TERM_COUNT],
+         cpml_psi_e_terms=outputs[
+             psi_start + _CPML_TERM_COUNT : psi_start + 2 * _CPML_TERM_COUNT
+@@ -506,10 +557,13 @@ def _disjoint_source_group_mask(groups: tuple[Any, ...]) -> int:
+ 
+ def _uniform_cpml_thickness(ctx) -> int:
+     """Return the one thickness shared by every H/E recurrence, or zero."""
+-    return _boundary_code(
+-        ctx.boundary.cpml.metallic_edges,
+-        (*ctx.boundary.cpml.h_terms, *ctx.boundary.cpml.e_terms),
+-    ) >> 8
++    return (
++        _boundary_code(
++            ctx.boundary.cpml.metallic_edges,
++            (*ctx.boundary.cpml.h_terms, *ctx.boundary.cpml.e_terms),
++        )
++        >> 8
++    )
+ 
+ 
+ def _packed_e_material(coeffs) -> bool:
+@@ -528,24 +582,28 @@ def _packed_e_material(coeffs) -> bool:
+ 
+ 
+ def _combined_cpml_core_supported(state, ctx, coeffs) -> bool:
+-    """Prove the combined CPML queue has a non-empty regular-grid core."""
++    """Prove the combined CPML queue has a non-empty regular-grid core.
++
++    Material encoding is independent of the spatial partition: scalar, dense,
++    and codebook E coefficients all use the same disjoint core/shell boxes.
++    Dense H coefficients retain the general schedule until they benefit.
++    """
+     if (
+         not ctx.boundary.cpml.enabled
+         or ctx.config.metric_kind != "isotropic_uniform"
+         or _uniform_cpml_thickness(ctx) <= 0
+-        or not _packed_e_material(coeffs)
+     ):
+         return False
+-    h_values = (
+-        coeffs.h_decay_x,
+-        coeffs.h_decay_y,
+-        coeffs.h_decay_z,
+-        coeffs.h_source_x,
+-        coeffs.h_source_y,
+-        coeffs.h_source_z,
+-    )
++    # Dense H coefficients did not benefit from the combined queue or a
++    # second bank in the conductive benchmark; retain the general schedule.
++    if any(
++        getattr(coeffs, f"h_{kind}_{axis}").ndim != 0
++        for kind in ("decay", "source")
++        for axis in "xyz"
++    ):
++        return False
+     thickness = _uniform_cpml_thickness(ctx)
+-    return all(value.ndim == 0 for value in h_values) and all(
++    return all(
+         min(int(field.shape[axis]) for field in _fields(state)[:3]) > 2 * thickness
+         for axis in range(3)
+     )
+@@ -570,7 +628,9 @@ def _temporal_cpml_fields_supported(ctx, coeffs, nsteps: int) -> bool:
+     )
+     e_sources = (coeffs.e_source_x, coeffs.e_source_y, coeffs.e_source_z)
+     return all(value.ndim == 0 for value in h_values) and all(
+-        value.ndim == 1 and value.dtype == jnp.int32 for value in e_sources
++        value.size > 0
++        and (value.ndim in (0, 3) or (value.ndim == 1 and value.dtype == jnp.int32))
++        for value in e_sources
+     )
+ 
+ 
+@@ -648,7 +708,10 @@ def _native_schedule_plan(
+         flags |= abi.NATIVE_SCHEDULE_PACKED_MATERIAL
+     if combined_cpml_core:
+         flags |= abi.NATIVE_SCHEDULE_COMBINED_CPML_CORE
+-    if kind in {"source", "monitor"} or layout == abi.PROGRAM_LAYOUT_SOURCE_TEMPORAL_CPML:
++    if (
++        kind in {"source", "monitor"}
++        or layout == abi.PROGRAM_LAYOUT_SOURCE_TEMPORAL_CPML
++    ):
+         flags |= abi.NATIVE_SCHEDULE_SOURCES
+     if monitor_count:
+         flags |= abi.NATIVE_SCHEDULE_MONITORS
+@@ -660,6 +723,19 @@ def _native_schedule_plan(
+         monitor_count=monitor_count,
+         coincident_source_group_mask=_coincident_source_group_mask(groups),
+         disjoint_source_group_mask=_disjoint_source_group_mask(groups),
++        logical_shape=(state.hx.shape[0], state.hx.shape[1], state.hy.shape[2])
++        if temporal_cpml and _field_padding(ctx)[1] > 1
++        else (0, 0, 0),
++        temporal_steps=2
++        if (
++            temporal_cpml
++            and combined_cpml_core
++            and ctx.config.cuda_flags & abi.CUDA_TEMPORAL_PAIR
++            and all(group is None for group in groups[:3])
++            and min(state.hx.shape[0], state.hx.shape[1], state.hy.shape[2])
++            > 2 * (_uniform_cpml_thickness(ctx) + 2)
++        )
++        else 1,
+     )
+ 
+ 
+@@ -673,7 +749,7 @@ def run_source_group_steps(state, ctx, coeffs, groups, nsteps: int) -> Simulatio
+     )
+     use_temporal_cpml = plan.uses_temporal_fields
+     arguments, result_values, aliases = (
+-        _temporal_cpml_graph_io(state, ctx, coeffs)
++        _temporal_cpml_graph_io(state, ctx, coeffs, plan.temporal_steps)
+         if use_temporal_cpml
+         else _graph_io(state, ctx, coeffs)
+     )
+@@ -685,7 +761,13 @@ def run_source_group_steps(state, ctx, coeffs, groups, nsteps: int) -> Simulatio
+         **_program_attributes(ctx, nsteps, plan),
+     )
+     if use_temporal_cpml:
+-        return _replace_temporal_cpml_outputs(state, outputs, nsteps)
++        return _replace_temporal_cpml_outputs(
++            state,
++            outputs,
++            nsteps,
++            plan.temporal_steps,
++            bool(ctx.config.cuda_flags & abi.CUDA_CPML_PAIR),
++        )
+     if ctx.boundary.cpml.enabled:
+         return _replace_graph_outputs(state, outputs)
+     return _replace_fields(state, outputs)
+@@ -782,6 +864,27 @@ def pack_dft_monitors(monitors):
+     )
+ 
+ 
++def _pair_publication_mask(state, packed_monitors):
++    """Conservative 16x8x1 map of intermediate fields read by any DFT gather.
++
++    Includes every component and interpolation neighbor, independent of record
++    interval/window. Static gather plans let XLA fold this once at compilation.
++    Logical coordinates deliberately exclude storage padding.
++    """
++    fields = (state.ex, state.ey, state.ez, state.hx, state.hy, state.hz)
++    nz, ny, nx = (max(field.shape[a] for field in fields) for a in range(3))
++    mask = jnp.zeros((nz, (ny + 7) // 8, (nx + 15) // 16), dtype=jnp.int32)
++    for component, field in enumerate(fields):
++        indices = packed_monitors[0][:, component].reshape(-1)
++        z = indices // (field.shape[1] * field.shape[2])
++        y = (indices // field.shape[2]) % field.shape[1]
++        x = indices % field.shape[2]
++        valid = (indices >= 0) & (indices < field.size)
++        # Invalid indices are dropped; duplicate updates all write the same 1.
++        mask = mask.at[jnp.where(valid, z, nz), y // 8, x // 16].set(1, mode="drop")
++    return mask
++
++
+ def run_program_steps(
+     state, ctx, coeffs, groups, packed_monitors, nsteps: int
+ ) -> SimulationState:
+@@ -802,7 +905,7 @@ def run_program_steps(
+     )
+     use_temporal_cpml = plan.uses_temporal_fields
+     arguments, result_values, aliases = (
+-        _temporal_cpml_graph_io(state, ctx, coeffs)
++        _temporal_cpml_graph_io(state, ctx, coeffs, plan.temporal_steps)
+         if use_temporal_cpml
+         else _graph_io(state, ctx, coeffs)
+     )
+@@ -814,13 +917,26 @@ def run_program_steps(
+         state.dft_weight_sum,
+     )
+     phase_shape = (
+-        int(packed_monitors[0].shape[0]),
++        int(packed_monitors[0].shape[0]) * plan.temporal_steps,
+         int(packed_monitors[2].shape[1]),
+     )
+     phase_sin = jnp.empty(phase_shape, dtype=jnp.float32)
+     phase_cos = jnp.empty(phase_shape, dtype=jnp.float32)
+     phase_window = jnp.empty(phase_shape, dtype=jnp.float32)
+     result_values = (*result_values, phase_sin, phase_cos, phase_window)
++    if plan.temporal_steps == 2:
++        result_values = (
++            *result_values,
++            jnp.empty(
++                (
++                    int(packed_monitors[0].shape[0]),
++                    6,
++                    int(packed_monitors[0].shape[2]),
++                    2,
++                ),
++                dtype=jnp.float32,
++            ),
++        )
+     monitor_output_start = len(arguments) + len(source_arguments) + len(packed_monitors)
+     aliases = {
+         **aliases,
+@@ -844,10 +960,21 @@ def run_program_steps(
+         phase_window,
+         state.t,
+         state.current_step,
++        *(
++            (_pair_publication_mask(state, packed_monitors),)
++            if plan.temporal_steps == 2
++            else ()
++        ),
+         **_program_attributes(ctx, nsteps, plan),
+     )
+     if use_temporal_cpml:
+-        next_state = _replace_temporal_cpml_outputs(state, outputs, nsteps)
++        next_state = _replace_temporal_cpml_outputs(
++            state,
++            outputs,
++            nsteps,
++            plan.temporal_steps,
++            bool(ctx.config.cuda_flags & abi.CUDA_CPML_PAIR),
++        )
+     elif ctx.boundary.cpml.enabled:
+         next_state = _replace_graph_outputs(state, outputs)
+     else:
+diff --git i/beamz/simulation/execute.py w/beamz/simulation/execute.py
+index c614ed1a..c9613dbb 100644
+--- i/beamz/simulation/execute.py
++++ w/beamz/simulation/execute.py
+@@ -605,6 +605,28 @@ def build_scan(program, *, donate_state: bool = False):
+         and (not program.monitors or packed_graph_monitors is not None)
+         and (not program.sources or source_groups_supported)
+     )
++    native_graph_calls = None
++    if cfg.cuda_storage_axes != (0, 1, 2):
++        if not (
++            cuda_multi_step
++            and cfg.is_3d
++            and cfg.metric_kind == "isotropic_uniform"
++            and boundary.cpml.enabled
++        ):
++            raise ValueError(
++                "CUDA storage-axis permutations require a 3D uniform-grid CPML "
++                "native graph with supported slab sources and DFT monitors"
++            )
++        from beamz.simulation.cuda import (
++            run_program_steps,
++            run_source_group_steps,
++            run_steps,
++        )
++        from beamz.simulation.cuda.storage import wrap_native_calls
++
++        native_graph_calls = wrap_native_calls(
++            run_steps, run_program_steps, run_source_group_steps, cfg.cuda_storage_axes
++        )
+ 
+     def run_scan(
+         state: SimulationState,
+@@ -619,6 +641,11 @@ def build_scan(program, *, donate_state: bool = False):
+                 run_steps,
+             )
+ 
++            if native_graph_calls is not None:
++                run_steps, run_program_steps, run_source_group_steps = (
++                    native_graph_calls
++                )
++
+             def advance_native_chunk(chunk_state, chunk_steps: int, elapsed_steps):
+                 elapsed_steps = jnp.asarray(elapsed_steps, dtype=jnp.int32)
+                 chunk_state = chunk_state._replace(
+diff --git i/beamz/simulation/kernels.py w/beamz/simulation/kernels.py
+index 6481f676..3fe239aa 100644
+--- i/beamz/simulation/kernels.py
++++ w/beamz/simulation/kernels.py
+@@ -255,13 +255,20 @@ def compile_cpml_term(*, component, axis, sign, sigma, kappa, alpha, dt, full_sh
+ 
+ 
+ def correct_cpml_term(derivative, psi, term):
+-    """Apply one packed recurrence and return the signed corrected derivative."""
++    """Apply CPML in field precision, rounding only the stored auxiliary state."""
+     if not term.slab.low and not term.slab.high:
+         return term.sign * derivative, psi
+-    derivative_slab = _pack_cpml_slab(derivative.astype(psi.dtype), term.slab)
+-    psi = term.b.astype(psi.dtype) * psi + term.a.astype(psi.dtype) * derivative_slab
+-    corrected = derivative_slab * term.inv_kappa.astype(psi.dtype) + psi
+-    return term.sign * _unpack_cpml_slab(derivative, corrected, term.slab), psi
++    arithmetic_dtype = jnp.result_type(derivative.dtype, psi.dtype, jnp.float32)
++    derivative_slab = _pack_cpml_slab(derivative.astype(arithmetic_dtype), term.slab)
++    next_psi = (
++        term.b.astype(arithmetic_dtype) * psi.astype(arithmetic_dtype)
++        + term.a.astype(arithmetic_dtype) * derivative_slab
++    )
++    corrected = derivative_slab * term.inv_kappa.astype(arithmetic_dtype) + next_psi
++    return (
++        term.sign * _unpack_cpml_slab(derivative, corrected, term.slab),
++        next_psi.astype(psi.dtype),
++    )
+ 
+ 
+ def fused_update_h_lossy_3d_material(
+diff --git i/beamz/simulation/model.py w/beamz/simulation/model.py
+index b8fde569..e6d57b02 100644
+--- i/beamz/simulation/model.py
++++ w/beamz/simulation/model.py
+@@ -36,6 +36,7 @@ class RunSpec:
+     backend: str = "jax"
+     cuda_flags: int = 0
+     cuda_graph_cache_capacity: int = 32
++    cuda_storage_axes: tuple[int, int, int] = (0, 1, 2)
+ 
+ 
+ @dataclass(frozen=True, slots=True)
+@@ -464,6 +465,7 @@ class RunConfig:
+     sharding: ShardingConfig = ShardingConfig()
+     cuda_flags: int = 0
+     cuda_graph_cache_capacity: int = 32
++    cuda_storage_axes: tuple[int, int, int] = (0, 1, 2)
+ 
+ 
+ @dataclass(frozen=True, slots=True, eq=False)
+diff --git i/cuda/README.md w/cuda/README.md
+index b5da9dc6..4d3091b5 100644
+--- i/cuda/README.md
++++ w/cuda/README.md
+@@ -64,12 +64,110 @@ manifest before registering any FFI handler. An older or partial component makes
+ `auto` fall back to JAX and causes explicit CUDA requests to fail with a
+ compatibility diagnostic.
+ 
+-Regular-grid, lossless CPML simulations with packed source groups use two
++Eligible regular-grid CPML simulations with packed source groups use two
+ XLA-owned field banks. Alternating frozen inputs and outputs removes in-place
+ read/write hazards and enables safe spatial fusion in the CPML-free core. The
+-validated temporal, packed-source, material-codebook, and combined CPML queues
+-are unconditional; the legacy experimental schedule switches and their dead
+-kernels have been removed.
++combined core/shell queue accepts scalar, dense, and exact codebook E materials
++with scalar H coefficients. Dense H coefficients retain the general schedule.
++On SM86, grids with scalar H update coefficients, at least 12 Mi cells, and
++x extent at least 384 use an H/E
++interior kernel with a two-plane shared-memory ring. H sources are included in
++interior and halo recomputation; CPML shell updates remain separate. Smaller or
++narrower grids and unmeasured architectures retain separate phase queues.
++See the [local RTX3090 measurements](../docs/reviews/cuda-optimization-2026-09-17.md)
++for the measured envelope, remaining validation gates, and limitations.
++
++`BEAMZ_CUDA_CPML_CORE_FUSION=0` disables interior fusion; `=1` forces it for
++otherwise eligible schedules. Unset it for automatic selection. This diagnostic
++override is read at native invocation and included in the graph-cache key; it
++changes scheduling only. It allows small parity and sanitizer workloads to
++exercise fusion, including odd tile tails and sources crossing the shell.
++
++Experimental layout and temporal-blocking controls (ABI 18):
++
++- `BEAMZ_CUDA_STORAGE_AXES=012|120|201` selects an internal cyclic storage
++  permutation. The default `012` preserves canonical `(z,y,x)` storage;
++  `120` stores `(y,x,z)` and `201` stores `(x,z,y)`. For example, `120` stores
++  a physical `1024x256x64` domain as `256x64x1024`, with no geometry change.
++  Fields, packed material IDs, CPML terms, sources and DFT component/gather
++  plans are remapped together, and returned state remains canonical. The
++  choice is snapshotted in the compiled-program cache key. Conversions occur
++  around each native chunk and are included in executable timings. This
++  opt-in currently requires a uniform 3D CPML native graph; supported sources
++  and DFT monitors may be present or absent. Unsupported execution paths raise
++  an error. A longer contiguous axis improved the measured narrow cases, but
++  one fixed permutation is not universally faster.
++- `BEAMZ_CUDA_FIELD_PADDING=none|32|64|32x8|64x8` rounds each field's storage
++  width to 32 or 64 floats, optionally rounding its allocated height to eight
++  rows. Logical Yee extents, CPML thickness, source positions and DFT indices
++  remain unchanged. Padding/cropping happens once around a multi-step program,
++  not once per timestep. The default is `none`; these are measured experiments,
++  not universal performance recommendations.
++- `BEAMZ_CUDA_CPML_TILE=auto|32x8x8|64x4x8|32x4x8` selects a compiled fused
++  interior tile. `auto` retains 32x8x8 and the existing fusion eligibility rules.
++  The native graph key includes the tile choice.
++- `BEAMZ_CUDA_CPML_SHELL_TILE=64x4|32x8|32x4` selects a combined CPML queue
++  variant. The default preserves the existing FP32 64x4 / BF16 32x4 selection;
++  the other values explicitly select their named tile. The core queue remaps
++  threads to a 64-wide tile, preserving logical coverage.
++- `BEAMZ_CUDA_TEMPORAL_STEPS=1|2` selects an experimental paired schedule at
++  `2`. The default rolling interior completes two Yee timesteps using a
++  16x8x16 tile and three two-plane stages (about 13 KB shared memory). A third
++  field bank keeps old fields frozen. Only a two-cell coupling rim and the
++  monitor gather regions publish intermediate fields. CPML recurrence state
++  still advances separately at both substeps; it is not temporally blocked.
++  Sources are injected at their original H/E phase and timestep.
++- `BEAMZ_CUDA_PAIR_TILE=16x8x16|32x4x16|32x8x16|single` selects the paired
++  schedule's interior. `16x8x16` retains the bare-stencil winner. `single`
++  preserves the ordinary, automatically selected field kernels and pairs only
++  monitor processing; it avoids the temporal coupling band. This override is
++  read at native invocation and included in the graph key.
++- `BEAMZ_CUDA_CPML_TEMPORAL=1` opts into complete two-step CPML tiles,
++  including on-chip intermediate auxiliary state and source injection. This
++  also requests temporal depth two. Final auxiliary banks swap once per pair;
++  odd tails retain one-step semantics. FP32 and BF16 auxiliary storage are
++  supported. This experiment is currently slower than the established schedule.
++- `BEAMZ_CUDA_CPML_PAIR_TILE=16x8x16|16x8x4|oriented` selects those CPML
++  boundary tiles while retaining the winning 16x8x16 two-step interior.
++  The oriented family uses 15x16x16 x-face and 16x15x16 y-face tiles with
++  384 threads, 32x4x16 z-face tiles and 16x8x4 edge/corner tiles. The y-face
++  kernel bounds register use to permit three resident blocks on SM86.
++- `BEAMZ_CUDA_CPML_SPATIAL=1` selects an experimental fused single H/E step
++  across the domain, including CPML. It is a control for measuring the cost of
++  temporal halos and intermediate auxiliary storage. Complete temporal CPML
++  takes precedence if both controls are set. Both native tile controls and the
++  spatial choice are included in graph-cache keys.
++
++Both paired schedules gather each monitor point at both times once, share the
++interpolation geometry, reuse the samples across frequencies, and accumulate
++DFTs in chronological order. Record intervals, Hann windows, normalization,
++masked components, odd trailing steps and continuation retain their semantics.
++Scratch samples cost `2 * monitor_count * 6 * max_points * sizeof(float)` bytes;
++the conservative publication map uses one int32 per 16x8x1 logical region.
++Paired execution requires uniform CPML, scalar H coefficients, a nonempty deep
++interior, and no before-H source groups. Other cases retain the ordinary path.
++`BEAMZ_CUDA_TEMPORAL_STEPS=1` remains the default; these experiments have not
++established consistent 9 GCUPS for arbitrary realistic simulations.
++
++Padding, shell tiling and temporal depth are snapshotted into the compiled
++program's CUDA flags. Returned fields always have the original logical shapes.
++Inspect `native_plans` in benchmark JSON to confirm whether the requested
++temporal depth was eligible. Run `scripts/benchmark_cuda_shapes.py --help` for
++controlled layout comparisons with 12-cell CPML and lossless mode-source cases.
++The [RTX3090 layout and temporal study](../docs/reviews/cuda-layout-temporal-study-2026-09-18.md)
++records the measured regressions and shape dependence. These controls are
++experimental; padding and two-timestep blocking are not enabled automatically.
++The [expanded CPML and bare temporal study](../docs/reviews/cuda-cpml-tiles-and-bare-temporal-2026-09-18.md)
++tests tile generality and a separate rolling-plane temporal prototype. Two-step
++rolling reuse helps the tested bare periodic stencil. Its rolling design is now
++available through the backend's temporal flag; realistic CPML coupling adds
++substantial cost. The standalone source is
++`cuda/tests/temporal_bulk_benchmark.cu`.
++The [realistic integration study](../docs/reviews/cuda-realistic-temporal-integration-2026-09-18.md)
++records paired source/monitor integration, correctness checks and large-domain
++comparisons. `scripts/benchmark_cuda_cpml_tiles.py --study temporal_schedule`
++compares the ordinary schedule, rolling two-step core and paired monitors on the
++same initialized problem, with interleaved timing rounds.
+ 
+ For memory-constrained CPML runs,
+ `BEAMZ_CUDA_CPML_PSI_PRECISION=bf16` stores only absorber recurrence state in
+@@ -85,7 +183,7 @@ threads to a `64 × 2` recurrence-free core tile; FP32 retains its measured-opti
+ executables. In-flight entries may temporarily exceed the target so the native
+ cache never destroys an executable still referenced by a CUDA stream. These
+ choices and the CPML precision setting are snapshotted into the immutable
+-compiled-program key; native execution never rereads environment variables.
++compiled-program key. The scheduling-only fusion override above is separate.
+ Set `BEAMZ_CUDA_GRAPH_CACHE_STATS=1` while profiling to emit an initial and then
+ periodic cache hit-rate and mean graph-instantiation-time summary. It is off by
+ default and has no counter/timing work on normal graph replays.
+@@ -98,6 +196,22 @@ No CUDA result is promoted without all of the following on real hardware:
+ - run Compute Sanitizer memcheck and racecheck;
+ - capture Nsight Compute memory throughput and the canonical H100 GCUPS records.
+ 
++For a standalone CPML interior sanitizer check without JAX initialization:
++
++```console
++mkdir -p .cache/cuda-check
++nvcc -std=c++17 -arch=sm_86 -Icuda/src \
++  cuda/tests/cpml_core_sanitizer.cu cuda/src/update.cu \
++  -o .cache/cuda-check/cpml_core_sanitizer
++compute-sanitizer --tool memcheck --error-exitcode 99 .cache/cuda-check/cpml_core_sanitizer
++compute-sanitizer --tool racecheck --error-exitcode 99 .cache/cuda-check/cpml_core_sanitizer
++```
++
++This exercises packed/dense coefficients, overlapping H/E sources, partial tiles,
++padded storage, all three ring tiles, and the two-timestep core. It checks memory
++access and synchronization in these interior kernels;
++the complete-state numerical oracle remains `tests/hardware/test_cuda_backends.py`.
++
+ The CUDA workflow always compiles the private component and imports it through the
+ BeamZ namespace in a CUDA development container. It is retained only as a CI
+ artifact and is never published independently. Repositories with an H100
+@@ -113,3 +227,49 @@ clang++ -std=c++17 \
+   -I"$(python -c 'import jax; print(jax.ffi.include_dir())')" -Icuda/src \
+   -fsyntax-only cuda/src/ffi_handler.cc
+ ```
++
++### Automatic RTX3090 storage and shell selection
++
++With no manual `BEAMZ_CUDA_*` overrides, `Simulation.compile()` automatically
++calibrates eligible RTX3090 programs on first use. It compares the three cyclic
++storage orders (`012`, `120`, `201`) and the existing `64x4` / `32x8` CPML shell
++tiles. The physical grid, 12-cell CPML, source/monitor sampling and FP32 precision
++remain unchanged. Existing automatic H/E fusion still applies within each layout;
++experimental CPML temporal blocking is not selected.
++
++Calibration uses a private initial state, exact complete-state validation against
++the branch's ordinary canonical layout, two additional warmups and six balanced
++timing rounds. Layout conversions are timed. A nondefault choice must reduce
++median runtime by at least 3% and win in both timing halves. This finds the best
++accepted member of a small candidate set, not a global optimum or a guarantee
++of beating another revision. First-use calibration adds setup time (about
++37 seconds in the initial 16.8-million-cell flat-domain check).
++
++Results persist under `$XDG_CACHE_HOME/beamz/cuda-tuning` (otherwise
++`~/.cache/beamz/cuda-tuning`). Keys include the exact request, step count, native
++and Python solver fingerprints, JAX/platform versions, GPU UUID, driver and power
++limit. Configuration is stored in the returned immutable program and isolated
++in the compiled-program cache. A cache hit does not rerun the timing trials.
++
++```python
++program = sim.compile(num_steps=256, backend="cuda_streamed")
++from beamz.simulation.cuda.tuning import tuning_report
++print(program.config.cuda_storage_axes)
++print(tuning_report(program))  # choice, samples, rejections, cost and cache hit
++```
++
++`BEAMZ_CUDA_AUTOTUNE=off` disables selection. `refresh` recalibrates after clearing
++the program cache or starting a new process. `BEAMZ_CUDA_TUNING_CACHE` chooses a
++cache directory. Other explicit `BEAMZ_CUDA_*` overrides disable automatic
++selection, preserving manual experiments. Unwritable caches do not prevent runs.
++
++The initial automatic scope is one RTX3090, at least 8,388,608 logical cells,
++at least 32 steps, uniform 3D lossless diagonal materials, CPML12, and native-compatible
++slab sources / DFT monitors. Other workloads retain existing dispatch. Calibration
++requires GPU telemetry, at least 4 GiB free memory between trials, and temperature
++below 85 C. It makes no power-limit changes. Decisions describe warm execution;
++startup cost can outweigh the gain for a simulation run only once. Calibration
++checks branch-internal parity; it does not resolve the separately recorded CPML
++numerical differences from `origin/main`.
++
++Long runs calibrate a single native chunk of at most 256 steps using the full source and monitor plans. The returned program keeps the requested step count. This bounds first-use cost; chunk timing predicts the long-run choice, so unusual tails or changing source activity can change the optimum.
+diff --git i/cuda/abi_layout.json w/cuda/abi_layout.json
+index 0bd04e5e..d74d4797 100644
+--- i/cuda/abi_layout.json
++++ w/cuda/abi_layout.json
+@@ -1,6 +1,6 @@
+ {
+-  "abi_version": 15,
+-  "component_version": "0.15.0",
++  "abi_version": 18,
++  "component_version": "0.18.0",
+   "targets": {
+     "streamed": "beamz_cuda_streamed",
+     "program": "beamz_cuda_program",
+@@ -12,7 +12,14 @@
+   ],
+   "flags": {
+     "graph_cache": 7,
+-    "bf16_psi": 12
++    "bf16_psi": 12,
++    "field_pad32": 13,
++    "field_pad64": 14,
++    "field_pad_y8": 15,
++    "temporal_pair": 16,
++    "shell32x8": 17,
++    "shell32x4": 18,
++    "cpml_pair": 19
+   },
+   "default_flags": [
+     "graph_cache"
+diff --git i/cuda/pyproject.toml w/cuda/pyproject.toml
+index 787cd61b..39e34a00 100644
+--- i/cuda/pyproject.toml
++++ w/cuda/pyproject.toml
+@@ -9,7 +9,7 @@ build-backend = "scikit_build_core.build"
+ 
+ [project]
+ name = "beamz-cuda-component"
+-version = "0.15.0"
++version = "0.18.0"
+ description = "Private optional CUDA component built from the BeamZ source tree"
+ requires-python = ">=3.10"
+ classifiers = ["Private :: Do Not Upload"]
+diff --git i/cuda/src/abi_layout.h w/cuda/src/abi_layout.h
+index bd608f52..7f380fb0 100644
+--- i/cuda/src/abi_layout.h
++++ w/cuda/src/abi_layout.h
+@@ -7,14 +7,21 @@
+ 
+ namespace beamz::cuda::abi {
+ 
+-inline constexpr int32_t kAbiVersion = 15;
+-inline constexpr char kComponentVersion[] = "0.15.0";
++inline constexpr int32_t kAbiVersion = 18;
++inline constexpr char kComponentVersion[] = "0.18.0";
+ inline constexpr char kStreamedTarget[] = "beamz_cuda_streamed";
+ inline constexpr char kProgramTarget[] = "beamz_cuda_program";
+ inline constexpr char kHopperTarget[] = "beamz_cuda_hopper";
+ 
+ inline constexpr int32_t kBeamzGraphCache = 1 << 7;
+ inline constexpr int32_t kBeamzBf16Psi = 1 << 12;
++inline constexpr int32_t kBeamzFieldPad32 = 1 << 13;
++inline constexpr int32_t kBeamzFieldPad64 = 1 << 14;
++inline constexpr int32_t kBeamzFieldPadY8 = 1 << 15;
++inline constexpr int32_t kBeamzTemporalPair = 1 << 16;
++inline constexpr int32_t kBeamzShell32x8 = 1 << 17;
++inline constexpr int32_t kBeamzShell32x4 = 1 << 18;
++inline constexpr int32_t kBeamzCpmlPair = 1 << 19;
+ inline constexpr int32_t kBeamzDefaultFlags = kBeamzGraphCache;
+ 
+ inline constexpr int32_t kNativeScheduleCpml = 1 << 0;
+diff --git i/cuda/src/ffi_handler.cc w/cuda/src/ffi_handler.cc
+index e9293fb0..f3d7fbe6 100644
+--- i/cuda/src/ffi_handler.cc
++++ w/cuda/src/ffi_handler.cc
+@@ -262,6 +262,14 @@ ffi::Error DecodeBuffer(const ffi::AnyBuffer& value, BeamzBuffer* output) {
+   for (size_t index = 0; index < dims.size(); ++index) {
+     output->dims[index] = dims[index];
+   }
++  if (dims.size() == 3) {
++    if (dims[1] > INT32_MAX || dims[2] > INT32_MAX ||
++        dims[1] * dims[2] > INT32_MAX)
++      return ffi::Error::InvalidArgument(
++          "rank-three pitches exceed int32 offsets");
++    output->row_stride = static_cast<int32_t>(dims[2]);
++    output->plane_stride = static_cast<int32_t>(dims[1] * dims[2]);
++  }
+   return ffi::Error::Success();
+ }
+ 
+@@ -536,6 +544,37 @@ ffi::Error StreamedSourceGroupsCpmlStepsHandler(
+                    std::to_string(error));
+ }
+ 
++// Input/output aliasing has already been established by XLA. Only the six
++// field components in each bank have padded storage; coefficients and
++// compressed CPML recurrences retain their logical indexing and allocations.
++ffi::Error ConfigurePaddedFields(BeamzBuffer* outputs, int nz, int ny, int nx,
++                                 int count = 2 * kFieldCount) {
++  if (nz == 0 && ny == 0 && nx == 0) return ffi::Error::Success();
++  if (nz <= 0 || ny <= 0 || nx <= 0 || nz >= INT32_MAX || ny >= INT32_MAX ||
++      nx >= INT32_MAX)
++    return ffi::Error::InvalidArgument("invalid logical field extents");
++  for (int i = 0; i < count; ++i) {
++    auto& field = outputs[i];
++    const int c = i % kFieldCount;
++    const bool electric = c >= 3;
++    const int axis = c % 3;
++    const int64_t z = nz + (electric ? axis != 2 : axis == 2);
++    const int64_t y = ny + (electric ? axis != 1 : axis == 1);
++    const int64_t x = nx + (electric ? axis != 0 : axis == 0);
++    if (field.rank != 3 || field.element_type != kBeamzF32 ||
++        field.dims[0] != z || field.dims[1] < y || field.dims[2] < x ||
++        field.dims[1] > INT32_MAX || field.dims[2] > INT32_MAX ||
++        field.dims[1] * field.dims[2] > INT32_MAX / z)
++      return ffi::Error::InvalidArgument("invalid padded field allocation");
++    field.row_stride = static_cast<int32_t>(field.dims[2]);
++    field.plane_stride = static_cast<int32_t>(field.dims[1] * field.dims[2]);
++    field.dims[0] = z;
++    field.dims[1] = y;
++    field.dims[2] = x;
++  }
++  return ffi::Error::Success();
++}
++
+ // A second XLA-owned field bank lets the CUDA implementation freeze every
+ // timestep's inputs.  The native scheduler can then fuse the CPML-free core
+ // without racing another block that still needs the old magnetic halo.
+@@ -544,7 +583,8 @@ ffi::Error TemporalSourceGroupsCpmlStepsHandler(
+     int32_t abi_version, int32_t cuda_flags, int32_t nsteps, float dt,
+     float resolution, int32_t boundary_code, int32_t metric_kind,
+     int32_t coincident_source_group_mask, int32_t disjoint_source_group_mask,
+-    int32_t graph_cache_capacity, int32_t schedule_flags) {
++    int32_t graph_cache_capacity, int32_t schedule_flags, int32_t logical_z,
++    int32_t logical_y, int32_t logical_x, int32_t temporal_steps) {
+   constexpr size_t kGraphInputCount = kCpmlGraphInputCount;
+   constexpr size_t kWorkspaceInputCount = 3 * kFieldCount;
+   constexpr size_t kSourceInputCount =
+@@ -563,24 +603,47 @@ ffi::Error TemporalSourceGroupsCpmlStepsHandler(
+     return ffi::Error::InvalidArgument(
+         "invalid BeamZ CUDA temporal CPML source-group attributes");
+   }
+-  BeamzBuffer inputs[kInputCount]{};
+-  BeamzBuffer outputs[kOutputCount]{};
+-  if (auto error = DecodeArgs(args, inputs); error.failure()) return error;
+-  if (auto error = DecodeRets(rets, outputs); error.failure()) return error;
++  const size_t extra = temporal_steps == 2 ? kFieldCount : 0;
++  BeamzBuffer inputs[kInputCount + kFieldCount]{};
++  BeamzBuffer outputs[kOutputCount + kFieldCount]{};
++  if (auto error = DecodeArgs(args, inputs, kInputCount + extra);
++      error.failure())
++    return error;
++  if (auto error = DecodeRets(rets, outputs, kOutputCount + extra);
++      error.failure())
++    return error;
+ 
++  if (auto error =
++          ConfigurePaddedFields(outputs, logical_z, logical_y, logical_x);
++      error.failure())
++    return error;
++
++  if (extra) {
++    if (auto error = ConfigurePaddedFields(
++            outputs + 2 * kFieldCount + 4 * kCpmlTermCount, logical_z,
++            logical_y, logical_x, kFieldCount);
++        error.failure())
++      return error;
++  }
+   TemporalCpmlLaunches launches = InitializeTemporalCpmlLaunches(
+       abi_version, cuda_flags, dt, resolution, boundary_code, metric_kind,
+       inputs, outputs);
+ 
+   BeamzSourceGroupLaunch groups[kSourceGroupCount]{};
+-  constexpr size_t kSourceOffset = kGraphInputCount + kWorkspaceInputCount;
++  const size_t kSourceOffset = kGraphInputCount + kWorkspaceInputCount + extra;
+   const BeamzBuffer& current_step =
+       inputs[kSourceOffset + kSourceGroupBufferCount * kSourceGroupCount];
+   InitializeSourceGroups(groups, inputs, kSourceOffset, current_step,
+                          coincident_source_group_mask, disjoint_source_group_mask);
+-  const int error = BeamzLaunchProgram(
+-      stream, TemporalProgram(launches, nsteps, groups, kSourceGroupCount,
+-                              nullptr, graph_cache_capacity, schedule_flags));
++  auto program = TemporalProgram(launches, nsteps, groups, kSourceGroupCount,
++                                 nullptr, graph_cache_capacity, schedule_flags);
++  if (extra) {
++    program.field_bank_count = 3;
++    for (int c = 0; c < kFieldCount; ++c)
++      program.pair_fields[c] =
++          outputs[2 * kFieldCount + 4 * kCpmlTermCount + c];
++  }
++  const int error = BeamzLaunchProgram(stream, program);
+   return error == 0
+              ? ffi::Error::Success()
+              : ffi::Error::Internal(
+@@ -594,7 +657,8 @@ ffi::Error TemporalProgramCpmlStepsHandler(
+     float resolution, int32_t boundary_code, int32_t metric_kind,
+     int32_t monitor_count, int32_t coincident_source_group_mask,
+     int32_t disjoint_source_group_mask, int32_t graph_cache_capacity,
+-    int32_t schedule_flags) {
++    int32_t schedule_flags, int32_t logical_z, int32_t logical_y,
++    int32_t logical_x, int32_t temporal_steps) {
+   constexpr size_t kGraphInputCount = kCpmlGraphInputCount;
+   constexpr size_t kWorkspaceInputCount = 3 * kFieldCount;
+   constexpr size_t kSourceInputCount =
+@@ -604,8 +668,8 @@ ffi::Error TemporalProgramCpmlStepsHandler(
+   constexpr size_t kStateOutputCount =
+       2 * kFieldCount + 4 * kCpmlTermCount;
+   constexpr size_t kOutputCount = kStateOutputCount + 6;
+-  if (abi_version != kAbiVersion || nsteps < 1 ||
+-      metric_kind < 0 || metric_kind > 2 || monitor_count < 1 ||
++  if (abi_version != kAbiVersion || nsteps < 1 || metric_kind < 0 ||
++      metric_kind > 2 || monitor_count < 1 ||
+       coincident_source_group_mask < 0 ||
+       coincident_source_group_mask >= (1 << kSourceGroupCount) ||
+       disjoint_source_group_mask < 0 ||
+@@ -614,50 +678,88 @@ ffi::Error TemporalProgramCpmlStepsHandler(
+     return ffi::Error::InvalidArgument(
+         "invalid BeamZ CUDA temporal CPML program attributes");
+   }
+-  BeamzBuffer inputs[kInputCount]{};
+-  BeamzBuffer outputs[kOutputCount]{};
+-  if (auto error = DecodeArgs(args, inputs); error.failure()) return error;
+-  if (auto error = DecodeRets(rets, outputs); error.failure()) return error;
++  const size_t extra = temporal_steps == 2 ? kFieldCount : 0;
++  BeamzBuffer inputs[kInputCount + kFieldCount + 1]{};
++  BeamzBuffer outputs[kOutputCount + kFieldCount + 1]{};
++  if (auto error =
++          DecodeArgs(args, inputs, kInputCount + extra + (extra ? 1 : 0));
++      error.failure())
++    return error;
++  if (auto error =
++          DecodeRets(rets, outputs, kOutputCount + extra + (extra ? 1 : 0));
++      error.failure())
++    return error;
+ 
++  if (auto error =
++          ConfigurePaddedFields(outputs, logical_z, logical_y, logical_x);
++      error.failure())
++    return error;
++
++  if (extra) {
++    if (auto error = ConfigurePaddedFields(
++            outputs + 2 * kFieldCount + 4 * kCpmlTermCount, logical_z,
++            logical_y, logical_x, kFieldCount);
++        error.failure())
++      return error;
++  }
+   TemporalCpmlLaunches launches = InitializeTemporalCpmlLaunches(
+       abi_version, cuda_flags, dt, resolution, boundary_code, metric_kind,
+       inputs, outputs);
+ 
+-  constexpr size_t kSourceOffset = kGraphInputCount + kWorkspaceInputCount;
+-  constexpr size_t kMonitorOffset = kSourceOffset + kSourceInputCount;
+-  const BeamzBuffer& current_step =
++  const size_t kSourceOffset = kGraphInputCount + kWorkspaceInputCount + extra;
++  const size_t kMonitorOffset = kSourceOffset + kSourceInputCount;
++  const BeamzBuffer &current_step =
+       inputs[kMonitorOffset + kMonitorCurrentStepInput];
+   BeamzSourceGroupLaunch groups[kSourceGroupCount]{};
+   InitializeSourceGroups(groups, inputs, kSourceOffset, current_step,
+-                         coincident_source_group_mask, disjoint_source_group_mask);
++                         coincident_source_group_mask,
++                         disjoint_source_group_mask);
+   BeamzDftGroupLaunch monitors = InitializeDftGroups(
+-      inputs, kMonitorOffset, outputs[kStateOutputCount],
+-      outputs[kStateOutputCount + 1], outputs[kStateOutputCount + 2],
+-      outputs[kStateOutputCount + 3], outputs[kStateOutputCount + 4],
+-      outputs[kStateOutputCount + 5],
+-      monitor_count);
++      inputs, kMonitorOffset, outputs[kStateOutputCount + extra],
++      outputs[kStateOutputCount + extra + 1],
++      outputs[kStateOutputCount + extra + 2],
++      outputs[kStateOutputCount + extra + 3],
++      outputs[kStateOutputCount + extra + 4],
++      outputs[kStateOutputCount + extra + 5], monitor_count);
+ 
+-  const int error = BeamzLaunchProgram(
+-      stream, TemporalProgram(launches, nsteps, groups, kSourceGroupCount,
+-                              &monitors, graph_cache_capacity, schedule_flags));
+-  return error == 0
+-             ? ffi::Error::Success()
+-             : ffi::Error::Internal(
+-                   "BeamZ CUDA temporal CPML program launch failed: " +
+-                   std::to_string(error));
++  if (extra)
++    monitors.pair_samples = outputs[kStateOutputCount + extra + 6];
++  auto program =
++      TemporalProgram(launches, nsteps, groups, kSourceGroupCount, &monitors,
++                      graph_cache_capacity, schedule_flags);
++  if (extra) {
++    program.field_bank_count = 3;
++    program.pair_publication = inputs[kInputCount + extra];
++    const auto &mask = program.pair_publication;
++    int64_t extent[3] = {};
++    for (int c = 0; c < kFieldCount; ++c)
++      for (int axis = 0; axis < 3; ++axis)
++        extent[axis] = std::max(extent[axis], outputs[c].dims[axis]);
++    if (mask.rank != 3 || mask.element_type != kBeamzS32 ||
++        mask.dims[0] != extent[0] || mask.dims[1] != (extent[1] + 7) / 8 ||
++        mask.dims[2] != (extent[2] + 15) / 16)
++      return ffi::Error::InvalidArgument("invalid temporal publication map");
++    for (int c = 0; c < kFieldCount; ++c)
++      program.pair_fields[c] =
++          outputs[2 * kFieldCount + 4 * kCpmlTermCount + c];
++  }
++  const int error = BeamzLaunchProgram(stream, program);
++  return error == 0 ? ffi::Error::Success()
++                    : ffi::Error::Internal(
++                          "BeamZ CUDA temporal CPML program launch failed: " +
++                          std::to_string(error));
+ }
+ 
+ ffi::Error StreamedProgramCpmlStepsHandler(
+-    void* stream, ffi::RemainingArgs args, ffi::RemainingRets rets,
++    void *stream, ffi::RemainingArgs args, ffi::RemainingRets rets,
+     int32_t abi_version, int32_t cuda_flags, int32_t nsteps, float dt,
+     float resolution, int32_t boundary_code, int32_t metric_kind,
+     int32_t cpml_enabled, int32_t monitor_count,
+     int32_t coincident_source_group_mask, int32_t disjoint_source_group_mask,
+     int32_t graph_cache_capacity, int32_t schedule_flags) {
+-  if (abi_version != kAbiVersion || nsteps < 1 ||
+-      metric_kind < 0 || metric_kind > 2 || cpml_enabled < 0 ||
+-      cpml_enabled > 1 || monitor_count < 1 ||
+-      coincident_source_group_mask < 0 ||
++  if (abi_version != kAbiVersion || nsteps < 1 || metric_kind < 0 ||
++      metric_kind > 2 || cpml_enabled < 0 || cpml_enabled > 1 ||
++      monitor_count < 1 || coincident_source_group_mask < 0 ||
+       coincident_source_group_mask >= (1 << kSourceGroupCount) ||
+       disjoint_source_group_mask < 0 ||
+       disjoint_source_group_mask >= (1 << kSourceGroupCount) ||
+@@ -717,11 +819,19 @@ ffi::Error ProgramHandler(
+     float resolution, int32_t boundary_code, int32_t metric_kind,
+     int32_t program_layout, int32_t cpml_enabled, int32_t monitor_count,
+     int32_t coincident_source_group_mask, int32_t disjoint_source_group_mask,
+-    int32_t graph_cache_capacity, int32_t schedule_flags) {
++    int32_t graph_cache_capacity, int32_t schedule_flags, int32_t logical_z,
++    int32_t logical_y, int32_t logical_x, int32_t temporal_steps) {
++  if (temporal_steps != 1 && temporal_steps != 2)
++    return ffi::Error::InvalidArgument("temporal_steps must be 1 or 2");
+   if (graph_cache_capacity < 0 || graph_cache_capacity > 4096) {
+     return ffi::Error::InvalidArgument(
+         "BeamZ CUDA graph-cache capacity must be from 0 to 4096");
+   }
++  if ((logical_z || logical_y || logical_x || temporal_steps == 2) &&
++      program_layout != kProgramLayoutSourceTemporalCpml &&
++      program_layout != kProgramLayoutMonitorTemporalCpml) {
++    return ffi::Error::InvalidArgument("padded fields require temporal CPML");
++  }
+   switch (program_layout) {
+     case kProgramLayoutYeeInPlace:
+       return StreamedStepsHandler(stream, args, rets, abi_version, cuda_flags,
+@@ -748,7 +858,8 @@ ffi::Error ProgramHandler(
+       return TemporalSourceGroupsCpmlStepsHandler(
+           stream, args, rets, abi_version, cuda_flags, nsteps, dt, resolution,
+           boundary_code, metric_kind, coincident_source_group_mask,
+-          disjoint_source_group_mask, graph_cache_capacity, schedule_flags);
++          disjoint_source_group_mask, graph_cache_capacity, schedule_flags,
++          logical_z, logical_y, logical_x, temporal_steps);
+     case kProgramLayoutMonitorInPlace:
+       return StreamedProgramCpmlStepsHandler(
+           stream, args, rets, abi_version, cuda_flags, nsteps, dt, resolution,
+@@ -760,7 +871,8 @@ ffi::Error ProgramHandler(
+           stream, args, rets, abi_version, cuda_flags, nsteps, dt, resolution,
+           boundary_code, metric_kind, monitor_count,
+           coincident_source_group_mask, disjoint_source_group_mask,
+-          graph_cache_capacity, schedule_flags);
++          graph_cache_capacity, schedule_flags, logical_z, logical_y, logical_x,
++          temporal_steps);
+     default:
+       return ffi::Error::InvalidArgument(
+           "unknown BeamZ CUDA program buffer layout");
+@@ -793,26 +905,29 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_streamed, StreamedHandler,
+                                   .Attr<int32_t>("boundary_code")
+                                   .Attr<int32_t>("metric_kind"));
+ 
+-XLA_FFI_DEFINE_HANDLER_SYMBOL(
+-    beamz_cuda_program, ProgramHandler,
+-    ffi::Ffi::Bind()
+-        .Ctx<ffi::PlatformStream<void*>>()
+-        .RemainingArgs()
+-        .RemainingRets()
+-        .Attr<int32_t>("abi_version")
+-        .Attr<int32_t>("cuda_flags")
+-        .Attr<int32_t>("nsteps")
+-        .Attr<float>("dt")
+-        .Attr<float>("resolution")
+-        .Attr<int32_t>("boundary_code")
+-        .Attr<int32_t>("metric_kind")
+-        .Attr<int32_t>("program_layout")
+-        .Attr<int32_t>("cpml_enabled")
+-        .Attr<int32_t>("monitor_count")
+-        .Attr<int32_t>("coincident_source_group_mask")
+-        .Attr<int32_t>("disjoint_source_group_mask")
+-        .Attr<int32_t>("graph_cache_capacity")
+-        .Attr<int32_t>("schedule_flags"));
++XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_program, ProgramHandler,
++                              ffi::Ffi::Bind()
++                                  .Ctx<ffi::PlatformStream<void*>>()
++                                  .RemainingArgs()
++                                  .RemainingRets()
++                                  .Attr<int32_t>("abi_version")
++                                  .Attr<int32_t>("cuda_flags")
++                                  .Attr<int32_t>("nsteps")
++                                  .Attr<float>("dt")
++                                  .Attr<float>("resolution")
++                                  .Attr<int32_t>("boundary_code")
++                                  .Attr<int32_t>("metric_kind")
++                                  .Attr<int32_t>("program_layout")
++                                  .Attr<int32_t>("cpml_enabled")
++                                  .Attr<int32_t>("monitor_count")
++                                  .Attr<int32_t>("coincident_source_group_mask")
++                                  .Attr<int32_t>("disjoint_source_group_mask")
++                                  .Attr<int32_t>("graph_cache_capacity")
++                                  .Attr<int32_t>("schedule_flags")
++                                  .Attr<int32_t>("logical_z")
++                                  .Attr<int32_t>("logical_y")
++                                  .Attr<int32_t>("logical_x")
++                                  .Attr<int32_t>("temporal_steps"));
+ XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_hopper, HopperHandler,
+                               ffi::Ffi::Bind()
+                                   .Ctx<ffi::PlatformStream<void*>>()
+diff --git i/cuda/src/graph.cu w/cuda/src/graph.cu
+index 1f9c632c..6259626f 100644
+--- i/cuda/src/graph.cu
++++ w/cuda/src/graph.cu
+@@ -133,6 +133,8 @@ void AppendBuffer(std::string* key, const BeamzBuffer& value) {
+   Append(key, value.data);
+   Append(key, value.rank);
+   Append(key, value.element_type);
++  Append(key, value.row_stride);
++  Append(key, value.plane_stride);
+   for (int axis = 0; axis < 4; ++axis) Append(key, value.dims[axis]);
+ }
+ 
+@@ -180,6 +182,7 @@ void AppendMonitors(std::string* key, const BeamzDftGroupLaunch& value) {
+   AppendBuffer(key, value.phase_sin);
+   AppendBuffer(key, value.phase_cos);
+   AppendBuffer(key, value.phase_window);
++  AppendBuffer(key, value.pair_samples);
+   AppendBuffer(key, value.time);
+   AppendBuffer(key, value.current_step);
+   Append(key, value.monitor_count);
+@@ -197,10 +200,13 @@ std::string BeamzGraphKey(const char* schedule, void* stream,
+   Append(&key, program.schedule_flags);
+   AppendLaunch(&key, program.h_ab);
+   AppendLaunch(&key, program.e_ab);
+-  if (program.field_bank_count == 2) {
++  if (program.field_bank_count >= 2) {
+     AppendLaunch(&key, program.h_ba);
+     AppendLaunch(&key, program.e_ba);
+   }
++  if (program.field_bank_count == 3)
++    for (const auto& field : program.pair_fields) AppendBuffer(&key, field);
++  AppendBuffer(&key, program.pair_publication);
+   Append(&key, program.source_group_count);
+   for (int32_t index = 0; index < program.source_group_count; ++index) {
+     AppendSourceGroup(&key, program.source_groups[index]);
+diff --git i/cuda/src/io.cu w/cuda/src/io.cu
+index a89aa6d0..1170d9b4 100644
+--- i/cuda/src/io.cu
++++ w/cuda/src/io.cu
+@@ -1,6 +1,8 @@
+ #include <cuda_runtime_api.h>
+ 
++#include <algorithm>
+ #include <cstdint>
++#include <limits>
+ 
+ #include "kernels.h"
+ #include "launch.h"
+@@ -115,11 +117,7 @@ __device__ __forceinline__ void ApplySourceGroupCell(
+        y) *
+           static_cast<int>(group.coefficients.dims[3]) +
+       x;
+-  const int target_offset =
+-      (static_cast<int>(target_z) * static_cast<int>(target.dims[1]) +
+-       static_cast<int>(target_y)) *
+-          static_cast<int>(target.dims[2]) +
+-      static_cast<int>(target_x);
++  const int target_offset = BeamzOffset3D(target, target_z, target_y, target_x);
+   const float contribution =
+       static_cast<const float*>(group.coefficients.data)[coefficient_offset] *
+       static_cast<const float*>(group.waveforms.data)[waveform_offset];
+@@ -171,11 +169,7 @@ __global__ void ApplySingleSourceGroup(BeamzBuffer target,
+       (z * static_cast<int>(group.coefficients.dims[2]) + y) *
+           static_cast<int>(group.coefficients.dims[3]) +
+       x;
+-  const int target_offset =
+-      (static_cast<int>(target_z) * static_cast<int>(target.dims[1]) +
+-       static_cast<int>(target_y)) *
+-          static_cast<int>(target.dims[2]) +
+-      static_cast<int>(target_x);
++  const int target_offset = BeamzOffset3D(target, target_z, target_y, target_x);
+   static_cast<float*>(target.data)[target_offset] +=
+       static_cast<const float*>(group.coefficients.data)[coefficient_offset] *
+       static_cast<const float*>(group.waveforms.data)[waveform_index];
+@@ -213,11 +207,7 @@ __device__ __forceinline__ void ApplyCoincidentSourceGroupCell(
+       waveform_index >= group.waveforms.dims[1]
+           ? static_cast<int>(group.waveforms.dims[1]) - 1
+           : waveform_index;
+-  const int target_offset =
+-      (static_cast<int>(target_z) * static_cast<int>(target.dims[1]) +
+-       static_cast<int>(target_y)) *
+-          static_cast<int>(target.dims[2]) +
+-      static_cast<int>(target_x);
++  const int target_offset = BeamzOffset3D(target, target_z, target_y, target_x);
+   float value = static_cast<float*>(target.data)[target_offset];
+   const int coefficient_stride =
+       static_cast<int>(group.coefficients.dims[1] *
+@@ -232,8 +222,10 @@ __device__ __forceinline__ void ApplyCoincidentSourceGroupCell(
+   const auto* waveforms = static_cast<const float*>(group.waveforms.data);
+   const int waveform_stride = static_cast<int>(group.waveforms.dims[1]);
+   for (int source = 0; source < group.coefficients.dims[0]; ++source) {
+-    value += coefficients[source * coefficient_stride + coefficient_cell] *
+-             waveforms[source * waveform_stride + waveform_index];
++    // Source products are formed before the scatter-add in the JAX reference.
++    value = __fadd_rn(
++        value, coefficients[source * coefficient_stride + coefficient_cell] *
++                   waveforms[source * waveform_stride + waveform_index]);
+   }
+   static_cast<float*>(target.data)[target_offset] = value;
+ }
+@@ -265,6 +257,52 @@ __global__ void ApplyCoincidentSourceGroup(BeamzBuffer target,
+                                  y, x);
+ }
+ 
++struct SourcePhasePlan {
++  BeamzBuffer targets[3];
++  BeamzSourceGroupLaunch groups[3];
++  int ends[3];
++  int x_blocks[3];
++  int y_blocks[3];
++  int z_blocks[3];
++  int low;
++  int high[3];
++};
++
++__global__ void ApplySourcePhase(SourcePhasePlan plan, int step,
++                                 int metallic_edges) {
++  const int block = blockIdx.x;
++  const int index = block < plan.ends[0] ? 0 : (block < plan.ends[1] ? 1 : 2);
++  int local = block - (index == 0 ? 0 : plan.ends[index - 1]);
++  const int bx = local % plan.x_blocks[index];
++  local /= plan.x_blocks[index];
++  const int by = local % plan.y_blocks[index];
++  local /= plan.y_blocks[index];
++  const auto &group = plan.groups[index];
++  const int x = bx * blockDim.x + threadIdx.x;
++  const int y = by * blockDim.y + threadIdx.y;
++  const int source = local / plan.z_blocks[index];
++  const int z = (local % plan.z_blocks[index]) * blockDim.z + threadIdx.z;
++  if (plan.low > 0) {
++    const auto *starts = static_cast<const int32_t *>(group.starts.data);
++    const int tz = starts[3 * source] + z;
++    const int ty = starts[3 * source + 1] + y;
++    const int tx = starts[3 * source + 2] + x;
++    if (tz >= plan.low && ty >= plan.low && tx >= plan.low &&
++        tz < plan.high[0] && ty < plan.high[1] && tx < plan.high[2])
++      return;
++  }
++  if (group.coincident && group.coefficients.dims[0] > 1) {
++    ApplyCoincidentSourceGroupCell(plan.targets[index], group, step,
++                                   metallic_edges, z, y, x);
++  } else if (group.disjoint || group.coefficients.dims[0] == 1) {
++    ApplySourceGroupCell<false>(plan.targets[index], group, source, step,
++                                metallic_edges, z, y, x);
++  } else {
++    ApplySourceGroupCell<true>(plan.targets[index], group, source, step,
++                               metallic_edges, z, y, x);
++  }
++}
++
+ cudaError_t LaunchSourceGroup(cudaStream_t stream, const BeamzLaunch& launch,
+                               const BeamzBuffer& target,
+                               const BeamzSourceGroupLaunch& group,
+@@ -312,31 +350,35 @@ __global__ void PrepareDftPhases(DftFields fields, BeamzDftGroupLaunch monitors,
+                                  int step_offset) {
+   const int frequency = blockIdx.x * blockDim.x + threadIdx.x;
+   const int monitor = blockIdx.y;
+-  const int max_frequency_count = static_cast<int>(monitors.frequencies.dims[1]);
++  const int max_frequency_count =
++      static_cast<int>(monitors.frequencies.dims[1]);
+   if (monitor >= monitors.monitor_count || frequency >= max_frequency_count) {
+     return;
+   }
+-  const int phase_offset = monitor * max_frequency_count + frequency;
++  const int frequency_offset = monitor * max_frequency_count + frequency;
++  const int phase_offset = frequency_offset + blockIdx.z *
++                                                  monitors.monitor_count *
++                                                  max_frequency_count;
++  step_offset += blockIdx.z;
+   float window = 0.0f;
+   float phase_sin = 0.0f;
+   float phase_cos = 0.0f;
+-  const auto* counts = static_cast<const int32_t*>(monitors.counts.data);
++  const auto *counts = static_cast<const int32_t *>(monitors.counts.data);
+   const int frequency_count = counts[5 * monitor];
+-  const int interval = counts[5 * monitor + 2] > 0
+-                           ? counts[5 * monitor + 2]
+-                           : 1;
+-  const auto* codes = static_cast<const int32_t*>(monitors.codes.data);
++  const int interval =
++      counts[5 * monitor + 2] > 0 ? counts[5 * monitor + 2] : 1;
++  const auto *codes = static_cast<const int32_t *>(monitors.codes.data);
+   if (frequency < frequency_count && frequency_count > 0 &&
+       frequency_count <= max_frequency_count &&
+       (codes[2 * monitor] == 0 || codes[2 * monitor] == 1) &&
+       (codes[2 * monitor + 1] == 0 || codes[2 * monitor + 1] == 1)) {
+     const int64_t absolute_step =
+         static_cast<int64_t>(
+-            static_cast<const int32_t*>(monitors.current_step.data)[0]) +
++            static_cast<const int32_t *>(monitors.current_step.data)[0]) +
+         step_offset;
+-    const float time = static_cast<const float*>(monitors.time.data)[0] +
++    const float time = static_cast<const float *>(monitors.time.data)[0] +
+                        static_cast<float>(step_offset + 1) * fields.dt;
+-    const auto* windows = static_cast<const float*>(monitors.windows.data);
++    const auto *windows = static_cast<const float *>(monitors.windows.data);
+     const float start = windows[3 * monitor];
+     const float end = windows[3 * monitor + 1];
+     if (absolute_step % interval == 0 && time >= start && time <= end) {
+@@ -346,15 +388,15 @@ __global__ void PrepareDftPhases(DftFields fields, BeamzDftGroupLaunch monitors,
+             fminf(fmaxf((time - start) / (end - start), 0.0f), 1.0f);
+         window = 0.5f * (1.0f - cosf(6.2831853071795864769f * tau));
+       }
+-      const float frequency_hz =
+-          static_cast<const float*>(monitors.frequencies.data)[phase_offset];
++      const float frequency_hz = static_cast<const float *>(
++          monitors.frequencies.data)[frequency_offset];
+       sincosf(6.2831853071795864769f * frequency_hz * time, &phase_sin,
+               &phase_cos);
+     }
+   }
+-  static_cast<float*>(monitors.phase_window.data)[phase_offset] = window;
+-  static_cast<float*>(monitors.phase_sin.data)[phase_offset] = phase_sin;
+-  static_cast<float*>(monitors.phase_cos.data)[phase_offset] = phase_cos;
++  static_cast<float *>(monitors.phase_window.data)[phase_offset] = window;
++  static_cast<float *>(monitors.phase_sin.data)[phase_offset] = phase_sin;
++  static_cast<float *>(monitors.phase_cos.data)[phase_offset] = phase_cos;
+ }
+ 
+ template <bool SingleMonitor, bool CachedPhase>
+@@ -457,7 +499,8 @@ __global__ void AccumulateDftGroups(DftFields fields,
+     const int field_offset =
+         static_cast<const int32_t*>(monitors.indices.data)[gather_offset];
+     if (field_offset >= 0 && field_offset < ElementCount(field)) {
+-      sample += static_cast<const float*>(field.data)[field_offset] *
++      sample += static_cast<const float*>(
++                    field.data)[BeamzPhysicalIndex(field, field_offset)] *
+                 static_cast<const float*>(monitors.weights.data)[gather_offset];
+     }
+   }
+@@ -479,42 +522,164 @@ __global__ void AccumulateDftGroups(DftFields fields,
+       scale * sample * phase_sin;
+ }
+ 
+-cudaError_t LaunchDftGroups(cudaStream_t stream, const BeamzLaunch& h_launch,
+-                            const BeamzLaunch& e_launch,
+-                            const BeamzDftGroupLaunch& monitors,
+-                            int32_t step) {
++// Interpolation geometry is shared by both times and every frequency. Gather
++// once per point, retaining the original neighbor accumulation order.
++__global__ void
++GatherDftPair(const __grid_constant__ DftFields first,
++              const __grid_constant__ DftFields second,
++              const __grid_constant__ BeamzDftGroupLaunch monitors) {
++  const int point = blockIdx.x * blockDim.x + threadIdx.x;
++  const int monitor = blockIdx.y / 6, component = blockIdx.y % 6;
++  const auto *counts = static_cast<const int *>(monitors.counts.data);
++  const int nf = counts[5 * monitor], np = counts[5 * monitor + 1];
++  const int max_np = monitors.indices.dims[2],
++            max_nf = monitors.frequencies.dims[1];
++  if (nf < 1 || nf > max_nf || np < 1 || np > max_np || point >= np ||
++      static_cast<const float *>(
++          monitors.component_masks.data)[monitor * 6 + component] == 0.f)
++    return;
++  const auto *windows = static_cast<const float *>(monitors.phase_window.data);
++  const bool active0 = windows[monitor * max_nf] != 0.f;
++  const bool active1 =
++      windows[(monitor + monitors.monitor_count) * max_nf] != 0.f;
++  if (!active0 && !active1)
++    return;
++  const auto &a = first.values[component];
++  const auto &b = second.values[component];
++  const int neighbors = monitors.indices.dims[3];
++  const int base = ((monitor * 6 + component) * max_np + point) * neighbors;
++  float sample0 = 0.f, sample1 = 0.f;
++  for (int neighbor = 0; neighbor < neighbors; ++neighbor) {
++    const int index =
++        static_cast<const int *>(monitors.indices.data)[base + neighbor];
++    const float weight =
++        static_cast<const float *>(monitors.weights.data)[base + neighbor];
++    if (index >= 0 && index < ElementCount(a)) {
++      if (active0)
++        sample0 +=
++            static_cast<const float *>(a.data)[BeamzPhysicalIndex(a, index)] *
++            weight;
++      if (active1)
++        sample1 +=
++            static_cast<const float *>(b.data)[BeamzPhysicalIndex(b, index)] *
++            weight;
++    }
++  }
++  const int output = ((monitor * 6 + component) * max_np + point) * 2;
++  static_cast<float *>(monitors.pair_samples.data)[output] = sample0;
++  static_cast<float *>(monitors.pair_samples.data)[output + 1] = sample1;
++}
++
++// Accumulate both observations in chronological order, retaining the DFT
++// accumulator in registers between them. The intermediate field bank is sparse
++// but includes every interpolation neighbor in this gather plan.
++__global__ void
++AccumulateDftPair(const __grid_constant__ DftFields first,
++                  const __grid_constant__ DftFields second,
++                  const __grid_constant__ BeamzDftGroupLaunch monitors) {
++  const int point = blockIdx.x * blockDim.x + threadIdx.x;
++  const int frequency = blockIdx.y * blockDim.y + threadIdx.y;
++  const int lane = blockIdx.z * blockDim.z + threadIdx.z;
++  const int monitor = lane / 6, component = lane % 6;
++  if (monitor >= monitors.monitor_count)
++    return;
++  const auto *counts = static_cast<const int *>(monitors.counts.data);
++  const int nf = counts[5 * monitor], np = counts[5 * monitor + 1];
++  const int interval = max(1, counts[5 * monitor + 2]);
++  const int vo = counts[5 * monitor + 3], wo = counts[5 * monitor + 4];
++  const int max_nf = monitors.frequencies.dims[1];
++  const int max_np = monitors.indices.dims[2];
++  if (nf < 1 || nf > max_nf || np < 1 || np > max_np || vo < 0 || wo < 0 ||
++      frequency >= nf || point >= np ||
++      static_cast<int64_t>(vo) + 6LL * nf * np > monitors.dft_re.dims[0] ||
++      static_cast<int64_t>(vo) + 6LL * nf * np > monitors.dft_im.dims[0] ||
++      static_cast<int64_t>(wo) + nf > monitors.dft_weight.dims[0])
++    return;
++  const int offset = vo + (component * nf + frequency) * np + point;
++  const float mask = static_cast<const float *>(
++      monitors.component_masks.data)[monitor * 6 + component];
++  float re = 0.f, im = 0.f;
++  if (mask != 0.f) {
++    re = static_cast<const float *>(monitors.dft_re.data)[offset];
++    im = static_cast<const float *>(monitors.dft_im.data)[offset];
++  }
++  float weight = 0.f;
++  if (component == 0 && point == 0)
++    weight =
++        static_cast<const float *>(monitors.dft_weight.data)[wo + frequency];
++#pragma unroll
++  for (int sub = 0; sub < 2; ++sub) {
++    const int po =
++        (sub * monitors.monitor_count + monitor) * max_nf + frequency;
++    const float window =
++        static_cast<const float *>(monitors.phase_window.data)[po];
++    if (window == 0.f)
++      continue;
++    if (component == 0 && point == 0)
++      weight += window;
++    if (mask == 0.f)
++      continue;
++    const auto &fields = sub == 0 ? first : second;
++    const int sample_offset =
++        ((monitor * 6 + component) * max_np + point) * 2 + sub;
++    const float sample =
++        static_cast<const float *>(monitors.pair_samples.data)[sample_offset];
++    float scale = window;
++    if (static_cast<const int *>(monitors.codes.data)[2 * monitor + 1] == 1) {
++      const float length =
++          static_cast<const float *>(monitors.windows.data)[3 * monitor + 2];
++      if (!isfinite(length) || length <= 0.f)
++        continue;
++      scale *= fields.dt * static_cast<float>(interval) * 299792458.0f /
++               length / sqrtf(6.2831853071795864769f);
++    }
++    re += scale * sample *
++          static_cast<const float *>(monitors.phase_cos.data)[po];
++    im += scale * sample *
++          static_cast<const float *>(monitors.phase_sin.data)[po];
++  }
++  if (component == 0 && point == 0)
++    static_cast<float *>(monitors.dft_weight.data)[wo + frequency] = weight;
++  if (mask != 0.f) {
++    static_cast<float *>(monitors.dft_re.data)[offset] = re;
++    static_cast<float *>(monitors.dft_im.data)[offset] = im;
++  }
++}
++
++cudaError_t LaunchDftGroups(cudaStream_t stream, const BeamzLaunch &h_launch,
++                            const BeamzLaunch &e_launch,
++                            const BeamzDftGroupLaunch &monitors, int32_t step) {
+   const DftFields fields = MakeDftFields(h_launch, e_launch);
+   const int frequency_threads =
+       monitors.monitor_count == 1 && monitors.frequencies.dims[1] == 3 ? 3 : 2;
+   const dim3 threads(32, frequency_threads, 2);
+-  const dim3 blocks(
+-      (monitors.indices.dims[2] + threads.x - 1) / threads.x,
+-      (monitors.frequencies.dims[1] + threads.y - 1) / threads.y,
+-      (monitors.monitor_count * 6 + threads.z - 1) / threads.z);
++  const dim3 blocks((monitors.indices.dims[2] + threads.x - 1) / threads.x,
++                    (monitors.frequencies.dims[1] + threads.y - 1) / threads.y,
++                    (monitors.monitor_count * 6 + threads.z - 1) / threads.z);
+   // A phase is shared by every component and point of one monitor/frequency.
+   // For monitor-heavy work, one tiny producer launch removes repeated sincosf
+   // calls from every 32-point block. Small plans keep the original fused path
+   // so an extra kernel launch cannot dominate a short gather.
+-  const bool cache_phase = monitors.indices.dims[2] > kTileX ||
+-                           monitors.monitor_count * monitors.frequencies.dims[1] >=
+-                               32;
++  const bool cache_phase =
++      monitors.indices.dims[2] > kTileX ||
++      monitors.monitor_count * monitors.frequencies.dims[1] >= 32;
+   if (cache_phase) {
+     const dim3 phase_threads(kTileX);
+     const dim3 phase_blocks(
+         (monitors.frequencies.dims[1] + phase_threads.x - 1) / phase_threads.x,
+         monitors.monitor_count);
+-    PrepareDftPhases<<<phase_blocks, phase_threads, 0, stream>>>(fields,
+-                                                                  monitors, step);
++    PrepareDftPhases<<<phase_blocks, phase_threads, 0, stream>>>(
++        fields, monitors, step);
+     if (cudaError_t error = cudaPeekAtLastError(); error != cudaSuccess) {
+       return error;
+     }
+   }
+   if (monitors.monitor_count == 1 && cache_phase) {
+-    AccumulateDftGroups<true, true><<<blocks, threads, 0, stream>>>(
+-        fields, monitors, step);
++    AccumulateDftGroups<true, true>
++        <<<blocks, threads, 0, stream>>>(fields, monitors, step);
+   } else if (monitors.monitor_count == 1) {
+-    AccumulateDftGroups<true, false><<<blocks, threads, 0, stream>>>(
+-        fields, monitors, step);
++    AccumulateDftGroups<true, false>
++        <<<blocks, threads, 0, stream>>>(fields, monitors, step);
+   } else if (cache_phase) {
+     AccumulateDftGroups<false, true><<<blocks, threads, 0, stream>>>(
+         fields, monitors, step);
+@@ -540,3 +705,93 @@ cudaError_t BeamzEnqueueDftGroups(cudaStream_t stream,
+                                   int32_t step) {
+   return LaunchDftGroups(stream, h_launch, e_launch, monitors, step);
+ }
++
++cudaError_t BeamzEnqueueSourcePhase(cudaStream_t stream, const BeamzLaunch& h,
++                                    const BeamzLaunch& e,
++                                    const BeamzSourceGroupLaunch* groups,
++                                    int32_t count, int timing, int32_t step,
++                                    bool shell_only, int inner_margin) {
++  if (groups == nullptr || count == 0)
++    return cudaSuccess;
++  if (count != 9 || timing < 0 || timing > 2)
++    return cudaErrorInvalidValue;
++  SourcePhasePlan plan{};
++  if (shell_only || inner_margin >= 0) {
++    plan.low = h.uniform_cpml_thickness + (shell_only ? 0 : inner_margin);
++    for (int axis = 0; axis < 3; ++axis) {
++      plan.high[axis] =
++          std::min({h.outputs[0].dims[axis], h.outputs[1].dims[axis],
++                    h.outputs[2].dims[axis]}) -
++          plan.low;
++    }
++  }
++  int64_t max_x_extent = 1;
++  for (int component = 0; component < 3; ++component) {
++    const auto &group = groups[timing * 3 + component];
++    if (group.coefficients.dims[0] > 0)
++      max_x_extent = std::max(max_x_extent, group.coefficients.dims[3]);
++  }
++  const dim3 threads = SourceThreads(max_x_extent);
++  int total = 0, active = 0, last = -1;
++  for (int component = 0; component < 3; ++component) {
++    const auto &group = groups[timing * 3 + component];
++    plan.groups[component] = group;
++    plan.targets[component] = timing == 0   ? e.inputs[component]
++                              : timing == 1 ? h.outputs[component]
++                                            : e.outputs[component];
++    if (group.coefficients.dims[0] > 0) {
++      ++active;
++      last = component;
++      const int xb = (group.coefficients.dims[3] + threads.x - 1) / threads.x;
++      const int yb = (group.coefficients.dims[2] + threads.y - 1) / threads.y;
++      const int zb = (group.coefficients.dims[1] + threads.z - 1) / threads.z;
++      plan.x_blocks[component] = xb;
++      plan.y_blocks[component] = yb;
++      plan.z_blocks[component] = zb;
++      const int64_t blocks =
++          static_cast<int64_t>(xb) * yb * zb *
++          (group.coincident ? 1 : group.coefficients.dims[0]);
++      if (blocks > std::numeric_limits<int>::max() - total)
++        return cudaErrorInvalidValue;
++      total += static_cast<int>(blocks);
++    }
++    plan.ends[component] = total;
++  }
++  if (active == 0)
++    return cudaSuccess;
++  if (active == 1 && !shell_only && inner_margin < 0)
++    return BeamzEnqueueSourceGroup(stream, h, plan.targets[last],
++                                   plan.groups[last], step);
++  ApplySourcePhase<<<total, threads, 0, stream>>>(plan, step, h.metallic_edges);
++  return cudaPeekAtLastError();
++}
++
++cudaError_t BeamzEnqueueDftPair(cudaStream_t stream, const BeamzLaunch &h1,
++                                const BeamzLaunch &e1, const BeamzLaunch &h2,
++                                const BeamzLaunch &e2,
++                                const BeamzDftGroupLaunch &monitors, int step) {
++  const auto &samples = monitors.pair_samples;
++  if (monitors.phase_sin.dims[0] < 2 * monitors.monitor_count ||
++      samples.rank != 4 || samples.element_type != kBeamzF32 ||
++      samples.data == nullptr || samples.dims[0] != monitors.monitor_count ||
++      samples.dims[1] != 6 || samples.dims[2] != monitors.indices.dims[2] ||
++      samples.dims[3] != 2)
++    return cudaErrorInvalidValue;
++  const auto first = MakeDftFields(h1, e1), second = MakeDftFields(h2, e2);
++  const dim3 phase_blocks((monitors.frequencies.dims[1] + 31) / 32,
++                          monitors.monitor_count, 2);
++  PrepareDftPhases<<<phase_blocks, 32, 0, stream>>>(first, monitors, step);
++  if (auto error = cudaPeekAtLastError(); error != cudaSuccess)
++    return error;
++  GatherDftPair<<<dim3((monitors.indices.dims[2] + 127) / 128,
++                       monitors.monitor_count * 6),
++                  128, 0, stream>>>(first, second, monitors);
++  if (auto error = cudaPeekAtLastError(); error != cudaSuccess)
++    return error;
++  const dim3 threads(32, 2, 2);
++  const dim3 blocks((monitors.indices.dims[2] + 31) / 32,
++                    (monitors.frequencies.dims[1] + 1) / 2,
++                    (monitors.monitor_count * 6 + 1) / 2);
++  AccumulateDftPair<<<blocks, threads, 0, stream>>>(first, second, monitors);
++  return cudaPeekAtLastError();
++}
+diff --git i/cuda/src/kernels.h w/cuda/src/kernels.h
+index 553667f3..9d8e7378 100644
+--- i/cuda/src/kernels.h
++++ w/cuda/src/kernels.h
+@@ -5,23 +5,58 @@
+ 
+ #include "launch.h"
+ 
++cudaError_t BeamzEnqueueTemporalCpml(cudaStream_t stream, const BeamzLaunch &h,
++    const BeamzLaunch &e, const BeamzBuffer *final_fields,
++    const BeamzSourceGroupLaunch *groups, int step, BeamzBuffer publication, int tile = 0);
++
++cudaError_t BeamzEnqueueSpatialCpml(cudaStream_t stream, const BeamzLaunch &h,
++    const BeamzLaunch &e, const BeamzSourceGroupLaunch *groups, int step);
++
+ // Leaf launchers enqueue one operation and own no graph or timestep policy.
+-cudaError_t BeamzValidatePhase(const BeamzLaunch& launch);
+-cudaError_t BeamzEnqueuePhase(void* stream, const BeamzLaunch& launch);
++cudaError_t BeamzValidatePhase(const BeamzLaunch &launch);
++cudaError_t BeamzEnqueuePhase(void *stream, const BeamzLaunch &launch);
+ cudaError_t BeamzEnqueueCpmlPhase(cudaStream_t stream,
+-                                  const BeamzLaunch& launch);
++                                  const BeamzLaunch &launch);
++cudaError_t BeamzEnqueueCpmlShell(cudaStream_t stream,
++                                  const BeamzLaunch &launch);
++cudaError_t BeamzEnqueueCpmlCore(cudaStream_t stream, const BeamzLaunch &h,
++                                 const BeamzLaunch &e,
++                                 const BeamzSourceGroupLaunch *groups, int step,
++                                 int tile = 0, bool band = false);
++cudaError_t BeamzEnqueueCpmlPairBand(cudaStream_t stream, const BeamzLaunch &h,
++                                     const BeamzLaunch &e,
++                                     const BeamzSourceGroupLaunch *groups,
++                                     int step);
++cudaError_t BeamzEnqueueCpmlPairCore(cudaStream_t stream, const BeamzLaunch &h,
++                                     const BeamzLaunch &e,
++                                     const BeamzBuffer *final_fields,
++                                     const BeamzSourceGroupLaunch *groups,
++                                     int step, BeamzBuffer publication = {},
++                                     int tile = 0);
+ cudaError_t BeamzEnqueueFusedFullStep(cudaStream_t stream,
+-                                      const BeamzLaunch& h_launch,
+-                                      const BeamzLaunch& e_launch);
++                                      const BeamzLaunch &h_launch,
++                                      const BeamzLaunch &e_launch);
+ cudaError_t BeamzEnqueueSourceGroup(cudaStream_t stream,
+-                                    const BeamzLaunch& launch,
+-                                    const BeamzBuffer& target,
+-                                    const BeamzSourceGroupLaunch& group,
++                                    const BeamzLaunch &launch,
++                                    const BeamzBuffer &target,
++                                    const BeamzSourceGroupLaunch &group,
+                                     int32_t step);
++cudaError_t BeamzEnqueueSourcePhase(cudaStream_t stream,
++                                    const BeamzLaunch &h_launch,
++                                    const BeamzLaunch &e_launch,
++                                    const BeamzSourceGroupLaunch *groups,
++                                    int32_t count, int timing, int32_t step,
++                                    bool shell_only = false,
++                                    int inner_margin = -1);
+ cudaError_t BeamzEnqueueDftGroups(cudaStream_t stream,
+-                                  const BeamzLaunch& h_launch,
+-                                  const BeamzLaunch& e_launch,
+-                                  const BeamzDftGroupLaunch& monitors,
++                                  const BeamzLaunch &h_launch,
++                                  const BeamzLaunch &e_launch,
++                                  const BeamzDftGroupLaunch &monitors,
+                                   int32_t step);
+ 
+-#endif  // BEAMZ_CUDA_KERNELS_H_
++cudaError_t BeamzEnqueueDftPair(cudaStream_t stream, const BeamzLaunch &h1,
++                                const BeamzLaunch &e1, const BeamzLaunch &h2,
++                                const BeamzLaunch &e2,
++                                const BeamzDftGroupLaunch &monitors, int step);
++
++#endif // BEAMZ_CUDA_KERNELS_H_
+diff --git i/cuda/src/launch.h w/cuda/src/launch.h
+index 5ba8a19f..613bd72b 100644
+--- i/cuda/src/launch.h
++++ w/cuda/src/launch.h
+@@ -14,8 +14,29 @@ struct BeamzBuffer {
+   int32_t rank;
+   int32_t element_type;
+   int64_t dims[4];
++  // Logical dimensions remain unchanged when storage is padded. Rank-three
++  // descriptors always have explicit pitches, including contiguous arrays.
++  int32_t row_stride = 0;
++  int32_t plane_stride = 0;
+ };
+ 
++#ifdef __CUDACC__
++#define BEAMZ_HD __host__ __device__ __forceinline__
++#else
++#define BEAMZ_HD inline
++#endif
++BEAMZ_HD int BeamzOffset3D(const BeamzBuffer& value, int z, int y, int x) {
++  return z * value.plane_stride + y * value.row_stride + x;
++}
++BEAMZ_HD int BeamzPhysicalIndex(const BeamzBuffer& value, int logical) {
++  const int nx = static_cast<int>(value.dims[2]);
++  const int ny = static_cast<int>(value.dims[1]);
++  if (value.row_stride == nx && value.plane_stride == nx * ny) return logical;
++  const int zy = logical / nx;
++  return BeamzOffset3D(value, zy / ny, zy % ny, logical % nx);
++}
++#undef BEAMZ_HD
++
+ struct BeamzLaunch {
+   int32_t abi_version;
+   int32_t cuda_flags;
+@@ -62,6 +83,8 @@ struct BeamzDftGroupLaunch {
+   BeamzBuffer phase_sin;
+   BeamzBuffer phase_cos;
+   BeamzBuffer phase_window;
++  // Paired monitor samples: [monitor, component, point, substep].
++  BeamzBuffer pair_samples{};
+   BeamzBuffer time;
+   BeamzBuffer current_step;
+   int32_t monitor_count;
+@@ -85,6 +108,11 @@ struct BeamzProgramLaunch {
+   // One immutable compiler decision, cross-validated once before capture. It
+   // prevents individual launchers from re-inferring incompatible fast paths.
+   int32_t schedule_flags = 0;
++  // Experimental two-timestep core uses a third bank: old fields remain frozen
++  // while one kernel publishes intermediate monitor state and final fields.
++  BeamzBuffer pair_fields[6]{};
++  // Optional read-only 16x8x1 DFT publication map, in logical coordinates.
++  BeamzBuffer pair_publication{};
+ };
+ 
+ // Returns zero after enqueueing all work, otherwise a CUDA runtime error code.
+diff --git i/cuda/src/program.cu w/cuda/src/program.cu
+index 2776fbfd..c9ef5790 100644
+--- i/cuda/src/program.cu
++++ w/cuda/src/program.cu
+@@ -1,6 +1,8 @@
+ #include <cuda_runtime_api.h>
+ 
+ #include <cstdint>
++#include <cstdlib>
++#include <cstring>
+ #include <limits>
+ 
+ #include "abi_layout.h"
+@@ -48,7 +50,8 @@ cudaError_t ValidateSourceGroups(const BeamzSourceGroupLaunch* groups,
+   if (count != kSourceGroupCount) return cudaErrorInvalidValue;
+   for (int32_t index = 0; index < count; ++index) {
+     const BeamzSourceGroupLaunch& group = groups[index];
+-    if (group.component < 0 || group.component > 2 || group.timing < 0 ||
++    if (group.component != index % 3 || group.timing != index / 3 ||
++        group.component < 0 || group.component > 2 || group.timing < 0 ||
+         group.timing > 2 || group.coefficients.rank != 4 ||
+         group.waveforms.rank != 2 || group.starts.rank != 2 ||
+         group.current_step.rank != 0 || group.coincident < 0 ||
+@@ -64,8 +67,8 @@ cudaError_t ValidateSourceGroups(const BeamzSourceGroupLaunch* groups,
+         group.coefficients.dims[1] < 1 || group.coefficients.dims[2] < 1 ||
+         group.coefficients.dims[3] < 1 || group.current_step.data == nullptr ||
+         (group.coefficients.dims[0] > 0 &&
+-         (group.coefficients.data == nullptr || group.waveforms.data == nullptr ||
+-          group.starts.data == nullptr)) ||
++         (group.coefficients.data == nullptr ||
++          group.waveforms.data == nullptr || group.starts.data == nullptr)) ||
+         !FitsIntOffsets(group.coefficients) ||
+         !FitsIntOffsets(group.waveforms) || !FitsIntOffsets(group.starts) ||
+         !FitsIntOffsets(group.current_step)) {
+@@ -94,7 +97,7 @@ bool UniformCpml(const BeamzProgramLaunch& program) {
+           program.h_ab.uniform_cpml_thickness) {
+     return false;
+   }
+-  if (program.field_bank_count == 2 &&
++  if (program.field_bank_count >= 2 &&
+       (program.h_ba.uniform_cpml_thickness !=
+            program.h_ab.uniform_cpml_thickness ||
+        program.e_ba.uniform_cpml_thickness !=
+@@ -106,21 +109,21 @@ bool UniformCpml(const BeamzProgramLaunch& program) {
+ 
+ bool CombinedCpmlCoreSupported(const BeamzProgramLaunch& program) {
+   if (!UniformCpml(program) || program.h_ab.metric_kind != 0 ||
+-      program.e_ab.metric_kind != 0 ||
+-      !HasPackedLosslessMaterial(program.e_ab)) {
++      program.e_ab.metric_kind != 0) {
+     return false;
+   }
+-  if (program.field_bank_count == 2 &&
+-      (program.h_ba.metric_kind != 0 || program.e_ba.metric_kind != 0 ||
+-       !HasPackedLosslessMaterial(program.e_ba))) {
++  if (program.field_bank_count >= 2 &&
++      (program.h_ba.metric_kind != 0 || program.e_ba.metric_kind != 0)) {
+     return false;
+   }
+   const BeamzLaunch* h_launches[] = {
+-      &program.h_ab, program.field_bank_count == 2 ? &program.h_ba : nullptr};
+-  for (const BeamzLaunch* h_launch : h_launches) {
+-    if (h_launch == nullptr) continue;
+-    for (int material = 0; material < 6; ++material) {
+-      if (h_launch->inputs[6 + material].rank != 0) return false;
++      &program.h_ab, program.field_bank_count >= 2 ? &program.h_ba : nullptr};
++  for (const auto *h : h_launches) {
++    if (h == nullptr)
++      continue;
++    for (int material = 6; material < 12; ++material) {
++      if (h->inputs[material].rank != 0)
++        return false;
+     }
+   }
+   const int64_t thickness = program.h_ab.uniform_cpml_thickness;
+@@ -147,7 +150,7 @@ cudaError_t ValidateSchedulePlan(const BeamzProgramLaunch& program) {
+     return cudaErrorInvalidValue;
+   }
+   const bool cpml = program.h_ab.nterms == kCpmlTermCount;
+-  const bool temporal = program.field_bank_count == 2;
++  const bool temporal = program.field_bank_count >= 2;
+   const bool sources = program.source_group_count != 0;
+   const bool monitors = program.monitors != nullptr;
+   const bool packed_material =
+@@ -246,11 +249,45 @@ cudaError_t ValidateMonitors(const BeamzDftGroupLaunch* value) {
+ 
+ cudaError_t ValidateProgram(const BeamzProgramLaunch& program) {
+   if (program.nsteps < 1 || program.graph_cache_capacity < 0 ||
+-      (program.field_bank_count != 1 && program.field_bank_count != 2) ||
++      (program.field_bank_count < 1 || program.field_bank_count > 3) ||
+       program.h_ab.phase != 0 || program.e_ab.phase != 1 ||
+       program.h_ab.nterms != program.e_ab.nterms) {
+     return cudaErrorInvalidValue;
+   }
++  if (program.field_bank_count == 3) {
++    if (FlagEnabled(program.h_ab, kBeamzCpmlPair)) {
++      const int type=program.h_ab.inputs[31].element_type;
++      if(type!=kBeamzF32 && type!=kBeamzBF16) return cudaErrorInvalidValue;
++      for (int t=0;t<6;++t)
++        if (program.h_ab.inputs[31+t].element_type != type ||
++            program.e_ab.inputs[31+t].element_type != type ||
++            program.h_ab.outputs[3+t].element_type != type ||
++            program.e_ab.outputs[3+t].element_type != type)
++          return cudaErrorInvalidValue;
++    }
++    if (program.source_group_count != 9 || !CombinedCpmlCoreSupported(program))
++      return cudaErrorInvalidValue;
++    for (int c = 0; c < 3; ++c) {
++      if (program.source_groups[c].coefficients.dims[0] != 0)
++        return cudaErrorInvalidValue;
++      for (int axis = 0; axis < 3; ++axis)
++        if (program.h_ab.outputs[c].dims[axis] <=
++            2 * (program.h_ab.uniform_cpml_thickness + 2))
++          return cudaErrorInvalidValue;
++    }
++    for (int c = 0; c < 6; ++c) {
++      const auto& reference =
++          c < 3 ? program.h_ab.inputs[c] : program.e_ab.inputs[c - 3];
++      const auto& scratch = program.pair_fields[c];
++      if (scratch.rank != 3 || scratch.element_type != kBeamzF32 ||
++          !scratch.data || !FitsIntOffsets(scratch) ||
++          scratch.data == reference.data)
++        return cudaErrorInvalidValue;
++      for (int axis = 0; axis < 3; ++axis)
++        if (scratch.dims[axis] != reference.dims[axis])
++          return cudaErrorInvalidValue;
++    }
++  }
+   if (cudaError_t error = BeamzValidatePhase(program.h_ab);
+       error != cudaSuccess) {
+     return error;
+@@ -259,7 +296,7 @@ cudaError_t ValidateProgram(const BeamzProgramLaunch& program) {
+       error != cudaSuccess) {
+     return error;
+   }
+-  if (program.field_bank_count == 2) {
++  if (program.field_bank_count >= 2) {
+     if (program.h_ba.phase != 0 || program.e_ba.phase != 1 ||
+         program.h_ba.nterms != program.h_ab.nterms ||
+         program.e_ba.nterms != program.e_ab.nterms) {
+@@ -324,15 +361,8 @@ int LaunchInPlaceProgram(void* raw_stream, const BeamzProgramLaunch& program) {
+     const bool split_cpml =
+         ScheduleFlagEnabled(program, kNativeScheduleCombinedCpmlCore);
+     auto enqueue_sources = [&](int timing, int32_t step) {
+-      for (int32_t index = 0; index < source_group_count; ++index) {
+-        const BeamzSourceGroupLaunch& group = source_groups[index];
+-        if (group.timing != timing || group.coefficients.dims[0] == 0) continue;
+-        const BeamzLaunch& target_launch = timing == 1 ? h_launch : e_launch;
+-        error = BeamzEnqueueSourceGroup(
+-            stream, h_launch, target_launch.outputs[group.component], group,
+-            step);
+-        if (error != cudaSuccess) return;
+-      }
++      error = BeamzEnqueueSourcePhase(stream, h_launch, e_launch, source_groups,
++                                      source_group_count, timing, step);
+     };
+     for (int32_t step = 0; step < program.nsteps; ++step) {
+       if (source_groups != nullptr) {
+@@ -415,34 +445,270 @@ int LaunchTemporalYeeProgram(void* raw_stream,
+                           program.graph_cache_capacity, enqueue);
+ }
+ 
+-int LaunchTemporalCpmlProgram(void* raw_stream,
+-                              const BeamzProgramLaunch& program) {
+-  const BeamzLaunch& h_ab = program.h_ab;
+-  const BeamzLaunch& e_ab = program.e_ab;
+-  const BeamzLaunch& h_ba = program.h_ba;
+-  const BeamzLaunch& e_ba = program.e_ba;
+-  const BeamzSourceGroupLaunch* source_groups = program.source_groups;
++// The ring kernel is tuned on GA102. Keep the established phase queue for
++// smaller/narrower grids and unmeasured architectures; those cases did not
++// consistently benefit from fusion. The override also lets parity tests cover
++// tile tails and shell intersections without allocating multi-million-cell
++// grids.
++bool FuseCpmlCore(const BeamzProgramLaunch &program) {
++  if (!ScheduleFlagEnabled(program, kNativeScheduleCombinedCpmlCore))
++    return false;
++  const char *override = std::getenv("BEAMZ_CUDA_CPML_CORE_FUSION");
++  if (override != nullptr && std::strcmp(override, "0") == 0)
++    return false;
++  if (override != nullptr && std::strcmp(override, "1") == 0)
++    return true;
++  const auto &h = program.h_ab;
++  int64_t shape[3];
++  for (int axis = 0; axis < 3; ++axis) {
++    shape[axis] = h.outputs[0].dims[axis];
++    for (int component = 1; component < 3; ++component) {
++      if (h.outputs[component].dims[axis] < shape[axis])
++        shape[axis] = h.outputs[component].dims[axis];
++    }
++  }
++  if (shape[2] < 384 || shape[0] * shape[1] * shape[2] < 12 * 1024 * 1024)
++    return false;
++  int device, major, minor;
++  if (cudaGetDevice(&device) != cudaSuccess ||
++      cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor,
++                             device) != cudaSuccess ||
++      cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor,
++                             device) != cudaSuccess)
++    return false;
++  return major == 8 && minor == 6;
++}
++
++// Two completed timesteps share tile-local fields in the deep interior. The
++// intermediate bank remains observable by DFTs; a disjoint final bank prevents
++// inter-block read/write hazards. The CPML and a two-cell coupling band advance
++// conventionally at both substeps.
++cudaError_t EnqueueTemporalPairProgram(cudaStream_t stream,
++                                       const BeamzProgramLaunch &program,
++                                       int tile, int pair_tile,
++                                       bool fused_core, int cpml_tile, bool spatial) {
++  BeamzBuffer a[6], b[6];
++  for (int c = 0; c < 3; ++c) {
++    a[c] = program.h_ab.inputs[c];
++    a[3 + c] = program.e_ab.inputs[c];
++    b[c] = program.h_ab.outputs[c];
++    b[3 + c] = program.e_ab.outputs[c];
++  }
++  auto bind = [](BeamzLaunch &h, BeamzLaunch &e, const BeamzBuffer *input,
++                 const BeamzBuffer *output) {
++    for (int c = 0; c < 3; ++c) {
++      h.inputs[c] = input[c];
++      h.inputs[3 + c] = input[3 + c];
++      h.outputs[c] = output[c];
++      e.inputs[c] = input[3 + c];
++      e.inputs[3 + c] = output[c];
++      e.outputs[c] = output[3 + c];
++    }
++  };
++  auto boundary_step = [&](const BeamzLaunch &h, const BeamzLaunch &e, int step,
++                           bool band, bool observe = true) -> cudaError_t {
++    if (spatial) {
++      auto error=BeamzEnqueueSpatialCpml(stream,h,e,program.source_groups,step);
++      if(error!=cudaSuccess)return error;
++      return observe && program.monitors
++          ? BeamzEnqueueDftGroups(stream,h,e,*program.monitors,step) : cudaSuccess;
++    }
++    if (pair_tile >= 3 && !fused_core) {
++      auto sources = [&](int timing) -> cudaError_t {
++        for (int index = 0; index < program.source_group_count; ++index) {
++          const auto &group = program.source_groups[index];
++          if (group.timing != timing || group.coefficients.dims[0] == 0)
++            continue;
++          const auto &target = timing == 1 ? h.outputs[group.component]
++                                           : e.outputs[group.component];
++          auto error = BeamzEnqueueSourceGroup(stream, h, target, group, step);
++          if (error != cudaSuccess)
++            return error;
++        }
++        return cudaSuccess;
++      };
++      auto error = BeamzEnqueueCpmlPhase(stream, h);
++      if (error != cudaSuccess)
++        return error;
++      error = sources(1);
++      if (error != cudaSuccess)
++        return error;
++      error = BeamzEnqueueCpmlPhase(stream, e);
++      if (error != cudaSuccess)
++        return error;
++      error = sources(2);
++      if (error != cudaSuccess)
++        return error;
++      return observe && program.monitors
++                 ? BeamzEnqueueDftGroups(stream, h, e, *program.monitors, step)
++                 : cudaSuccess;
++    }
++    auto error = BeamzEnqueueCpmlShell(stream, h);
++    if (error != cudaSuccess)
++      return error;
++    error = BeamzEnqueueSourcePhase(stream, h, e, program.source_groups,
++                                    program.source_group_count, 1, step, true);
++    if (error != cudaSuccess)
++      return error;
++    error = band ? BeamzEnqueueCpmlPairBand(stream, h, e, program.source_groups,
++                                            step)
++                 : BeamzEnqueueCpmlCore(stream, h, e, program.source_groups,
++                                        step, tile, false);
++    if (error != cudaSuccess)
++      return error;
++    error = BeamzEnqueueCpmlShell(stream, e);
++    if (error != cudaSuccess)
++      return error;
++    error = BeamzEnqueueSourcePhase(stream, h, e, program.source_groups,
++                                    program.source_group_count, 2, step, false,
++                                    band ? 2 : -1);
++    if (error != cudaSuccess)
++      return error;
++    return program.monitors && observe
++               ? BeamzEnqueueDftGroups(stream, h, e, *program.monitors, step)
++               : cudaSuccess;
++  };
++  const bool cpml_pair = FlagEnabled(program.h_ab, kBeamzCpmlPair);
++  for (int pair = 0; pair < program.nsteps / 2; ++pair) {
++    const auto *input = (pair & 1) ? program.pair_fields : a;
++    const auto *output = (pair & 1) ? a : program.pair_fields;
++    auto h1 = program.h_ab, e1 = program.e_ab;
++    auto h2 = program.h_ba, e2 = program.e_ba;
++    bind(h1, e1, input, b);
++    bind(h2, e2, b, output);
++    const bool rolling = pair_tile < 3 && !spatial;
++    auto error = cudaSuccess;
++    if (cpml_pair) {
++      const auto &hp = (pair & 1) ? program.h_ba : program.h_ab;
++      const auto &ep = (pair & 1) ? program.e_ba : program.e_ab;
++      for (int t=0;t<6;++t) {
++        h1.inputs[31+t]=hp.inputs[31+t]; h1.outputs[3+t]=hp.outputs[3+t];
++        e1.inputs[31+t]=ep.inputs[31+t]; e1.outputs[3+t]=ep.outputs[3+t];
++      }
++      error = BeamzEnqueueTemporalCpml(stream,h1,e1,output,program.source_groups,
++                                      2*pair,program.pair_publication,cpml_tile);
++      if (error != cudaSuccess) return error;
++    } else if (rolling) {
++      error = BeamzEnqueueCpmlPairCore(stream, h1, e1, output,
++                                       program.source_groups, 2 * pair,
++                                       program.pair_publication, pair_tile);
++      if (error != cudaSuccess)
++        return error;
++    }
++    if (!cpml_pair) {
++    error = boundary_step(h1, e1, 2 * pair, rolling, false);
++    if (error != cudaSuccess)
++      return error;
++    error = boundary_step(h2, e2, 2 * pair + 1, rolling, false);
++    if (error != cudaSuccess)
++      return error;
++    }
++    if (program.monitors) {
++      error = BeamzEnqueueDftPair(stream, h1, e1, h2, e2, *program.monitors,
++                                  2 * pair);
++      if (error != cudaSuccess)
++        return error;
++    }
++  }
++  if (program.nsteps & 1) {
++    const auto *input = ((program.nsteps / 2) & 1) ? program.pair_fields : a;
++    auto h = cpml_pair && ((program.nsteps / 2) & 1) ? program.h_ba : program.h_ab;
++    auto e = cpml_pair && ((program.nsteps / 2) & 1) ? program.e_ba : program.e_ab;
++    bind(h, e, input, b);
++    return boundary_step(h, e, program.nsteps - 1, false);
++  }
++  return cudaSuccess;
++}
++
++int LaunchTemporalCpmlProgram(void *raw_stream,
++                              const BeamzProgramLaunch &program) {
++  const BeamzLaunch &h_ab = program.h_ab;
++  const BeamzLaunch &e_ab = program.e_ab;
++  const BeamzLaunch &h_ba = program.h_ba;
++  const BeamzLaunch &e_ba = program.e_ba;
++  const BeamzSourceGroupLaunch *source_groups = program.source_groups;
+   const int32_t source_group_count = program.source_group_count;
+-  const BeamzDftGroupLaunch* monitors = program.monitors;
++  const BeamzDftGroupLaunch *monitors = program.monitors;
+   auto stream = reinterpret_cast<cudaStream_t>(raw_stream);
+-  const std::string graph_key =
+-      BeamzGraphKey("temporal-cpml", raw_stream, program);
++  const bool fused_core = FuseCpmlCore(program);
++  int tile = 0;
++  if (const char *value = std::getenv("BEAMZ_CUDA_CPML_TILE")) {
++    if (std::strcmp(value, "64x4x8") == 0)
++      tile = 1;
++    else if (std::strcmp(value, "32x4x8") == 0)
++      tile = 2;
++    else if (std::strcmp(value, "32x8x8") != 0 &&
++             std::strcmp(value, "auto") != 0)
++      return cudaErrorInvalidValue;
++  }
++  // Source batching regressed the large unfused graph by 3.5% on GA102.
++  // Preserve its established launch sequence; small and fused runs benefit.
++  const auto &shape = h_ab.outputs[0].dims;
++  const bool batch_sources =
++      fused_core || shape[0] * shape[1] * shape[2] < 1024 * 1024;
++  std::string graph_key =
++      BeamzGraphKey(fused_core ? "temporal-cpml-fused-core" : "temporal-cpml",
++                    raw_stream, program);
++  graph_key.append(reinterpret_cast<const char *>(&tile), sizeof(tile));
++  int pair_tile = 0;
++  if (program.field_bank_count == 3) {
++    const char *choice = std::getenv("BEAMZ_CUDA_PAIR_TILE");
++    if (choice && std::strcmp(choice, "32x4x16") == 0)
++      pair_tile = 1;
++    else if (choice && std::strcmp(choice, "32x8x16") == 0)
++      pair_tile = 2;
++    else if (choice && std::strcmp(choice, "single") == 0)
++      pair_tile = 3;
++    else if (choice && std::strcmp(choice, "16x8x16") != 0)
++      return cudaErrorInvalidValue;
++  }
++  graph_key.append(reinterpret_cast<const char *>(&pair_tile),
++                   sizeof(pair_tile));
++  int cpml_tile=0;
++  if (FlagEnabled(h_ab,kBeamzCpmlPair)) {
++    if (const char *choice=std::getenv("BEAMZ_CUDA_CPML_PAIR_TILE")) {
++      if (std::strcmp(choice,"16x8x4")==0) cpml_tile=1;
++      else if (std::strcmp(choice,"oriented")==0) cpml_tile=2;
++      else if (std::strcmp(choice,"16x8x16")!=0) return cudaErrorInvalidValue;
++    }
++  }
++  graph_key.append(reinterpret_cast<const char *>(&cpml_tile),sizeof(cpml_tile));
++  const char *spatial_choice=std::getenv("BEAMZ_CUDA_CPML_SPATIAL");
++  bool spatial=spatial_choice && std::strcmp(spatial_choice,"1")==0 &&
++      CombinedCpmlCoreSupported(program) && !FlagEnabled(h_ab,kBeamzCpmlPair);
++  const int psi_type=h_ab.inputs[31].element_type;
++  for(int t=0;t<6;++t)
++    spatial &= h_ab.inputs[31+t].element_type==psi_type &&
++               e_ab.inputs[31+t].element_type==psi_type;
++  graph_key.append(reinterpret_cast<const char *>(&spatial),sizeof(spatial));
+   const bool cache_enabled = FlagEnabled(h_ab, kBeamzGraphCache);
+ 
+   auto enqueue = [&]() {
++    if (program.field_bank_count == 3)
++      return EnqueueTemporalPairProgram(stream, program, tile, pair_tile,
++                                        fused_core, cpml_tile, spatial);
+     cudaError_t error = cudaSuccess;
+-    auto enqueue_sources = [&](const BeamzLaunch& h_launch,
+-                               const BeamzLaunch& e_launch, int timing,
++    auto enqueue_sources = [&](const BeamzLaunch &h_launch,
++                               const BeamzLaunch &e_launch, int timing,
+                                int32_t step) {
+-      for (int32_t index = 0; index < source_group_count; ++index) {
+-        const BeamzSourceGroupLaunch& group = source_groups[index];
+-        if (group.timing != timing || group.coefficients.dims[0] == 0) continue;
+-        const BeamzBuffer& target =
+-            timing == 0 ? e_launch.inputs[group.component]
+-                        : (timing == 1 ? h_launch.outputs[group.component]
+-                                       : e_launch.outputs[group.component]);
+-        error = BeamzEnqueueSourceGroup(stream, h_launch, target, group, step);
+-        if (error != cudaSuccess) return;
++      if (batch_sources) {
++        error = BeamzEnqueueSourcePhase(
++            stream, h_launch, e_launch, source_groups, source_group_count,
++            timing, step, timing == 1 && fused_core);
++      } else {
++        for (int index = 0; index < source_group_count; ++index) {
++          const auto &group = source_groups[index];
++          if (group.timing != timing || group.coefficients.dims[0] == 0)
++            continue;
++          const auto &target =
++              timing == 0 ? e_launch.inputs[group.component]
++                          : (timing == 1 ? h_launch.outputs[group.component]
++                                         : e_launch.outputs[group.component]);
++          error =
++              BeamzEnqueueSourceGroup(stream, h_launch, target, group, step);
++          if (error != cudaSuccess)
++            return;
++        }
+       }
+     };
+     for (int32_t step = 0; step < program.nsteps; ++step) {
+@@ -450,27 +716,50 @@ int LaunchTemporalCpmlProgram(void* raw_stream,
+       const BeamzLaunch& h_launch = ab ? h_ab : h_ba;
+       const BeamzLaunch& e_launch = ab ? e_ab : e_ba;
+       enqueue_sources(h_launch, e_launch, 0, step);
+-      if (error != cudaSuccess) return error;
+-      if (ScheduleFlagEnabled(program, kNativeScheduleCombinedCpmlCore)) {
+-        error = BeamzEnqueueCpmlPhase(stream, h_launch);
+-        if (error != cudaSuccess) return error;
++      if (error != cudaSuccess)
++        return error;
++      if (spatial) {
++        error=BeamzEnqueueSpatialCpml(stream,h_launch,e_launch,source_groups,step);
++      } else if (fused_core) {
++        error = BeamzEnqueueCpmlShell(stream, h_launch);
++        if (error != cudaSuccess)
++          return error;
+         enqueue_sources(h_launch, e_launch, 1, step);
+-        if (error != cudaSuccess) return error;
++        if (error != cudaSuccess)
++          return error;
++        error = BeamzEnqueueCpmlCore(stream, h_launch, e_launch, source_groups,
++                                     step, tile);
++        if (error != cudaSuccess)
++          return error;
++        error = BeamzEnqueueCpmlShell(stream, e_launch);
++      } else if (ScheduleFlagEnabled(program,
++                                     kNativeScheduleCombinedCpmlCore)) {
++        error = BeamzEnqueueCpmlPhase(stream, h_launch);
++        if (error != cudaSuccess)
++          return error;
++        enqueue_sources(h_launch, e_launch, 1, step);
++        if (error != cudaSuccess)
++          return error;
+         error = BeamzEnqueueCpmlPhase(stream, e_launch);
+       } else {
+         error = BeamzEnqueuePhase(raw_stream, h_launch);
+-        if (error != cudaSuccess) return error;
++        if (error != cudaSuccess)
++          return error;
+         enqueue_sources(h_launch, e_launch, 1, step);
+-        if (error != cudaSuccess) return error;
++        if (error != cudaSuccess)
++          return error;
+         error = BeamzEnqueuePhase(raw_stream, e_launch);
+       }
+-      if (error != cudaSuccess) return error;
+-      enqueue_sources(h_launch, e_launch, 2, step);
+-      if (error != cudaSuccess) return error;
++      if (error != cudaSuccess)
++        return error;
++      if (!spatial) enqueue_sources(h_launch, e_launch, 2, step);
++      if (error != cudaSuccess)
++        return error;
+       if (monitors != nullptr) {
+         error = BeamzEnqueueDftGroups(stream, h_launch, e_launch, *monitors,
+                                       step);
+-        if (error != cudaSuccess) return error;
++        if (error != cudaSuccess)
++          return error;
+       }
+     }
+     return error;
+diff --git i/cuda/src/update.cu w/cuda/src/update.cu
+index 1af13e2d..78a72df3 100644
+--- i/cuda/src/update.cu
++++ w/cuda/src/update.cu
+@@ -5,6 +5,8 @@
+ #include <cstddef>
+ #include <cstdint>
+ #include <limits>
++#include <type_traits>
++#include "abi_layout.h"
+ #include "kernels.h"
+ #include "launch.h"
+ #include "yee_primitives.cuh"
+@@ -24,6 +26,17 @@ constexpr int kFusedSharedZ = kFusedCoreZ + 1;
+ constexpr int kFusedVolume = kFusedSharedX * kFusedSharedY * kFusedSharedZ;
+ constexpr size_t kFusedSharedBytes = 3 * kFusedVolume * sizeof(float);
+ 
++template <int X_, int Y_, int Z_>
++struct CpmlTile {
++  static constexpr int X = X_, Y = Y_, Z = Z_;
++  static constexpr int SharedX = X + 1, SharedY = Y + 1;
++  static constexpr int Volume = 2 * SharedX * SharedY;
++  static constexpr size_t SharedBytes = 3 * Volume * sizeof(float);
++  __device__ static int Offset(int z, int y, int x) {
++    return (z * SharedY + y) * SharedX + x;
++  }
++};
++
+ // The temporal Yee kernel needs only the phase payload, not the full ABI
+ // descriptor (versioning, CPML slots, or unused result slots).
+ struct FusedYeePhase {
+@@ -115,9 +128,12 @@ int64_t Elements(const BeamzBuffer& value) {
+   return elements;
+ }
+ 
+-int MaxOutputExtent(const BeamzLaunch& launch, int axis) {
++int RequiredMetricExtent(const BeamzLaunch &launch, int axis) {
+   int extent = 0;
+   for (int component = 0; component < 3; ++component) {
++    // Only transverse components take a derivative along this axis.
++    if (axis == 2 - component)
++      continue;
+     const int value = static_cast<int>(launch.outputs[component].dims[axis]);
+     extent = value > extent ? value : extent;
+   }
+@@ -258,7 +274,7 @@ cudaError_t ValidatePhase(const BeamzLaunch& launch) {
+          (metric.rank != 0 || metric.data == nullptr)) ||
+         (launch.metric_kind == 2 &&
+          (metric.rank != 1 ||
+-          metric.dims[0] < MaxOutputExtent(launch, axis) ||
++          metric.dims[0] < RequiredMetricExtent(launch, axis) ||
+           metric.data == nullptr))) {
+       return cudaErrorInvalidValue;
+     }
+@@ -272,9 +288,7 @@ __device__ __forceinline__ int Offset(const BeamzBuffer& value, int z, int y,
+   const int iz = value.dims[0] == 1 ? 0 : z;
+   const int iy = value.dims[1] == 1 ? 0 : y;
+   const int ix = value.dims[2] == 1 ? 0 : x;
+-  return (iz * static_cast<int>(value.dims[1]) + iy) *
+-             static_cast<int>(value.dims[2]) +
+-         ix;
++  return BeamzOffset3D(value, iz, iy, ix);
+ }
+ 
+ __device__ __forceinline__ float Read(const BeamzBuffer& value, int z, int y,
+@@ -284,9 +298,7 @@ __device__ __forceinline__ float Read(const BeamzBuffer& value, int z, int y,
+ 
+ __device__ __forceinline__ float Read3D(const BeamzBuffer& value, int z, int y,
+                                         int x) {
+-  const int offset = (z * static_cast<int>(value.dims[1]) + y) *
+-                         static_cast<int>(value.dims[2]) +
+-                     x;
++  const int offset = BeamzOffset3D(value, z, y, x);
+   return static_cast<const float*>(value.data)[offset];
+ }
+ 
+@@ -319,8 +331,9 @@ __device__ __forceinline__ float ForwardDifference(const BeamzBuffer& value,
+     if (x + 1 >= value.dims[2]) return 0.0f;
+     ++next_x;
+   }
+-  return (Read3D(value, next_z, next_y, next_x) - Read3D(value, z, y, x)) *
+-         MetricScale<MetricKind>(launch, axis, coordinate);
++  return beamz::cuda::yee::ScaleYeeDifference(
++      Read3D(value, next_z, next_y, next_x) - Read3D(value, z, y, x),
++      MetricScale<MetricKind>(launch, axis, coordinate));
+ }
+ 
+ template <int MetricKind, bool HasMetallicEdges = true>
+@@ -334,7 +347,8 @@ __device__ __forceinline__ float BoundaryDifference(const BeamzBuffer& value,
+   if (coordinate == 0) {
+     if constexpr (!HasMetallicEdges) return 0.0f;
+     const bool metallic = edge_mask & (1 << (2 * axis));
+-    return metallic ? Read3D(value, z, y, x) * inv_dx : 0.0f;
++    return metallic ? beamz::cuda::yee::ScaleYeeDifference(
++                          Read3D(value, z, y, x), inv_dx) : 0.0f;
+   }
+   if (coordinate == size) {
+     if constexpr (!HasMetallicEdges) return 0.0f;
+@@ -343,13 +357,15 @@ __device__ __forceinline__ float BoundaryDifference(const BeamzBuffer& value,
+     if (axis == 1) last_y = size - 1;
+     if (axis == 2) last_x = size - 1;
+     const bool metallic = edge_mask & (1 << (2 * axis + 1));
+-    return metallic ? -Read3D(value, last_z, last_y, last_x) * inv_dx : 0.0f;
++    return metallic ? beamz::cuda::yee::ScaleYeeDifference(
++                          -Read3D(value, last_z, last_y, last_x), inv_dx) : 0.0f;
+   }
+   int low_z = z, low_y = y, low_x = x;
+   if (axis == 0) --low_z;
+   if (axis == 1) --low_y;
+   if (axis == 2) --low_x;
+-  return (Read3D(value, z, y, x) - Read3D(value, low_z, low_y, low_x)) * inv_dx;
++  return beamz::cuda::yee::ScaleYeeDifference(
++      Read3D(value, z, y, x) - Read3D(value, low_z, low_y, low_x), inv_dx);
+ }
+ 
+ template <int Term, bool UniformCpml = false, int PsiType = -1>
+@@ -450,7 +466,7 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
+   }
+   if constexpr (!Cpml) {
+     if (zero_on_wall) {
+-      static_cast<float*>(output.data)[linear] = 0.0f;
++      static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] = 0.0f;
+       return;
+     }
+   }
+@@ -485,11 +501,12 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
+   if (zero_on_wall) {
+     // CPML memory still evolves where an absorbing face intersects a PEC face;
+     // only the constrained field value is masked after the recurrence update.
+-    static_cast<float*>(output.data)[linear] = 0.0f;
++    static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] = 0.0f;
+     return;
+   }
+ 
+-  const float old_field = static_cast<const float*>(input.data)[linear];
++  const float old_field =
++      static_cast<const float*>(input.data)[BeamzOffset3D(input, z, y, x)];
+   float decay;
+   float source;
+   if constexpr (PackedLosslessMaterial) {
+@@ -500,7 +517,7 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
+     decay = Read(launch.inputs[6 + Component], z, y, x);
+     source = Read(launch.inputs[9 + Component], z, y, x);
+   }
+-  static_cast<float*>(output.data)[linear] =
++  static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] =
+       beamz::cuda::yee::AdvanceYeeField(Phase, old_field, decay, source, curl);
+ }
+ 
+@@ -528,7 +545,8 @@ __device__ __forceinline__ float UncheckedDifference(
+   if (axis == 2) neighbor_x += Phase == 0 ? 1 : -1;
+   const float center = Read3D(value, z, y, x);
+   const float neighbor = Read3D(value, neighbor_z, neighbor_y, neighbor_x);
+-  return (Phase == 0 ? neighbor - center : center - neighbor) * inv_dx;
++  return beamz::cuda::yee::ScaleYeeDifference(
++      Phase == 0 ? neighbor - center : center - neighbor, inv_dx);
+ }
+ 
+ template <int Phase, int Component>
+@@ -537,14 +555,11 @@ __device__ __forceinline__ void UpdateFullPecScalarComponent(
+   const BeamzBuffer& input = launch.inputs[Component];
+   const BeamzBuffer& output = launch.outputs[Component];
+   if (z >= output.dims[0] || y >= output.dims[1] || x >= output.dims[2]) return;
+-  const int linear = (z * static_cast<int>(output.dims[1]) + y) *
+-                         static_cast<int>(output.dims[2]) +
+-                     x;
+   constexpr int normal_axis = 2 - Component;
+   if constexpr (Phase == 0) {
+     const int coordinate = normal_axis == 0 ? z : (normal_axis == 1 ? y : x);
+     if (coordinate == 0 || coordinate == output.dims[normal_axis] - 1) {
+-      static_cast<float*>(output.data)[linear] = 0.0f;
++      static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] = 0.0f;
+       return;
+     }
+   } else {
+@@ -552,7 +567,7 @@ __device__ __forceinline__ void UpdateFullPecScalarComponent(
+       if (axis == normal_axis) continue;
+       const int coordinate = axis == 0 ? z : (axis == 1 ? y : x);
+       if (coordinate == 0 || coordinate == output.dims[axis] - 1) {
+-        static_cast<float*>(output.data)[linear] = 0.0f;
++        static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] = 0.0f;
+         return;
+       }
+     }
+@@ -568,13 +583,14 @@ __device__ __forceinline__ void UpdateFullPecScalarComponent(
+   const float derivative1 = UncheckedDifference<Phase>(
+       launch.inputs[3 + second_source[Component]], second_axis[Component], z,
+       y, x, launch.inv_resolution);
+-  const float old_field = static_cast<const float*>(input.data)[linear];
++  const float old_field =
++      static_cast<const float*>(input.data)[BeamzOffset3D(input, z, y, x)];
+   const float decay =
+       static_cast<const float*>(launch.inputs[6 + Component].data)[0];
+   const float source =
+       static_cast<const float*>(launch.inputs[9 + Component].data)[0];
+   const float curl = derivative0 - derivative1;
+-  static_cast<float*>(output.data)[linear] =
++  static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] =
+       Phase == 0 ? decay * old_field - source * curl
+                  : decay * old_field + source * curl;
+ }
+@@ -674,11 +690,7 @@ __device__ __forceinline__ float FusedHValue(const FusedYeePhase& launch,
+   const float derivative1 = ForwardDifference<MetricKind>(
+       launch.inputs[3 + second_source[Component]], second_axis[Component], z,
+       y, x, launch);
+-  const int linear = (z * static_cast<int>(output.dims[1]) + y) *
+-                         static_cast<int>(output.dims[2]) +
+-                     x;
+-  const float old_field =
+-      static_cast<const float*>(launch.inputs[Component].data)[linear];
++  const float old_field = Read3D(launch.inputs[Component], z, y, x);
+   const float decay =
+       ScalarCoefficients
+           ? static_cast<const float*>(launch.inputs[6 + Component].data)[0]
+@@ -723,17 +735,13 @@ __device__ __forceinline__ float FusedEValue(const FusedYeePhase& launch,
+                                     FusedOffset(neighbor_z, neighbor_y,
+                                                 neighbor_x)];
+     const int coordinate = axis == 0 ? z : (axis == 1 ? y : x);
+-    return (center - neighbor) *
+-           MetricScale<MetricKind>(launch, axis, coordinate);
++    return beamz::cuda::yee::ScaleYeeDifference(
++        center - neighbor, MetricScale<MetricKind>(launch, axis, coordinate));
+   };
+   const float curl = difference(first_source[Component], first_axis[Component]) -
+                      difference(second_source[Component],
+                                 second_axis[Component]);
+-  const int linear = (z * static_cast<int>(output.dims[1]) + y) *
+-                         static_cast<int>(output.dims[2]) +
+-                     x;
+-  const float old_field =
+-      static_cast<const float*>(launch.inputs[Component].data)[linear];
++  const float old_field = Read3D(launch.inputs[Component], z, y, x);
+   const float decay =
+       ScalarCoefficients
+           ? static_cast<const float*>(launch.inputs[6 + Component].data)[0]
+@@ -886,10 +894,7 @@ __global__ void FusedFullStepPec(FusedYeePhase h_launch,
+     for (int component = 0; component < 3; ++component) {
+       const BeamzBuffer& h_output = h_launch.outputs[component];
+       if (BufferContains(h_output, z, y, x)) {
+-        const int linear = (z * static_cast<int>(h_output.dims[1]) + y) *
+-                               static_cast<int>(h_output.dims[2]) +
+-                           x;
+-        static_cast<float*>(h_output.data)[linear] =
++        static_cast<float*>(h_output.data)[BeamzOffset3D(h_output, z, y, x)] =
+             h_fields[component * kFusedVolume + center];
+       }
+     }
+@@ -906,15 +911,161 @@ __global__ void FusedFullStepPec(FusedYeePhase h_launch,
+     for (int component = 0; component < 3; ++component) {
+       const BeamzBuffer& e_output = e_launch.outputs[component];
+       if (BufferContains(e_output, z, y, x)) {
+-        const int linear = (z * static_cast<int>(e_output.dims[1]) + y) *
+-                               static_cast<int>(e_output.dims[2]) +
+-                           x;
+-        static_cast<float*>(e_output.data)[linear] = values[component];
++        static_cast<float*>(e_output.data)[BeamzOffset3D(e_output, z, y, x)] =
++            values[component];
+       }
+     }
+   }
+ }
+ 
++// The shell has already advanced H and injected its H sources. Interior H
++// values (including tile halos) are recomputed from the frozen input bank so
++// adjacent blocks never read another block's in-flight interior writes.
++struct FusedHSources {
++  BeamzSourceGroupLaunch groups[3];
++  int step;
++};
++
++template <int Component>
++__device__ __forceinline__ float
++AddFusedHSource(float value, const FusedHSources &sources, int z, int y, int x,
++                int step_offset = 0) {
++  const auto &group = sources.groups[Component];
++  const auto *starts = static_cast<const int32_t *>(group.starts.data);
++  for (int source = 0; source < group.coefficients.dims[0]; ++source) {
++    const int sz = z - starts[3 * source];
++    const int sy = y - starts[3 * source + 1];
++    const int sx = x - starts[3 * source + 2];
++    if (sz < 0 || sy < 0 || sx < 0 || sz >= group.coefficients.dims[1] ||
++        sy >= group.coefficients.dims[2] || sx >= group.coefficients.dims[3])
++      continue;
++    int t = static_cast<const int *>(group.current_step.data)[0] +
++            sources.step + step_offset;
++    t = max(0, min(t, static_cast<int>(group.waveforms.dims[1]) - 1));
++    const int index =
++        ((source * static_cast<int>(group.coefficients.dims[1]) + sz) *
++             static_cast<int>(group.coefficients.dims[2]) +
++         sy) *
++            static_cast<int>(group.coefficients.dims[3]) +
++        sx;
++    const float contribution =
++        static_cast<const float *>(group.coefficients.data)[index] *
++        static_cast<const float *>(
++            group.waveforms.data)[source * group.waveforms.dims[1] + t];
++    // Match the separately rounded multiply then source addition.
++    value = __fadd_rn(value, contribution);
++  }
++  return value;
++}
++
++template <int Component>
++__device__ float CoreHValue(const FusedYeePhase &h,
++                            const FusedHSources &sources, int z, int y, int x,
++                            int low, int hz, int hy, int hx) {
++  if (!BufferContains(h.outputs[Component], z, y, x))
++    return 0.f;
++  if (z < low || y < low || x < low || z >= hz || y >= hy || x >= hx) {
++    return Read3D(h.outputs[Component], z, y, x);
++  }
++  constexpr auto a = beamz::cuda::yee::FirstCurlTerm(Component);
++  constexpr auto b = beamz::cuda::yee::SecondCurlTerm(Component);
++  const float curl =
++      UncheckedDifference<0>(h.inputs[3 + a.source_component],
++                             a.derivative_axis, z, y, x, h.inv_resolution) -
++      UncheckedDifference<0>(h.inputs[3 + b.source_component],
++                             b.derivative_axis, z, y, x, h.inv_resolution);
++  const float value = beamz::cuda::yee::AdvanceYeeField(
++      0, Read3D(h.inputs[Component], z, y, x),
++      Read(h.inputs[6 + Component], z, y, x),
++      Read(h.inputs[9 + Component], z, y, x), curl);
++  return AddFusedHSource<Component>(value, sources, z, y, x);
++}
++
++template <int Component, bool Packed, typename Tile>
++__device__ void CoreEValue(const FusedYeePhase& e, const float* h_fields,
++                           int lz, int ly, int lx, int z, int y, int x) {
++  auto difference = [&](int source, int axis) {
++    const int center = source * Tile::Volume + Tile::Offset(lz, ly, lx);
++    const int neighbor = source * Tile::Volume +
++                         Tile::Offset(axis == 0 ? (lz ^ 1) : lz,
++                                      ly - (axis == 1), lx - (axis == 2));
++    return beamz::cuda::yee::ScaleYeeDifference(
++        h_fields[center] - h_fields[neighbor], e.inv_resolution);
++  };
++  constexpr auto a = beamz::cuda::yee::FirstCurlTerm(Component);
++  constexpr auto b = beamz::cuda::yee::SecondCurlTerm(Component);
++  const float curl = difference(a.source_component, a.derivative_axis) -
++                     difference(b.source_component, b.derivative_axis);
++  const auto &output = e.outputs[Component];
++  const int linear = (z * static_cast<int>(output.dims[1]) + y) *
++                         static_cast<int>(output.dims[2]) +
++                     x;
++  const float decay = Packed ? 1.f : Read(e.inputs[6 + Component], z, y, x);
++  const float source =
++      Packed ? beamz::cuda::yee::PackedMaterialSource(
++                   e.inputs[6 + Component], e.inputs[9 + Component], linear)
++             : Read(e.inputs[9 + Component], z, y, x);
++  static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] =
++      beamz::cuda::yee::AdvanceYeeField(1, Read3D(e.inputs[Component], z, y, x),
++                                        decay, source, curl);
++}
++
++template <bool Packed, typename Tile, bool Band = false>
++__global__ __launch_bounds__(Tile::X* Tile::Y, 6) void FusedCpmlCore(
++    FusedYeePhase h, FusedYeePhase e, FusedHSources sources, int low, int hz,
++    int hy, int hx) {
++  extern __shared__ float h_fields[];
++  const int thread = threadIdx.y * blockDim.x + threadIdx.x;
++  const int threads = blockDim.x * blockDim.y;
++  const int ox = low + blockIdx.x * Tile::X;
++  const int oy = low + blockIdx.y * Tile::Y;
++  const int oz = low + blockIdx.z * Tile::Z;
++  if constexpr (Band) {
++    if (ox >= low + 2 && oy >= low + 2 && oz >= low + 2 &&
++        ox + Tile::X <= hx - 2 && oy + Tile::Y <= hy - 2 &&
++        oz + Tile::Z <= hz - 2)
++      return;
++  }
++  constexpr int plane = Tile::SharedX * Tile::SharedY;
++  auto stage = [&](int z, int slot) {
++    for (int index = thread; index < plane; index += threads) {
++      const int x = ox + index % Tile::SharedX - 1;
++      const int y = oy + index / Tile::SharedX - 1;
++      const int dest = slot * plane + index;
++      h_fields[dest] = CoreHValue<0>(h, sources, z, y, x, low, hz, hy, hx);
++      h_fields[Tile::Volume + dest] =
++          CoreHValue<1>(h, sources, z, y, x, low, hz, hy, hx);
++      h_fields[2 * Tile::Volume + dest] =
++          CoreHValue<2>(h, sources, z, y, x, low, hz, hy, hx);
++    }
++  };
++  // Only two H planes are live: the current plane and its backward z halo.
++  stage(oz - 1, 1);
++  const int lx = threadIdx.x + 1, ly = threadIdx.y + 1;
++  const int x = ox + threadIdx.x, y = oy + threadIdx.y;
++  for (int dz = 0; dz < Tile::Z && oz + dz < hz; ++dz) {
++    const int z = oz + dz, lz = dz & 1;
++    stage(z, lz);
++    __syncthreads();
++    if (y < hy && x < hx &&
++        (!Band || x < low + 2 || y < low + 2 || z < low + 2 || x >= hx - 2 ||
++         y >= hy - 2 || z >= hz - 2)) {
++      for (int component = 0; component < 3; ++component) {
++        const auto &output = h.outputs[component];
++        static_cast<float*>(output.data)[BeamzOffset3D(output, z, y, x)] =
++            h_fields[component * Tile::Volume + Tile::Offset(lz, ly, lx)];
++      }
++      CoreEValue<0, Packed, Tile>(e, h_fields, lz, ly, lx, z, y, x);
++      CoreEValue<1, Packed, Tile>(e, h_fields, lz, ly, lx, z, y, x);
++      CoreEValue<2, Packed, Tile>(e, h_fields, lz, ly, lx, z, y, x);
++    }
++    __syncthreads();
++  }
++}
++
++#include "temporal_pair.cuh"
++#include "temporal_cpml.cuh"
++
+ template <int MetricKind, bool HasMetallicEdges, bool UniformCpml>
+ void LaunchFusedUpdate(cudaStream_t stream, const BeamzLaunch& launch,
+                        dim3 blocks, dim3 threads) {
+@@ -1088,14 +1239,15 @@ int UniformPsiType(const BeamzLaunch& launch) {
+   return psi_type;
+ }
+ 
+-template <int Phase, int PsiType, bool PackedLosslessMaterial>
+-void LaunchCombinedCpmlQueueForType(cudaStream_t stream,
+-                                    const BeamzLaunch& launch,
+-                                    const CpmlGeometry& geometry) {
+-  constexpr int tile_x = PsiType == kBeamzBF16 ? 32 : 64;
+-  constexpr int tile_y = 4;
+-  constexpr int core_tile_x = PsiType == kBeamzBF16 ? 64 : tile_x;
+-  constexpr int core_tile_y = PsiType == kBeamzBF16 ? 2 : tile_y;
++template <int Phase, int PsiType, bool PackedLosslessMaterial, int TileX, int TileY>
++void LaunchCpmlQueueTile(cudaStream_t stream,
++                                    const BeamzLaunch &launch,
++                                    const CpmlGeometry &geometry,
++                                    bool shell_only = false) {
++  constexpr int tile_x = TileX;
++  constexpr int tile_y = TileY;
++  constexpr int core_tile_x = 64;
++  constexpr int core_tile_y = tile_x * tile_y / core_tile_x;
+   static_assert(tile_x * tile_y == core_tile_x * core_tile_y);
+   const int max_z = geometry.field.max_z;
+   const int max_y = geometry.field.max_y;
+@@ -1125,54 +1277,67 @@ void LaunchCombinedCpmlQueueForType(cudaStream_t stream,
+   if (launch.metallic_edges == 0) {
+     UpdateCombinedCpmlQueue<Phase, PsiType, PackedLosslessMaterial, false,
+                             tile_x, tile_y, core_tile_x, core_tile_y>
+-        <<<shell_blocks + core_blocks, threads, 0, stream>>>(
++        <<<shell_blocks + (shell_only ? 0 : core_blocks), threads, 0, stream>>>(
+             launch, max_z, max_y, max_x, high_z, high_y, high_x,
+             z_region_blocks, y_region_blocks, shell_blocks, core_x_blocks,
+             core_y_blocks);
+   } else {
+     UpdateCombinedCpmlQueue<Phase, PsiType, PackedLosslessMaterial, true,
+                             tile_x, tile_y, core_tile_x, core_tile_y>
+-        <<<shell_blocks + core_blocks, threads, 0, stream>>>(
++        <<<shell_blocks + (shell_only ? 0 : core_blocks), threads, 0, stream>>>(
+             launch, max_z, max_y, max_x, high_z, high_y, high_x,
+             z_region_blocks, y_region_blocks, shell_blocks, core_x_blocks,
+             core_y_blocks);
+   }
+ }
+ 
++template <int Phase, int PsiType, bool Packed>
++void LaunchCombinedCpmlQueueForType(cudaStream_t stream, const BeamzLaunch& launch,
++                                    const CpmlGeometry& geometry, bool shell_only) {
++  if (launch.cuda_flags & beamz::cuda::abi::kBeamzShell32x8)
++    LaunchCpmlQueueTile<Phase, PsiType, Packed, 32, 8>(stream, launch, geometry, shell_only);
++  else if (launch.cuda_flags & beamz::cuda::abi::kBeamzShell32x4)
++    LaunchCpmlQueueTile<Phase, PsiType, Packed, 32, 4>(stream, launch, geometry, shell_only);
++  else
++    LaunchCpmlQueueTile<Phase, PsiType, Packed, PsiType == kBeamzBF16 ? 32 : 64, 4>(
++        stream, launch, geometry, shell_only);
++}
++
+ cudaError_t LaunchCombinedCpmlQueuePhase(cudaStream_t stream,
+-                                         const BeamzLaunch& launch) {
++                                         const BeamzLaunch &launch,
++                                         bool shell_only = false) {
+   const CpmlGeometry geometry = MakeCpmlGeometry(launch);
+   const int psi_type = UniformPsiType(launch);
+   const bool packed = launch.phase == 1 && HasPackedLosslessMaterial(launch);
+   if (launch.phase == 0) {
+     if (psi_type == kBeamzBF16) {
+       LaunchCombinedCpmlQueueForType<0, kBeamzBF16, false>(
+-          stream, launch, geometry);
++          stream, launch, geometry, shell_only);
+     } else if (psi_type == kBeamzF32) {
+-      LaunchCombinedCpmlQueueForType<0, kBeamzF32, false>(
+-          stream, launch, geometry);
++      LaunchCombinedCpmlQueueForType<0, kBeamzF32, false>(stream, launch,
++                                                          geometry, shell_only);
+     } else {
+-      LaunchCombinedCpmlQueueForType<0, -1, false>(
+-          stream, launch, geometry);
++      LaunchCombinedCpmlQueueForType<0, -1, false>(stream, launch, geometry,
++                                                   shell_only);
+     }
+   } else if (packed && psi_type == kBeamzBF16) {
+-    LaunchCombinedCpmlQueueForType<1, kBeamzBF16, true>(
+-        stream, launch, geometry);
++    LaunchCombinedCpmlQueueForType<1, kBeamzBF16, true>(stream, launch,
++                                                        geometry, shell_only);
+   } else if (packed && psi_type == kBeamzF32) {
+-    LaunchCombinedCpmlQueueForType<1, kBeamzF32, true>(
+-        stream, launch, geometry);
++    LaunchCombinedCpmlQueueForType<1, kBeamzF32, true>(stream, launch, geometry,
++                                                       shell_only);
+   } else if (packed) {
+-    LaunchCombinedCpmlQueueForType<1, -1, true>(
+-        stream, launch, geometry);
++    LaunchCombinedCpmlQueueForType<1, -1, true>(stream, launch, geometry,
++                                                shell_only);
+   } else if (psi_type == kBeamzBF16) {
+-    LaunchCombinedCpmlQueueForType<1, kBeamzBF16, false>(
+-        stream, launch, geometry);
++    LaunchCombinedCpmlQueueForType<1, kBeamzBF16, false>(stream, launch,
++                                                         geometry, shell_only);
+   } else if (psi_type == kBeamzF32) {
+-    LaunchCombinedCpmlQueueForType<1, kBeamzF32, false>(
+-        stream, launch, geometry);
++    LaunchCombinedCpmlQueueForType<1, kBeamzF32, false>(stream, launch,
++                                                        geometry, shell_only);
+   } else {
+-    LaunchCombinedCpmlQueueForType<1, -1, false>(
+-        stream, launch, geometry);
++    LaunchCombinedCpmlQueueForType<1, -1, false>(stream, launch, geometry,
++                                                 shell_only);
+   }
+   return cudaPeekAtLastError();
+ }
+@@ -1232,3 +1397,246 @@ cudaError_t BeamzEnqueueFusedFullStep(cudaStream_t stream,
+   }
+   return cudaPeekAtLastError();
+ }
++
++cudaError_t BeamzEnqueueCpmlShell(cudaStream_t stream,
++                                  const BeamzLaunch &launch) {
++  return LaunchCombinedCpmlQueuePhase(stream, launch, true);
++}
++
++template <typename Tile, bool Band = false>
++cudaError_t EnqueueCpmlCoreTile(cudaStream_t stream, const BeamzLaunch& h,
++                                const BeamzLaunch& e,
++                                const BeamzSourceGroupLaunch* groups,
++                                int step) {
++  const CpmlGeometry geometry = MakeCpmlGeometry(h);
++  FusedHSources sources{};
++  sources.step = step;
++  if (groups != nullptr) {
++    for (int component = 0; component < 3; ++component)
++      sources.groups[component] = groups[3 + component];
++  }
++  const dim3 blocks((geometry.high_x - geometry.low + Tile::X - 1) / Tile::X,
++                    (geometry.high_y - geometry.low + Tile::Y - 1) / Tile::Y,
++                    (geometry.high_z - geometry.low + Tile::Z - 1) / Tile::Z);
++  if (HasPackedLosslessMaterial(e)) {
++    FusedCpmlCore<true, Tile, Band>
++        <<<blocks, dim3(Tile::X, Tile::Y), Tile::SharedBytes, stream>>>(
++            MakeFusedYeePhase(h), MakeFusedYeePhase(e), sources, geometry.low,
++            geometry.high_z, geometry.high_y, geometry.high_x);
++  } else {
++    FusedCpmlCore<false, Tile, Band>
++        <<<blocks, dim3(Tile::X, Tile::Y), Tile::SharedBytes, stream>>>(
++            MakeFusedYeePhase(h), MakeFusedYeePhase(e), sources, geometry.low,
++            geometry.high_z, geometry.high_y, geometry.high_x);
++  }
++  return cudaPeekAtLastError();
++}
++
++cudaError_t BeamzEnqueueCpmlCore(cudaStream_t stream, const BeamzLaunch& h,
++                                 const BeamzLaunch& e,
++                                 const BeamzSourceGroupLaunch* groups, int step,
++                                 int tile, bool band) {
++  if (band) {
++    switch (tile) {
++      case 0:
++        return EnqueueCpmlCoreTile<CpmlTile<32, 8, 8>, true>(stream, h, e,
++                                                             groups, step);
++      case 1:
++        return EnqueueCpmlCoreTile<CpmlTile<64, 4, 8>, true>(stream, h, e,
++                                                             groups, step);
++      case 2:
++        return EnqueueCpmlCoreTile<CpmlTile<32, 4, 8>, true>(stream, h, e,
++                                                             groups, step);
++      default:
++        return cudaErrorInvalidValue;
++    }
++  }
++  switch (tile) {
++    case 0:
++      return EnqueueCpmlCoreTile<CpmlTile<32, 8, 8>>(stream, h, e, groups,
++                                                     step);
++    case 1:
++      return EnqueueCpmlCoreTile<CpmlTile<64, 4, 8>>(stream, h, e, groups,
++                                                     step);
++    case 2:
++      return EnqueueCpmlCoreTile<CpmlTile<32, 4, 8>>(stream, h, e, groups,
++                                                     step);
++    default:
++      return cudaErrorInvalidValue;
++  }
++}
++
++template <int X, int Y, int Z>
++cudaError_t EnqueueCpmlPairCoreTile(cudaStream_t stream, const BeamzLaunch &h,
++                                    const BeamzLaunch &e,
++                                    const BeamzBuffer *final_fields,
++                                    const BeamzSourceGroupLaunch *groups,
++                                    int step, BeamzBuffer publication) {
++  const auto geometry = MakeCpmlGeometry(h);
++  PairFieldOutputs final{};
++  FusedHSources hs{}, es{};
++  hs.step = es.step = step;
++  for (int c = 0; c < 6; ++c)
++    final.fields[c] = final_fields[c];
++  for (int c = 0; c < 3; ++c) {
++    hs.groups[c] = groups[3 + c];
++    es.groups[c] = groups[6 + c];
++  }
++  const dim3 blocks((geometry.high_x - geometry.low - 4 + X - 1) / X,
++                    (geometry.high_y - geometry.low - 4 + Y - 1) / Y,
++                    (geometry.high_z - geometry.low - 4 + Z - 1) / Z);
++  if (HasPackedLosslessMaterial(e))
++    TemporalPairCore<true, X, Y, Z>
++        <<<blocks, 256, PairStage<X, Y, 3>::offset * sizeof(float), stream>>>(
++            MakeFusedYeePhase(h), MakeFusedYeePhase(e), final, hs, es,
++            publication, geometry.low, geometry.high_z, geometry.high_y,
++            geometry.high_x);
++  else
++    TemporalPairCore<false, X, Y, Z>
++        <<<blocks, 256, PairStage<X, Y, 3>::offset * sizeof(float), stream>>>(
++            MakeFusedYeePhase(h), MakeFusedYeePhase(e), final, hs, es,
++            publication, geometry.low, geometry.high_z, geometry.high_y,
++            geometry.high_x);
++  return cudaPeekAtLastError();
++}
++
++cudaError_t BeamzEnqueueCpmlPairCore(cudaStream_t stream, const BeamzLaunch &h,
++                                     const BeamzLaunch &e,
++                                     const BeamzBuffer *final_fields,
++                                     const BeamzSourceGroupLaunch *groups,
++                                     int step, BeamzBuffer publication,
++                                     int tile) {
++  switch (tile) {
++  case 0:
++    return EnqueueCpmlPairCoreTile<16, 8, 16>(stream, h, e, final_fields,
++                                              groups, step, publication);
++  case 1:
++    return EnqueueCpmlPairCoreTile<32, 4, 16>(stream, h, e, final_fields,
++                                              groups, step, publication);
++  case 2:
++    return EnqueueCpmlPairCoreTile<32, 8, 16>(stream, h, e, final_fields,
++                                              groups, step, publication);
++  default:
++    return cudaErrorInvalidValue;
++  }
++}
++
++cudaError_t BeamzEnqueueCpmlPairBand(cudaStream_t stream, const BeamzLaunch &h,
++                                     const BeamzLaunch &e,
++                                     const BeamzSourceGroupLaunch *groups,
++                                     int step) {
++  const auto g = MakeCpmlGeometry(h);
++  const int nx = g.high_x - g.low, ny = g.high_y - g.low, nz = g.high_z - g.low;
++  const int count = nx * ny * nz - (nx - 4) * (ny - 4) * (nz - 4);
++  FusedHSources sources{};
++  sources.step = step;
++  for (int c = 0; c < 3; ++c)
++    sources.groups[c] = groups[3 + c];
++  if (HasPackedLosslessMaterial(e))
++    TemporalPairBand<true><<<(count + 255) / 256, 256, 0, stream>>>(
++        MakeFusedYeePhase(h), MakeFusedYeePhase(e), sources, g.low, g.high_z,
++        g.high_y, g.high_x);
++  else
++    TemporalPairBand<false><<<(count + 255) / 256, 256, 0, stream>>>(
++        MakeFusedYeePhase(h), MakeFusedYeePhase(e), sources, g.low, g.high_z,
++        g.high_y, g.high_x);
++  return cudaPeekAtLastError();
++}
++
++
++template <bool Packed, bool Half, int X, int Y, int Z, int Mask, int Steps>
++cudaError_t LaunchTemporalCpmlMask(cudaStream_t stream,
++    const PairCpmlPhase &h, const PairCpmlPhase &e, const PairFieldOutputs &final,
++    const FusedHSources &hs, const FusedHSources &es, BeamzBuffer publication,
++    PairCpmlGrid grid) {
++  int counts[3];
++  const int sizes[3]={Z,Y,X};
++  for (int a=0;a<3;++a) {
++    counts[a]=(Mask & (1<<a)) ? (grid.high[a]+sizes[a]-1)/sizes[a]+(grid.extent[a]-grid.boundary[a]+sizes[a]-1)/sizes[a]
++                            : (grid.boundary[a]-grid.high[a]+sizes[a]-1)/sizes[a];
++    if (!counts[a]) return cudaSuccess;
++  }
++  constexpr size_t bytes=Steps==1 ? PairStage<X-2,Y-2,1>::offset*sizeof(float)
++      : PairPsiStage<X,Y,1,Mask,Half>::offset*sizeof(float)+
++        2*PairPsiTerms(Mask)*(X+2)*(Y+2)*(Half?sizeof(__nv_bfloat16):sizeof(float));
++  TemporalCpmlPair<Packed,Half,X,Y,Z,Mask,Steps>
++      <<<dim3(counts[2],counts[1],counts[0]),
++         (Steps == 2 && ((Mask == 4 && X == 15 && Y == 16) || (Mask == 2 && X == 16 && Y == 15))) ? 384 : 256,
++         bytes,stream>>>(h,e,final,hs,es,publication,grid);
++  return cudaPeekAtLastError();
++}
++
++template <bool Packed, bool Half, int Tile, int Steps=2>
++cudaError_t LaunchTemporalCpmlMasks(cudaStream_t stream, const BeamzLaunch &h,
++    const BeamzLaunch &e, const BeamzBuffer *final_fields,
++    const BeamzSourceGroupLaunch *groups, int step, BeamzBuffer publication) {
++  PairFieldOutputs final{};
++  FusedHSources hs{}, es{};
++  hs.step = es.step = step;
++  int extents[3]{};
++  for (int c=0;c<6;++c) {
++    final.fields[c]=final_fields[c];
++    for (int a=0;a<3;++a)
++      extents[a]=std::max(extents[a],static_cast<int>(final_fields[c].dims[a]));
++  }
++  for (int c=0;c<3;++c) {hs.groups[c]=groups[3+c];es.groups[c]=groups[6+c];}
++  PairCpmlGrid grid{};
++  for (int a=0;a<3;++a) {
++    int limit=static_cast<int>(h.outputs[0].dims[a]);
++    for(int c=1;c<3;++c)limit=std::min(limit,static_cast<int>(h.outputs[c].dims[a]));
++    grid.field_high[a]=limit;
++    grid.extent[a]=extents[a];
++    grid.high[a]=h.uniform_cpml_thickness+Steps;
++    grid.boundary[a]=limit-h.uniform_cpml_thickness-Steps;
++  }
++  const auto hp=MakePairCpmlPhase(h), ep=MakePairCpmlPhase(e);
++#define LAUNCH_MASK(M) { \
++    constexpr bool face=(M==1||M==2||M==4); \
++    constexpr int X=Steps==1 ? ((M&4)?15:31) : M==0?16:Tile==2&&face?(M==4?15:M==2?16:32):16; \
++    constexpr int Y=Steps==1 ? ((M&4)?15:7) : M==0?8:Tile==2&&face?(M==4?16:M==2?15:4):8; \
++    constexpr int Z=Steps==1 ? 16 : M==0||Tile==0||Tile==2&&face?16:4; \
++    auto error=LaunchTemporalCpmlMask<Packed,Half,X,Y,Z,M,Steps>( \
++        stream,hp,ep,final,hs,es,publication,grid); \
++    if(error!=cudaSuccess)return error; \
++  }
++  LAUNCH_MASK(0); LAUNCH_MASK(1); LAUNCH_MASK(2); LAUNCH_MASK(4);
++  LAUNCH_MASK(3); LAUNCH_MASK(5); LAUNCH_MASK(6); LAUNCH_MASK(7);
++#undef LAUNCH_MASK
++  return cudaSuccess;
++}
++
++cudaError_t BeamzEnqueueTemporalCpml(cudaStream_t stream, const BeamzLaunch &h,
++    const BeamzLaunch &e, const BeamzBuffer *final_fields,
++    const BeamzSourceGroupLaunch *groups, int step, BeamzBuffer publication, int tile) {
++#define LAUNCH_TILE(T) \
++  if (HasPackedLosslessMaterial(e)) { \
++    if(h.inputs[31].element_type==kBeamzBF16) \
++      return LaunchTemporalCpmlMasks<true,true,T>(stream,h,e,final_fields,groups,step,publication); \
++    return LaunchTemporalCpmlMasks<true,false,T>(stream,h,e,final_fields,groups,step,publication); \
++  } \
++  if(h.inputs[31].element_type==kBeamzBF16) \
++    return LaunchTemporalCpmlMasks<false,true,T>(stream,h,e,final_fields,groups,step,publication); \
++  return LaunchTemporalCpmlMasks<false,false,T>(stream,h,e,final_fields,groups,step,publication);
++  switch(tile) {
++    case 0: {LAUNCH_TILE(0)}
++    case 1: {LAUNCH_TILE(1)}
++    case 2: {LAUNCH_TILE(2)}
++    default: return cudaErrorInvalidValue;
++  }
++#undef LAUNCH_TILE
++}
++
++
++cudaError_t BeamzEnqueueSpatialCpml(cudaStream_t stream, const BeamzLaunch &h,
++    const BeamzLaunch &e, const BeamzSourceGroupLaunch *groups, int step) {
++  BeamzBuffer final[6];
++  for(int c=0;c<3;++c){final[c]=h.outputs[c];final[3+c]=e.outputs[c];}
++  if (HasPackedLosslessMaterial(e)) {
++    if(h.inputs[31].element_type==kBeamzBF16)
++      return LaunchTemporalCpmlMasks<true,true,2,1>(stream,h,e,final,groups,step,{});
++    return LaunchTemporalCpmlMasks<true,false,2,1>(stream,h,e,final,groups,step,{});
++  }
++  if(h.inputs[31].element_type==kBeamzBF16)
++    return LaunchTemporalCpmlMasks<false,true,2,1>(stream,h,e,final,groups,step,{});
++  return LaunchTemporalCpmlMasks<false,false,2,1>(stream,h,e,final,groups,step,{});
++}
+diff --git i/cuda/src/yee_primitives.cuh w/cuda/src/yee_primitives.cuh
+index 311f29df..178cf93f 100644
+--- i/cuda/src/yee_primitives.cuh
++++ w/cuda/src/yee_primitives.cuh
+@@ -56,23 +56,32 @@ __host__ __device__ __forceinline__ bool CpmlPackedCoordinate(
+   return false;
+ }
+ 
++__device__ __forceinline__ float ScaleYeeDifference(float difference,
++                                                   float inv_spacing) {
++  // Round each derivative before curl subtraction or CPML correction. An
++  // inlined multiply must not contract with a different stage's arithmetic.
++  return __fmul_rn(difference, inv_spacing);
++}
++
+ __device__ __forceinline__ float AdvanceYeeField(int phase, float old_field,
+                                                   float decay, float source,
+                                                   float curl) {
+-  return phase == 0 ? decay * old_field - source * curl
+-                    : decay * old_field + source * curl;
++  // Fix the multiply/FMA order across ordinary, fused and temporal kernels.
++  // Compiler contraction otherwise depends on inlining and tile specialization.
++  return __fmaf_rn(phase == 0 ? -source : source, curl,
++                   __fmul_rn(decay, old_field));
+ }
+ 
+ __device__ __forceinline__ float AdvanceCpmlPsi(float b, float old_psi,
+                                                  float a, float derivative) {
+-  return b * old_psi + a * derivative;
++  return __fmaf_rn(b, old_psi, __fmul_rn(a, derivative));
+ }
+ 
+ __device__ __forceinline__ float CorrectCpmlDerivative(float sign,
+                                                         float derivative,
+                                                         float inv_kappa,
+                                                         float next_psi) {
+-  return sign * (derivative * inv_kappa + next_psi);
++  return __fmul_rn(sign, __fmaf_rn(derivative, inv_kappa, next_psi));
+ }
+ 
+ __device__ __forceinline__ float PackedMaterialSource(

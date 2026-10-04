@@ -23,6 +23,312 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.mark.parametrize("padding", ["32", "64", "32x8", "64x8"])
+@pytest.mark.parametrize("fusion", ["0", "1"])
+@pytest.mark.parametrize("material", ["binary", "smooth"])
+@pytest.mark.parametrize("tile", ["32x8x8", "64x4x8", "32x4x8"])
+def test_streamed_padded_fields_preserve_logical_state(
+    padding, fusion, material, tile, monkeypatch
+):
+    """Odd extents, 12-cell CPML, source/DFT and odd/even continuation parity."""
+    from argparse import Namespace
+
+    from scripts.benchmark_cuda_realistic import build_simulation
+
+    monkeypatch.setenv("BEAMZ_CUDA_FIELD_PADDING", padding)
+    monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "1")
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", fusion)
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_TILE", tile)
+    monkeypatch.setenv(
+        "BEAMZ_CUDA_CPML_SHELL_TILE",
+        {"32x8x8": "64x4", "64x4x8": "32x8", "32x4x8": "32x4"}[tile],
+    )
+    simulation = build_simulation(
+        Namespace(
+            shape=(37, 49, 65),
+            steps=33,
+            pml=12,
+            monitors=2,
+            frequencies=3,
+            material=material,
+            source="mode",
+            monitor_type="field",
+        )
+    )
+    program = simulation.compile(backend="jax")
+    state = initial_program_state(program, t=0, current_step=0, monitor_steps=33)
+    rng = np.random.default_rng(20260918)
+    state = state._replace(
+        **{
+            name: rng.normal(size=getattr(state, name).shape).astype(np.float32) * 1e-3
+            for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+        }
+    )
+    reference = simulation.advance(
+        state=_copy_state(state), num_steps=33, backend="jax"
+    ).state
+    first = simulation.advance(
+        state=_copy_state(state), num_steps=17, backend="cuda_streamed"
+    ).state
+    actual = simulation.advance(
+        state=first, num_steps=16, backend="cuda_streamed"
+    ).state
+    _assert_state_close(reference, actual)
+    assert tuple(actual.ex.shape) == tuple(state.ex.shape)
+
+
+@pytest.mark.parametrize("steps", [2, 3, 4, 5, 33])
+@pytest.mark.parametrize(
+    "padding,material,tile",
+    [
+        ("none", "binary", "32x8x8"),
+        ("32", "binary", "64x4x8"),
+        ("64x8", "smooth", "32x4x8"),
+    ],
+)
+def test_streamed_temporal_pair_full_state_and_continuation(
+    steps, padding, material, tile, monkeypatch
+):
+    from argparse import Namespace
+
+    from beamz.simulation.cuda import runtime
+    from scripts.benchmark_cuda_realistic import build_simulation
+
+    monkeypatch.setenv("BEAMZ_CUDA_FIELD_PADDING", padding)
+    monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "2")
+    monkeypatch.setenv(
+        "BEAMZ_CUDA_PAIR_TILE",
+        {
+            "32x8x8": "16x8x16",
+            "64x4x8": "32x4x16",
+            "32x4x8": "32x8x16",
+        }[tile],
+    )
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_TILE", tile)
+    monkeypatch.setenv(
+        "BEAMZ_CUDA_CPML_SHELL_TILE",
+        {"32x8x8": "64x4", "64x4x8": "32x8", "32x4x8": "32x4"}[tile],
+    )
+    plans = []
+    choose = runtime._native_schedule_plan
+
+    def record(*args, **kwargs):
+        plan = choose(*args, **kwargs)
+        plans.append(plan)
+        return plan
+
+    monkeypatch.setattr(runtime, "_native_schedule_plan", record)
+    simulation = build_simulation(
+        Namespace(
+            shape=(61, 73, 97),
+            steps=33,
+            pml=12,
+            monitors=2,
+            frequencies=3,
+            material=material,
+            source="mode",
+            monitor_type="field",
+        )
+    )
+    if steps == 5:
+        # Coincident mode slabs straddle the 12-cell CPML/core coupling band.
+        source = simulation.sources[0]
+        edge = source.updated_copy(center=(13.2 * 80e-9, *source.center[1:]))
+        simulation = simulation.updated_copy(sources=(edge, edge))
+    program = simulation.compile(backend="jax")
+    state = initial_program_state(program, t=0, current_step=0, monitor_steps=33)
+    rng = np.random.default_rng(20260919)
+    state = state._replace(
+        **{
+            name: rng.normal(size=getattr(state, name).shape).astype(np.float32) * 1e-3
+            for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+        }
+    )
+    reference = simulation.advance(
+        state=_copy_state(state), num_steps=steps, backend="jax"
+    ).state
+    actual = simulation.advance(
+        state=_copy_state(state), num_steps=steps, backend="cuda_streamed"
+    ).state
+    _assert_state_close(reference, actual)
+    assert any(plan.temporal_steps == 2 for plan in plans)
+    if steps < 33:
+        reference = simulation.advance(
+            state=reference, num_steps=33 - steps, backend="jax"
+        ).state
+        actual = simulation.advance(
+            state=actual, num_steps=33 - steps, backend="cuda_streamed"
+        ).state
+        _assert_state_close(reference, actual)
+
+
+@pytest.mark.parametrize("io", ["none", "source", "mode_monitor"])
+@pytest.mark.parametrize("pair_tile", ["16x8x16", "single"])
+def test_streamed_temporal_pair_io_variants(io, pair_tile, monkeypatch):
+    """Exercise both FFI arities and six-component mode-monitor gathering."""
+    from argparse import Namespace
+
+    from beamz.simulation.cuda import runtime
+    from scripts.benchmark_cuda_realistic import build_simulation
+
+    monkeypatch.setenv("BEAMZ_CUDA_FIELD_PADDING", "32x8")
+    monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "2")
+    monkeypatch.setenv("BEAMZ_CUDA_PAIR_TILE", pair_tile)
+    plans = []
+    choose = runtime._native_schedule_plan
+
+    def record(*args, **kwargs):
+        plan = choose(*args, **kwargs)
+        plans.append(plan)
+        return plan
+
+    monkeypatch.setattr(runtime, "_native_schedule_plan", record)
+    simulation = build_simulation(
+        Namespace(
+            shape=(48, 56, 80),
+            steps=6,
+            pml=12,
+            monitors=2,
+            frequencies=3,
+            material="binary",
+            source="mode",
+            monitor_type="mode",
+        )
+    )
+    if io != "mode_monitor":
+        simulation = simulation.updated_copy(monitors=())
+    if io == "none":
+        simulation = simulation.updated_copy(sources=())
+    program = simulation.compile(backend="jax")
+    state = initial_program_state(program, t=0, current_step=0, monitor_steps=6)
+    rng = np.random.default_rng(20260920)
+    state = state._replace(
+        **{
+            name: rng.normal(size=getattr(state, name).shape).astype(np.float32) * 1e-3
+            for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+        }
+    )
+    reference = simulation.advance(
+        state=_copy_state(state), num_steps=6, backend="jax"
+    ).state
+    actual = simulation.advance(
+        state=_copy_state(state), num_steps=6, backend="cuda_streamed"
+    ).state
+    _assert_state_close(reference, actual)
+    assert any(plan.temporal_steps == 2 for plan in plans)
+
+
+@pytest.mark.parametrize("shell_tile", ["64x4", "32x8", "32x4"])
+@pytest.mark.parametrize("axis", ["x", "y", "z"])
+@pytest.mark.parametrize("fusion,temporal_steps", [("0", "1"), ("1", "1"), ("1", "2")])
+@pytest.mark.parametrize("material", ["binary", "smooth"])
+def test_cpml_shell_tiles_rotated_sources(
+    shell_tile, axis, fusion, temporal_steps, material, monkeypatch
+):
+    """Odd tails, all source normals, shell intersections and continuation."""
+    from argparse import Namespace
+
+    from scripts.benchmark_cuda_realistic import build_simulation
+
+    monkeypatch.setenv("BEAMZ_CUDA_FIELD_PADDING", "none")
+    monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", temporal_steps)
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", fusion)
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_TILE", "auto")
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_SHELL_TILE", shell_tile)
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "fp32")
+    simulation = build_simulation(
+        Namespace(
+            shape=(37, 49, 65),
+            steps=65,
+            pml=12,
+            monitors=2,
+            frequencies=3,
+            material=material,
+            source="mode",
+            monitor_type="mode" if material == "binary" else "field",
+        )
+    )
+    order = {"x": (0, 1, 2), "y": (2, 0, 1), "z": (1, 2, 0)}[axis]
+
+    def rotate(values):
+        return tuple(values[i] for i in order)
+
+    eps = np.transpose(
+        np.asarray(simulation.material_grid.permittivity),
+        tuple(2 - order[2 - i] for i in range(3)),
+    ).copy()
+    grid = MaterialGrid(
+        permittivity=eps,
+        conductivity=np.float32(0),
+        permeability=np.float32(1),
+        resolution=80e-9,
+        shape=eps.shape,
+    )
+    source = simulation.sources[0]
+    source = source.updated_copy(
+        center=rotate((13.2 * 80e-9, *source.center[1:])), size=rotate(source.size)
+    )
+    monitors = []
+    for monitor in simulation.monitors:
+        changes = dict(center=rotate(monitor.center), size=rotate(monitor.size))
+        if material == "smooth":
+            changes["fields"] = tuple(
+                field[0] + "xyz"[order.index("xyz".index(field[1].lower()))]
+                for field in monitor.fields
+            )
+        monitors.append(monitor.updated_copy(**changes))
+    simulation = simulation.updated_copy(
+        material_grid=grid,
+        sources=(source, source),
+        monitors=tuple(monitors),
+    )
+    program = simulation.compile(backend="jax")
+    state = initial_program_state(program, t=0, current_step=0, monitor_steps=65)
+    rng = np.random.default_rng(20260921)
+    state = state._replace(
+        **{
+            name: rng.normal(size=getattr(state, name).shape).astype(np.float32) * 1e-3
+            for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+        }
+    )
+    reference = simulation.advance(
+        state=_copy_state(state), num_steps=65, backend="jax"
+    ).state
+    first = simulation.advance(
+        state=_copy_state(state), num_steps=32, backend="cuda_streamed"
+    ).state
+    actual = simulation.advance(
+        state=first, num_steps=33, backend="cuda_streamed"
+    ).state
+    # With 65 steps and coincident sources, the original tile also differs from
+    # JAX by about two ppm of a leaf's peak near cancellation zeros. Retain a
+    # three-ppm absolute scale here, and separately require exact tile parity.
+    _assert_state_close(reference, actual, dynamic_atol_scale=3e-6)
+    for expected, observed in zip(
+        jax.tree_util.tree_leaves(reference),
+        jax.tree_util.tree_leaves(actual),
+        strict=True,
+    ):
+        expected, observed = np.asarray(expected), np.asarray(observed)
+        if np.issubdtype(expected.dtype, np.inexact):
+            peak = np.max(np.abs(expected), initial=0)
+            assert np.max(np.abs(expected - observed), initial=0) <= 3e-6 * peak + 3e-6
+    if shell_tile != "64x4":
+        monkeypatch.setenv("BEAMZ_CUDA_CPML_SHELL_TILE", "64x4")
+        baseline = simulation.advance(
+            state=_copy_state(state), num_steps=32, backend="cuda_streamed"
+        ).state
+        baseline = simulation.advance(
+            state=baseline, num_steps=33, backend="cuda_streamed"
+        ).state
+        for expected, observed in zip(
+            jax.tree_util.tree_leaves(baseline),
+            jax.tree_util.tree_leaves(actual),
+            strict=True,
+        ):
+            np.testing.assert_array_equal(observed, expected)
+
+
 def _simulation_and_seed(
     *,
     cpml: bool,
@@ -112,6 +418,10 @@ def _assert_state_close(reference, actual, *, dynamic_atol_scale=1e-6):
     for expected, observed in zip(reference_leaves, actual_leaves, strict=True):
         expected = np.asarray(expected)
         observed = np.asarray(observed)
+        if expected.dtype.name == "bfloat16":
+            # ml_dtypes BF16 is not classified as np.inexact by NumPy.
+            expected = expected.astype(np.float32)
+            observed = observed.astype(np.float32)
         if np.issubdtype(expected.dtype, np.inexact):
             # CPML memories span roughly five orders of magnitude. Near-zero
             # elements can differ by a few float32 ULPs even when the complete
@@ -347,6 +657,102 @@ def test_streamed_cuda_matches_jax_complete_state(cpml):
     _assert_state_close(reference, actual)
 
 
+@pytest.mark.parametrize("material", ["binary", "smooth", "scalar", "lossy"])
+@pytest.mark.parametrize("fusion", ["0", "1"])
+def test_streamed_cuda_realistic_sources_and_cpml_match_jax(
+    material, fusion, monkeypatch
+):
+    """Exercise dense/scalar/codebook CPML, batched H/E sources and large DFTs."""
+    from argparse import Namespace
+
+    from scripts.benchmark_cuda_realistic import build_simulation
+
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", fusion)
+    simulation = build_simulation(
+        Namespace(
+            shape=(32, 192, 192)
+            if material == "binary" and fusion == "0"
+            else (24, 32, 48),
+            steps=33,
+            pml=4,
+            monitors=2,
+            frequencies=5,
+            material=material,
+            source="gaussian" if material in {"scalar", "lossy"} else "mode",
+        )
+    )
+    from types import SimpleNamespace
+
+    from beamz.simulation.cuda import runtime as cuda_runtime
+
+    cuda_program = simulation.compile(backend="cuda_streamed")
+    context = SimpleNamespace(
+        config=cuda_program.config, boundary=cuda_program.boundary
+    )
+    assert cuda_runtime._temporal_cpml_fields_supported(
+        context, cuda_program.coefficients, simulation.num_steps
+    ) == (material != "lossy")
+    reference_program = simulation.compile(backend="jax")
+    state = initial_program_state(
+        reference_program,
+        t=0,
+        current_step=0,
+        monitor_steps=simulation.num_steps,
+    )
+    rng = np.random.default_rng(20260917)
+    state = state._replace(
+        **{
+            name: rng.normal(size=getattr(state, name).shape).astype(np.float32) * 1e-6
+            for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+        }
+    )
+    reference = simulation.advance(
+        state=_copy_state(state),
+        num_steps=33,
+        backend="jax",
+    ).state
+    actual = simulation.advance(
+        state=_copy_state(state),
+        num_steps=33,
+        backend="cuda_streamed",
+    ).state
+    _assert_state_close(reference, actual)
+
+
+@pytest.mark.parametrize("fusion", ["0", "1"])
+def test_streamed_cuda_overlapping_h_sources_cross_cpml_core_boundary(
+    fusion, monkeypatch
+):
+    """Halo recomputation must include each overlapping source exactly once."""
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", fusion)
+    simulation, state = _simulation_and_seed(cpml=True, source=False)
+    waveform = np.sin(np.arange(simulation.num_steps) * 0.3).astype(np.float32)
+    sources = []
+    for component in ("Hx", "Hy", "Hz"):
+        for shift in (0, 1, 1):
+            index = (slice(1, 8), slice(2, 10), slice(4 + shift, 16 + shift))
+            sources.append(
+                bz.CustomSource(
+                    component=component,
+                    timing="h",
+                    index=index,
+                    coeff=np.full((7, 8, 12), 1e-5, dtype=np.float32),
+                    waveform=waveform,
+                    target_shape=getattr(state, component.lower()).shape,
+                )
+            )
+    simulation = simulation.updated_copy(sources=sources)
+    reference = simulation.advance(
+        state=_copy_state(state), num_steps=simulation.num_steps, backend="jax"
+    ).state
+    actual = simulation.advance(
+        state=_copy_state(state),
+        num_steps=simulation.num_steps,
+        backend="cuda_streamed",
+    ).state
+    _assert_state_close(reference, actual)
+
+
 def test_bf16_cpml_program_matches_jax_application_state(monkeypatch):
     simulation, seeded = _simulation_and_seed(
         cpml=True,
@@ -474,6 +880,36 @@ def test_streamed_cuda_bounded_graph_replay_preserves_native_result(
     actual = build_scan(program)(_copy_state(state), program.coefficients)
 
     _assert_state_close(reference, actual)
+    if monitor:
+        # Graph boundaries must not introduce a second float32 clock rounding.
+        np.testing.assert_array_equal(actual.dft_vec_re, reference.dft_vec_re)
+        np.testing.assert_array_equal(actual.dft_vec_im, reference.dft_vec_im)
+
+
+def test_streamed_cuda_continuation_preserves_absolute_dft_clock():
+    simulation, state = _simulation_and_seed(
+        cpml=True, source=False, monitor=True, timesteps=60000
+    )
+    start_step = 40001
+    state = state._replace(
+        current_step=np.asarray(start_step, dtype=np.int32),
+        t=np.asarray(simulation.time[0] + start_step * simulation.dt, dtype=np.float32),
+    )
+    reference = simulation.advance(
+        state=_copy_state(state), num_steps=771, backend="cuda_streamed"
+    ).state
+    reference_program = simulation.compile(num_steps=771, backend="cuda_streamed")
+    actual = _copy_state(state)
+    for _ in range(3):
+        actual = simulation.advance(
+            state=actual, num_steps=257, backend="cuda_streamed"
+        ).state
+    continued_program = simulation.compile(num_steps=257, backend="cuda_streamed")
+    assert continued_program.coefficients is reference_program.coefficients
+    assert continued_program.boundary is reference_program.boundary
+    _assert_state_close(reference, actual)
+    np.testing.assert_array_equal(actual.dft_vec_re, reference.dft_vec_re)
+    np.testing.assert_array_equal(actual.dft_vec_im, reference.dft_vec_im)
 
 
 @pytest.mark.parametrize("metric_kind", ["axis_uniform", "rectilinear"])
@@ -493,23 +929,342 @@ def test_streamed_cuda_matches_jax_on_nonuniform_grids(metric_kind, cpml):
     _assert_state_close(reference, actual)
 
 
-@pytest.mark.skipif(
-    not STATUS.compute_capabilities
-    or any(capability < 90 for capability in STATUS.compute_capabilities),
-    reason="Hopper tiled target requires SM90+",
+@pytest.mark.parametrize("frequencies", [3, 101])
+@pytest.mark.parametrize("interval,normalization", [(1, 0), (2, 1), (3, 1)])
+@pytest.mark.parametrize("pair_tile", ["16x8x16", "single"])
+def test_temporal_pair_dft_windows_and_intervals(
+    interval, normalization, pair_tile, frequencies, monkeypatch
+):
+    """Two observations, masked components, inactive windows and an odd tail."""
+    from argparse import Namespace
+
+    from beamz.simulation import _cuda_abi as abi
+    from scripts.benchmark_cuda_realistic import build_simulation
+
+    monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "2")
+    monkeypatch.setenv("BEAMZ_CUDA_PAIR_TILE", pair_tile)
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", "1")
+    simulation = build_simulation(
+        Namespace(
+            shape=(61, 73, 97),
+            steps=65,
+            pml=12,
+            monitors=2,
+            frequencies=frequencies,
+            material="binary",
+            source="mode",
+            monitor_type="field",
+        )
+    )
+    first, second = simulation.monitors
+    second = second.updated_copy(
+        size=(first.size[1] * 0.5, 0, first.size[2] * 0.75),
+        freqs=np.asarray(second.freqs)
+        if frequencies == 101
+        else np.asarray(second.freqs)[:2],
+        interval=interval + 1,
+    )
+    inactive = first.updated_copy(
+        freqs=np.asarray(first.freqs)[:1],
+        fields=("Ex",),
+        name="inactive",
+    )
+    simulation = simulation.updated_copy(
+        monitors=(
+            first.updated_copy(
+                interval=interval,
+                freqs=np.asarray(first.freqs)[:1]
+                if frequencies == 101
+                else first.freqs,
+            ),
+            second,
+            inactive,
+        )
+    )
+    program = simulation.compile(num_steps=65, backend="cuda_streamed")
+    monitors = tuple(
+        replace(
+            m,
+            dft_window_code=1,
+            dft_normalization_code=normalization,
+            dft_t_start=float(
+                simulation.time[4]
+                if i == 0
+                else simulation.time[1]
+                if i == 1
+                else simulation.time[-1] * 2
+            ),
+            dft_t_end=float(
+                simulation.time[-5]
+                if i == 0
+                else simulation.time[-2]
+                if i == 1
+                else simulation.time[-1] * 3
+            ),
+        )
+        for i, m in enumerate(program.monitors)
+    )
+    program = replace(program, monitors=monitors)
+    state = initial_program_state(program, t=0, current_step=0, monitor_steps=65)
+    baseline = replace(
+        program,
+        config=replace(
+            program.config,
+            cuda_flags=program.config.cuda_flags & ~abi.CUDA_TEMPORAL_PAIR,
+        ),
+    )
+    expected = build_scan(baseline, donate_state=False)(state, baseline.coefficients)
+    actual = build_scan(program, donate_state=False)(state, program.coefficients)
+    for ref, result in zip(
+        jax.tree_util.tree_leaves(expected),
+        jax.tree_util.tree_leaves(actual),
+        strict=True,
+    ):
+        np.testing.assert_array_equal(result, ref)
+
+
+@pytest.mark.parametrize("steps", [2, 3, 4, 5, 33])
+@pytest.mark.parametrize(
+    "shape,padding,material",
+    [
+        ((37, 41, 61), "none", "binary"),
+        ((61, 37, 49), "32", "smooth"),
+        ((49, 61, 37), "64x8", "binary"),
+    ],
 )
-@pytest.mark.parametrize("cpml", [False, True], ids=["pec", "cpml"])
-def test_hopper_cuda_matches_streamed_complete_state(cpml):
+@pytest.mark.parametrize("precision", ["fp32", "bf16"])
+@pytest.mark.parametrize(
+    "cpml_tile", ["16x8x16", "16x8x4", "oriented", "spatial", "spatial_single"]
+)
+def test_temporally_blocked_cpml_seeded_state(
+    steps, shape, padding, material, cpml_tile, precision, monkeypatch
+):
+    """Frozen-psi halos, staggered edges, bank parity and continued runs."""
+    from argparse import Namespace
+
+    from scripts.benchmark_cuda_realistic import build_simulation
+
+    spatial = cpml_tile.startswith("spatial")
+    depth = "1" if cpml_tile == "spatial_single" else "2"
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", precision)
+    tolerance = 2e-2 if precision == "bf16" else 3e-6
+    monkeypatch.setenv(
+        "BEAMZ_CUDA_CPML_PAIR_TILE", "oriented" if spatial else cpml_tile
+    )
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_SPATIAL", "1" if spatial else "0")
+    monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", depth)
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_TEMPORAL", "0" if spatial else "1")
+    monkeypatch.setenv("BEAMZ_CUDA_FIELD_PADDING", padding)
+    simulation = build_simulation(
+        Namespace(
+            shape=shape,
+            steps=35,
+            pml=12,
+            monitors=2,
+            frequencies=3,
+            material=material,
+            source="mode",
+            monitor_type="field",
+        )
+    )
+    program = simulation.compile(backend="jax")
+    state = initial_program_state(program, t=0, current_step=0, monitor_steps=35)
+    rng = np.random.default_rng(20260918)
+    state = state._replace(
+        **{
+            name: rng.normal(size=getattr(state, name).shape).astype(np.float32) * 1e-3
+            for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+        },
+        **{
+            name: tuple(
+                rng.normal(size=p.shape).astype(np.float32) * 1e2
+                for p in getattr(state, name)
+            )
+            for name in ("cpml_psi_h_terms", "cpml_psi_e_terms")
+        },
+    )
+    expected = simulation.advance(
+        state=_copy_state(state), num_steps=steps, backend="jax"
+    ).state
+    actual = simulation.advance(
+        state=_copy_state(state), num_steps=steps, backend="cuda_streamed"
+    ).state
+    assert all(
+        str(p.dtype) == ("bfloat16" if precision == "bf16" else "float32")
+        for p in (*actual.cpml_psi_h_terms, *actual.cpml_psi_e_terms)
+    )
+    _assert_state_close(expected, actual, dynamic_atol_scale=tolerance)
+    # CUDA schedules share explicit derivative rounding and multiply/FMA order.
+    # Unlike the independent JAX comparison, schedule parity must be exact,
+    # including BF16 recurrence rounding and chronological monitor accumulation.
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_TEMPORAL", "0")
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_SPATIAL", "0")
+    monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "1")
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", "0")
+    ordinary = simulation.advance(
+        state=_copy_state(state), num_steps=steps, backend="cuda_streamed"
+    ).state
+    for ref, result in zip(
+        jax.tree_util.tree_leaves(ordinary),
+        jax.tree_util.tree_leaves(actual),
+        strict=True,
+    ):
+        np.testing.assert_array_equal(result, ref)
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_TEMPORAL", "0" if spatial else "1")
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_SPATIAL", "1" if spatial else "0")
+    monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", depth)
+    expected = simulation.advance(
+        state=expected, num_steps=35 - steps, backend="jax"
+    ).state
+    actual = simulation.advance(
+        state=actual, num_steps=35 - steps, backend="cuda_streamed"
+    ).state
+    _assert_state_close(expected, actual, dynamic_atol_scale=tolerance)
+
+
+@pytest.mark.parametrize("shell_tile", ["64x4", "32x8", "32x4"])
+@pytest.mark.parametrize(
+    "width,material", [(63, "binary"), (64, "smooth"), (65, "binary")]
+)
+def test_narrow_cpml_queue_matches_fused_state(
+    width, material, shell_tile, monkeypatch
+):
+    """Short contiguous interiors and partial thread rows retain exact ownership."""
+    from argparse import Namespace
+
+    from scripts.benchmark_cuda_realistic import build_simulation
+
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "fp32")
+    monkeypatch.setenv("BEAMZ_CUDA_FIELD_PADDING", "none")
+    monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "1")
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_TEMPORAL", "0")
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_SPATIAL", "0")
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_SHELL_TILE", shell_tile)
+    simulation = build_simulation(
+        Namespace(
+            shape=(37, 49, width),
+            steps=35,
+            pml=12,
+            monitors=2,
+            frequencies=3,
+            material=material,
+            source="mode",
+            monitor_type="field",
+        )
+    )
+    program = simulation.compile(backend="jax")
+    state = initial_program_state(program, t=0, current_step=0, monitor_steps=35)
+    rng = np.random.default_rng(20260918)
+    state = state._replace(
+        **{
+            name: rng.normal(size=getattr(state, name).shape).astype(np.float32) * 1e-3
+            for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+        },
+        **{
+            name: tuple(
+                rng.normal(size=p.shape).astype(np.float32) * 1e2
+                for p in getattr(state, name)
+            )
+            for name in ("cpml_psi_h_terms", "cpml_psi_e_terms")
+        },
+    )
+    expected = simulation.advance(
+        state=_copy_state(state), num_steps=33, backend="jax"
+    ).state
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", "0")
+    actual = simulation.advance(
+        state=_copy_state(state), num_steps=33, backend="cuda_streamed"
+    ).state
+    _assert_state_close(expected, actual, dynamic_atol_scale=3e-6)
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", "1")
+    fused = simulation.advance(
+        state=_copy_state(state), num_steps=33, backend="cuda_streamed"
+    ).state
+    for ref, value in zip(jax.tree.leaves(fused), jax.tree.leaves(actual), strict=True):
+        np.testing.assert_array_equal(value, ref)
+    fused = simulation.advance(state=fused, num_steps=2, backend="cuda_streamed").state
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", "0")
+    actual = simulation.advance(
+        state=actual, num_steps=2, backend="cuda_streamed"
+    ).state
+    for ref, value in zip(jax.tree.leaves(fused), jax.tree.leaves(actual), strict=True):
+        np.testing.assert_array_equal(value, ref)
+
+
+@pytest.mark.parametrize("axis", ["z", "y", "x"])
+@pytest.mark.parametrize("num_devices", [2, 4])
+@pytest.mark.parametrize("cpml", [False, True])
+def test_sharded_streamed_cuda_matches_jax_and_continuation(axis, num_devices, cpml):
+    """Real FFI gate: uneven Yee supports, material interfaces, source and DFT."""
+    if len(jax.devices("gpu")) < num_devices:
+        pytest.skip(f"requires {num_devices} CUDA devices")
     simulation, state = _simulation_and_seed(cpml=cpml)
+    sharding = dict(axis=axis, num_devices=num_devices, backend="gpu")
     reference = simulation.advance(
-        state=_copy_state(state),
-        num_steps=simulation.num_steps,
-        backend="cuda_streamed",
+        state=_copy_state(state), num_steps=32, backend="jax", progress=False
     ).state
     actual = simulation.advance(
         state=_copy_state(state),
-        num_steps=simulation.num_steps,
-        backend="cuda_hopper",
+        num_steps=32,
+        backend="cuda_streamed",
+        sharding=sharding,
+        progress=False,
     ).state
+    first = simulation.advance(
+        state=_copy_state(state),
+        num_steps=16,
+        backend="cuda_streamed",
+        sharding=sharding,
+        progress=False,
+    ).state
+    continued = simulation.advance(
+        state=first,
+        num_steps=16,
+        backend="cuda_streamed",
+        sharding=sharding,
+        progress=False,
+    ).state
+    _assert_state_close(reference, actual)
+    _assert_state_close(actual, continued)
 
+
+@pytest.mark.parametrize("axis", ["z", "y", "x"])
+@pytest.mark.parametrize(
+    "profile", ["asymmetric_cpml", "rectilinear", "mode", "tensor"]
+)
+def test_sharded_streamed_extended_features(axis, profile):
+    if len(jax.devices("gpu")) < 2:
+        pytest.skip("requires two CUDA devices")
+    if profile == "rectilinear":
+        simulation, state = _nonuniform_simulation(metric_kind="rectilinear", cpml=True)
+    else:
+        if profile == "mode":
+            from tests.unit.test_cuda_sharded_features import mode_simulation
+
+            simulation = mode_simulation()
+        elif profile == "tensor":
+            from tests.unit.test_execution_backend import _full_tensor_3d_simulation
+
+            base = _full_tensor_3d_simulation()
+            simulation = bz.Simulation(
+                material_grid=base._material_grid(),
+                time=np.arange(12) * 1e-10,
+                boundaries=[bz.PML(thickness=0.05, formulation="cpml")],
+            )
+        else:
+            simulation = _feature_simulation(profile)
+        from tests.unit.test_cuda_sharding import seed_state
+
+        state = seed_state(simulation)
+    reference = simulation.advance(
+        state=_copy_state(state),
+        backend="jax",
+        progress=False,
+    ).state
+    actual = simulation.advance(
+        state=_copy_state(state),
+        backend="cuda_streamed",
+        progress=False,
+        sharding=dict(axis=axis, num_devices=2, backend="gpu"),
+    ).state
     _assert_state_close(reference, actual)

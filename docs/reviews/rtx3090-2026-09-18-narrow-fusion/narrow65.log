@@ -1,0 +1,6 @@
+ordinary64 exact full-state parity
+ordinary32 exact full-state parity
+20x12x16 exact full-state parity
+40x6x16 exact full-state parity
+16x16x16 exact full-state parity
+{'ordinary64': 6.576919909218944, 'ordinary32': 6.977403522165154, '20x12x16': 5.272939389171465, '40x6x16': 6.043314394853258, '16x16x16': 5.529920896092352}

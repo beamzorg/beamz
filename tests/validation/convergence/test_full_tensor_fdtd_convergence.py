@@ -192,6 +192,7 @@ def _analytical_interface_error(
     interface_offset=0.07 * bz.um,
     angle_degrees=27.0,
     anisotropic=True,
+    drop_intrinsic_couplings=False,
 ) -> float:
     """Run the public raster-to-FDTD path and return its global exact-solution error."""
 
@@ -208,6 +209,10 @@ def _analytical_interface_error(
         if anisotropic
         else 4.0 * np.eye(2)
     )
+    if drop_intrinsic_couplings:
+        # An explicit, deliberately incorrect material is the negative control.
+        # The public diagonal smoothing policy rejects implicit tensor truncation.
+        epsilon_right_xy = np.diag(np.diag(epsilon_right_xy))
     epsilon_right = (
         (epsilon_right_xy[0, 0], epsilon_right_xy[0, 1], 0.0),
         (epsilon_right_xy[1, 0], epsilon_right_xy[1, 1], 0.0),
@@ -407,7 +412,7 @@ def test_sloped_anisotropic_interface_matches_exact_pulse_at_second_order(
 @pytest.mark.parametrize(
     ("anisotropic", "control", "minimum_gain", "maximum_control_order"),
     (
-        (True, "farjadpour_diagonal", 10.0, 1.0),
+        (True, "diagonalized_material", 10.0, 1.0),
         (False, "volume", 3.0, 1.6),
     ),
 )
@@ -430,7 +435,10 @@ def test_full_farjadpour_convergence_is_sensitive_to_weaker_material_controls(
         _analytical_interface_error(
             cells,
             anisotropic=anisotropic,
-            smoothing=control,
+            smoothing=(
+                "farjadpour_diagonal" if control == "diagonalized_material" else control
+            ),
+            drop_intrinsic_couplings=control == "diagonalized_material",
             **arguments,
         )
         for cells in grids

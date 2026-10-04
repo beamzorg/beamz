@@ -1,0 +1,74 @@
+[
+  {
+    "case": "narrow",
+    "variant": "baseline",
+    "repeat": 0,
+    "gcups": 6.593861452372977
+  },
+  {
+    "case": "narrow",
+    "variant": "axis",
+    "repeat": 1,
+    "gcups": 6.7389025132562415
+  },
+  {
+    "case": "narrow",
+    "variant": "axis",
+    "repeat": 2,
+    "gcups": 6.757693925978657
+  },
+  {
+    "case": "narrow",
+    "variant": "baseline",
+    "repeat": 3,
+    "gcups": 6.817876567225153
+  },
+  {
+    "case": "wide",
+    "variant": "baseline",
+    "repeat": 0,
+    "gcups": 8.376737769914333
+  },
+  {
+    "case": "wide",
+    "variant": "axis",
+    "repeat": 1,
+    "gcups": 8.452770454597857
+  },
+  {
+    "case": "wide",
+    "variant": "axis",
+    "repeat": 2,
+    "gcups": 8.35925672309992
+  },
+  {
+    "case": "wide",
+    "variant": "baseline",
+    "repeat": 3,
+    "gcups": 8.329021900769172
+  },
+  {
+    "case": "irregular",
+    "variant": "baseline",
+    "repeat": 0,
+    "gcups": 7.938341166889879
+  },
+  {
+    "case": "irregular",
+    "variant": "axis",
+    "repeat": 1,
+    "gcups": 7.986368701600934
+  },
+  {
+    "case": "irregular",
+    "variant": "axis",
+    "repeat": 2,
+    "gcups": 8.075093056461498
+  },
+  {
+    "case": "irregular",
+    "variant": "baseline",
+    "repeat": 3,
+    "gcups": 7.974432966533576
+  }
+]

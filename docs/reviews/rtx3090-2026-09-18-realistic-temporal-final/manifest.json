@@ -1,0 +1,144 @@
+[
+  {
+    "name": "irregular_71_479_503",
+    "shape": [
+      71,
+      479,
+      503
+    ]
+  },
+  {
+    "name": "field_eleven_frequencies",
+    "shape": [
+      1024,
+      256,
+      64
+    ],
+    "monitor_type": "field",
+    "frequencies": 11
+  },
+  {
+    "name": "aspect_64_256_1024",
+    "shape": [
+      64,
+      256,
+      1024
+    ]
+  },
+  {
+    "name": "developed_short_x",
+    "shape": [
+      1024,
+      256,
+      64
+    ],
+    "presteps": 1024
+  },
+  {
+    "name": "volume_256_256_256",
+    "shape": [
+      256,
+      256,
+      256
+    ]
+  },
+  {
+    "name": "aspect_256_1024_64",
+    "shape": [
+      256,
+      1024,
+      64
+    ]
+  },
+  {
+    "name": "long_short_x",
+    "shape": [
+      1024,
+      256,
+      64
+    ],
+    "steps": 1024
+  },
+  {
+    "name": "volume_128_256_256",
+    "shape": [
+      128,
+      256,
+      256
+    ]
+  },
+  {
+    "name": "aspect_1024_64_256",
+    "shape": [
+      1024,
+      64,
+      256
+    ]
+  },
+  {
+    "name": "field_1024_256_64",
+    "shape": [
+      1024,
+      256,
+      64
+    ],
+    "monitor_type": "field"
+  },
+  {
+    "name": "smooth",
+    "shape": [
+      128,
+      256,
+      512
+    ],
+    "material": "smooth"
+  },
+  {
+    "name": "volume_128_256_768",
+    "shape": [
+      128,
+      256,
+      768
+    ]
+  },
+  {
+    "name": "volume_128_256_512",
+    "shape": [
+      128,
+      256,
+      512
+    ]
+  },
+  {
+    "name": "aspect_1024_256_64",
+    "shape": [
+      1024,
+      256,
+      64
+    ]
+  },
+  {
+    "name": "irregular_97_289_593",
+    "shape": [
+      97,
+      289,
+      593
+    ]
+  },
+  {
+    "name": "aspect_64_1024_256",
+    "shape": [
+      64,
+      1024,
+      256
+    ]
+  },
+  {
+    "name": "aspect_256_64_1024",
+    "shape": [
+      256,
+      64,
+      1024
+    ]
+  }
+]

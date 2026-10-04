@@ -1,0 +1,77 @@
+{
+  "source_sha256": "ad9bcf5b8aae70a9d21dd7d5f26dc0db9c98e471a9e2f6a5753b42629713453f",
+  "benchmark_sha256": "38de14103c1fb8b38d793bc97d090e3e805e4adcc3d51d14eaf0b8d63bdf3df4",
+  "warmups": 4,
+  "cpml_core_fusion_env": "auto",
+  "source_root": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371",
+  "commit": "b0a5ff32d70755aa3c6f5d20e8ae9a5fdfe4ee7b",
+  "extension_sha256": "a36fda1964ca161e79d1696e164ff14a9abccc9d2436c8780842c371fed7644d",
+  "device": "cuda:0",
+  "jax": "0.9.0",
+  "shape": [
+    128,
+    256,
+    512
+  ],
+  "steps": 256,
+  "material": "binary",
+  "pml": 8,
+  "monitors": 2,
+  "frequencies": 3,
+  "in_place_experiment": false,
+  "source_specs": 8,
+  "setup_s": 15.157637583091855,
+  "compile_s": 0.5065862759947777,
+  "source": "mode",
+  "monitor_type": "field",
+  "native_plans": [
+    {
+      "layout": 6,
+      "flags": 255,
+      "monitor_count": 2,
+      "coincident_source_group_mask": 432,
+      "disjoint_source_group_mask": 0
+    }
+  ],
+  "presteps": 0,
+  "conditioning_s": 0.0,
+  "public_samples_s": [
+    0.5589437100570649,
+    0.5609592739492655,
+    0.5618379327934235
+  ],
+  "samples_s": [
+    0.49439145415090024,
+    0.49767308798618615,
+    0.49982816306874156,
+    0.4984316099435091,
+    0.49806211283430457,
+    0.485882808919996,
+    0.49756835401058197
+  ],
+  "median_gcups": 8.63009754732652,
+  "field_dtype": "float32",
+  "cpml_dtypes": [
+    "float32"
+  ],
+  "h_coefficient_shapes": {
+    "h_decay_x": [],
+    "h_decay_y": [],
+    "h_decay_z": [],
+    "h_source_x": [],
+    "h_source_y": [],
+    "h_source_z": []
+  },
+  "e_coefficient_shapes": [
+    [
+      4243584
+    ],
+    [
+      4235328
+    ],
+    [
+      4218912
+    ]
+  ],
+  "gpu": "name, utilization.gpu [%], clocks.current.sm [MHz], clocks.current.memory [MHz], power.draw [W], power.limit [W], temperature.gpu, memory.used [MiB]\nNVIDIA GeForce RTX 3090, 100 %, 1800 MHz, 9501 MHz, 354.07 W, 370.00 W, 71, 14563 MiB"
+}

@@ -84,7 +84,7 @@ def _require_k_axis(field_profile: FieldProfile3D) -> float:
 
 def _field_arrays_like(fields, *, dtype) -> dict[str, np.ndarray]:
     return {
-        component: np.zeros_like(np.asarray(getattr(fields, component)), dtype=dtype)
+        component: np.zeros(getattr(fields, component).shape, dtype=dtype)
         for component in _FIELD_COMPONENTS_3D
     }
 
@@ -389,7 +389,13 @@ def local_3d_phasor_context(
         component: _shape3(getattr(fields, component).shape)
         for component in _FIELD_COMPONENTS_3D
     }
-    grid_shape = _shape3(fields.permittivity.shape)
+    # These bounds describe node supports: component_slices_from_cell_bounds
+    # removes one endpoint for center-aligned components. Clamping to the
+    # material-cell count would lose the outer Yee node (and truncate profiles
+    # spanning that plane), so use the complete node lattice here.
+    grid_shape = tuple(
+        max(shape[d] for shape in field_shapes.values()) for d in range(3)
+    )
     lows = [int(v) for v in grid_shape]
     highs = [0, 0, 0]
     found = False
@@ -458,9 +464,9 @@ def local_3d_phasor_context(
         slices: tuple[slice, slice, slice],
     ) -> np.ndarray:
         value = getattr(fields, attr)
-        arr = np.asarray(value)
         local_shape = tuple(int(s.stop or 0) - int(s.start or 0) for s in slices)
-        if arr.ndim == 0:
+        if np.ndim(value) == 0:
+            arr = np.asarray(value)
             return np.full(local_shape, arr.item(), dtype=arr.dtype)
         return np.asarray(value[slices])
 

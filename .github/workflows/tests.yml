@@ -17,14 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
           enable-cache: true
       - run: uv python install 3.11
       - name: Install quality dependencies
         run: uv sync --python 3.11 --extra lint --extra gds
-      - name: Verify Python and Rust version metadata
+      - name: Validate citation metadata
+        run: uv tool run --python 3.11 --from cffconvert==2.0.0 cffconvert --validate
+      - name: Verify Python, Rust, and citation version metadata
         run: >-
           uv run --no-active --python 3.11 python -c
           "import release_version; release_version.verify_version_sync()"
@@ -48,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
           enable-cache: true
@@ -70,13 +72,13 @@ jobs:
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
           enable-cache: true
       - run: uv python install 3.11
       - name: Install test dependencies
-        run: uv sync --python 3.11 --extra test --extra gds
+        run: uv sync --python 3.11 --extra test --extra gds --extra mesh
       - name: Run PR evidence suite with branch coverage
         run: >-
           uv run --no-active --python 3.11 python -m pytest tests/
@@ -115,7 +117,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
           enable-cache: true
@@ -137,7 +139,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
           enable-cache: true
@@ -162,7 +164,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
           enable-cache: true

@@ -1,0 +1,12 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.0.2, pluggy-1.6.0
+Using --randomly-seed=885052238
+rootdir: /home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371
+configfile: pytest.ini
+plugins: randomly-4.0.1, cov-7.0.0, hypothesis-6.161.2, anyio-4.14.2
+collected 145 items / 97 deselected / 48 selected
+
+.cache/perf/test_cpml_half_y.py ........................................ [ 83%]
+........                                                                 [100%]
+
+================= 48 passed, 97 deselected in 89.96s (0:01:29) =================

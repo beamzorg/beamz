@@ -1,0 +1,115 @@
+{
+  "seed": 2026091807,
+  "cases": [
+    {
+      "name": "short_x",
+      "shape": [
+        1126,
+        297,
+        65
+      ],
+      "material": "binary",
+      "bounds": [
+        [
+          700,
+          1500
+        ],
+        [
+          160,
+          400
+        ],
+        [
+          50,
+          110
+        ]
+      ]
+    },
+    {
+      "name": "long_y",
+      "shape": [
+        104,
+        1083,
+        180
+      ],
+      "material": "smooth",
+      "bounds": [
+        [
+          55,
+          110
+        ],
+        [
+          700,
+          1400
+        ],
+        [
+          180,
+          400
+        ]
+      ]
+    },
+    {
+      "name": "flat_z",
+      "shape": [
+        110,
+        202,
+        866
+      ],
+      "material": "binary",
+      "bounds": [
+        [
+          65,
+          140
+        ],
+        [
+          180,
+          400
+        ],
+        [
+          400,
+          1000
+        ]
+      ]
+    },
+    {
+      "name": "irregular",
+      "shape": [
+        325,
+        203,
+        312
+      ],
+      "material": "smooth",
+      "bounds": [
+        [
+          190,
+          390
+        ],
+        [
+          180,
+          350
+        ],
+        [
+          200,
+          450
+        ]
+      ]
+    }
+  ],
+  "selection": "Stratified random integer extents, accepted at 16\u201324 Mi cells",
+  "process_order": [
+    "main",
+    "branch",
+    "branch",
+    "main"
+  ],
+  "steps": 256,
+  "warmups": 4,
+  "samples": 9,
+  "main_commit": "88142066ba8f3fc96358f574e0dd60ff21347313",
+  "branch_head": "085387d3b3bb64a0aea4c385386a560e7e6b447e",
+  "main_source_sha256": "8c32d29669432ad0e4849b0959fad6697c0a76b8a62a266a9d76c597081f66b0",
+  "branch_source_sha256": "5b3275bbf976a0e2099bac9be78b02d35848263a0d5d4adb5cf2e2f5ab9f6f57",
+  "native_build": "Fresh native builds, CUDA 13.3.73, GNU 16.1.1, Release, fast math OFF; RTX 3090 SM86",
+  "precision": "FP32",
+  "pml": 12,
+  "branch_selection": "Default predictive auto, no manual overrides"
+}

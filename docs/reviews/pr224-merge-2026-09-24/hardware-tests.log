@@ -1,0 +1,35 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.0.2, pluggy-1.6.0
+Using --randomly-seed=2302899314
+rootdir: /home/quentinwach/.t3/worktrees/beamz/pr224-validation
+configfile: pytest.ini
+plugins: randomly-4.0.1, cov-7.0.0, hypothesis-6.161.2, anyio-4.14.2
+collected 408 items
+
+tests/hardware/test_cuda_storage.py .................................... [  8%]
+.............                                                            [ 12%]
+tests/hardware/test_cuda_tuning.py ......                                [ 13%]
+tests/hardware/test_cuda_backends.py s.....................s............ [ 22%]
+.s............s.....s.....................s........s.................... [ 39%]
+.....s.............................s..........................s.....s... [ 57%]
+.........s..................s............s..........s.s............s.... [ 75%]
+.....s.......................................s...............s.......... [ 92%]
+s.s.......s....s..s.........s.                                           [100%]
+
+============================= slowest 15 durations =============================
+10.94s call     tests/hardware/test_cuda_backends.py::test_temporally_blocked_cpml_seeded_state[16x8x4-bf16-shape0-none-binary-2]
+10.02s call     tests/hardware/test_cuda_backends.py::test_streamed_cuda_realistic_sources_and_cpml_match_jax[1-smooth]
+10.00s call     tests/hardware/test_cuda_tuning.py::test_predictive_selection_preserves_seeded_complete_state[shape1-axes1-519-cpu]
+9.84s call     tests/hardware/test_cuda_backends.py::test_temporally_blocked_cpml_seeded_state[spatial_single-bf16-shape1-32-smooth-33]
+9.36s call     tests/hardware/test_cuda_storage.py::test_cyclic_graph[fp32-cpml_pair-binary-sources-120]
+9.06s call     tests/hardware/test_cuda_backends.py::test_streamed_temporal_pair_full_state_and_continuation[64x8-smooth-32x4x8-2]
+8.57s call     tests/hardware/test_cuda_backends.py::test_cpml_shell_tiles_rotated_sources[binary-1-1-y-32x4]
+8.51s call     tests/hardware/test_cuda_backends.py::test_temporally_blocked_cpml_seeded_state[16x8x4-bf16-shape2-64x8-binary-33]
+8.14s call     tests/hardware/test_cuda_tuning.py::test_seeded_candidate_parity_and_persistent_lookup[33-cpu]
+8.11s call     tests/hardware/test_cuda_backends.py::test_streamed_temporal_pair_io_variants[single-mode_monitor]
+7.78s call     tests/hardware/test_cuda_backends.py::test_cpml_shell_tiles_rotated_sources[binary-1-2-z-32x4]
+7.70s call     tests/hardware/test_cuda_backends.py::test_streamed_cuda_realistic_sources_and_cpml_match_jax[0-binary]
+5.67s call     tests/hardware/test_cuda_backends.py::test_narrow_cpml_queue_matches_fused_state[63-binary-32x4]
+5.58s call     tests/hardware/test_cuda_tuning.py::test_predictive_selection_preserves_seeded_complete_state[shape0-axes0-33-default]
+5.32s call     tests/hardware/test_cuda_backends.py::test_streamed_cuda_overlapping_h_sources_cross_cpml_core_boundary[1]
+================= 382 passed, 26 skipped in 912.65s (0:15:12) ==================

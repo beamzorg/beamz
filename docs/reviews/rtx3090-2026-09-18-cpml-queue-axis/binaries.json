@@ -1,0 +1,10 @@
+{
+  "baseline": {
+    "path": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/explicit-arithmetic-checkpoint/beamz/_cuda.cpython-311-x86_64-linux-gnu.so",
+    "sha256": "9bdcbc7dcd7c61bd2f9110113d054e774eb77197348f23c1f2a86be18409ba92"
+  },
+  "axis": {
+    "path": "/home/quentinwach/.t3/worktrees/beamz/t3code-e82e3371/.cache/perf/cpml-queue-axis/_cuda.cpython-311-x86_64-linux-gnu.so",
+    "sha256": "03ecf054e87b3c82654675f43a6a483485de49ee0cdd2282bc55f0e9900f8d0d"
+  }
+}

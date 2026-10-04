@@ -1,0 +1,17 @@
+{
+  "output": "docs/reviews/rtx3090-2026-09-18-realistic-temporal-final-tail",
+  "cases": [
+    "smooth",
+    "aspect_1024_256_64",
+    "aspect_256_64_1024",
+    "aspect_64_1024_256",
+    "volume_128_256_512",
+    "volume_128_256_768",
+    "irregular_97_289_593"
+  ],
+  "study": "temporal_schedule",
+  "rounds": 6,
+  "seed": 37,
+  "profile": false,
+  "worker": null
+}

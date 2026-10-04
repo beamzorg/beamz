@@ -1,0 +1,342 @@
+{
+  "case": {
+    "steps": 256,
+    "presteps": 0,
+    "psi_precision": "bf16",
+    "pml": 12,
+    "material": "binary",
+    "source": "mode",
+    "monitors": 2,
+    "frequencies": 3,
+    "monitor_type": "mode",
+    "name": "volume_128_256_512",
+    "shape": [
+      128,
+      256,
+      512
+    ]
+  },
+  "correctness_reference": "fused_one_step",
+  "variants": {
+    "one_step": {
+      "cuda_flags": 4224,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 1
+        }
+      ],
+      "compile_s": 0.43631717200014464,
+      "samples_s": [
+        0.4807230569999774,
+        0.48201614000026893,
+        0.480705695999859,
+        0.4815477830002237,
+        0.4811854760000642,
+        0.4815679939997608
+      ],
+      "correctness_reference": "auto_one_step",
+      "parity_gate": "BF16: rtol=3e-5, atol=max(3e-6,0.02*leaf_peak)",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "parity_passed": true,
+      "median_gcups": 8.922445040404936,
+      "paired_speedups": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "median_paired_speedup": 1.0
+    },
+    "single": {
+      "cuda_flags": 69760,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.13115508200007753,
+      "samples_s": [
+        0.48086909099993136,
+        0.47286201899987645,
+        0.4817986339999152,
+        0.48211626000011165,
+        0.4821109500003331,
+        0.476861615999951
+      ],
+      "correctness_reference": "auto_one_step",
+      "parity_gate": "BF16: rtol=3e-5, atol=max(3e-6,0.02*leaf_peak)",
+      "max_absolute_difference_by_leaf": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "parity_passed": true,
+      "median_gcups": 8.923052439512679,
+      "paired_speedups": [
+        0.999696312358837,
+        1.0193589686474585,
+        0.997731546079775,
+        0.9988208715468593,
+        0.9980803713330547,
+        1.0098694838122813
+      ],
+      "median_paired_speedup": 0.9992585919528482
+    },
+    "spatial": {
+      "cuda_flags": 69760,
+      "native_plans": [
+        {
+          "layout": 6,
+          "flags": 255,
+          "monitor_count": 2,
+          "coincident_source_group_mask": 432,
+          "disjoint_source_group_mask": 0,
+          "logical_shape": [
+            0,
+            0,
+            0
+          ],
+          "temporal_steps": 2
+        }
+      ],
+      "compile_s": 0.1267657280000094,
+      "samples_s": [
+        0.5477252020000378,
+        0.5439268360000824,
+        0.5482429650000995,
+        0.5465628279998782,
+        0.5463037129998156,
+        0.5441763269996045
+      ],
+      "correctness_reference": "fused_one_step",
+      "parity_gate": "BF16: rtol=3e-5, atol=max(3e-6,0.02*leaf_peak)",
+      "parity_failures": [
+        {
+          "leaf_index": 13,
+          "error": "\nNot equal to tolerance rtol=3e-05, atol=1.14924e+07\n\nMismatched elements: 48 / 3158016 (0.00152%)\nFirst 5 mismatches are at indices:\n [5, 93, 183]: 218103808.0 (ACTUAL), 230686720.0 (DESIRED)\n [5, 97, 175]: -182452224.0 (ACTUAL), -170917888.0 (DESIRED)\n [5, 101, 173]: -167772160.0 (ACTUAL), -179306496.0 (DESIRED)\n [5, 111, 172]: -246415360.0 (ACTUAL), -234881024.0 (DESIRED)\n [5, 112, 182]: -92798976.0 (ACTUAL), -80740352.0 (DESIRED)\nMax absolute difference among violations: 1.4680064e+07\nMax relative difference among violations: 2.169697\n ACTUAL: array([[[0., 0., 0., ..., 0., 0., 0.],\n        [0., 0., 0., ..., 0., 0., 0.],\n        [0., 0., 0., ..., 0., 0., 0.],...\n DESIRED: array([[[0., 0., 0., ..., 0., 0., 0.],\n        [0., 0., 0., ..., 0., 0., 0.],\n        [0., 0., 0., ..., 0., 0., 0.],..."
+        }
+      ],
+      "max_absolute_difference_by_leaf": [
+        347.2613525390625,
+        589.001953125,
+        192.0732421875,
+        2.251171112060547,
+        1.5069646835327148,
+        0.632904052734375,
+        0.001953125,
+        5972688896.0,
+        4026531840.0,
+        9.62964972193618e-35,
+        9.62964972193618e-35,
+        3.814697265625e-06,
+        1.1920928955078125e-07,
+        14680064.0,
+        19922944.0,
+        3.76158192263132e-37,
+        3.009265538105056e-36,
+        0.0001220703125,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "parity_passed": false,
+      "median_gcups": 7.860003275553119,
+      "paired_speedups": [
+        0.8776719698940276,
+        0.8861782653433851,
+        0.8768114261161049,
+        0.8810474447419447,
+        0.8808021335930891,
+        0.8849484442937019
+      ],
+      "median_paired_speedup": 0.8809247891675169
+    }
+  },
+  "orders": [
+    [
+      "one_step",
+      "spatial",
+      "single"
+    ],
+    [
+      "single",
+      "spatial",
+      "one_step"
+    ],
+    [
+      "single",
+      "one_step",
+      "spatial"
+    ],
+    [
+      "one_step",
+      "single",
+      "spatial"
+    ],
+    [
+      "spatial",
+      "one_step",
+      "single"
+    ],
+    [
+      "spatial",
+      "single",
+      "one_step"
+    ]
+  ],
+  "seed": 37,
+  "setup_s": 9.694019503999698,
+  "warmups": 4,
+  "jax": "0.9.0",
+  "device": "cuda:0",
+  "source_sha256": "2a578a486054970543a5390898f2b58a594fe431c4ac8c5d5c7eb797d567c5fe",
+  "extension_sha256": "92aff386f9739d1779ce20d3a36a1a8c77c82c3d975cc99bcab3ef5b5f36f5d3",
+  "benchmark_sha256": "92cbabf07291e8e9cd1f683d5b5f1ea3184978d1c2aab15b1ec8f5f1c4a185ce",
+  "builder_sha256": "8ef0831a2267c4b2e0a3d478d877dd27c295ca65b77640f052c2e410c2edc6f6",
+  "field_shapes": {
+    "ex": [
+      129,
+      257,
+      512
+    ],
+    "ey": [
+      129,
+      256,
+      513
+    ],
+    "ez": [
+      128,
+      257,
+      513
+    ],
+    "hx": [
+      128,
+      256,
+      513
+    ],
+    "hy": [
+      128,
+      257,
+      512
+    ],
+    "hz": [
+      129,
+      256,
+      512
+    ]
+  },
+  "field_dtype": "float32",
+  "cpml_dtypes": [
+    "bfloat16"
+  ],
+  "monitor_regions": [
+    {
+      "center": [
+        2.6624e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    },
+    {
+      "center": [
+        3.0720000000000004e-05,
+        1.024e-05,
+        5.12e-06
+      ],
+      "size": [
+        0.0,
+        1.6e-06,
+        8e-07
+      ]
+    }
+  ],
+  "source_specs": 8
+}
