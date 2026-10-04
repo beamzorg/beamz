@@ -160,6 +160,38 @@ def test_checkpoint_rejects_old_schema_and_wrong_identity(design, tmp_path):
         optimizer.load_result(path, phase_objective)
 
 
+@pytest.mark.parametrize("interface", ["optimizer", "topology"])
+def test_checkpoint_rejects_pre_merge_solver_numerics(
+    design, tmp_path, monkeypatch, interface
+):
+    if interface == "optimizer":
+        import beamz.optimization.optimizer as module
+
+        optimizer = bi.AdamOptimizer(design, learning_rate=0.02)
+        current = optimizer._fingerprint(transmission)
+        with monkeypatch.context() as previous:
+            previous.setattr(module, "TOPOLOGY_NUMERICS_VERSION", 3)
+            old = optimizer._fingerprint(transmission)
+
+        def load(path):
+            return optimizer.load_result(path, transmission)
+    else:
+        import beamz.optimization.problem as module
+
+        problem = make_problem()
+        current = problem.fingerprint
+        with monkeypatch.context() as previous:
+            previous.setattr(module, "TOPOLOGY_NUMERICS_VERSION", 3)
+            old = make_problem().fingerprint
+        load = problem.load
+    assert old != current
+    # Identity is checked before loading optimizer arrays or scalar history.
+    path = tmp_path / "previous-solver.npz"
+    np.savez_compressed(path, metadata=json.dumps({"schema": 2, "fingerprint": old}))
+    with pytest.raises(ValueError, match="different design"):
+        load(path)
+
+
 def test_workflow_rejects_bad_parameters_and_objectives(design):
     with pytest.raises(ValueError, match="integer multiples"):
         design.design_region.updated_copy(size=(2.01e-6, 1.6e-6, 0))
