@@ -25,7 +25,9 @@ def test_bend_output_direction_and_external_density_gradient(
     polarization, gradient_backend
 ):
     dx, frequency = 100e-9, LIGHT_SPEED / 1.55e-6
-    core = Material(permittivity=4)
+    # Keep the seeded sharp bend sufficiently confined in both polarizations
+    # for the outgoing-mode dominance check, as well as the derivative check.
+    core = Material(permittivity=5)
     design = Design(width=6e-6, height=6e-6, material=Material(permittivity=1))
     design += Rectangle(position=(0, 2.6e-6), width=2e-6, height=0.8e-6, material=core)
     design += Rectangle(
@@ -65,7 +67,7 @@ def test_bend_output_direction_and_external_density_gradient(
         region_mask=mask,
         resolution=dx,
         eps_min=1,
-        eps_max=4,
+        eps_max=5,
         projection_type="identity",
     )
     problem = TopologyProblem(

@@ -37,7 +37,7 @@ def test_softmin_full_solver_derivative_and_checkpoint(polarization, tmp_path):
 
     path = tmp_path / "worst-frequency.npz"
     problem.run(5, stop_after=0, checkpoint=path)
-    assert problem.load(path).problem_fingerprint == problem.fingerprint
+    assert problem.load(path).fingerprint == problem.fingerprint
     for changed in (
         replace(objective, temperature=0.08),
         ModePower("upper", reference_monitor="input"),

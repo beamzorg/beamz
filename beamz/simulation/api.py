@@ -1700,8 +1700,13 @@ class Simulation:
 
         Uses the supplied MaterialGrid when present, including optimized density
         designs. Accepts one ``x``, ``y``, or ``z`` slice for 3D, source/monitor marker
-        controls, and Matplotlib axes/color limits. Returns ``(figure, axes)``.
+        controls, and Matplotlib axes/color limits.
         Slice positions are metres; display axes are micrometres.
+
+        Returns
+        -------
+        tuple
+            Matplotlib ``(figure, axes)`` containing the permittivity plot.
         """
         kwargs.setdefault("show", False)
         return _analysis_function("plotting", "plot_simulation_permittivity")(
