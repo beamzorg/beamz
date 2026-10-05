@@ -54,6 +54,7 @@ Try out notebooks from our growing **[example library](https://beamz.tech/simula
 
 
 - [CMOS RGB Image Sensor](https://beamz.tech/examples/cmos_rgb_sensor)
+- [Multi-layer Inverse Design of a Vertical Grating Coupler (3D)](examples/notebooks/multilayer_grating_coupler.ipynb)
 
 ## Integration 
 
