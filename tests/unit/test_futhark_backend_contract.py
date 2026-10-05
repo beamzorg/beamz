@@ -92,10 +92,10 @@ def test_handler_generator_rejects_consumed_inputs():
             "program": {
                 "cfun": "futhark_entry_program",
                 "inputs": [
-                    {"name": "nsteps", "type": "i64", "unique": False},
-                    {"name": "field", "type": "[][][]f32", "unique": True},
+                    {"name": "nsteps", "type": "i64", "consumed": False},
+                    {"name": "field", "type": "[][][]f32", "consumed": True},
                 ],
-                "output": {"type": "([][][]f32)", "unique": True},
+                "output": {"type": "([][][]f32)", "consumed": True},
             }
         },
         "types": {
@@ -110,7 +110,7 @@ def test_handler_generator_rejects_consumed_inputs():
     }
     with pytest.raises(SystemExit, match="consumed"):
         build.generate_handler(manifest)
-    manifest["entry_points"]["program"]["inputs"][1]["unique"] = False
+    manifest["entry_points"]["program"]["inputs"][1]["consumed"] = False
     handler = build.generate_handler(manifest)
     assert 'Attr<int64_t>("nsteps")' in handler
     assert "futhark_new_raw_f32_3d" in handler

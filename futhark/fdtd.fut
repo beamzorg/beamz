@@ -169,10 +169,10 @@ entry program
                 hd0 = scalar h_decay_x, hd1 = scalar h_decay_y, hd2 = scalar h_decay_z,
                 hs0 = scalar h_source_x, hs1 = scalar h_source_y, hs2 = scalar h_source_z,
                 ed0 = scalar e_decay_x, ed1 = scalar e_decay_y, ed2 = scalar e_decay_z, ne}
-      let (urows, uidx) = source_rows (nt * P0 * (TY * TX)) (map (tiled_row g <-< i64.i32) source_target)
+      let rows = map (tiled_row g <-< i64.i32) source_target
       -- Groups g, g + 1 and g + 2: the three components at one timing.
       let inject3 [a][b] (at: place) (f: *store [a][b]) step group : *store [a][b] =
-        tinject g at f step group source_group urows uidx source_amplitude source_offset source_length waveforms
+        tinject g at f step group source_group rows source_amplitude source_offset source_length waveforms
       let observe [a][b] s step (at: place) (fe: store [a][b]) (fh: store [a][b])
                   (re: *[R]f32, im: *[R]f32, w: *[Q]f32) =
         if M == 0 then (re, im, w)

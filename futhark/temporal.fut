@@ -20,8 +20,9 @@
 -- so all updates are exact and nothing but the margin is computed twice.
 -- CPML memory lives in yee.fut's packed slabs; only edge cells touch it.
 --
--- The core kernel keeps its result columns in shared memory unless the
--- generated code is patched (intrablock.py); build.py applies that patch.
+-- The core kernel writes its result columns straight to global memory
+-- (#[intrablock_result_global], from the Futhark checkout BeamZ builds with);
+-- a whole column would not fit in shared memory.
 
 import "yee"
 
@@ -143,7 +144,25 @@ def hcore (inv: f32) (decay: f32) (s: f32) (old: f32) (v0: f32) (w0: f32) (v1: f
 def ecore (inv: f32) (decay: f32) (s: f32) (old: f32) (v0: f32) (w0: f32) (v1: f32) (w1: f32) : f32 =
   f32.fma s ((v0 - w0) * inv - (v1 - w1) * inv) (decay * old)
 
-def zring (n: i64) : *[n][WY][WX][3]f32 = replicate n (replicate WY (replicate WX (replicate 3 0)))
+-- A window ring: n planes per component. Separate per-component planes, not
+-- [n][WY][WX][3]: reading the interleaved layout costs the core kernel 5%.
+type~ ring = ([][WY][WX]f32, [][WY][WX]f32, [][WY][WX]f32)
+
+def zring (n: i64) : *ring =
+  let z () = replicate n (replicate WY (replicate WX 0f32)) in (z (), z (), z ())
+
+-- Component c (a literal, so this folds) of slot s at (y, xx).
+def rget (r: ring) (s: i64) (c: i64) (y: i64) (xx: i64) : f32 =
+  #[unsafe] (if c == 0 then r.0[s, y, xx] else if c == 1 then r.1[s, y, xx] else r.2[s, y, xx])
+
+-- Slot s of r := planes.
+def rset [n] ((r0, r1, r2): (*[n][WY][WX]f32, *[n][WY][WX]f32, *[n][WY][WX]f32)) (s: i64)
+    (planes: [WY][WX](f32, f32, f32)) : *ring =
+  let (a, b, c) = unzip3 (map unzip3 planes)
+  let r0[s] = a
+  let r1[s] = b
+  let r2[s] = c
+  in (r0, r1, r2)
 
 -- Two steps of the interior planes [zb, zt) of every core tile (cidx >= 0),
 -- from state (ae, ah). Other tiles and planes are left unwritten. Window planes:
@@ -175,48 +194,46 @@ def core_pass [nt][P0] (g: geo) (zb: i64) (zt: i64) (cf: corecf)
         let p = zb - 2 + n
         let q = p - 1
         let (sp, sq) = (p & 1, q & 1)
-        let e0[0] = tabulate_2d WY WX (\y xx -> [A 0 p y xx, A 1 p y xx, A 2 p y xx])
-        let h1[sp] = tabulate_2d WY WX (\y xx ->
-          let E s = #[unsafe] e0[0, y, xx, s]
-          in #[unsafe]
-             [hcore inv hd0 hs0 (A 3 p y xx) (E 2) e0[0, up y, xx, 2] (E 1) (A 1 (p + 1) y xx),
-              hcore inv hd1 hs1 (A 4 p y xx) (E 0) (A 0 (p + 1) y xx) (E 2) e0[0, y, rt xx, 2],
-              hcore inv hd2 hs2 (A 5 p y xx) (E 1) e0[0, y, rt xx, 1] (E 0) e0[0, up y, xx, 0]])
-        let e1[sp] = tabulate_2d WY WX (\y xx ->
+        let e0 = rset e0 0 (tabulate_2d WY WX (\y xx -> (A 0 p y xx, A 1 p y xx, A 2 p y xx)))
+        let h1 = rset h1 sp (tabulate_2d WY WX (\y xx ->
+          let E c = rget e0 0 c y xx
+          in (hcore inv hd0 hs0 (A 3 p y xx) (E 2) (rget e0 0 2 (up y) xx) (E 1) (A 1 (p + 1) y xx),
+              hcore inv hd1 hs1 (A 4 p y xx) (E 0) (A 0 (p + 1) y xx) (E 2) (rget e0 0 2 y (rt xx)),
+              hcore inv hd2 hs2 (A 5 p y xx) (E 1) (rget e0 0 1 y (rt xx)) (E 0) (rget e0 0 0 (up y) xx))))
+        let e1 = rset e1 sp (tabulate_2d WY WX (\y xx ->
           let (j, i) = (y0 + y, x0 + xx)
-          let H s = #[unsafe] h1[sp, y, xx, s]
-          let H0 s = #[unsafe] h1[1 - sp, y, xx, s]
-          in #[unsafe]
-             [ecore inv ed0 (src 0 p j i) e0[0, y, xx, 0] (H 2) h1[sp, dn y, xx, 2] (H 1) (H0 1),
-              ecore inv ed1 (src 1 p j i) e0[0, y, xx, 1] (H 0) (H0 0) (H 2) h1[sp, y, lf xx, 2],
-              ecore inv ed2 (src 2 p j i) e0[0, y, xx, 2] (H 1) h1[sp, y, lf xx, 1] (H 0) h1[sp, dn y, xx, 0]])
-        let h2[sq] = tabulate_2d WY WX (\y xx ->
-          let E s = #[unsafe] e1[sq, y, xx, s]
-          let E1 s = #[unsafe] e1[sp, y, xx, s]
-          in #[unsafe]
-             [hcore inv hd0 hs0 h1[sq, y, xx, 0] (E 2) e1[sq, up y, xx, 2] (E 1) (E1 1),
-              hcore inv hd1 hs1 h1[sq, y, xx, 1] (E 0) (E1 0) (E 2) e1[sq, y, rt xx, 2],
-              hcore inv hd2 hs2 h1[sq, y, xx, 2] (E 1) e1[sq, y, rt xx, 1] (E 0) e1[sq, up y, xx, 0]])
+          let H c = rget h1 sp c y xx
+          let H0 c = rget h1 (1 - sp) c y xx
+          let E c = rget e0 0 c y xx
+          in (ecore inv ed0 (src 0 p j i) (E 0) (H 2) (rget h1 sp 2 (dn y) xx) (H 1) (H0 1),
+              ecore inv ed1 (src 1 p j i) (E 1) (H 0) (H0 0) (H 2) (rget h1 sp 2 y (lf xx)),
+              ecore inv ed2 (src 2 p j i) (E 2) (H 1) (rget h1 sp 1 y (lf xx)) (H 0) (rget h1 sp 0 (dn y) xx))))
+        let h2 = rset h2 sq (tabulate_2d WY WX (\y xx ->
+          let E c = rget e1 sq c y xx
+          let E1 c = rget e1 sp c y xx
+          let H c = rget h1 sq c y xx
+          in (hcore inv hd0 hs0 (H 0) (E 2) (rget e1 sq 2 (up y) xx) (E 1) (E1 1),
+              hcore inv hd1 hs1 (H 1) (E 0) (E1 0) (E 2) (rget e1 sq 2 y (rt xx)),
+              hcore inv hd2 hs2 (H 2) (E 1) (rget e1 sq 1 y (rt xx)) (E 0) (rget e1 sq 0 (up y) xx))))
         -- Stage 2's E on the tile, written out with H2 by one map (rows as
         -- literals: a sliced row would become a parallel dimension).
         let out = tabulate (TY * TX) (\l ->
           let (y, xx) = (l / TX + 2, l % TX + 2)
           let (j, i) = (y0 + y, x0 + xx)
-          let H s = #[unsafe] h2[sq, y, xx, s]
-          let H0 s = #[unsafe] h2[1 - sq, y, xx, s]
-          let row (v: [2][WY][WX][3]f32) = #[unsafe] [v[sq, y, xx, 0], v[sq, y, xx, 1], v[sq, y, xx, 2]]
-          in #[unsafe]
-             ([ecore inv ed0 (src 0 q j i) e1[sq, y, xx, 0] (H 2) h2[sq, dn y, xx, 2] (H 1) (H0 1),
-               ecore inv ed1 (src 1 q j i) e1[sq, y, xx, 1] (H 0) (H0 0) (H 2) h2[sq, y, lf xx, 2],
-               ecore inv ed2 (src 2 q j i) e1[sq, y, xx, 2] (H 1) h2[sq, y, lf xx, 1] (H 0) h2[sq, dn y, xx, 0]],
-              row h2))
+          let H c = rget h2 sq c y xx
+          let H0 c = rget h2 (1 - sq) c y xx
+          let E c = rget e1 sq c y xx
+          in ([ecore inv ed0 (src 0 q j i) (E 0) (H 2) (rget h2 sq 2 (dn y) xx) (H 1) (H0 1),
+               ecore inv ed1 (src 1 q j i) (E 1) (H 0) (H0 0) (H 2) (rget h2 sq 2 y (lf xx)),
+               ecore inv ed2 (src 2 q j i) (E 2) (H 1) (rget h2 sq 1 y (lf xx)) (H 0) (rget h2 sq 0 (dn y) xx)],
+              [H 0, H 1, H 2]))
         let (fe, fh) = unzip out
         let r = i64.max zb q
         let oe[r] = fe
         let oh[r] = fh
         in (e0, h1, e1, h2, oe, oh)
     in (oe, oh)
-  let r = #[unsafe] #[flattening(only_intra)] tabulate nt run
+  let r = #[unsafe] #[flattening(only_intra)] #[intrablock_result_global] tabulate nt run
   in (map (.0) r, map (.1) r)
 
 -- Interior planes, rows or columns along `axis`: no CPML slab of any term and
@@ -359,45 +376,23 @@ def edge_phase [a0][b0][a1][b1][a2][b2][L][n]
       scatter_3d q2 (mem (t0 + 2) 0 nn.1) (map (.2) mems), scatter_3d q3 (mem (t0 + 3) 2 nn.1) (map (.3) mems),
       scatter_3d q4 (mem (t0 + 4) 2 nn.2) (map (.4) mems), scatter_3d q5 (mem (t0 + 5) 1 nn.2) (map (.5) mems))
 
--- Source entries grouped by target cell: the distinct tiled rows targeted
--- and, per entry, the index of its row among them (-1 for none). Not
--- inlined, so that its histogram over all n rows is freed on return.
-#[noinline]
-def source_rows [K] (n: i64) (rows: [K]i64) : ([]i64, [K]i64) =
-  let last = reduce_by_index (replicate n (-1i32)) i32.max (-1) rows (map i32.i64 (iota K))
-  let rep = map (\r -> if r < 0 then -1 else i64.i32 (#[unsafe] last[r])) rows
-  let first = map2 (\e r -> r == e) (iota K) rep
-  let slot = scan (+) 0 (map i64.bool first)
-  let nu = if K == 0 then 0 else slot[K - 1]
-  let at = map2 (\f p -> if f then p - 1 else -1) first slot
-  in (scatter (replicate nu 0) at rows, map (\r -> if r < 0 then -1 else #[unsafe] slot[r] - 1) rep)
-
 -- Add the source groups `base`, `base + 1` and `base + 2` (the three
--- components of E or H, at one timing) to tiled storage: sum each target
--- row's entries per component (from -0, so that a single entry adds exactly
--- as reduce_by_index would, and an absent component adds nothing), then
--- update the targeted rows. A histogram on the tiled array itself would need
--- a flattened copy of it, and array-valued histograms trip Futhark 0.27.1.
-def tinject [a][b][K][U] (g: geo) (at: place) (f: *store [a][b]) (step: i64) (base: i32)
-    (groups: [K]i32) (urows: [U]i64) (uidx: [K]i64) (amplitude: [K]f32) (offset: [K]i32)
+-- components of E or H, at one timing) to tiled storage: one histogram over
+-- its rows, with -0 for the components an entry does not touch, so that they
+-- stay exactly as they were. `rows` holds each entry's tiled row (-1 for
+-- none).
+def tinject [a][b][K] (g: geo) (at: place) (f: *store [a][b]) (step: i64) (base: i32)
+    (groups: [K]i32) (rows: [K]i64) (amplitude: [K]f32) (offset: [K]i32)
     (length: [K]i32) (waves: []f32) : *store [a][b] =
-  let (keys, values) =
-    unzip (map5 (\g u amp off len ->
-                   if g < base || g > base + 2 || u < 0 then (-1, 0)
+  let (targets, values) =
+    unzip (map5 (\grp r amp off len ->
+                   if grp < base || grp > base + 2 || r < 0 then ((-1, -1, -1), [-0, -0, -0])
                    else let t = i64.max 0 (i64.min step (i64.i32 len - 1))
-                        in (u * 3 + i64.i32 (g - base), amp * #[unsafe] waves[i64.i32 off + t]))
-                groups uidx amplitude offset length)
-  let sums = reduce_by_index (replicate (U * 3) (-0f32)) (+) (-0) keys values
-  let hit = reduce_by_index (replicate U false) (||) false (map (\k -> if k < 0 then -1 else k / 3) keys)
-                            (map (>= 0) keys)
-  let (targets, rows) =
-    unzip (map3 (\h r u ->
-                   let row = r / (TY * TX)
-                   let (u', v) = item_at g at (row / g.P0) (row % g.P0)
-                   let l = r % (TY * TX)
-                   in if !h then ((-1, -1, -1), [0, 0, 0])
-                      else let o = #[unsafe] f[u', v, l]
-                           in ((u', v, l), #[unsafe] [o[0] + sums[u * 3], o[1] + sums[u * 3 + 1],
-                                                     o[2] + sums[u * 3 + 2]]))
-                hit urows (iota U))
-  in scatter_3d f targets rows
+                        let v = amp * #[unsafe] waves[i64.i32 off + t]
+                        let row = r / (TY * TX)
+                        let (u, w) = item_at g at (row / g.P0) (row % g.P0)
+                        let c = grp - base
+                        in ((u, w, r % (TY * TX)),
+                            [if c == 0 then v else -0, if c == 1 then v else -0, if c == 2 then v else -0]))
+                groups rows amplitude offset length)
+  in reduce_by_index_3d f (map2 (+)) [-0, -0, -0] targets values

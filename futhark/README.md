@@ -17,12 +17,18 @@ to float32 rounding.
 
 ## Build
 
-Requires the `futhark` compiler (0.27), a CUDA toolkit or ROCm, and a
-matching GPU jaxlib in the active environment:
+Requires a Futhark checkout next to this repository (`../futhark`, or set
+`FUTHARK_SRC`) on branch `all-fixes` of
+[pepijndevos/futhark](https://github.com/pepijndevos/futhark), GHC and `cabal`
+(from ghcup, in `~/.ghcup/bin`), a CUDA toolkit or ROCm, and a matching GPU
+jaxlib in the active environment. That branch holds compiler fixes and options
+BeamZ needs that are not released yet (see FUTHARK_ISSUES.md). `build.py`
+builds the checkout's compiler with `cabal` and uses it; set `FUTHARK` to use
+another compiler binary instead.
 
 ```console
-FUTHARK=/path/to/futhark python futhark/build.py --platform cuda
-FUTHARK=/path/to/futhark python futhark/build.py --platform hip
+python futhark/build.py --platform cuda
+python futhark/build.py --platform hip
 ```
 
 For XLA's CPU client, the same program builds with Futhark's host backends:
@@ -34,15 +40,13 @@ python futhark/build.py --platform multicore   # also: ispc, c (sequential)
 On CPU the runtime loads `libbeamz_futhark_multicore.so`; set
 `BEAMZ_FUTHARK_CPU=ispc` or `c` to choose another build, and
 `BEAMZ_FUTHARK_THREADS` to cap the worker count. Host builds use
-`-march=native -ffp-contract=off`. The `ispc` build needs ISPC; `build.py`
-removes Futhark 0.27.1's `erf`/`erfc(double)` declarations, which ISPC 1.31's
-stdlib now defines. OpenCL is not supported, because XLA has no OpenCL
+`-march=native -ffp-contract=off`. The `ispc` build needs ISPC. OpenCL is not supported, because XLA has no OpenCL
 platform to share buffers with.
 
-`build.py` compiles `fdtd.fut` with `futhark cuda|hip --library`. On CUDA it
-patches the generated context to retain the device's *primary* context, shared
-with XLA so device pointers alias; HIP needs no patch. It then generates the
-XLA FFI handler from Futhark's JSON manifest and links
+`build.py` compiles `fdtd.fut` with `futhark cuda|hip --library` and
+generates the XLA FFI handler from Futhark's JSON manifest. On CUDA the handler
+makes Futhark retain the device's *primary* context, shared with XLA so device
+pointers alias; HIP has one context per device. It then links
 `beamz/simulation/futhark/_native/libbeamz_futhark_{cuda,hip}.so`. The runtime
 loads the library matching JAX's GPU platform; set `BEAMZ_FUTHARK_LIBRARY` to
 override the path.
@@ -53,6 +57,8 @@ JAX's ROCm 7 plugin needs `rccl`, `hipblaslt`, `hipfft` and `miopen-hip`, and
 its wheels ship no kernels for every RDNA3 part. On an RX 7600 XT (gfx1102)
 use `HSA_OVERRIDE_GFX_VERSION=11.0.0` and, on machines with an integrated
 Radeon, `ROCR_VISIBLE_DEVICES=0`; without the latter JAX faults on the iGPU.
+Do not set `CUDA_VISIBLE_DEVICES` to empty: HIP honours it and then finds no
+GPU.
 The Futhark kernels then compile for gfx1100 as well.
 
 ## Use

@@ -2,7 +2,8 @@
 -- Lean full-column 2.5D streaming (see bare2.fut): explicit K = 1 and K = 2
 -- stages whose planes rotate through loop-carried tuples (pointer swaps, no
 -- shared-memory copies), and one tabulate per output plane.
--- Layout: [tile][z][component][TY * TX]. Needs patch_cuda.py on CUDA.
+-- Layout: [tile][z][component][TY * TX]. Results go straight to global memory
+-- (#[intrablock_result_global]).
 
 import "bare"
 

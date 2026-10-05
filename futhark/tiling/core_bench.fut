@@ -1,6 +1,6 @@
 -- Time temporal.fut's core kernel alone on a synthetic run: storage P0 x P1
 -- x P2, every tile whose window keeps PML cells away is a core tile. Build
--- with `futhark cuda`, patch with ../intrablock.py, and time two step counts.
+-- with `futhark cuda` (the checkout build.py uses) and time two step counts.
 
 import "../temporal"
 

@@ -1,9 +1,13 @@
 # Futhark issues met by BeamZ's backend
 
-Compiler bugs, patches BeamZ applies to generated code, and code-generation
-behaviour that cost performance. All on Futhark 0.27.1. Each bug has a
-minimal reproducer, checked with `futhark c --library` and
-`futhark cuda --library`. None has been reported upstream yet.
+Compiler bugs, former patches to generated code, and code-generation
+behaviour that cost performance. BeamZ found these on Futhark 0.27.1 and now
+builds with the Futhark checkout next to this repository (`../futhark`, or
+`FUTHARK_SRC`; branch `all-fixes` of
+[pepijndevos/futhark](https://github.com/pepijndevos/futhark), on 0.28.0
+prerelease), which fixes all of them. Each fix is also on its own branch,
+reported upstream. `build.py` and `tiling/fc.sh` build that checkout with
+`cabal` (from `~/.ghcup`) and use its compiler; set `FUTHARK` to override.
 
 ## Compiler bugs
 
@@ -25,9 +29,10 @@ expecting 2 arguments of type(s)
 
 The element size gets confused with the array's second dimension `m`.
 Fails on both backends.
-**Workaround** (`temporal.fut`, `tinject`): sum per target row into a small
-1-D histogram, then read-modify-write the rows with `scatter_3d`, which does
-accept `[3]` rows.
+Fixed in the fork (`3b28a76f4`). `temporal.fut`'s `tinject` now uses
+`reduce_by_index_3d` on the tiled store directly; its workaround (a 1-D
+histogram per target row, then `scatter_3d`, plus `source_rows`, a
+histogram over every tiled row) is gone.
 
 ### 2. Two fused multi-dimensional histograms: type error after fusion
 
@@ -47,43 +52,67 @@ but should have type {i64, i64, i64, i64, i64, i64, i64, i64, i64, f32, f32, f32
 fail.) Horizontal fusion interleaves the index and value results per
 histogram where the fused operator expects all indices first. The 1-D
 `reduce_by_index` version of the same program compiles.
-**Workaround used for a while:** `#[noinline]` on the function holding one
-histogram, so that calls cannot fuse. Superseded by the workaround for bug 1.
+Fixed in the fork (`37cb494e5`).
 
-## Patches applied to generated code (`build.py`)
+## Former patches to generated code, now compiler features
 
-1. **Results of intra-block kernels go to global memory**
-   (`intrablock.py`). Futhark keeps every block-level array of an
-   `#[flattening(only_intra)]` kernel in shared memory, the block's results
-   included, and copies them out when the block ends. A temporal tile
-   streams a whole z column, so its results cannot fit. The patch points each
-   runtime-sized result at the block's slice of the global result, disables
-   the copy-out and removes its size from the host's shared-memory request.
-   About 2.3× on the bare K=2 kernel. Fragile: it pattern-matches generated
-   code and asserts every shape. (2026-10-05: the host sums the shared sizes
-   in its own order and folds constants, so results are now matched by size,
-   not by position.)
-   *Wanted upstream:* an attribute to keep a block's result in global
-   memory, or doing so automatically when it cannot fit in shared memory.
-2. **CUDA primary context** (`_patch_primary_context`). The generated
-   context calls `cuCtxCreate`. XLA uses the device's primary context, and
-   raw device pointers only alias across the two if Futhark retains the
-   primary context (`cuDevicePrimaryCtxRetain`/`Release`).
-   *Wanted upstream:* a config option to use the primary context.
-3. **ISPC stdlib clash** (`_patch_ispc_stdlib`). The generated ISPC code
-   declares `erf`/`erfc(double)` externs that ISPC 1.31's stdlib already
-   defines; the patch drops them.
+`build.py` used to patch Futhark's generated C. Each patch is now a fix or
+option in the checkout:
 
-4. **Out of device memory yields a NULL buffer** (`_patch_alloc_failure`).
-   In 0.27.1's generated `memblock_alloc_device`, the result of `gpu_alloc`
-   is discarded (`(void) gpu_alloc(...)`) and only `ctx->error` is checked.
-   `gpu_alloc_actual` returns `FUTHARK_OUT_OF_MEMORY` *without* setting an
-   error once the free list is exhausted, so the block is "received" with a
-   NULL pointer, the log even says so, and the next kernel writing it faults
-   with `CUDA_ERROR_ILLEGAL_ADDRESS` (found at 256×512×512 with
-   `unified_memory = 0`; managed memory hides it by oversubscribing). The
-   patch also checks the returned status.
-   *Wanted upstream:* propagate the status (one-line fix).
+1. **Results of intra-block kernels go to global memory** (was
+   `intrablock.py`, `tiling/patch_cuda.py`). Futhark keeps every block-level
+   array of an `#[flattening(only_intra)]` kernel in shared memory, the
+   block's results included, and copies them out when the block ends. A
+   temporal tile streams a whole z column, so its results cannot fit. Now:
+   the preliminary attribute `#[intrablock_result_global]` next to
+   `#[flattening(only_intra)]` (`32f49631b`, CUDA and HIP only). Same kernel
+   speed as the patch. It assumes each block's result is laid out
+   contiguously like its slice of the global result.
+2. **CUDA primary context** (was `_patch_primary_context`). XLA uses the
+   device's primary context, and raw device pointers only alias across the
+   two if Futhark retains it. Now `futhark_context_config_set_use_primary_context`
+   (`93f060de3`), which the generated handler calls. HIP has one context per
+   device and needs nothing.
+3. **ISPC stdlib clash** (was `_patch_ispc_stdlib`). Futhark declared
+   `erf`/`erfc(double)` externs that ISPC 1.31's stdlib already defines.
+   Fixed in `5a3853e8f`.
+4. **Out of device memory yielded a NULL buffer** (was `_patch_alloc_failure`).
+   0.27.1's generated `memblock_alloc_device` discarded `gpu_alloc`'s status
+   and checked only `ctx->error`, which an out-of-memory return does not
+   set; the next kernel then faulted with `CUDA_ERROR_ILLEGAL_ADDRESS`
+   (found at 256×512×512 with `unified_memory = 0`). Fixed in `a062c7eca`.
+
+The 0.28 manifest names an entry input's uniqueness `consumed` (was
+`unique`); `build.py` reads the new key.
+
+## Moving to the checkout (2026-10-05)
+
+Quadro RTX 5000, `scripts/benchmark_futhark_jax.py --backends futhark
+--pml-edges right`, GCUPS, plain / `BEAMZ_FUTHARK_TEMPORAL=2`:
+
+| Build | 128×256×512 | 256×512×512 |
+|---|---:|---:|
+| 0.27.1 + patches | 2.99 / 4.11 | 2.92 / 3.91 |
+| checkout, same `.fut` (attribute instead of patch) | 2.99 / 4.01 | 2.91 / 3.72 |
+| checkout, per-component window rings (below) | 2.99 / **4.18** | 2.92 / **3.93** |
+
+All walls at 128×256×512: 2.60 tiled. On the RX 7600 XT (128×256×512, 64
+steps, one wall) the checkout build is unchanged: 1.98 / 2.18 before, 1.97 /
+2.21 after.
+
+**The 5% core-kernel regression, bisected.** With the old `.fut`, the tiled
+path's core kernel was 5% slower on the checkout (4.05 → 4.26 ms per call at
+128×256×512), with every other kernel unchanged. Bisecting the 105 commits
+between v0.27.1 and the fork's base (production build and benchmark per
+step) gives upstream `2164c474b` "Simplify indexing of reshapes via symbol
+table" (4.13 on its parent, 4.01 on it). Before it, the compiler could not
+see through a reshape and copied each shifted H row out of the
+component-interleaved `[12][20][3]` shared window into a flat `[12][20]`
+shared array; after it, it reads the interleaved window directly. That is
+fewer instructions and barriers, yet slower: per-component planes suit the
+hardware better than stride-3 reads. Fix in `temporal.fut`: the window rings
+are three `[n][WY][WX]` arrays, one per component (`rget`/`rset`), which beats
+both earlier versions.
 
 ## Code-generation behaviour that cost performance
 

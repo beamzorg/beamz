@@ -1,7 +1,8 @@
 -- Lean full-column 2.5D streaming (see bare2.fut): explicit K = 1 and K = 2
 -- stages whose planes rotate through loop-carried tuples (pointer swaps, no
 -- shared-memory copies), and one tabulate per output plane.
--- Layout: [tile][z][component][TY * TX]. Needs patch_cuda.py on CUDA.
+-- Layout: [tile][z][component][TY * TX]. Results go straight to global memory
+-- (#[intrablock_result_global]).
 
 import "bare"
 
@@ -101,7 +102,7 @@ def pass1 [nt][nz] (ntx: i64) (ny: i64) (nx: i64) (src: stiled [nt][nz]) : *stil
         let out[i64.i32 z] = core6 e1 h1
         in (e0n, h1, out)
     in out
-  in #[unsafe] #[flattening(only_intra)] tabulate nt run
+  in #[unsafe] #[flattening(only_intra)] #[intrablock_result_global] tabulate nt run
 
 -- Two steps per pass; stage 2 lags one plane behind stage 1.
 def pass2 [nt][nz] (ntx: i64) (ny: i64) (nx: i64) (src: stiled [nt][nz]) : *stiled [nt][nz] =
@@ -120,7 +121,7 @@ def pass2 [nt][nz] (ntx: i64) (ny: i64) (nx: i64) (src: stiled [nt][nz]) : *stil
         let out[i64.i32 (i32.max 0 (z - 1))] = core6 e2 h2
         in (e0n, h1, e1, h2, out)
     in out
-  in #[unsafe] #[flattening(only_intra)] tabulate nt run
+  in #[unsafe] #[flattening(only_intra)] #[intrablock_result_global] tabulate nt run
 
 -- Three and four steps per pass, each stage lagging the previous by a plane.
 def pass3 [nt][nz] (ntx: i64) (ny: i64) (nx: i64) (src: stiled [nt][nz]) : *stiled [nt][nz] =
@@ -142,7 +143,7 @@ def pass3 [nt][nz] (ntx: i64) (ny: i64) (nx: i64) (src: stiled [nt][nz]) : *stil
         let out[i64.i32 (i32.max 0 (z - 2))] = core6 e3 h3
         in (e0n, h1, e1, h2, e2, h3, out)
     in out
-  in #[unsafe] #[flattening(only_intra)] tabulate nt run
+  in #[unsafe] #[flattening(only_intra)] #[intrablock_result_global] tabulate nt run
 
 def pass4 [nt][nz] (ntx: i64) (ny: i64) (nx: i64) (src: stiled [nt][nz]) : *stiled [nt][nz] =
   let run t =
@@ -166,7 +167,7 @@ def pass4 [nt][nz] (ntx: i64) (ny: i64) (nx: i64) (src: stiled [nt][nz]) : *stil
         let out[i64.i32 (i32.max 0 (z - 3))] = core6 e4 h4
         in (e0n, h1, e1, h2, e2, h3, e3, h4, out)
     in out
-  in #[unsafe] #[flattening(only_intra)] tabulate nt run
+  in #[unsafe] #[flattening(only_intra)] #[intrablock_result_global] tabulate nt run
 
 def stiled_run [nz][ny][nx] (nsteps: i64) (s: fields ([nz][ny][nx]f32)) =
   let nty = (ny + TY - 1) / TY
@@ -206,7 +207,7 @@ def passcopy [nt][nz] (ntx: i64) (ny: i64) (nx: i64) (src: stiled [nt][nz]) : *s
         let out[i64.i32 z] = core6 e h
         in out
     in out
-  in #[unsafe] #[flattening(only_intra)] tabulate nt run
+  in #[unsafe] #[flattening(only_intra)] #[intrablock_result_global] tabulate nt run
 
 entry bench_copy (nz: i64) (ny: i64) (nx: i64) (nsteps: i64) : f32 =
   let s = init nz ny nx

@@ -5,20 +5,20 @@ The steps are:
 
 1. ``futhark cuda --library`` (or ``futhark hip --library``) compiles
    ``fdtd.fut`` to C plus a JSON manifest.
-2. On CUDA, the generated context is patched to retain the device's *primary*
-   context, which XLA also uses, so Futhark can alias XLA buffers in place.
-   HIP's runtime API has one context per device, so it needs no patch. On both,
-   the temporal tile kernel is patched to write its results directly to global
-   memory (``intrablock.py``), and a failed device allocation is made to fail
-   the call instead of yielding a NULL buffer.
-3. A typed XLA FFI handler is generated from the manifest: every array input is
+2. A typed XLA FFI handler is generated from the manifest: every array input is
    wrapped with ``futhark_new_raw_*`` (no copy), every scalar input becomes an
    FFI attribute of the same name, and the result record is copied into the
    XLA-owned outputs.
-4. Everything is linked into ``beamz/simulation/futhark/_native/`` as
+3. Everything is linked into ``beamz/simulation/futhark/_native/`` as
    ``libbeamz_futhark_cuda.so`` or ``libbeamz_futhark_hip.so``.
 
-Set ``FUTHARK`` to the compiler path if ``futhark`` is not on ``PATH``,
+The compiler comes from the Futhark checkout next to this repository
+(``../futhark``, or ``FUTHARK_SRC``), built with ``cabal`` from ghcup. That
+checkout carries fixes BeamZ needs that are not yet released: the CUDA primary
+context option (shared with XLA, so device pointers alias), results of
+intra-block kernels written straight to global memory, failing a call on out of
+device memory, and the multi-dimensional histogram and ISPC fixes (see
+FUTHARK_ISSUES.md). Set ``FUTHARK`` to use another compiler binary,
 ``CUDA_HOME`` if the toolkit is not in ``/opt/cuda`` or ``/usr/local/cuda``, and
 ``ROCM_PATH`` if ROCm is not in ``/opt/rocm``.
 """
@@ -125,68 +125,6 @@ PLATFORMS = {
 }
 
 
-def _patch_primary_context(source: Path) -> None:
-    text = source.read_text()
-    created = (
-        "#if (CUDART_VERSION >= 13000)\n"
-        "  CUDA_SUCCEED_FATAL(cuCtxCreate(&ctx->cu_ctx, NULL, 0, ctx->dev));\n"
-        "#else\n"
-        "  CUDA_SUCCEED_FATAL(cuCtxCreate(&ctx->cu_ctx, 0, ctx->dev));\n"
-        "#endif\n"
-    )
-    destroyed = "    CUDA_SUCCEED_FATAL(cuCtxDestroy(ctx->cu_ctx));\n"
-    if "cuDevicePrimaryCtxRetain(&ctx->cu_ctx" in text:
-        return  # already patched
-    if text.count(created) != 1 or text.count(destroyed) != 1:
-        raise SystemExit(
-            "Generated Futhark context code changed; update _patch_primary_context"
-        )
-    text = text.replace(
-        created,
-        "  // BeamZ: share XLA's primary context so raw device pointers alias.\n"
-        "  CUDA_SUCCEED_FATAL(cuDevicePrimaryCtxRetain(&ctx->cu_ctx, ctx->dev));\n",
-    ).replace(
-        destroyed,
-        "    CUDA_SUCCEED_FATAL(cuDevicePrimaryCtxRelease(ctx->dev));\n",
-    )
-    source.write_text(text)
-
-
-def _patch_alloc_failure(source: Path) -> None:
-    """Make a failed device allocation fail the call.
-
-    The generated ``memblock_alloc_device`` discards ``gpu_alloc``'s result and
-    checks only ``ctx->error``, which a plain out-of-memory return never sets:
-    the block is then used with a NULL pointer and the next kernel faults with
-    an illegal address (see FUTHARK_ISSUES.md)."""
-    text = source.read_text()
-    call = "(void) gpu_alloc(ctx, ctx->log, (size_t) size, desc, &block->mem, (size_t *) &size);\n"
-    check = "    if (ctx->error == NULL) {\n"
-    if text.count(call + check) != 1:
-        raise SystemExit("Generated Futhark allocator changed; update _patch_alloc_failure")
-    source.write_text(
-        text.replace(
-            call + check,
-            "int alloc_status = gpu_alloc(ctx, ctx->log, (size_t) size, desc, &block->mem, (size_t *) &size);\n"
-            "    if (alloc_status == FUTHARK_SUCCESS && ctx->error == NULL) {\n",
-        )
-    )
-
-
-def _patch_ispc_stdlib(source: Path) -> None:
-    """Drop Futhark's erf/erfc(double) externs, which ISPC 1.31's stdlib defines."""
-    import re
-
-    text = source.read_text()
-    text = re.sub(
-        r'^extern "C" unmasked uniform double erfc?\(uniform double( x)?\);\n',
-        "",
-        text,
-        flags=re.MULTILINE,
-    )
-    source.write_text(text)
-
-
 def generate_handler(
     manifest: dict,
     platform: Platform = PLATFORMS["cuda"],
@@ -207,7 +145,7 @@ def generate_handler(
             call_args.append(name)
         else:
             rank, element = array
-            if item["unique"]:
+            if item["consumed"]:
                 raise SystemExit(
                     f"Entry input {name!r} is consumed; XLA-aliased inputs must not be"
                 )
@@ -293,6 +231,8 @@ def generate_handler(
                 "  }",
                 *(
                     [
+                        "  // Share XLA's primary context so raw device pointers alias.",
+                        "  futhark_context_config_set_use_primary_context(runtime.config, 1);",
                         "  // Diagnostics: the PTX NVRTC built, for `ptxas -v` register counts.",
                         '  if (const char* ptx = std::getenv("BEAMZ_FUTHARK_DUMP_PTX")) {',
                         "    futhark_context_config_dump_ptx_to(runtime.config, ptx);",
@@ -482,6 +422,36 @@ def generate_handler(
     return "\n".join(lines)
 
 
+def find_futhark() -> str | None:
+    """Return ``FUTHARK``, else the sibling checkout's compiler (built first),
+    else ``futhark`` on ``PATH``."""
+    if compiler := os.environ.get("FUTHARK"):
+        return compiler
+    checkout = Path(os.environ.get("FUTHARK_SRC", ROOT.parent / "futhark"))
+    if (checkout / "futhark.cabal").exists():
+        # Equivalent of sourcing ~/.ghcup/env.
+        env = dict(os.environ)
+        extra = [Path.home() / ".ghcup" / "bin", Path.home() / ".cabal" / "bin"]
+        env["PATH"] = os.pathsep.join([*map(str, extra), env.get("PATH", "")])
+        cabal = shutil.which("cabal", path=env["PATH"])
+        if cabal is None:
+            raise SystemExit(
+                f"cabal not found; needed to build the compiler in {checkout}"
+            )
+        subprocess.run(
+            [cabal, "-v0", "build", "exe:futhark"], cwd=checkout, env=env, check=True
+        )
+        return subprocess.run(
+            [cabal, "-v0", "list-bin", "exe:futhark"],
+            cwd=checkout,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    return shutil.which("futhark")
+
+
 def build(futhark: str, work: Path, output: Path, platform: Platform) -> Path:
     import jax.ffi
 
@@ -493,16 +463,6 @@ def build(futhark: str, work: Path, output: Path, platform: Platform) -> Path:
         [futhark, platform.name, "--library", "-o", str(stem), str(HERE / "fdtd.fut")],
         check=True,
     )
-    if platform.name == "cuda":
-        _patch_primary_context(stem.with_suffix(".c"))
-    if platform.gpu:
-        _patch_alloc_failure(stem.with_suffix(".c"))
-        # Temporal tiles stream whole z columns; their results must go
-        # straight to global memory (see intrablock.py).
-        from intrablock import move_results_to_global
-
-        if not move_results_to_global(stem.with_suffix(".c")):
-            raise RuntimeError("no temporal tile kernel was patched; see intrablock.py")
     manifest = json.loads(stem.with_suffix(".json").read_text())
     handler = work / "ffi_handler.cc"
     rtc_includes = (str(toolkit / "include"),) if platform.name == "hip" else ()
@@ -520,7 +480,6 @@ def build(futhark: str, work: Path, output: Path, platform: Platform) -> Path:
     )
     objects = [work / "fdtd.o"]
     if platform.name == "ispc":
-        _patch_ispc_stdlib(stem.with_suffix(".kernels.ispc"))
         kernels = work / "fdtd.kernels.o"
         subprocess.run(
             [os.environ.get("ISPC", "ispc"), "-O3", "--pic", "--addressing=64"]
@@ -553,13 +512,12 @@ def build(futhark: str, work: Path, output: Path, platform: Platform) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--futhark", default=os.environ.get("FUTHARK") or shutil.which("futhark")
-    )
+    parser.add_argument("--futhark", help="default: see find_futhark")
     parser.add_argument("--platform", choices=sorted(PLATFORMS), default="cuda")
     parser.add_argument("--work", type=Path, help="default: futhark/build/<platform>")
     parser.add_argument("--output", type=Path, default=OUTPUT)
     args = parser.parse_args()
+    args.futhark = args.futhark or find_futhark()
     if not args.futhark:
         parser.error("futhark compiler not found; pass --futhark or set FUTHARK")
     platform = PLATFORMS[args.platform]

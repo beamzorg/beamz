@@ -9,6 +9,12 @@ work it needs *less* device memory than plain stepping (59 vs 71 B/cell at
 walls of the small shapes it only ties: the edge there is about 36% of the
 cells, mostly CPML. See [Memory per cell](#memory-per-cell-2026-10-05-evening)
 and [Production integration, 2026-10-05](#production-integration-2026-10-05).
+Since 2026-10-05 the backend builds with the patched Futhark checkout
+(`../futhark`) instead of 0.27.1 plus generated-code patches, and the core
+kernel's window rings hold one plane per component (the interleaved layout
+lost 5% on the newer compiler): tiled 4.18 GCUPS at 128×256×512 and 3.93 at
+256×512×512, one wall. See FUTHARK_ISSUES.md, "Moving to the checkout", and
+[CPU, 2026-10-05](#cpu-2026-10-05) for the CPU.
 Earlier sections are kept as history; the 2026-10-04 status and next steps
 are superseded. The time-skewed checkerboard (a model only, so far) is exact
 with about K/2 levels of border history and a K/2-cell halo, at roughly the
@@ -242,8 +248,8 @@ shared memory per SM, 4 MB L2) and Ryzen 9 7950X; Futhark 0.27.1. Code is in
 | `bare2.fut` | Full-column streaming tile, generic K. |
 | `bare3.fut` | Lean full-column streaming tiles with explicit K = 1…4 stages, plus an intra-block copy kernel as a streaming upper bound. |
 | `bare4.fut` | **The working GPU design:** full-column streaming tiles whose planes live in fixed ring slots updated in place, for explicit K = 1, 2 and any K. |
-| `patch_cuda.py` | Rewrites a generated intra-block kernel so the block result lives in global memory (see below). |
-| `gen.py`, `fc.sh`, `bench.py` | Instantiate constants (`TY`, `TX`, `ZC`, `K`), compile, optionally patch, and time two step counts so that setup cancels. |
+| `patch_cuda.py` | Rewrote a generated intra-block kernel so the block result lives in global memory (see below). Removed: now the `#[intrablock_result_global]` attribute of the Futhark checkout (FUTHARK_ISSUES.md). |
+| `gen.py`, `fc.sh`, `bench.py` | Instantiate constants (`TY`, `TX`, `ZC`, `K`), compile with the Futhark checkout, and time two step counts so that setup cancels. |
 
 Every tiled variant was checked bitwise against the plain reference on odd
 shapes (e.g. 37×49×70) with zero differing samples, on `c`, `multicore` and
@@ -1319,3 +1325,40 @@ Priorities 2–5 above stand. Memory left per cell: two whole states (48 B,
 padded to whole tiles), T for the edge region, CPML memory double-buffered,
 and the XLA-side buffers (the benchmark doesn't donate its state, so XLA
 holds inputs and outputs too).
+
+## CPU, 2026-10-05
+
+Ryzen 9 7950X, `multicore` build of the Futhark checkout.
+
+**Production (`scripts/benchmark_futhark_jax.py`, 32 steps).** The tiled
+path is bit-identical to plain stepping on CPU as well
+(`compare_temporal.py`), but K=2 gains little there:
+
+| Shape, CPML | plain | `BEAMZ_FUTHARK_TEMPORAL=2` |
+|---|---:|---:|
+| 64×96×128, one wall | 0.294 | 0.210 |
+| 128×256×512, one wall | 0.299 | 0.308 |
+| 64×96×128, all walls | 0.180 | 0.140 |
+| 128×256×512, all walls | 0.237 | 0.245 |
+
+Wider tiles (TY×TX = 16×64, 16×128, 32×64, with `LY`/`LX` to match) do not
+help: 0.295, 0.256 and 0.264 one wall.
+
+**K scaling, bare stencil (`tiling/bare4.fut`, generic K, 128×256×512).**
+Plain one-step `bench_plain`: 0.41 GCUPS. Bitwise checks pass (37×49×70).
+
+| K | 8×32 | 16×128 | 32×64 |
+|---:|---:|---:|---:|
+| 1 | 0.52 | 0.60 | 0.60 |
+| 2 | 0.83 | 1.10 | 1.11 |
+| 3 | 1.05 | 1.39 | 1.33 |
+| 4 | 1.03 | 1.52 | **1.58** |
+| 5 | | 1.52 | 1.57 |
+| 6 | | 1.50 | 1.58 |
+| 8 | | 1.02 | 1.45 |
+
+So the CPU wants K≈4 and wide tiles (3.8× plain, saturating by K=4–6), but
+production's K=2 path gets almost none of it: bare K=2 runs at 2.0–2.7×
+plain, production at 1.03×. That gap is not yet explained.
+The multicore profile does not name kernels, so it does not show where the
+time goes.
