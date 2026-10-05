@@ -40,6 +40,7 @@ def run_case(backend: str, shape, steps: int, samples: int, warmups: int, args):
         material="binary",
         source="mode",
         monitor_type="field",
+        pml_edges=args.pml_edges if args.pml_edges == "all" else args.pml_edges.split(","),
     )
     start = time.perf_counter()
     sim = build_simulation(spec)
@@ -94,6 +95,9 @@ def main():
     parser.add_argument("--samples", type=int, default=7)
     parser.add_argument("--warmups", type=int, default=2)
     parser.add_argument("--pml", type=int, default=12)
+    parser.add_argument(
+        "--pml-edges", default="all", help='CPML faces: "all" or a comma list, e.g. "right"'
+    )
     parser.add_argument("--monitors", type=int, default=2)
     parser.add_argument("--frequencies", type=int, default=3)
     parser.add_argument("--output", type=Path)
@@ -121,10 +125,11 @@ def main():
                 "samples",
                 "warmups",
                 "pml",
+                "pml_edges",
                 "monitors",
                 "frequencies",
             ):
-                command += [f"--{name}", str(getattr(args, name))]
+                command += [f"--{name.replace('_', '-')}", str(getattr(args, name))]
             done = subprocess.run(command, env=env, capture_output=True, text=True)
             lines = [
                 line for line in done.stdout.splitlines() if line.startswith("RESULT ")

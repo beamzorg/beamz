@@ -30,6 +30,8 @@ TARGET = "beamz_futhark_program"
 _SYMBOL = "BeamzFutharkProgram"
 _LIBRARY_ENV = "BEAMZ_FUTHARK_LIBRARY"
 _CPU_ENV = "BEAMZ_FUTHARK_CPU"
+# Steps per temporal-tiling pass (0 or 2); see futhark/TEMPORAL_TILING.md.
+_TEMPORAL_ENV = "BEAMZ_FUTHARK_TEMPORAL"
 _NATIVE = Path(__file__).resolve().parent / "_native"
 _SOURCE_GROUP_COUNT = 9
 _TERM_COUNT = 6
@@ -359,6 +361,7 @@ def run_program(
         inv_resolution=np.float32(1) / np.float32(ctx.resolution),
         edges=np.int64(edges),
         metric_kind=np.int64(_metric_kind_code(ctx)),
+        temporal=np.int64(int(os.environ.get(_TEMPORAL_ENV, "0"))),
     )
     ex, ey, ez, hx, hy, hz = outputs[:6]
     next_state = state._replace(ex=ex, ey=ey, ez=ez, hx=hx, hy=hy, hz=hz)

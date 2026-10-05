@@ -7,7 +7,10 @@ The steps are:
    ``fdtd.fut`` to C plus a JSON manifest.
 2. On CUDA, the generated context is patched to retain the device's *primary*
    context, which XLA also uses, so Futhark can alias XLA buffers in place.
-   HIP's runtime API has one context per device, so it needs no patch.
+   HIP's runtime API has one context per device, so it needs no patch. On both,
+   the temporal tile kernel is patched to write its results directly to global
+   memory (``intrablock.py``), and a failed device allocation is made to fail
+   the call instead of yielding a NULL buffer.
 3. A typed XLA FFI handler is generated from the manifest: every array input is
    wrapped with ``futhark_new_raw_*`` (no copy), every scalar input becomes an
    FFI attribute of the same name, and the result record is copied into the
@@ -132,6 +135,8 @@ def _patch_primary_context(source: Path) -> None:
         "#endif\n"
     )
     destroyed = "    CUDA_SUCCEED_FATAL(cuCtxDestroy(ctx->cu_ctx));\n"
+    if "cuDevicePrimaryCtxRetain(&ctx->cu_ctx" in text:
+        return  # already patched
     if text.count(created) != 1 or text.count(destroyed) != 1:
         raise SystemExit(
             "Generated Futhark context code changed; update _patch_primary_context"
@@ -145,6 +150,27 @@ def _patch_primary_context(source: Path) -> None:
         "    CUDA_SUCCEED_FATAL(cuDevicePrimaryCtxRelease(ctx->dev));\n",
     )
     source.write_text(text)
+
+
+def _patch_alloc_failure(source: Path) -> None:
+    """Make a failed device allocation fail the call.
+
+    The generated ``memblock_alloc_device`` discards ``gpu_alloc``'s result and
+    checks only ``ctx->error``, which a plain out-of-memory return never sets:
+    the block is then used with a NULL pointer and the next kernel faults with
+    an illegal address (see FUTHARK_ISSUES.md)."""
+    text = source.read_text()
+    call = "(void) gpu_alloc(ctx, ctx->log, (size_t) size, desc, &block->mem, (size_t *) &size);\n"
+    check = "    if (ctx->error == NULL) {\n"
+    if text.count(call + check) != 1:
+        raise SystemExit("Generated Futhark allocator changed; update _patch_alloc_failure")
+    source.write_text(
+        text.replace(
+            call + check,
+            "int alloc_status = gpu_alloc(ctx, ctx->log, (size_t) size, desc, &block->mem, (size_t *) &size);\n"
+            "    if (alloc_status == FUTHARK_SUCCESS && ctx->error == NULL) {\n",
+        )
+    )
 
 
 def _patch_ispc_stdlib(source: Path) -> None:
@@ -261,6 +287,24 @@ def generate_handler(
                     f'  {platform.rtc_option[0]}(runtime.config, "-I{path}");'
                     for path in rtc_includes
                 ],
+                "  // Experiments: one extra kernel compiler option, e.g. a register cap.",
+                '  if (const char* option = std::getenv("BEAMZ_FUTHARK_RTC_OPTION")) {',
+                f"    {platform.rtc_option[0]}(runtime.config, option);",
+                "  }",
+                *(
+                    [
+                        "  // Diagnostics: the PTX NVRTC built, for `ptxas -v` register counts.",
+                        '  if (const char* ptx = std::getenv("BEAMZ_FUTHARK_DUMP_PTX")) {',
+                        "    futhark_context_config_dump_ptx_to(runtime.config, ptx);",
+                        "  }",
+                        "  // Fail on exhaustion instead of paging managed memory, which slows",
+                        "  // kernels about tenfold (BEAMZ_FUTHARK_UNIFIED=1 restores paging).",
+                        "  futhark_context_config_set_unified_memory(",
+                        '      runtime.config, std::getenv("BEAMZ_FUTHARK_UNIFIED") ? 1 : 0);',
+                    ]
+                    if platform.name == "cuda"
+                    else []
+                ),
             ]
             if platform.gpu
             else [
@@ -274,6 +318,14 @@ def generate_handler(
         "  // Opt-in per-kernel timing, printed to stderr after every program.",
         '  if (std::getenv("BEAMZ_FUTHARK_PROFILE")) {',
         "    futhark_context_config_set_profiling(runtime.config, 1);",
+        "  }",
+        "  // Diagnostics: Futhark's event log (allocations, kernels) on stderr.",
+        '  if (std::getenv("BEAMZ_FUTHARK_LOG")) {',
+        "    futhark_context_config_set_logging(runtime.config, 1);",
+        "  }",
+        "  // Diagnostics: synchronise and check for errors after every kernel.",
+        '  if (std::getenv("BEAMZ_FUTHARK_DEBUG")) {',
+        "    futhark_context_config_set_debugging(runtime.config, 1);",
         "  }",
         '  if (const char* cache = std::getenv("BEAMZ_FUTHARK_CACHE_FILE")) {',
         "    futhark_context_config_set_cache_file(runtime.config, cache);",
@@ -443,6 +495,14 @@ def build(futhark: str, work: Path, output: Path, platform: Platform) -> Path:
     )
     if platform.name == "cuda":
         _patch_primary_context(stem.with_suffix(".c"))
+    if platform.gpu:
+        _patch_alloc_failure(stem.with_suffix(".c"))
+        # Temporal tiles stream whole z columns; their results must go
+        # straight to global memory (see intrablock.py).
+        from intrablock import move_results_to_global
+
+        if not move_results_to_global(stem.with_suffix(".c")):
+            raise RuntimeError("no temporal tile kernel was patched; see intrablock.py")
     manifest = json.loads(stem.with_suffix(".json").read_text())
     handler = work / "ffi_handler.cc"
     rtc_includes = (str(toolkit / "include"),) if platform.name == "hip" else ()
