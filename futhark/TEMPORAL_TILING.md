@@ -1362,3 +1362,42 @@ production's K=2 path gets almost none of it: bare K=2 runs at 2.0–2.7×
 plain, production at 1.03×. That gap is not yet explained.
 The multicore profile does not name kernels, so it does not show where the
 time goes.
+
+### Future exploration: configurable tile size and K
+
+Today only on/off is a runtime choice: `BEAMZ_FUTHARK_TEMPORAL` becomes the
+entry's `temporal` argument, and `fdtd.fut` tiles when it is 2 (anything else
+steps plainly). The rest is fixed in `temporal.fut`:
+
+- **Tile size** is compile-time: `TY = 8`, `TX = 16`, with `LY`/`LX` their
+  log2. `tile_of`, `lane` and the row decoding use shifts and masks, so
+  `LY`/`LX` must match powers of two; a mismatch segfaults rather than
+  failing cleanly. `TY * TX` appears in the storage types (`tiled`, `store`),
+  so it also fixes the layout and the block size. The window is
+  `WY = TY + 4`, `WX = TX + 4` (a halo of K = 2 per side). To try another
+  size today, edit these four `def`s (that is how the CPU tile sizes above
+  were measured).
+- **K = 2 is structural.** `core_pass` is written out for two steps (rings
+  E0, H1, E1, H2 and a fixed sequence of four plane updates). The halo, the
+  margin computed twice, and the edge plan (`interior`, `make_plan`,
+  `edge_cells`) all assume a two-step pass.
+
+Ways to open these up:
+
+1. **Tile size per build (cheap).** A `build.py` option that rewrites
+   `TY`/`TX` and derives `LY`/`LX` (as `tiling/gen.py` does for experiments),
+   rejecting non-powers of two, with a default per platform (8×16 on CUDA,
+   wider on CPU). Keep it compile-time: a runtime tile size would make block
+   and shared-memory sizes dynamic, which likely costs speed on the GPU.
+2. **K as a parameter (real work).** Generalise `core_pass` to K stages
+   along the lines of `bare4.fut`'s `rpassk` (halo 2K), rework the edge plan
+   for a K-step margin, and re-verify bit-exactness with
+   `compare_temporal.py`. On CUDA, K = 3 already ran out of shared memory with
+   larger tiles in the `bare4` experiments, so this mainly matters for CPU,
+   where the bare stencil peaks at K = 4–6.
+
+Before investing in K on CPU, explain why production's K = 2 gains only 3%
+there while the bare stencil's K = 2 gains 2.0–2.7×. Wider tiles alone did
+not help production (see above). Note that `tiling/lean.fut`, the
+intermediate between `bare4` and production, no longer compiles (it uses
+`route`, since removed from `yee.fut`) and needs updating first.
