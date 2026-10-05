@@ -59,11 +59,12 @@ def compare(name, simulation, steps):
     return not bad
 
 
-def realistic(shape, steps, source="mode"):
+def realistic(shape, steps, source="mode", pml_edges="all"):
     from benchmark_cuda_realistic import build_simulation
 
     spec = SimpleNamespace(shape=shape, steps=steps, pml=12, monitors=2, frequencies=3,
-                           material="binary", source=source, monitor_type="field")
+                           material="binary", source=source, monitor_type="field",
+                           pml_edges=pml_edges)
     return build_simulation(spec)
 
 
@@ -87,6 +88,11 @@ def main():
         # One step: no pass, only the final plain step on the tiled state (a
         # simulation needs at least two time entries).
         ok &= compare("gaussian 64x96x224", realistic((64, 96, 224), 2, "gaussian"), 1)
+    # CPML on one face only: core tiles reach the PEC faces of the store,
+    # where the core kernel clamps its reads.
+    if "gaussian-right" in cases:
+        for steps in (64, 33):
+            ok &= compare("gaussian 64x96x224 right", realistic((64, 96, 224), steps, "gaussian", ["right"]), steps)
     sys.exit(0 if ok else 1)
 
 

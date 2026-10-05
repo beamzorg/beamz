@@ -1,5 +1,12 @@
 # Temporal tiling for the Futhark backend — design notes
 
+**Status (2026-10-05, night):** the core kernel turned out to be bound by
+DRAM bandwidth, much of it re-reading neighbours' halo. Tiles are now 16×32
+with core cells chosen per 8×16 quadrant: tiled 4.48 GCUPS at 128×256×512
+and 4.46 at 256×512×512 with one CPML wall (were 4.26 and 4.15), 2.91 and
+3.31 with all walls (2.64 and 3.02), still bit-identical; the smallest shapes
+got slower. See [Core kernel: bandwidth, not latency](#core-kernel-bandwidth-not-latency-2026-10-05-night).
+
 **Status (2026-10-05, evening):** the production path
 (`BEAMZ_FUTHARK_TEMPORAL=2`) uses the core-plus-plain-edges design and is
 bit-identical to plain stepping on every deterministic case. Since the memory
@@ -1326,6 +1333,134 @@ padded to whole tiles), T for the edge region, CPML memory double-buffered,
 and the XLA-side buffers (the benchmark doesn't donate its state, so XLA
 holds inputs and outputs too).
 
+## Core kernel: bandwidth, not latency (2026-10-05, night)
+
+Priority 2 of the re-ranked list. Outcome: the tiled path gains 5–10% on
+the shapes that fit this GPU, from 16×32 tiles with core cells chosen per
+8×16 quadrant. Barrier and occupancy work helped the core kernel in
+isolation but hardly in production, because the production kernel is
+limited by DRAM bandwidth, not by latency.
+
+### Results (Quadro RTX 5000, 256 steps, GCUPS)
+
+| Shape | One wall, before | One wall, now | All walls, before | All walls, now |
+|---|---:|---:|---:|---:|
+| 64×96×128 | 2.26 | 2.03 | 1.61 | 1.52 |
+| 96×160×256 | 3.44 | 3.40 | 2.06 | 2.16 |
+| 128×256×512 | 4.26 | **4.48** | 2.64 | **2.91** |
+| 256×512×512 | 4.15 | **4.46** | 3.02 | **3.31** |
+
+Bit-identical to plain stepping (`compare_temporal.py pec mixed pml gaussian
+gaussian-right`, CUDA and multicore; a deliberately perturbed core kernel
+fails both Gaussian cases, so they do cover core cells). The new
+`gaussian-right` case has CPML on one face only, so core tiles reach the PEC
+faces of the store. Peak device memory at 256×512×512: 5.77 GB, was 5.61 GB
+(padding to whole 16×32 tiles: 513 columns round up to 544, not 528). The
+small shapes lose: few large tiles underfill the GPU, and plain stepping
+(2.48 at 64×96×128, one wall) beats both, so the fallback in priority 4
+covers them. Multicore: tiled 0.33 GCUPS at 128×256×512, unchanged. The HIP
+build compiles (720-thread blocks, 52.7 KB of shared memory) but was not run.
+
+Per pass at 256×512×512, one wall: core 15.9 ms (was 18.4), edge kernels
+10.9 ms (step 1 H 2.75 and E 3.95, step 2 H 1.85 and E 2.37), monitors 2.2 ms.
+
+### What the core kernel was doing
+
+Harness: `tiling/core_bench.fut` at 129×257×513, with three different code
+arrays (it used to pass one array for all three components, which flatters
+material lookups). Generated kernels were inspected with `futhark dev
+--gpu-mem` and the CUDA source in the executable.
+
+- **Copies and barriers.** The loop had 14 barriers per plane. Each new H1
+  plane and two E1 components were built in a temporary and copied into
+  their ring slot, one barrier per copy, and the clamped `min(y + 1, WY - 1)`
+  reads of E0 were materialised as two shifted copies. Cause: after
+  `r[s] = v`, the simplifier forwards reads of `r[s]` to `v`, which keeps `v`
+  alive and blocks short-circuiting (FUTHARK_ISSUES.md). Reading through
+  `opaque` slot numbers gives 5 barriers and 20 KB of shared memory instead
+  of 25 KB: 7.2 → 7.9 GCUPS in the harness.
+- **Trimmed rings.** Each ring holds only what later stages read (H1 11×19,
+  E1 10×18, H2 9×17 for 8×16 tiles), so no read needs clamping and fewer
+  warps idle: 8.0 GCUPS, 18.8 KB, 3 blocks per SM. A one-row E0 ring cannot
+  be updated in place (FUTHARK_ISSUES.md).
+- **In production this gave 2%** (core 4.03 → 3.94 ms per pass at
+  128×256×512) and nothing at 256×512×512.
+
+### Why: DRAM traffic, mostly halo
+
+Experiments on the 8×16 harness kernel (2.82 ms per pass), each changing
+one thing:
+
+| Change | ms per pass |
+|---|---:|
+| none | 2.82 |
+| outputs written to a two-plane buffer that stays in L2 | 2.20 |
+| window reads clamped to the block's own tile (no halo from neighbours) | 2.18 |
+| constant material coefficients | ≈2.5 |
+| more shared memory, forcing 2 blocks per SM instead of 3 | 2.95 |
+| component-planar tiles, `[tile][z][3][lane]` | 2.81 |
+| bands of 2, 4, 8 tile rows numbered column by column | 2.71, 2.90, 3.07 |
+
+- Removing 263 MB of writes per pass saves 0.62 ms, which is about 420 GB/s,
+  the GPU's whole DRAM bandwidth: the kernel is bandwidth-bound. By the same
+  rate it moves about 1.2 GB per pass, about 109 B per cell, where reading
+  and writing the state once needs 51 B.
+- Halo reads from neighbouring tiles account for another 0.64 ms: they mostly
+  come from DRAM, not L2. A block's y neighbours run a tile row of blocks
+  later. Numbering tiles in bands, so that y neighbours run together, does
+  not help (it moves x neighbours apart). Each block also streams its whole
+  column, so neighbours drift apart in z; at 256×512×512 the core ran at
+  6.1 GCUPS against 7.0 at 128×256×512.
+- Time is linear in the number of core tiles (432 → 840 tiles: 1.46 →
+  2.82 ms), with no wave quantisation: a lone block runs 7× faster per plane
+  than a block on a busy GPU.
+- `nvidia-smi dmon` shows the memory controller busy 96–100% of the time.
+  CUPTI's profiler (the `profiling_injection` sample builds against
+  `/opt/cuda/extras/CUPTI`) would give DRAM and L2 byte counts, but needs
+  access to the performance counters
+  (`NVreg_RestrictProfilingToAdminUsers=0`, or root).
+
+### Larger tiles, finer edge
+
+Less halo per cell needs larger windows. Harness at 257×513×513 (E0 loaded
+per iteration rather than carried, which fits the larger rings):
+
+| Tile | Window | Shared memory | GCUPS |
+|---|---|---:|---:|
+| 8×16 | 12×20 | 18.8 KB | 6.4–6.7 |
+| 2×2 groups of 8×16 tiles per block | 20×36 | 52.7 KB | 7.2 |
+| 16×32 | 20×36 | 52.7 KB | 8.6–8.9 |
+
+The 16×32 storage tile beats the same window over four 8×16 tiles. In
+production, 16×32 tiles alone made the core 28% faster at 256×512×512 but
+grew the edge region by as much (each PEC face costs a whole tile, 16 or 32
+cells, and the x walls 32 + 33 columns of 513), so the total did not move.
+
+The kept design separates the two: core cells are chosen per 8×16 quadrant
+(`cmask`, a bitmask per tile; `busy_quadrants` for sources), so the edge
+region is what it was with 8×16 tiles. The core kernel runs every tile with
+a core quadrant through its whole window, clamping reads outside the store.
+Results in a non-core quadrant are wrong, but step 2 overwrites every edge
+cell, and a core quadrant's result depends only on its own window, which
+avoids every boundary. T, the compact scratch state, holds quadrants of
+items (`[n][1][128][3]`, slots per quadrant): with whole 16×32 items it took
+0.6 GB more at 256×512×512.
+
+### Next
+
+- Small shapes: fall back to plain stepping below a core fraction (priority
+  4); this change made them slower.
+- The edge kernels run at about half the per-cell speed of plain stepping
+  (about 0.32 ns per cell and phase against 0.17, from cell counts estimated
+  with the plan rules). Not because of the CPML or PEC
+  logic, which plain stepping shares, but because of the edge machinery:
+  cell-list decoding, `tile_of`/`lane` and compact slot lookups on every
+  read, and scattered writes. Most edge cells are plain interior cells (z
+  caps, the tile next to each PEC face).
+- The core kernel's remaining traffic: the halo still comes from DRAM, and
+  the writes are fixed at K = 2. More steps per pass would cut both, but
+  shared memory already limits the 16×32 kernel to one block per SM.
+
 ## CPU, 2026-10-05
 
 Ryzen 9 7950X, `multicore` build of the Futhark checkout.
@@ -1369,8 +1504,9 @@ Today only on/off is a runtime choice: `BEAMZ_FUTHARK_TEMPORAL` becomes the
 entry's `temporal` argument, and `fdtd.fut` tiles when it is 2 (anything else
 steps plainly). The rest is fixed in `temporal.fut`:
 
-- **Tile size** is compile-time: `TY = 8`, `TX = 16`, with `LY`/`LX` their
-  log2. `tile_of`, `lane` and the row decoding use shifts and masks, so
+- **Tile size** is compile-time: `TY = 8`, `TX = 16` when this was written
+  (16×32 since the night of 2026-10-05, with core quadrants of half that),
+  with `LY`/`LX` their log2. `tile_of`, `lane` and the row decoding use shifts and masks, so
   `LY`/`LX` must match powers of two; a mismatch segfaults rather than
   failing cleanly. `TY * TX` appears in the storage types (`tiled`, `store`),
   so it also fixes the layout and the block size. The window is

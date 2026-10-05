@@ -163,17 +163,17 @@ entry program
                    && unit e_decay_x && unit e_decay_y && unit e_decay_z
                    && length e_codes_x > 0 && length e_codes_y > 0 && length e_codes_z > 0
       let scalar (v: [][][]f32) = if unit v then #[unsafe] v[0, 0, 0] else 0
-      let (zb, zt, cidx) = make_plan g nh ne slabs nt (busy_tiles g nt source_target) common
-      let (first, edge) = edge_cells g zb zt cidx (flatten_4d monitor_indices)
+      let (zb, zt, cmask) = make_plan g nh ne slabs nt (busy_quadrants g nt source_target) common
+      let (first, edge) = edge_cells g zb zt cmask (flatten_4d monitor_indices)
       let cf = {inv = inv_resolution,
                 hd0 = scalar h_decay_x, hd1 = scalar h_decay_y, hd2 = scalar h_decay_z,
                 hs0 = scalar h_source_x, hs1 = scalar h_source_y, hs2 = scalar h_source_z,
                 ed0 = scalar e_decay_x, ed1 = scalar e_decay_y, ed2 = scalar e_decay_z, ne}
       let rows = map (tiled_row g <-< i64.i32) source_target
       -- Groups g, g + 1 and g + 2: the three components at one timing.
-      let inject3 [a][b] (at: place) (f: *store [a][b]) step group : *store [a][b] =
+      let inject3 [a][b][d] (at: place) (f: *store [a][b][d]) step group : *store [a][b][d] =
         tinject g at f step group source_group rows source_amplitude source_offset source_length waveforms
-      let observe [a][b] s step (at: place) (fe: store [a][b]) (fh: store [a][b])
+      let observe [a][b][d] s step (at: place) (fe: store [a][b][d]) (fh: store [a][b][d])
                   (re: *[R]f32, im: *[R]f32, w: *[Q]f32) =
         if M == 0 then (re, im, w)
         else let sample c o = let (k, j, i) = decode g o
@@ -184,14 +184,14 @@ entry program
       -- One plain step on `cells`, from (ae, ah) (placed by la) into
       -- (de, dh) (placed by ld): H, its sources, E (curl from dh), its
       -- sources. CPML memory advances from psi_h and psi_e into qh and qe.
-      let step [n][a0][b0][a1][b1] (cells: [n]i32) stp
-               (la: place) (ae: store [a0][b0]) (ah: store [a0][b0])
-               (ld: place) (de: *store [a1][b1]) (dh: *store [a1][b1])
+      let step [n][a0][b0][c0][a1][b1][c1] (cells: [n]i32) stp
+               (la: place) (ae: store [a0][b0][c0]) (ah: store [a0][b0][c0])
+               (ld: place) (de: *store [a1][b1][c1]) (dh: *store [a1][b1][c1])
                (psi_h: ([][][]f32, [][][]f32, [][][]f32, [][][]f32, [][][]f32, [][][]f32))
                (psi_e: ([][][]f32, [][][]f32, [][][]f32, [][][]f32, [][][]f32, [][][]f32))
                (qh0: *[][][]f32, qh1: *[][][]f32, qh2: *[][][]f32, qh3: *[][][]f32, qh4: *[][][]f32, qh5: *[][][]f32)
                (qe0: *[][][]f32, qe1: *[][][]f32, qe2: *[][][]f32, qe3: *[][][]f32, qe4: *[][][]f32, qe5: *[][][]f32)
-               : (*store [a1][b1], *store [a1][b1],
+               : (*store [a1][b1][c1], *store [a1][b1][c1],
                   (*[][][]f32, *[][][]f32, *[][][]f32, *[][][]f32, *[][][]f32, *[][][]f32),
                   (*[][][]f32, *[][][]f32, *[][][]f32, *[][][]f32, *[][][]f32, *[][][]f32)) =
         let (dh, qh0, qh1, qh2, qh3, qh4, qh5) =
@@ -214,12 +214,12 @@ entry program
       let dft = (copy dft_re, copy dft_im, copy dft_weight)
       -- T: scratch state for the first step of a pass. Only the cells that
       -- step writes are ever read, so it starts uninitialised and holds just
-      -- their items (and a spare row for reads that go unused). A pass holds
-      -- two whole states, A and C, plus T.
+      -- the quadrants of items holding them (and a spare row for reads that
+      -- go unused). A pass holds two whole states, A and C, plus T.
       let (nu, tslot) = item_slots (nt * P0) first
       let tplace = (true, tslot)
-      let scratch () : *store [nu + 1][1] =
-        #[scratch] replicate (nu + 1) (replicate 1 (replicate (TY * TX) (replicate 3 0f32)))
+      let scratch () : *store [nu + 1][1][QL] =
+        #[scratch] replicate (nu + 1) (replicate 1 (replicate QL (replicate 3 0f32)))
       let (ae, ah, psi_h, psi_e, qh, qe, dft) =
         loop (ae: *[][P0][TY * TX][3]f32, ah: *[][P0][TY * TX][3]f32,
               psi_h: (*[][][]f32, *[][][]f32, *[][][]f32, *[][][]f32, *[][][]f32, *[][][]f32),
@@ -237,7 +237,7 @@ entry program
           let (fe, fh) = initial (if n == 0 then nt else 0)
           let (ae, ah) = if n == 0 then (inject3 whole (fe :> tiled [nt][P0]) step0 0, fh :> tiled [nt][P0])
                          else (ae :> tiled [nt][P0], ah :> tiled [nt][P0])
-          let (ce, ch) = core_pass g zb zt cf e_codes_x e_codes_y e_codes_z e_table_x e_table_y e_table_z cidx ae ah
+          let (ce, ch) = core_pass g zb zt cf e_codes_x e_codes_y e_codes_z e_table_x e_table_y e_table_z cmask ae ah
           let (te, th, qh, qe) = step first (step0 + s) whole ae ah tplace (scratch ()) (scratch ()) psi_h psi_e qh qe
           let dft = observe s (step0 + s) tplace te th dft
           -- Pre-E sources of the following step.

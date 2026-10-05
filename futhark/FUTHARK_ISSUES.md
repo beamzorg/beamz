@@ -153,3 +153,14 @@ measurements.
   used.
 - **Profiling the first call** measures cold memory: early passes ran about
   6× slower. Use the second report.
+- **Reading a ring slot right after updating it forwards the read to the new
+  value**, which keeps that value alive as a separate array: array
+  short-circuiting then can't build it in the ring, so it is built apart and
+  copied in, with a barrier per copy. With `r[s] = tabulate …` followed by
+  reads of `r[s, y, x]`, the core kernel had 14 barriers per plane instead of
+  5 and 25 KB of shared memory instead of 20 KB. Fix: read through an opaque
+  slot number (`let s' = opaque s`), which costs nothing at run time.
+- **Updating the only row of a one-row array** (`r[0] = v` with `r: [1][…]`)
+  is simplified into replacing the array, even with an opaque index, so a
+  loop-carried one-row ring is double-buffered and copied every iteration.
+  Use two rows (one unused) or don't carry it.
