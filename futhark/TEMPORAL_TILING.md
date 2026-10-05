@@ -1358,8 +1358,14 @@ faces of the store. Peak device memory at 256×512×512: 5.77 GB, was 5.61 GB
 (padding to whole 16×32 tiles: 513 columns round up to 544, not 528). The
 small shapes lose: few large tiles underfill the GPU, and plain stepping
 (2.48 at 64×96×128, one wall) beats both, so the fallback in priority 4
-covers them. Multicore: tiled 0.33 GCUPS at 128×256×512, unchanged. The HIP
-build compiles (720-thread blocks, 52.7 KB of shared memory) but was not run.
+covers them. Multicore: tiled 0.33 GCUPS at 128×256×512, unchanged.
+
+HIP (RX 7600 XT, 720-thread blocks, 52.7 KB of shared memory): bit-identical
+on the same cases. Tiled GCUPS with one CPML wall, before → now: 1.02 → 0.98
+(64×96×128), 1.61 → 1.58 (96×160×256), 2.31 → 2.29 (128×256×512) and 2.02 →
+**2.77** (256×512×512). With 8×16 tiles the large shape ran slower than the
+smaller one, as on CUDA. All-walls runs were cut short: this card also
+drives the desktop, and the large shapes made it unresponsive.
 
 Per pass at 256×512×512, one wall: core 15.9 ms (was 18.4), edge kernels
 10.9 ms (step 1 H 2.75 and E 3.95, step 2 H 1.85 and E 2.37), monitors 2.2 ms.

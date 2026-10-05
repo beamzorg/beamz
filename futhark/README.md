@@ -59,6 +59,11 @@ use `HSA_OVERRIDE_GFX_VERSION=11.0.0` and, on machines with an integrated
 Radeon, `ROCR_VISIBLE_DEVICES=0`; without the latter JAX faults on the iGPU.
 Do not set `CUDA_VISIBLE_DEVICES` to empty: HIP honours it and then finds no
 GPU.
+With Arch's ROCm packages (7.2), use `jax-rocm7-plugin==0.9.1.post6` and
+`jax-rocm7-pjrt==0.9.1.post6`: the plain 0.9.1 wheels link against
+rocprofiler-sdk and hipsolver, which those packages lack, and JAX silently
+falls back to the CPU. If the GPU also drives the desktop, keep benchmarks to
+small shapes.
 The Futhark kernels then compile for gfx1100 as well.
 
 ## Use
