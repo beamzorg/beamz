@@ -98,13 +98,16 @@ def _version_in_file(filepath, pattern, label):
 
 
 def verify_version_sync(expected_version=None):
-    """Require Python, Rust, and Rust-lock metadata to share one version."""
+    """Require Python, Rust, and citation metadata to share one version."""
     versions = {
         "pyproject.toml": _version_in_file(
             "pyproject.toml", r'(?m)^version = "([^"]+)"$', "Python package"
         ),
         "beamz/__init__.py": _version_in_file(
             "beamz/__init__.py", r'(?m)^__version__ = "([^"]+)"$', "Python runtime"
+        ),
+        "CITATION.cff": _version_in_file(
+            "CITATION.cff", r'(?m)^version: "([^"]+)"$', "citation"
         ),
         "Cargo.toml": _version_in_file(
             "Cargo.toml",
@@ -134,6 +137,8 @@ def verify_version_sync(expected_version=None):
 
 def update_version(version):
     """Update version in all relevant files."""
+    # Fail before changing files if the required citation version is missing.
+    _version_in_file("CITATION.cff", r'(?m)^version: "([^"]+)"$', "citation")
     changes = []
 
     # Update pyproject.toml (primary source of truth)
@@ -156,6 +161,15 @@ def update_version(version):
         )
     )
 
+    changes.append(
+        update_version_in_file(
+            "CITATION.cff",
+            version,
+            r'(?m)^version: "[^"]+"$',
+            'version: "{version}"',
+        )
+    )
+
     # Keep the native extension metadata and raster-cache engine identity in sync
     # with the Python distribution version.
     changes.append(update_cargo_workspace_version("Cargo.toml", version))
@@ -172,6 +186,7 @@ def commit_version_changes(version):
         "pyproject.toml",
         "uv.lock",
         "beamz/__init__.py",
+        "CITATION.cff",
         "Cargo.toml",
         "Cargo.lock",
     ]
@@ -252,7 +267,7 @@ def main():
         "--verify",
         metavar="VERSION",
         type=validate_version,
-        help="Verify that Python and Rust metadata match VERSION without changing files",
+        help="Verify Python, Rust, and citation metadata match VERSION without changing files",
     )
     parser.add_argument(
         "--message", "-m", help="Release message (default: 'Release version X.Y.Z')"

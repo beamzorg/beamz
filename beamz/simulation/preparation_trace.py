@@ -2,7 +2,6 @@
 
 import json
 import os
-import resource
 import sys
 import time
 from contextlib import contextmanager
@@ -11,6 +10,11 @@ from pathlib import Path
 
 
 def _memory():
+    try:
+        import resource
+    except ImportError:
+        return {"host_peak_bytes": None, "host_rss_bytes": None}
+
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     peak *= 1 if sys.platform == "darwin" else 1024
     rss = None
@@ -28,6 +32,7 @@ def preparation_phase(name):
 
     Timings cover host work and enqueues, not asynchronous device execution.
     Peak RSS is process-wide; nested records are deliberately not additive.
+    Memory fields are null on platforms without the Unix resource module.
     """
     path = os.getenv("BEAMZ_TRACE_PREPARATION")
     if not path:

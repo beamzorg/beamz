@@ -496,7 +496,10 @@ fn count_self_intersections(vertices: &[Vec3], triangles: &[[u32; 3]]) -> usize 
                 .fold(0.0_f64, f64::max);
             let left_shape = parry_triangle(vertices, *left, origin, scale);
             let right_shape = parry_triangle(vertices, right, origin, scale);
-            if intersection_test(&pose, &left_shape, &pose, &right_shape).unwrap_or(false) {
+            if intersection_test(&pose, &left_shape, &pose, &right_shape)
+                .map(|result| result.intersecting)
+                .unwrap_or(false)
+            {
                 intersections += 1;
             }
         }

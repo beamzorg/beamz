@@ -24,7 +24,9 @@ jobs:
       - run: uv python install 3.11
       - name: Install quality dependencies
         run: uv sync --python 3.11 --extra lint --extra gds
-      - name: Verify Python and Rust version metadata
+      - name: Validate citation metadata
+        run: uv tool run --python 3.11 --from cffconvert==2.0.0 cffconvert --validate
+      - name: Verify Python, Rust, and citation version metadata
         run: >-
           uv run --no-active --python 3.11 python -c
           "import release_version; release_version.verify_version_sync()"

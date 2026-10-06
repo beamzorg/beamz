@@ -15,6 +15,7 @@
   [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://github.com/beamzorg/beamz/blob/main/LICENSE)
   [![Tests](https://github.com/beamzorg/beamz/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/beamzorg/beamz/actions/workflows/tests.yml)
   [![Coverage](https://raw.githubusercontent.com/beamzorg/beamz/main/.github/badges/coverage.svg)](https://github.com/beamzorg/beamz/actions/workflows/tests.yml)
+  [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23085101.svg)](https://doi.org/10.5281/zenodo.23085101)
 </div>
 
 
@@ -90,6 +91,32 @@ BeamZ aims to become the FDTD engine of choice for **photonic simulations** in i
 **We appreciate all contributions.** If you are planning to contribute bug-fixes, please do so without any further discussion. If you would like to add new features, please first open an issue and discuss the feature with us. There may be ongoing work that could conflict with your changes, or we may be heading in a different direction and we don't want to waste your time working on something that might be rejected. - You can find [more information here](CONTRIBUTING.md).
 
 The simplest way to support the project of course is by **giving this repo a star.** Thank you!
+
+
+## Citation
+
+If you use BeamZ in your research, please cite:
+
+Quentin Wach (2026). *BeamZ: CUDA-accelerated Differentiable FDTD for Photonics*
+(v0.5.3). Zenodo. https://doi.org/10.5281/zenodo.23135312
+
+```bibtex
+@software{wach_beamz,
+  author = {Wach, Quentin},
+  title = {{BeamZ}: {CUDA}-accelerated Differentiable {FDTD} for Photonics},
+  year = {2026},
+  version = {v0.5.3},
+  publisher = {Zenodo},
+  doi = {10.5281/zenodo.23135312},
+  url = {https://doi.org/10.5281/zenodo.23135312}
+}
+```
+
+Citation metadata is available in [CITATION.cff](CITATION.cff). For reproducible
+research, cite the DOI of the specific release you used; the citation above is
+for v0.5.3. If using an unreleased version, also report the commit hash.
+To reference BeamZ across all versions, use the
+[all-versions DOI](https://doi.org/10.5281/zenodo.23085101).
 
 ---
 

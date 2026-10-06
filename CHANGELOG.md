@@ -1,5 +1,53 @@
 # Changelog
 
+## v0.5.3 - 2026-10-04
+
+### What's Changed
+
+- docs: add Zenodo DOI badge and release citation by @QuentinWach in [#305](https://github.com/beamzorg/beamz/pull/305)
+- build(deps): bump tornado from 6.5.8 to 6.5.9 by @dependabot[bot] in [#299](https://github.com/beamzorg/beamz/pull/299)
+- build(deps): bump gitpython from 3.1.59 to 3.1.62 by @dependabot[bot] in [#300](https://github.com/beamzorg/beamz/pull/300)
+- build(deps): bump urllib3 from 2.7.0 to 2.8.0 by @dependabot[bot] in [#301](https://github.com/beamzorg/beamz/pull/301)
+- build(deps): bump parry3d-f64 from 0.30.2 to 0.31.1 by @dependabot[bot] in [#291](https://github.com/beamzorg/beamz/pull/291)
+- fix: preserve simulation materials in detached 3D modal analysis by @QuentinWach in [#310](https://github.com/beamzorg/beamz/pull/310)
+
+**Full Changelog**: https://github.com/beamzorg/beamz/compare/v0.5.2...v0.5.3
+
+## v0.5.2 - 2026-10-01
+
+### Added
+
+- Added multi-GPU CUDA execution and improved streamed CUDA/JAX scaling,
+  continuation, and shard-local material preparation for large 3D simulations.
+- Added optional constant-radius bent-waveguide eigenmode evaluation through
+  `solve_grid(..., bend_radius=..., bend_axis=...)`.
+- Added software citation metadata and preparation for Zenodo release archiving.
+
+### Changed
+
+- Improved CUDA storage layout selection and CPML execution, and reduced
+  full-field communication in sparse JAX source and monitor operations.
+- Removed the experimental `cuda_hopper` backend; use `cuda_streamed` or JAX.
+  Rebuild the optional CUDA extension for ABI 21 / component version 0.21.0.
+- Updated dependencies, validation tooling, benchmarks, and documentation.
+
+### Fixed
+
+- Fixed package imports on Windows by making Unix process-memory tracing optional.
+- Improved material-coefficient equivalence across mesh, GDS, and native Design
+  imports, including mesh-region ownership, clipping, adaptive sampling, and
+  boundary classification.
+- Hardened CUDA graph execution, modal DFT continuation, and distributed CPML
+  ownership and halo exchange.
+
+### Validation limits
+
+- GPU performance depends on hardware and geometry. Large-capacity benchmark
+  completion does not establish optical convergence or full-size backend parity.
+- Some CUDA CPML auxiliary-state and refined raw-DFT comparisons remain outside
+  tolerance; see the linked validation reports and benchmark evidence in the
+  release notes. Bent-mode radiation loss requires mesh/domain/PML convergence.
+
 ## v0.5.1 - 2026-09-12
 
 ### Added

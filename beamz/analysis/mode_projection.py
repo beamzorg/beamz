@@ -244,9 +244,13 @@ def _build_discrete_port_projection_3d(
     else:
         width, height = size[0], size[1]
 
+    # The scalar raster alone cannot reproduce smoothed or anisotropic Yee
+    # coefficients. Use the same retained constitutive data as the source solve.
     discrete_mode = solve_mode_plane_3d(
         perm,
         permeability,
+        material_tensors=sim.materials.material_tensors,
+        yee_materials=sim.materials.yee_materials,
         frequency=frequency,
         resolution=sim.resolution,
         dt=sim.dt,
