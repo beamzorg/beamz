@@ -12,7 +12,7 @@
 -- core only, fused with the output.
 --
 -- Layout as bare3.fut: [tile][z][TY * TX][6]. Results go straight to global memory
--- (#[intrablock_result_global]).
+-- (#[intrablock_result(global)]).
 
 import "bare"
 import "bare3"
@@ -91,7 +91,7 @@ def rpass1 [nt][nz] (ntx: i64) (ny: i64) (nx: i64) (src: stiled [nt][nz]) : *sti
         let out[z] = emit g zi h1 cur (1 - cur) (slot3 e0 0)
         in (e0, h1, out)
     in out
-  in #[unsafe] #[flattening(only_intra)] #[intrablock_result_global] tabulate nt run
+  in #[unsafe] #[flattening(only_intra)] #[intrablock_result(global)] tabulate nt run
 
 -- Two steps per pass. Rings: E0 at z (1), H1, E1 and H2 at two planes each.
 -- Stage 2 works on plane z - 1.
@@ -117,7 +117,7 @@ def rpass2 [nt][nz] (ntx: i64) (ny: i64) (nx: i64) (src: stiled [nt][nz]) : *sti
         let out[o] = emit g (zi - 1) h2 prev cur (slot3 e1 prev)
         in (e0, h1, e1, h2, out)
     in out
-  in #[unsafe] #[flattening(only_intra)] #[intrablock_result_global] tabulate nt run
+  in #[unsafe] #[flattening(only_intra)] #[intrablock_result(global)] tabulate nt run
 
 -- Any K. Stage s turns (E_s, H_s) into (E_s+1, H_s+1) on plane p = z - s.
 -- hr[s] holds H_s+1 and er[s] holds E_s+1 (s < K - 1), each in two slots
@@ -163,9 +163,9 @@ def rpassk [nt][nz] (ntx: i64) (ny: i64) (nx: i64) (src: stiled [nt][nz]) : *sti
           emit g p hr[s] sp sm (\y x -> if s == 0 then slot3 e0 0 y x else slot3 er[s - 1] sp y x)
         in (e0, hr, er, out)
     in out
-  in #[unsafe] #[flattening(only_intra)] #[intrablock_result_global] tabulate nt run
+  in #[unsafe] #[flattening(only_intra)] #[intrablock_result(global)] tabulate nt run
 
--- Without #[intrablock_result_global]: blocks own (tile, z chunk) and keep their ZC output
+-- Without #[intrablock_result(global)]: blocks own (tile, z chunk) and keep their ZC output
 -- planes in shared memory. A chunk starts K planes early so that every stage
 -- is exact on the planes the next one reads; early outputs land in plane 0
 -- and are overwritten once exact. nz must be a multiple of ZC.

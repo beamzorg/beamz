@@ -26,7 +26,7 @@
 -- quadrants keep the edge region as fine as 8 x 16 tiles did.
 --
 -- The core kernel writes its result columns straight to global memory
--- (#[intrablock_result_global], from the Futhark checkout BeamZ builds with);
+-- (#[intrablock_result(global)], from the Futhark checkout BeamZ builds with);
 -- a whole column would not fit in shared memory.
 
 import "yee"
@@ -285,7 +285,7 @@ def core_pass [nt][P0] (g: geo) (zb: i64) (zt: i64) (cf: corecf)
         let oh[r] = fh
         in (h1, e1, h2, oe, oh)
     in (oe, oh)
-  let r = #[unsafe] #[flattening(only_intra)] #[intrablock_result_global] tabulate nt run
+  let r = #[unsafe] #[flattening(only_intra)] #[intrablock_result(global)] tabulate nt run
   in (map (.0) r, map (.1) r)
 
 -- Interior planes, rows or columns along `axis`: no CPML slab of any term and

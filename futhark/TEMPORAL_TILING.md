@@ -255,7 +255,7 @@ shared memory per SM, 4 MB L2) and Ryzen 9 7950X; Futhark 0.27.1. Code is in
 | `bare2.fut` | Full-column streaming tile, generic K. |
 | `bare3.fut` | Lean full-column streaming tiles with explicit K = 1…4 stages, plus an intra-block copy kernel as a streaming upper bound. |
 | `bare4.fut` | **The working GPU design:** full-column streaming tiles whose planes live in fixed ring slots updated in place, for explicit K = 1, 2 and any K. |
-| `patch_cuda.py` | Rewrote a generated intra-block kernel so the block result lives in global memory (see below). Removed: now the `#[intrablock_result_global]` attribute of the Futhark checkout (FUTHARK_ISSUES.md). |
+| `patch_cuda.py` | Rewrote a generated intra-block kernel so the block result lives in global memory (see below). Removed: now the `#[intrablock_result(global)]` attribute of the Futhark checkout (FUTHARK_ISSUES.md). |
 | `gen.py`, `fc.sh`, `bench.py` | Instantiate constants (`TY`, `TX`, `ZC`, `K`), compile with the Futhark checkout, and time two step counts so that setup cancels. |
 
 Every tiled variant was checked bitwise against the plain reference on odd

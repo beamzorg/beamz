@@ -3,7 +3,7 @@
 -- stages whose planes rotate through loop-carried tuples (pointer swaps, no
 -- shared-memory copies), and one tabulate per output plane.
 -- Layout: [tile][z][component][TY * TX]. Results go straight to global memory
--- (#[intrablock_result_global]).
+-- (#[intrablock_result(global)]).
 
 import "bare"
 

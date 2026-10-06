@@ -64,10 +64,12 @@ option in the checkout:
    array of an `#[flattening(only_intra)]` kernel in shared memory, the
    block's results included, and copies them out when the block ends. A
    temporal tile streams a whole z column, so its results cannot fit. Now:
-   the preliminary attribute `#[intrablock_result_global]` next to
-   `#[flattening(only_intra)]` (`32f49631b`, CUDA and HIP only). Same kernel
-   speed as the patch. It assumes each block's result is laid out
-   contiguously like its slice of the global result.
+   the attribute `#[intrablock_result(global)]` next to
+   `#[flattening(only_intra)]` (`de8e16e5f`). The block result lives in a
+   `global_alias` memory space that is bound at launch to the block's slice
+   of the global result, so it works on OpenCL as well as CUDA/HIP. It only
+   applies to freshly allocated, directly laid out results; otherwise the
+   compiler falls back to shared memory and warns.
 2. **CUDA primary context** (was `_patch_primary_context`). XLA uses the
    device's primary context, and raw device pointers only alias across the
    two if Futhark retains it. Now `futhark_context_config_set_use_primary_context`

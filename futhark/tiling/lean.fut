@@ -211,7 +211,7 @@ def pass [nt][P0][C][T][S3][U9][Lz] (g: geo) (m: mats [C][T][S3][U9][nt][P0]) (f
         let oz = if ZPML && r >= 0 then oz with [r] = zo else oz
         in (e0, h1, e1, h2, zmh, zme, out, oz)
     in (out, oz)
-  let r = #[unsafe] #[flattening(only_intra)] #[intrablock_result_global] tabulate nt run
+  let r = #[unsafe] #[flattening(only_intra)] #[intrablock_result(global)] tabulate nt run
   in (map (.0) r, map (.1) r)
 
 def setup (P0: i64) (P1: i64) (P2: i64) =

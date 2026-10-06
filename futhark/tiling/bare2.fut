@@ -1,7 +1,7 @@
 -- Full-column 2.5D streaming variant of bare.fut: each block owns one xy tile
 -- and streams every z plane through K pipelined stages. The block's output
 -- column does not fit in shared memory, so it goes straight to global memory
--- (#[intrablock_result_global]).
+-- (#[intrablock_result(global)]).
 
 import "bare"
 
@@ -65,7 +65,7 @@ def cpass [nt][nz] (ntx: i64) (ny: i64) (nx: i64) (ch: f32) (cb: f32)
         let out[5, p] = core h.2
         in (ep, hp, out)
     in out
-  in #[unsafe] #[flattening(only_intra)] #[intrablock_result_global] tabulate nt run
+  in #[unsafe] #[flattening(only_intra)] #[intrablock_result(global)] tabulate nt run
 
 def ctiled_run [nz][ny][nx] (nsteps: i64) (s: fields ([nz][ny][nx]f32)) =
   let nty = (ny + TY - 1) / TY
