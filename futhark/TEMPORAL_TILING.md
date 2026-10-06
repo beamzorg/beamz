@@ -58,7 +58,7 @@ Since 2026-10-05 the backend builds with the patched Futhark checkout
 (`../futhark`) instead of 0.27.1 plus generated-code patches, and the core
 kernel's window rings hold one plane per component (the interleaved layout
 lost 5% on the newer compiler): tiled 4.18 GCUPS at 128×256×512 and 3.93 at
-256×512×512, one wall. See FUTHARK_ISSUES.md, "Moving to the checkout", and
+256×512×512, one wall. See
 [CPU, 2026-10-05](#cpu-2026-10-05) for the CPU.
 Earlier sections are kept as history; the 2026-10-04 status and next steps
 are superseded. The time-skewed checkerboard (a model only, so far) is exact
@@ -746,8 +746,9 @@ The kept variant ties the best for all walls and wins when the edge is small
 
 ### Futhark pitfalls met on the way
 
-Compiler bugs (with minimal reproducers), generated-code patches and these
-codegen traps are collected in `FUTHARK_ISSUES.md`.
+Compiler bugs, generated-code patches and these codegen traps were collected
+in `FUTHARK_ISSUES.md`, removed once the checkout fixed them (it is in git
+history: `git show 6d01dff0:futhark/FUTHARK_ISSUES.md`).
 
 - `flatten` of a loop-carried array forces a full copy whenever Futhark does
   not know its outer strides (existential loop layouts). This produced
@@ -1363,7 +1364,7 @@ With `unified_memory = 0` (now the default in the handler;
 `memblock_alloc_device` ignores `gpu_alloc`'s status, and an out-of-memory
 return sets no error, so the block was "received" with a NULL pointer
 (found with `compute-sanitizer` and `BEAMZ_FUTHARK_DEBUG=1`, also new). Patched
-in `build.py` (`_patch_alloc_failure`); see FUTHARK_ISSUES.md. Managed memory
+in `build.py` (`_patch_alloc_failure`), since fixed in the checkout. Managed memory
 hid both this and the footprint by paging.
 
 ### Next
@@ -1422,13 +1423,13 @@ material lookups). Generated kernels were inspected with `futhark dev
   their ring slot, one barrier per copy, and the clamped `min(y + 1, WY - 1)`
   reads of E0 were materialised as two shifted copies. Cause: after
   `r[s] = v`, the simplifier forwards reads of `r[s]` to `v`, which keeps `v`
-  alive and blocks short-circuiting (FUTHARK_ISSUES.md). Reading through
+  alive and blocks short-circuiting. Reading through
   `opaque` slot numbers gives 5 barriers and 20 KB of shared memory instead
   of 25 KB: 7.2 → 7.9 GCUPS in the harness.
 - **Trimmed rings.** Each ring holds only what later stages read (H1 11×19,
   E1 10×18, H2 9×17 for 8×16 tiles), so no read needs clamping and fewer
   warps idle: 8.0 GCUPS, 18.8 KB, 3 blocks per SM. A one-row E0 ring cannot
-  be updated in place (FUTHARK_ISSUES.md).
+  be updated in place.
 - **In production this gave 2%** (core 4.03 → 3.94 ms per pass at
   128×256×512) and nothing at 256×512×512.
 

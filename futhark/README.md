@@ -22,7 +22,7 @@ Requires a Futhark checkout next to this repository (`../futhark`, or set
 [pepijndevos/futhark](https://github.com/pepijndevos/futhark), GHC and `cabal`
 (from ghcup, in `~/.ghcup/bin`), a CUDA toolkit or ROCm, and a matching GPU
 jaxlib in the active environment. That branch holds compiler fixes and options
-BeamZ needs that are not released yet (see FUTHARK_ISSUES.md). `build.py`
+BeamZ needs that are not released yet. `build.py`
 builds the checkout's compiler with `cabal` and uses it; set `FUTHARK` to use
 another compiler binary instead.
 

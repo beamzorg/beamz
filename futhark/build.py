@@ -17,8 +17,7 @@ The compiler comes from the Futhark checkout next to this repository
 checkout carries fixes BeamZ needs that are not yet released: the CUDA primary
 context option (shared with XLA, so device pointers alias), results of
 intra-block kernels written straight to global memory, failing a call on out of
-device memory, and the multi-dimensional histogram and ISPC fixes (see
-FUTHARK_ISSUES.md). Set ``FUTHARK`` to use another compiler binary,
+device memory, and the multi-dimensional histogram and ISPC fixes. Set ``FUTHARK`` to use another compiler binary,
 ``CUDA_HOME`` if the toolkit is not in ``/opt/cuda`` or ``/usr/local/cuda``, and
 ``ROCM_PATH`` if ROCm is not in ``/opt/rocm``.
 """
