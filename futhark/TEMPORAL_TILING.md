@@ -1,5 +1,35 @@
 # Temporal tiling for the Futhark backend — design notes
 
+**Status (2026-10-06, evening):** both remaining "obvious" gaps were
+measurement artefacts. This GPU streams 294 GB/s (copy) and 361 GB/s (read),
+not 420, so the core kernel moves about 70 B per cell and pass against about
+60 B its reads and writes need, not 2× the minimum. Edge cells are not 2×
+slower than plain stepping either: the edge machinery costs about 1.3× plain
+per cell, and the rest is that the edge is mostly CPML cells, which cost more
+in any scheme. On this GPU the K = 2 design is within about 25% of its limits
+in both kernels. See [Calibration](#calibration-how-far-from-the-limits-2026-10-06-evening).
+
+**Status (2026-10-06, later):** the lean CPML kernel is integrated in a
+split state (`tiling/split_state.patch`, not applied): bit-exact on every
+`compare_temporal.py` case, but slower than the committed tiling, 2.47 vs
+4.48 GCUPS with one wall and 1.85 vs 2.91 with all walls at 128×256×512.
+In production the CPML kernel runs at 0.8–0.9 ns per cell-step, not the
+harness's 0.4–0.5, and the split state's lookups make the core kernel 28%
+slower. Even at harness speed it would only tie with one wall. CPML tiles
+do not pay for the target, large domains with a thin CPML shell (and the
+patch fails at 256×512×512, not investigated). See
+[CPML tiles in production](#cpml-tiles-in-production-a-split-state-2026-10-06);
+current next steps are in [Where to resume](#where-to-resume-2026-10-06).
+
+**Status (2026-10-06):** a lean CPML tile kernel (`tiling/cpml_bench.fut`,
+not in production yet) is bit-exact and runs CPML regions at 0.34–0.39 ns
+per cell-step with 16×16 or 8×32 jobs, against 0.53–0.77 for plain stepping
+and 0.5–0.75 for the production edge kernels. It is limited by register
+pressure (one block per SM), not by halo bandwidth: the memory controller is
+43% busy and removing all halo traffic saves 6–17%. A checkerboard would gain
+at most about 15% on core tiles and about 25% on CPML tiles. See
+[Lean CPML tiles](#lean-cpml-tiles-halo-and-registers-2026-10-06).
+
 **Status (2026-10-05, night):** the core kernel turned out to be bound by
 DRAM bandwidth, much of it re-reading neighbours' halo. Tiles are now 16×32
 with core cells chosen per 8×16 quadrant: tiled 4.48 GCUPS at 128×256×512
@@ -1236,7 +1266,9 @@ Keep rectangles.
 
 ### Re-ranked priorities
 
-This replaces "Where to resume" in the production section.
+This replaces "Where to resume" in the production section. Superseded in
+turn by [Where to resume (2026-10-06)](#where-to-resume-2026-10-06): item 2
+turned out to be bandwidth, not latency, and item 5 does not pay.
 
 1. **Memory per cell** (done, see the next section). Store T compactly (it
    only needs the step-1 cells, not two full states) and set
@@ -1467,6 +1499,59 @@ items (`[n][1][128][3]`, slots per quadrant): with whole 16×32 items it took
   the writes are fixed at K = 2. More steps per pass would cut both, but
   shared memory already limits the 16×32 kernel to one block per SM.
 
+## Edge kernels and monitors: what did not help (2026-10-05, late night)
+
+All measured in production (Quadro RTX 5000, 256 steps, profile per pass of
+two steps) and reverted; none moved end-to-end GCUPS beyond noise.
+
+Where the time goes at 256×512×512, from the profile and a numpy model of
+the plan rules (core 59.8 M cells, edge 7.9 M one wall; 52.8 M and 14.9 M all
+walls):
+
+| Kernel, ms per pass | one wall | all walls |
+|---|---:|---:|
+| core | 15.9 | 13.8 |
+| step 1 H + E | 6.7 | 12.7 |
+| step 2 H + E | 4.2 | 10.0 |
+| monitor gathers + DFT histograms | 2.3 | 2.3 |
+
+Per cell and step that is about 0.13 ns in the core, 0.5–0.75 ns in the edge
+kernels (step 1 dearer than step 2), and 0.31 ns for plain stepping. Plain's
+E phase is 0.16 ns per cell, the step-2 edge E phase 0.36 ns with all walls.
+Even at 1000³ with 12-cell CPML on all walls, the edge would be about a third
+of the time at these rates.
+
+Tried, each against the same baseline:
+
+- **Fast path for interior edge cells** (no slab, boundary or padding case:
+  skip the CPML, PEC and slot logic, same arithmetic): step 1 E 143 → 151 ms
+  per 128 passes at 128×256×512, one wall. The branching is not the cost.
+- **32-bit row indexing** in the store accessors: all edge kernels 2–5%
+  slower.
+- **Component-planar stores**, as three `[tile][z][lane]` arrays: core
+  +12%, edge kernels +2–9%. Interleaved `[lane][3]` is better: a cell's
+  three components share a sector. (`[tile][z][3][lane]` was worse still:
+  scatters to it cannot fuse with the map computing the values, which
+  brought transposes and copies.)
+- **Monitors.** The plan gathers all six components with four neighbours,
+  but masked components (here Ex, Hx) have zero weights and Ey/Ez one zero
+  neighbour. Skipping those in `gather`, and watching only used samples (and
+  H samples without their lower neighbours) in `edge_cells`, cut watched cells
+  by 29% at 64×96×128 and the gathers by 24% at 128×256×512, but nothing at
+  256×512×512, nor end to end, nor for plain stepping. The step-1 monitor
+  cost (1.6 ms per pass at 256×512×512, the x columns of the monitor planes
+  scattered over tiled rows) is set by the sampled columns, which the change
+  keeps.
+- **Material codes tiled for the core kernel** (three `[tile][z][lane]u8`
+  arrays, so a window row is one 32-byte sector): core 2031 → 2125 ms per
+  128 passes at 256×512×512. A constant material instead (wrong results, as
+  a bound only) gave 1660 ms, so lookups cost up to 18%, but in the
+  dependent code → table loads, not in code bytes from DRAM.
+
+Not tried yet: plain fallback for small shapes (priority 4), and CPML cells
+in tiles, the only lever left that changes the edge's per-cell cost by more
+than layout tweaks.
+
 ## CPU, 2026-10-05
 
 Ryzen 9 7950X, `multicore` build of the Futhark checkout.
@@ -1543,3 +1628,487 @@ there while the bare stencil's K = 2 gains 2.0–2.7×. Wider tiles alone did
 not help production (see above). Note that `tiling/lean.fut`, the
 intermediate between `bare4` and production, no longer compiles (it uses
 `route`, since removed from `yee.fut`) and needs updating first.
+
+## CPML in the tile pass: a general shell kernel (2026-10-05, late night)
+
+Goal: take the CPML (and the other edge cells) out of the plain edge steps,
+which run at about 0.6 ns per cell-step, and into a two-step tile kernel.
+Overlapped first, since the checkerboard's black and white kernels are
+variants of the same kernel (halo 0, and halo (2, 3) with partial levels).
+
+Baseline rerun today (256 steps, GCUPS): tiled 4.48 / 4.47 one wall, 2.91 /
+3.30 all walls (128×256×512 / 256×512×512); plain 3.01 / 2.98 and 2.50 / 2.67.
+
+### What exists (uncommitted, not used by fdtd.fut yet)
+
+- `yee.fut`: `stretched`/`field_cpml`/`field_value` read CPML memories
+  through accessors (`field`), callers wrap arrays in `at3`; new
+  `term_memory` recomputes the memory a term advances to. fdtd.fut still
+  type-checks; **the production build and its speed are not rechecked yet**.
+- `temporal.fut`: `shell_pass` (with `route`, `pick`, `pmem`, `comp1`,
+  `comp`, `umem`). One block per job (tile quadrant `tile * 4 + q`, z start,
+  `zc` planes), window = 8×16 quadrant + 2-cell halo, the four stages of
+  `core_pass` but each update is yee.fut's `field_cpml` through ring
+  accessors. Step 1's CPML memories are not stored: step 2 recomputes them
+  (`umem`) from E0 (ring of 2 planes) and H1 (ring of 3 planes). Results go
+  to per-job columns `[nj][zc][128]` of E, H, 6 H memories and 6 E memories
+  (still to be scattered into C and the packed slabs).
+- `tiling/shell_bench.fut`: synthetic grid with CPML of width w on chosen
+  faces, PEC elsewhere, dense decay arrays, codebook E sources. `check`
+  compares one shell pass over every quadrant (any z chunking) with two plain
+  yee.fut steps; `bench`/`cells` time it on the quadrants make_plan leaves to
+  the edge; `bench_plain` times plain steps. Compile takes ~4 min.
+
+### Results
+
+- **Bit-exact**: `check` gives 0/0/0 mismatches (E, H, memories) on
+  40×50×70, 29×37×70, 33×40×90, 100×60×60, 33×100×200 and 128×256×512, with
+  CPML on all, some or no faces and z chunks of 7–200 planes. Perturbing one
+  input memory by 1e-3 gives 222k/145k/280k mismatches, so the check bites.
+  (A first version read out of bounds: the out stage evaluated updates
+  before its `ok` guard; small grids hid it.)
+- **Slow**: at 128×256×512, ns per cell-step on the shell quadrants:
+
+| CPML | ms per pass | ns per cell-step |
+|---|---:|---:|
+| none (w=0, PEC quadrants only) | 4.91 | 0.58 |
+| x high face only | 5.43 | 0.64 |
+| z faces only | 5.13 | 0.61 |
+| all faces | 8.52 | 0.82 |
+
+  Edge kernels in production: 0.5–0.75; plain in this harness 0.44
+  (average over all cells, dense decay). So no gain as it stands.
+- **Why**: not CPML (0.58 without any) and not occupancy (176 registers,
+  1 block of 240 threads per SM; `__launch_bounds__(…, 2)` via
+  `--dump-cuda`/`--load-cuda` gives −3%, `(…, 3)` spills and is 20% slower;
+  `--nvrtc-option=-maxrregcount` has no effect, it never reaches the JIT).
+  The kernel is 7024 SASS instructions: 2376 IMAD, 1122 ISETP, 1067 IADD3,
+  351 SEL, 319 LEA against 72 FFMA, 120 FMUL, 48 FADD. It is integer index
+  arithmetic: 64-bit ring/window/tile indexing behind every accessor read,
+  boundary and slab tests, dims picked per component, dense coefficient
+  indexing. Matches lean.fut's earlier finding that the production `cell`
+  doubles the cost of a lean update.
+
+### Where to resume
+
+1. Make the harness production-like first: scalar decays/H source (the
+   common configuration the core kernel requires), then remeasure.
+2. Write a lean shell update, as `hcore`/`ecore` plus CPML terms, bit-exact
+   with `field_cpml`: 32-bit window indices computed once per cell, slab
+   rows/columns/planes and packed indices precomputed per window row,
+   column and plane (per (phase, axis), checking the per-term slabs agree),
+   PEC as explicit masks (beware −0 vs +0 at the high face: `0 - x` is not
+   `-x` for x = +0). lean.fut's lean z-CPML `upd` reached 0.30 ns at 4×32,
+   halo 2; aim for ≤ 0.3 here, against 0.6 for the edge kernels.
+3. Only then the checkerboard (halo 0 black: lean z-CPML 0.15 ns in the
+   proxy), and the integration: scatter job columns into C and the packed
+   slabs, shrink the step-1/step-2 cell lists to source quadrants and
+   monitors, z-cap jobs for core tiles.
+4. Recheck production build time and edge-kernel speed after the yee.fut
+   accessor change (or revert it if the lean kernel doesn't use it).
+
+## Lean CPML tiles: halo and registers (2026-10-06)
+
+Questions: does a checkerboard (less halo) pay for either tile type? Can
+CPML tiles beat plain stepping once they waste no compute or bandwidth? Is
+the CPML tile slowed by its halo's bandwidth? Which tile size suits each
+kernel?
+
+Quadro RTX 5000; 128×256×512 cells (store 129×257×513), CPML width 12;
+"faces" as in the harnesses (63 all, 32 x high, 3 z). Built with a private
+worktree of the Futhark checkout at 32f49631b: the checkout had uncommitted
+intra-block result changes, with which this kernel's outputs went to shared
+memory and the launch failed.
+
+### Core tiles: halo is at most 15%
+
+`core_bench` at 257×513×513 with window reads clamped to the tile's own cells
+(no neighbour halo traffic; wrong results): 11.5 → 9.8 ms per pass (8.5 →
+10.0 GCUPS). That bounds any scheme that reduces the halo. The staggered
+checkerboard halves it and adds border history, so ≲7%: not worth a second
+kernel.
+
+### CPML tiles are not bandwidth-bound
+
+`nvidia-smi dmon`, memory controller busy: core kernel 100%, `shell_pass`
+32%, the lean kernel below 43%. In the lean kernel (8×16 jobs), with
+CLAMP (window reads from the job's own cells: no halo traffic) the time drops
+6–17%; with SKIP (no compute outside the job, same block shape) 1–13%.
+Neither the halo's bytes nor its work dominates. Registers do (below).
+
+### The lean kernel
+
+`tiling/cpml_bench.fut`, `cpml_pass`: two steps for jobs of JY×JX cells
+(whole columns, any origin), window = job + 2, z streamed through rings as in
+`core_pass`. Production's common configuration (isotropic, scalar H
+coefficients and E decay, codebook E sources), yee.fut's CPML and PEC rules
+with literal axes and 32-bit coordinates, CPML memories in tiled layout
+(`[tile][z][lane][6]` per phase). Step 1's memories are recomputed in step
+2 from E0 (two planes kept) and H1 (three planes) rather than kept in rings
+(`RECOMP`). `check` compares one pass over every job with two plain
+yee.fut steps bitwise. 0 mismatches on seven shapes (CPML on all, some or no
+faces; 20×30×40 up to 128×256×512), and compute-sanitizer is clean. An
+injected CPML bug gives 240k mismatches, a boundary bug 41k.
+
+Two out-of-bounds reads on the way, both for halo cells outside a
+component: yee.fut's `packed` is non-negative for x ≥ n (yee.fut only gets
+there after its `inside` test), and the codebook lookup needs the component's
+extent, not the store's.
+
+Progress at 8×16 jobs, ns per cell-step (job cells, two steps per pass):
+
+| Version | all faces | x high | z | no CPML | barriers per plane |
+|---|---:|---:|---:|---:|---:|
+| `shell_pass` (previous) | 0.82 | 0.64 | 0.61 | 0.58 | |
+| lean, packed indices | 0.67 | 0.56 | 0.53 | 0.51 | 71 |
+| + coefficient tables, inlined helpers | 0.54 | 0.50 | 0.41 | 0.39 | 8 |
+| + step-1 memories recomputed | 0.52 | 0.41 | | 0.30 | 8 |
+
+**Block-level branches cost a barrier each.** Futhark hoists what depends
+only on the plane (the z terms' packed index and coefficients, edge-bit tests)
+out of the per-cell map. In an intra-block kernel every hoisted `if` then
+runs at block level between barriers: 71 per plane. Precomputed per-coordinate
+coefficient tables (unconditional loads), edge flags as booleans and
+`#[inline]` on small helpers (a non-inlined function inside `&&` became an
+`if`) leave none. Loading coefficients lazily (only inside a slab) put the
+branches back (57 barriers, slower).
+
+**Where the time goes** (no CPML, 8×16, tables version; probes are compile-time
+switches, wrong results):
+
+| Variant | ns/cell-step | registers |
+|---|---:|---:|
+| core arithmetic (`BARE`), no memory rings or outputs | 0.12 | 63 |
+| `BARE` with memory rings and outputs | 0.20 | 76 |
+| general update, no CPML terms (`NOCPML`), no memory plumbing | 0.17 | 69 |
+| general update, no boundary tests (`NOBND`), no memory plumbing | 0.16 | 117 |
+| general update, no memory plumbing | 0.34 | 169 |
+| general update | 0.39 | 165 |
+
+The streaming structure is as fast as the core kernel. CPML terms or
+boundary tests alone are cheap; together they need about 165 registers, which
+allows one 240-thread block (7.5 warps) per SM. `__launch_bounds__(…, 2)`
+(edited into `--dump-cuda` output, run with `--load-cuda`) takes the
+no-plumbing kernel from 0.34 to 0.22 (all faces 0.46 → 0.32), but only once
+shared memory allows two blocks: 35 KB with memory rings, 21 KB with
+`RECOMP`. A cap for three blocks spills and is slower. A thread per
+component and cell (`cpml_pass3`: 80 registers, 720 threads) was no faster
+(0.57/0.50/0.47/0.45).
+
+### Job size
+
+`RECOMP` kernel, best of no cap and the launch-bound caps, ns per cell-step
+(repeat runs agree within 1%; across sessions within about 10%):
+
+| Job (window) | no CPML | x high | all faces |
+|---|---:|---:|---:|
+| 8×16 (12×20) | 0.30 | 0.41 | 0.52 |
+| 4×32 (8×36) | 0.35 | 0.44 | 0.49 |
+| 8×32 (12×36) | 0.30 | 0.34 | 0.41 |
+| 16×16 (20×20) | 0.32 | 0.34 | 0.39 |
+| 16×32 (20×36) | 70 KB shared memory, does not launch | | |
+
+Larger jobs help: less of the window is halo. 400–432-thread blocks get
+120 registers without spills (with a cap; 128 and spills without), one block
+per SM. 16×32 needs less shared memory first.
+
+### Against plain stepping
+
+`bench_plain` (yee.fut's `phase_next`/`psi_next`) in the same harness, per
+step: 0.29 ns per interior cell, and from the CPML cell counts 0.53–0.58 per
+CPML cell (all faces, w = 12 and 40), 0.49 (z faces), 0.77 (x high face).
+Production measured 0.31 and 0.62. So CPML tiles at 0.34–0.39 are 1.5–2.2×
+faster than plain stepping on CPML cells. Without CPML they only match plain
+interior speed: a CPML tile's gain is handling CPML cells at about the cost
+of plain interior ones.
+
+*Estimate* for production at 256×512×512, if CPML tiles at about 0.4 ns took
+all edge cells: edge kernels 10.9 → 6.3 ms per pass with one wall (7.9 M
+cells; total 29 → 24 ms, +19%), 22.7 → 11.9 with all walls (14.9 M; total
+39 → 28 ms, +39%). Sources and monitors would stay plain, and the outputs
+would have to reach C (a scatter, or a kernel that writes C's tiles).
+
+### Checkerboard for CPML tiles
+
+A black (halo 0) 8×16 tile has the block shape of an overlapped 4×12 job
+(window 8×16). As a proxy, that job costs 34 / 41 / 48 ns per plane (no CPML /
+x high / all faces), i.e. 0.13 / 0.16 / 0.19 ns per cell-step for 128 black
+cells. A white tile (halo 2 to 3, plus loading black's partial levels) costs
+at least the overlapped 8×16 job, 0.30 / 0.41 / 0.52. The mean, 0.22 / 0.29 /
+0.36, is up to about 25% better than overlapped 16×16 jobs (0.32 / 0.34 /
+0.39) before the white tile's extra loads. A second kernel and partial-level
+storage for that: not before the items below.
+
+### Next
+
+Superseded: items 3 and 4 were done next and the result was negative, see
+the following section. Items 1 and 2 would speed up the kernel, but not
+enough to make it pay.
+
+1. A launch-bounds attribute in Futhark (or a `build.py` patch of the
+   generated CUDA): 20–35% once shared memory allows two blocks.
+2. Fewer registers: specialise jobs by which slabs and faces their window
+   touches (uniform per job in x and y, per plane in z), so a job carries
+   only the terms it needs.
+3. Integration: tiled CPML memories (packed slabs converted at entry and
+   exit), jobs for non-core quadrants plus core quadrants' z caps, outputs
+   into C, sources and monitors stepped plainly.
+4. `shell_pass` and the accessor change in yee.fut are superseded by this
+   kernel; revert them before integrating.
+
+## CPML tiles in production: a split state (2026-10-06)
+
+Next steps 3 and 4 of the previous section, ahead of 1 and 2, to measure the
+end-to-end gain first. Outcome: correct and slower. The patch is kept in
+`tiling/split_state.patch`; it applies to a clean checkout of a16d1d85.
+Built with a private worktree of the Futhark checkout at de8e16e5f.
+
+### Design
+
+Results must reach the state without a copy pass: copying the CPML kernel's
+outputs into C would cost about half its gain. So E and H are stored split
+three ways, in whole z columns:
+
+- K: the tiles with a core quadrant, `[tile][z][lane][3]`, valid on core
+  cells only (the core kernel's output);
+- XC: every other quadrant, `[slot][z][qlane][3]` (the CPML kernel's
+  output, one 8×16 job per quadrant column);
+- XZ: the z caps of the core quadrants, planes `[0, zb)` and `[zt, P0)`,
+  `[2 * pair + top][D][qlane][3]` (the CPML kernel again, with jobs of
+  `len` planes from `kb`).
+
+CPML memories live only in XC and XZ (`[..][6]`): core cells never lie in a
+slab. Every read goes through `locate` (per tile its K slot, per quadrant its
+XC slot or cap pair). Plain steps remain only for source quadrants (step 2)
+and for those plus their one-cell margin and the monitored cells (step 1), as
+before. An odd last step and runs outside the common configuration use the
+plain path, from run storage. yee.fut's `stretched` reads memories through an
+accessor `psi p k j i`, so that plain steps read either layout.
+
+Bit-identical to plain stepping on `compare_temporal.py pec mixed pml
+gaussian gaussian-right`. A perturbed CPML kernel (E2 decay × 1.001) fails
+them. The 256×512×512 runs failed with an unspecified Futhark error, not
+investigated (peak memory at 128×256×512: 2.5 GB with one wall, 3.0 GB with
+all walls).
+
+### Results (Quadro RTX 5000, 128×256×512, 256 steps, ms per pass)
+
+| | one wall, committed | one wall, split | all walls, committed | all walls, split |
+|---|---:|---:|---:|---:|
+| core kernel | 3.65 | 4.66 | 2.58 | 3.30 |
+| plain edge steps | 3.32 | 0.75 | 8.42 | 0.77 |
+| CPML kernel, columns | | 4.67 (193 jobs) | | 6.87 (253 jobs) |
+| CPML kernel, caps | | 1.72 (1792 jobs) | | 5.55 (1672 jobs) |
+| copy (one state, layout) | | 1.35 | | 1.18 |
+| total | 7.52 | 13.67 | 11.56 | 18.21 |
+| GCUPS | 4.48 | 2.47 | 2.91 | 1.85 |
+
+- **The core kernel is 28% slower.** Same kernel, same shared memory
+  (59 KB), 80 registers, but every window read goes through `locate`. The
+  harness check that suggested the lookups were free
+  (`tiling/split_bench.fut`, 10.8 ms per pass at 257×513×513) was compared
+  against an older session's core_bench number, not run side by side.
+- **The CPML kernel is 1.6–1.7× slower than in its harness:** 0.82 ns per
+  cell-step on columns and 0.89 on caps with all walls (harness: 0.52 at
+  8×16 jobs), 0.76 with one wall (harness 0.41). Causes: `locate` behind
+  every read (189 registers instead of 165, still one block per SM), and
+  wave quantisation (193 jobs on 48 SMs run as 5 waves for 4.02 waves of
+  work). Shallow caps pay three lead-in planes each: with PEC z faces a cap
+  is 3 planes and takes 6 iterations.
+- **More cells than the plain edge.** Quadrant columns include the padding
+  slivers (store row 256 and column 512 cost a whole quadrant row or column)
+  and core quadrants' z caps; with all walls the CPML kernel covers about
+  7.3 M cells against 6.1 M edge cells for plain stepping.
+- **Plain edge cells cost 0.69 ns per cell-step** (all walls), and that is
+  what the CPML kernel has to beat on the same cells. At its harness speed
+  (0.52 at 8×16, 0.39 at 16×16) on the cells above, the edge would cost
+  7.6 or 5.7 ms against 8.4, minus about 0.7 ms for the slower core: from
+  nothing to about 15% with all walls, and nothing with one wall.
+
+### Futhark pitfalls met on the way
+
+- **Flattened kernel results are copies.** `flatten (flatten r)` of an
+  intra-block result forced a transpose or copy of each state (5.5 ms per
+  pass); keeping `[item][plane][lane][3]` arrays removed most of it. One
+  1.2–1.35 ms state copy per pass after the core kernel remained, not
+  traced.
+- **"No global alias for intra-block result"** at de8e16e5f: core_bench.fut
+  with both its `bench` and `digest` entries fails (either alone compiles).
+  The result tiles' LMAD gets an existential stride (`lmad_arg = 3 * n`),
+  which `LMAD.isDirect` does not recognise as direct. Reproducer and
+  analysis: `../futhark/beamz-repros/` (README.md, global_alias_lmad_arg/).
+- **Size expressions over record fields crashed the internaliser**
+  (`Exps.hs:1842`, non-exhaustive patterns in the binary-operator handler)
+  when one function returns arrays sized by a record parameter's field
+  and another returns several, e.g. `length xs * g.P0 * QL` and
+  `... pl.D ...`. Passing the extents as scalar parameters avoids it.
+  Four-line reproducer: `../futhark/beamz-repros/size_record_field.fut`.
+- **Local functions do not generalise `[]` sizes**: unannotated `[]`
+  parameters of a local function unify across uses, so a helper used with
+  both K and XZ arrays needs explicit size parameters.
+
+### What this means
+
+CPML tiles pay only where CPML cells dominate the edge, and there by little:
+even at harness speed the kernel is only about 1.3–1.8× faster per cell
+than plain edge steps, and quadrant rounding and cap lead-in give it more
+cells to update. For the target, large domains with a thin shell, the edge
+is mostly non-CPML cells (z caps, PEC-adjacent tiles), where the kernel's
+advantage is smallest. Steps 1 and 2 of the
+previous section's list (launch bounds, job specialisation) would speed up
+the kernel itself, but not the core kernel's lookup penalty, which a split
+state brings. Not recommended as the next lever.
+
+## Calibration: how far from the limits (2026-10-06, evening)
+
+Item 1 and 2 of the list below, checked before starting on them. Built
+with a private worktree of the Futhark checkout at 8a1cdc1de. The working
+tree's superseded `shell_pass` and yee.fut accessor change are now in
+`tiling/shell_pass.patch` and reverted. (`--case` runs of
+`benchmark_futhark_jax.py` need `XLA_PYTHON_CLIENT_PREALLOCATE=false` by hand;
+only the launcher sets it, and without it 256×512×512 fails with "unknown
+Futhark error", which is what the split-state runs hit.)
+
+### Bandwidth of this GPU
+
+A native CUDA test (float4, grid-stride, 1 GiB arrays; `nvcc -arch=sm_75`)
+reaches 294 GB/s copying and 361 GB/s reading. A Futhark `map` copy reaches
+321 GB/s. Earlier sections assumed 420 GB/s (the spec is 448), and so
+overstated the core kernel's traffic.
+
+### Core kernel: production equals the harness
+
+Per tile cell and pass: production 0.226 ns (15.35 ms, 561 blocks, about
+528 with a core quadrant over 251 planes, at 256×512×512, one wall),
+`core_bench` at 257×513×513 0.228 ns (11.1 ms for 48.8 M cells). There is
+no production penalty to find. At 300–320 GB/s, 0.227 ns is 68–73 B per
+cell. What the kernel must move: 24 B read and 24 B written per cell, 3 B of
+material codes, and the halo, if it all came from DRAM, 8.5 B more (E window
+20×36 and H 19×35 per 16×32 tile): about 60 B. So the kernel is within about
+1.2× of its own traffic. The remaining levers are those already bounded:
+the halo (at most 15%) and K > 2. K = 3 does not fit Turing's 64 KB of
+shared memory with 16×32 tiles (rings about 80 KB); with 8×32 tiles it fits
+(about 59 KB) but cuts DRAM bytes per cell-step by only about 17%, for more
+redundant compute. Larger GPUs (100–228 KB of shared memory) could run K = 3
+or 4 with 16×32 tiles.
+
+The generated kernel stages each result plane in shared memory and copies it
+out coalesced (two barriers, 12 KB); the writes cost no extra DRAM traffic.
+
+### Edge kernels: machinery 1.3× plain, the rest is CPML
+
+128×256×512, all walls, ms per pass (two steps):
+
+| | plain stepping | tiled, all cells edge | tiled (production) |
+|---|---:|---:|---:|
+| cells stepped as edge | | 17.0 M | 6.15 M |
+| step 1 H + E | | 7.9 | 4.6 |
+| step 2 H + E | | 8.5 | 3.9 |
+| ns per edge cell-step, step 2 | 0.36 (all cells, with CPML kernels) | 0.50 | 0.63 |
+| GCUPS | 2.44 | 1.88 | 2.85 |
+
+"All cells edge": a build with `common` false, so that no tile is core.
+Over the same cells plain stepping does, the edge kernels cost 1.3–1.4× per
+cell: that is the cost of cell lists, tiled indexing and the compact T store.
+In production they cost 1.26× more per cell again, because there the edge is
+mostly CPML cells (a 12-cell slab plus the 2-cell halo, rounded to 16), which
+read and write their memories and coefficients, against about 30% of all
+cells. The earlier "0.69 vs 0.31 ns" compared CPML-dense edge cells with
+plain stepping's average over a mostly non-CPML domain.
+
+So making the edge kernels as fast as plain stepping would save at most
+about a quarter of the edge time (with all walls at 256×512×512 the edge is
+about 23 of 39 ms, so about 15% end to end), and CPML tiles, which would
+change that, are ruled out.
+
+### The halo's 15% is not DRAM traffic
+
+Can neighbouring tiles share the halo through L2? `core_bench` at
+257×513×513, kernel time from CUPTI activity tracing (below), ms per pass:
+
+| Variant | ms |
+|---|---:|
+| production kernel | 11.5–11.7 |
+| window reads clamped to the tile (no halo; wrong results) | 10.0 |
+| halo reads redirected to an L2-resident 1.5 MB region (same address pattern) | 11.9 |
+| same, redirected to a few hot lines | 12.3–12.6 |
+| z chunks of 64 / 32 planes, dispatched chunk-major | +5% / +10% over one chunk |
+| window loaded by a flat index (coalesced; 720 threads × 3 floats) | 13.7–13.8 |
+
+With every halo byte served from L2 the kernel is not faster, so ordering,
+chunking or synchronising neighbours (anything that turns halo DRAM reads
+into L2 hits) cannot recover the 15%. What clamping removes is L1 misses:
+a window row spans three tiles' rows 1.5 MB apart, so a warp's loads touch
+more sectors and lines. Chunking costs only its lead-in planes (3 per
+chunk).
+
+A flat-index load (consecutive threads read consecutive floats) was 18%
+slower: it needs 64-bit divisions by 3 and by the window width, and an extra
+barrier or interleaved shared reads.
+
+**This kernel is sensitive to small code changes.** The single-chunk
+version of the chunked kernel was 20% slower (13.7 vs 11.5 ms) with the same
+grid, shared memory (59 280 B), registers (64, no spills), allocations and
+near-identical SASS (3744 vs 3720 instructions, same loads, stores and
+barriers). Each of its two source changes alone (block → tile/chunk
+arithmetic; output rows and write index) was as fast as the original
+(11.3, 11.5 ms), and the write offset did not matter (13.6–13.8 for 0–64
+planes). Unified memory on or off made no difference. With one block per
+SM and five barriers per plane, the kernel depends on how early loads issue,
+which suggests it is partly latency-bound after all: prefetching the next
+plane would address that, but needs shared memory (6 KB of headroom under
+Turing's 64 KB; the result staging takes 12 KB).
+
+**Kernel timing without the profiler counters:** CUPTI activity tracing
+needs no admin rights. Build `/opt/cuda/extras/CUPTI/samples/cupti_trace_injection`
+(copy it and `../common`, `make CUDA_INSTALL_PATH=/opt/cuda`), then run any
+executable with `CUDA_INJECTION64_PATH=.../libcupti_trace_injection.so` and
+`LD_LIBRARY_PATH=/opt/cuda/extras/CUPTI/lib64`: it prints every kernel's
+duration (`CONCURRENT_KERNEL ... duration NS, "name"`). The first call of a
+kernel writing fresh output pays about 100 ms of first-touch. Futhark
+executables' `-P` prints no report in this build.
+
+### What this means
+
+On this GPU, at K = 2, both kernels are within about 25% of what their
+design allows. Further gains of the size seen so far need a change of
+design or of hardware: K > 2 (more shared memory), fewer bytes per cell
+(lower precision or compressed state: not bit-exact), or a different CPML
+scheme. Hardware counters would confirm the byte counts above; they need
+`NVreg_RestrictProfilingToAdminUsers=0` (`RmProfilingAdminOnly` is 1 now)
+and a CUPTI or Nsight Compute build (neither `ncu` nor `nsys` is installed).
+
+## Where to resume (2026-10-06)
+
+Production is the committed core-plus-plain-edges design (a16d1d85):
+4.48 / 4.46 GCUPS with one wall at 128×256×512 / 256×512×512, 2.91 / 3.31
+with all walls, against plain stepping's 3.0 / 3.0 and 2.5 / 2.7. Per pass
+(two steps) at 128×256×512, one wall: core kernel 3.65 ms, plain edge steps
+3.3 ms, of 7.5 ms. At 256×512×512, one wall: core 15.9, edge 10.9, monitors
+2.3, of about 29 ms.
+
+The superseded `shell_pass` (temporal.fut) and the yee.fut accessor change
+are reverted and kept in `tiling/shell_pass.patch` (`shell_bench.fut` and
+`cpml_bench.fut` need it applied).
+
+Done or ruled out: CPML tiles in any form (split state, checkerboard); edge
+layout and indexing tweaks (see "Edge kernels and monitors: what did not
+help"); barrier and occupancy work on the core kernel (bandwidth-bound).
+
+Open, roughly by expected value for large domains with a thin shell
+(*estimates*; items 1 and 2 revised by the calibration above):
+
+1. **Core kernel traffic.** Within about 1.2× of its own reads and writes
+   (see Calibration). The halo's 15% is not DRAM traffic, so L2 sharing
+   cannot recover it (see "The halo's 15% is not DRAM traffic"). Left:
+   latency (prefetching the next plane, if shared memory allows), and
+   K > 2, which needs more shared memory than Turing has.
+2. **Plain edge cost.** The machinery costs about 1.3× plain stepping per
+   cell; the rest is CPML. At most about 15% end to end with all walls.
+   Stepping the z caps or PEC faces in the core kernel would shrink the edge
+   of the one-wall proxy, but not the target's, whose edge is the CPML shell.
+3. **Small shapes**: fall back to plain stepping below a core fraction
+   (64×96×128 is slower tiled than plain).
+4. **Sources and monitors** are stepped plainly; a mode-source plane makes
+   whole quadrant columns plain. Monitors cost 2.3 ms of 29 per pass at
+   256×512×512, one wall; source quadrants not measured separately.
