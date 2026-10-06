@@ -1,5 +1,13 @@
 # Temporal tiling for the Futhark backend — design notes
 
+**Files (2026-10-06):** the experiment harnesses named below (`tiling/bare*.fut`,
+`checker.py`, `shapes.py`, `cost.fut`, `dct.fut`, `compress_study.py`,
+`lean.fut`, `gen.py`, `bench.py`, the probes, and the CPML tile harnesses and
+patches) were removed once their results were written up here. The tracked
+ones are in git history: `git show 9832ae7e:futhark/tiling/<file>`. Kept:
+`tiling/compare_temporal.py` (exactness check), `tiling/core_bench.fut` (core
+kernel harness) and `tiling/fc.sh` (builds it with the Futhark checkout).
+
 **Status (2026-10-06, evening):** both remaining "obvious" gaps were
 measurement artefacts. This GPU streams 294 GB/s (copy) and 361 GB/s (read),
 not 420, so the core kernel moves about 70 B per cell and pass against about
