@@ -115,7 +115,9 @@ class PML:
     kappa_max : float, default=2.0
         Maximum CPML coordinate-stretching factor.
     alpha_max : float, optional
-        Maximum CPML complex-frequency-shift coefficient.
+        Maximum CPML complex-frequency-shift coefficient in S/m. Defaults to
+        ``0.1 * EPS_0 * LIGHT_SPEED / thickness`` in both 2D and 3D, independent
+        of timestep. Specify a fixed physical thickness for mesh convergence.
     target_reflection : float, default=1e-6
         Reflection target used to derive automatic conductivity.
 
@@ -129,8 +131,6 @@ class PML:
     along the boundary normal to avoid material discontinuities inside the layer.
     """
 
-    _DEFAULT_CPML_ALPHA_NORMALIZED: ClassVar[float] = 0.1
-    _DEFAULT_3D_CPML_ALPHA_NORMALIZED: ClassVar[float] = 0.05
     DEFAULT_CELLS: ClassVar[int] = 12
 
     edges: BoundaryEdges = "all"
@@ -219,8 +219,6 @@ class Absorber:
     # never used by the sponge branch.
     kappa_max: ClassVar[float] = 1.0
     alpha_max: ClassVar[None] = None
-    _DEFAULT_CPML_ALPHA_NORMALIZED: ClassVar[float] = 0.0
-    _DEFAULT_3D_CPML_ALPHA_NORMALIZED: ClassVar[float] = 0.0
 
     edges: BoundaryEdges = "all"
     thickness: float = 1 * µm
