@@ -1,4 +1,4 @@
-"""Tidy3D-style post-processing, gradient selection, and optimizer lifecycle."""
+"""Modal post-processing, gradient selection, and optimizer lifecycle."""
 
 import json
 

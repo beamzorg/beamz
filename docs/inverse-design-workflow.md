@@ -1,6 +1,6 @@
 # Inverse-design workflow
 
-`beamz.optimization` follows Tidy3D's single-simulation inverse-design workflow while using **BeamZ objects, metre units, `(y, x)` arrays, and JAX**. Both gradient backends use the same objective and optimizer interface.
+`beamz.optimization` provides a single-simulation inverse-design workflow using **BeamZ objects, metre units, `(y, x)` arrays, and JAX**. Both gradient backends use the same objective and optimizer interface.
 
 Inverse-design regions, transforms, optimizers, and results are part of BeamZ's
 core optimization module. Import them directly from `beamz.optimization`.
@@ -8,7 +8,7 @@ Both optimization workflows use one result and checkpoint format. The previous
 branch-only checkpoint formats are rejected explicitly; the notebooks generate
 fresh checkpoints when rerun.
 
-The [1-to-3 splitter notebook](https://github.com/beamzorg/beamz/blob/main/examples/notebooks/tidy3d_inverse_design_splitter.ipynb) ports the single-simulation part of Flexcompute's [inverse-design plugin example](https://www.flexcompute.com/tidy3d/examples/notebooks/InverseDesign/). It records geometry, grid, solver, and normalization differences. It is a workflow port at coarser resolution, not a cross-solver numerical reproduction.
+The [1-to-3 splitter notebook](https://github.com/beamzorg/beamz/blob/main/examples/notebooks/topology_inverse_design_splitter.ipynb) demonstrates region definition, modal callbacks, optimization, and continuation. It records the geometry, grid, solver, and normalization choices. Its exploratory mesh does not establish device convergence.
 
 ## Define a region, objective, and optimizer
 
@@ -87,12 +87,12 @@ geometry = design.export_design(result.params[-1], threshold=0.5)
 verified = simulation_3d.updated_copy(design=geometry, resolution=40e-9).run()
 ```
 
-The [3D bend notebook](https://github.com/beamzorg/beamz/blob/main/examples/notebooks/tidy3d_topology_bend_3d.ipynb)
-recreates Flexcompute's [topology waveguide bend](https://www.flexcompute.com/tidy3d/examples/notebooks/Autograd18TopologyBend/).
+The [3D bend notebook](https://github.com/beamzorg/beamz/blob/main/examples/notebooks/topology_bend_3d.ipynb)
+demonstrates topology optimization of an extruded planar waveguide bend.
 It includes a coarse full-vector gradient comparison, 50 nm optimization, native
 layout/field plots, restart validation, a spectrum, duration verification, and
 independent polygon rerasterization. Its mesh, pulse, iteration count, and
-projection schedule differ from the reference and are stated in the notebook.
+projection schedule are stated in the notebook.
 
 In the saved execution, ten updates improve source-normalized target-mode power
 from **0.004988 to 0.734932**; the 800 fs verification agrees to six decimal
@@ -133,7 +133,7 @@ Complex amplitudes follow ordinary BeamZ modal analysis. Divide by measured inco
 
 ## Regions and transformations
 
-Region coordinates use the simulation's public frame, including centered domains. Bounds must align to the uniform grid, and `pixel_size` must equal `simulation.resolution`. The rectangular mask and Yee-material mapping are handled internally. Existing exclusions around CPML, domain edges, sources, and mode planes still apply. Parameters use `(y, x)` order instead of Tidy3D's three-dimensional parameter layout.
+Region coordinates use the simulation's public frame, including centered domains. Bounds must align to the uniform grid, and `pixel_size` must equal `simulation.resolution`. The rectangular mask and Yee-material mapping are handled internally. Existing exclusions around CPML, domain edges, sources, and mode planes still apply. Parameters use `(y, x)` order.
 
 `transformations` are applied in order with `(density, pixel_size)`. `FilterProject` rounds its conic radius up to cells, uses reflection padding by default, then applies tanh projection and clips numerical roundoff to `[0, 1]`. `penalties` receive transformed density and pixel size and return a weighted real scalar. `ErosionDilationPenalty(length_scale=..., weight=...)` measures the RMS difference between filtered closing and opening. Its norm has tiny smoothing near zero for finite derivatives. These are soft controls, not hard feature-size guarantees.
 
@@ -152,7 +152,7 @@ The investigation found four placement issues:
 - The uniform TM monitor basis used cell-centered material against node-sampled tangential fields. Its material profile is now interpolated onto the transverse nodes before cropping.
 - Adjoint DFT storage used the previous nearest-cell mask and missed interpolation boundary samples. It now includes every affected Yee sample, and the material VJP returns their contributions to design cells.
 
-In the recorded 1.668 ps uniform-design audit, relative mirror mismatch fell from **22.3493% to 0.0000049%** for complex Ez and from **70.5046% to 0.0002969%** for the objective gradient. The standalone fundamental mode on the centered symmetric waveguide was already symmetric to roughly 1e-13 relative error. The main errors occurred after mode solving. The notebook includes reproducible checks and native BeamZ plots; `results/topology_examples/tidy3d_splitter_symmetry.json` records that 50 nm run. The current notebook uses 25 nm and writes separate artifacts under `results/topology_examples/tidy3d_splitter_25nm/`. Its optimization now uses 2.502 ps because an updated design failed the adjoint decay guard at the reference duration.
+In the recorded 1.668 ps uniform-design audit, relative mirror mismatch fell from **22.3493% to 0.0000049%** for complex Ez and from **70.5046% to 0.0002969%** for the objective gradient. The standalone fundamental mode on the centered symmetric waveguide was already symmetric to roughly 1e-13 relative error. The main errors occurred after mode solving. The notebook includes reproducible checks and native BeamZ plots; `results/topology_examples/topology_splitter_symmetry.json` records that 50 nm run. The current notebook uses 25 nm and writes separate artifacts under `results/topology_examples/topology_splitter_25nm/`. Its optimization now uses 2.502 ps because an updated design failed the adjoint decay guard at the reference duration.
 
 The fresh run also exposed residual excitation from the internal adjoint pulse: extending time alone did not pass the decay check. A Gaussian envelope with width three periods and an eight-width leading margin reduced the perturbed-design adjoint terminal/peak ratio from 1.19e-4 to 2.27e-5 at 2.502 ps, while relative gradient-vector difference from autodiff stayed at about 0.1122%. The measured pulse DFT normalizes its source strength; the default 1e-4 decay guard remains unchanged. The 25 nm rerun additionally differences this pulse in time to suppress DC excitation. It also revealed accumulated float32 clock drift in the forward solver: observation time now comes from the integer step count, anchored to the initial or continued state. This aligns monitor DFT phases with the spectral adjoint and prevents drift over long runs. Both changes retain the unchanged decay guard. Independent full-autodiff and finite-difference checks remain required.
 
@@ -160,7 +160,7 @@ After all eleven unconstrained updates in the archived 50 nm notebook, parameter
 
 This does not establish exact symmetry for all mode problems. An additional deliberately off-center aperture test showed finite mode-domain boundary error: reflected modal electric profiles differed by about 7.3e-4 with six padding cells, decreasing to 3.3e-7 with twelve. Include enough of the evanescent tails and check aperture convergence. The placement corrections above target uniform-grid 2D TM; no corresponding 3D or nonuniform-grid claim is made. Arithmetic topology interpolation preserves reflection and positive material bounds but is not a mesh-convergence guarantee.
 
-The current **25 nm** run has 26,880 parameters, complete-gradient disagreement of **0.0020%**, and a post-processing score of **0.306 → 0.949** after 11 updates. Its final field mirror mismatch is **0.000813%**. This is a fresh optimization at finer resolution, not a convergence comparison of one fixed design. Saved outputs live under `results/topology_examples/tidy3d_splitter_25nm/`.
+The current **25 nm** run has 26,880 parameters, complete-gradient disagreement of **0.0020%**, and a post-processing score of **0.306 → 0.949** after 11 updates. Its final field mirror mismatch is **0.000813%**. This is a fresh optimization at finer resolution, not a convergence comparison of one fixed design. Saved outputs live under `results/topology_examples/topology_splitter_25nm/`.
 
 ## Continue and inspect a run
 
@@ -210,7 +210,7 @@ numerical environment.
 
 ## Current compatibility boundary
 
-This is a supported subset of the **inverse-design workflow**, not a drop-in `tidy3d` package. It keeps BeamZ objects and metre units. It supports one simulation, 2D or extruded 3D scalar lossless topology, differentiable modal callbacks, transformations/penalties, Adam, and result continuation. `InverseDesign` defaults to `adjoint`; the lower-level `TopologyProblem` still defaults to `autodiff`.
+This **inverse-design workflow** uses BeamZ objects and metre units. It supports one simulation, 2D or extruded 3D scalar lossless topology, differentiable modal callbacks, transformations/penalties, Adam, and result continuation. `InverseDesign` defaults to `adjoint`; the lower-level `TopologyProblem` still defaults to `autodiff`.
 
 The [backend documentation](inverse-design.md#two-gradient-backends) describes adjoint decay requirements, monitor restrictions, and host orchestration. No general volumetric filter workflow, shape, lossy/dispersive material, field/flux/far-field objective, `InverseDesignMulti`, expression-metric, or general traced `Simulation.run` support is implied. Additional backend capabilities will be exposed through this interface.
 
@@ -242,7 +242,7 @@ preserved through the projection ramp and objective-weight switch.
 
 `beta` overrides the region's `FilterProject` transformations. Set
 `TopologyDesignRegion(..., penalty_input="parameters")` when penalties should act
-on the raw parameters, as in the low-level Flexcompute WDM example; the default
+on the raw parameters, as in the four-channel WDM example; the default
 `"density"` continues to penalize the transformed density.
 
 `result.schedule_history` records the settings used before each update.
@@ -269,8 +269,8 @@ frequency solves so that pulse-spectrum normalization remains well conditioned. 
 falls back to independent-frequency solves. Each basis solve measures its pulse
 DFT at every required frequency, and its frequency-dependent complex weights are
 applied to the final field overlap. Mode profiles are not assumed to be constant
-across the band. This follows Tidy3D's broadband grouping principle, but is a
-BeamZ spatial-basis implementation rather than Tidy3D's port-grouping algorithm.
+across the band. This spatial-basis implementation verifies reconstruction
+before reducing the number of adjoint solves.
 
 Diagnostics expose `source_grouping`, `adjoint_solves`,
 `source_reconstruction_error` when a basis is used, and `adjoint_timesteps`.
@@ -281,6 +281,6 @@ and adjoint decay guards still apply. This stopping rule is exclusive to the
 spectral adjoint; full autodiff differentiates the full configured duration.
 
 Fewer solves do not necessarily mean lower runtime: each broadband basis solve
-accumulates more DFTs. The [four-channel WDM notebook](https://github.com/beamzorg/beamz/blob/main/examples/notebooks/tidy3d_wdm_4channel.ipynb)
+accumulates more DFTs. The [four-channel WDM notebook](https://github.com/beamzorg/beamz/blob/main/examples/notebooks/topology_wdm_4channel.ipynb)
 checks gradients, uses coarse-grid timings to select a backend, and reports its
 cold and warmed cost on the training grid.
