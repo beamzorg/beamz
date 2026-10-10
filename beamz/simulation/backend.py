@@ -30,8 +30,9 @@ ExecutionBackend = Literal[
     "jax",
     "cuda",
     "cuda_streamed",
+    "futhark",
 ]
-ResolvedBackend = Literal["jax", "cuda_streamed"]
+ResolvedBackend = Literal["jax", "cuda_streamed", "futhark"]
 
 _EXTENSION_MODULE = "beamz._cuda"
 _REGISTERED_MODULE: ModuleType | None = None
@@ -159,11 +160,12 @@ def normalize_backend(backend: str | None) -> ExecutionBackend:
         "streamed": "cuda_streamed",
         "cuda_streamed": "cuda_streamed",
         "cuda-streamed": "cuda_streamed",
+        "futhark": "futhark",
     }
     try:
         return aliases[value.strip().lower()]  # type: ignore[return-value]
     except KeyError as exc:
-        choices = "auto, jax, cuda, cuda_streamed"
+        choices = "auto, jax, cuda, cuda_streamed, futhark"
         raise ValueError(
             f"Unknown execution backend {value!r}; use one of: {choices}."
         ) from exc
@@ -286,6 +288,18 @@ def resolve_backend(backend: str | None) -> ResolvedBackend:
     requested = normalize_backend(backend)
     if requested == "jax":
         return "jax"
+    if requested == "futhark":
+        # Futhark is opt-in only; auto never selects it.
+        from beamz.simulation.futhark import (
+            FutharkBackendUnavailable,
+            futhark_backend_status,
+        )
+
+        if reason := futhark_backend_status():
+            raise FutharkBackendUnavailable(
+                f"Futhark execution backend was requested but is unavailable: {reason}"
+            )
+        return "futhark"
     status = cuda_backend_status()
     if requested == "auto" and not status.available:
         return "jax"

@@ -112,7 +112,13 @@ def build_simulation(args):
         size=tuple(size),
         sources=sources,
         monitors=monitors,
-        boundaries=[bz.PML(edges="all", thickness=args.pml * dx, formulation="cpml")],
+        boundaries=[
+            bz.PML(
+                edges=getattr(args, "pml_edges", "all"),
+                thickness=args.pml * dx,
+                formulation="cpml",
+            )
+        ],
         time=times,
     )
 

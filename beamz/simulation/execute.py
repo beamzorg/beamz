@@ -31,6 +31,7 @@ from beamz.devices.sources.compiler import (
 )
 from beamz.simulation.backend import CUDA_BF16_PSI
 from beamz.simulation.boundary_masks import compact_boundary_masks
+from beamz.simulation.compile import NATIVE_PROGRAM_BACKENDS
 from beamz.simulation.model import (
     AutoTermination,
     CompiledProgram,
@@ -746,7 +747,7 @@ def build_scan(program, *, donate_state: bool = False):
     )
     packed_graph_monitors = None
     if (
-        cfg.backend == "cuda_streamed"
+        cfg.backend in NATIVE_PROGRAM_BACKENDS
         and not cfg.sharding.enabled
         and graph_monitors_supported
         and not bool(jax.config.read("jax_enable_x64"))
@@ -760,6 +761,23 @@ def build_scan(program, *, donate_state: bool = False):
         and (not program.monitors or packed_graph_monitors is not None)
         and (not program.sources or source_groups_supported)
     )
+    futhark_program = cfg.backend == "futhark"
+    if futhark_program:
+        from beamz.simulation.futhark import FutharkBackendUnavailable
+
+        if not cfg.is_3d or cfg.sharding.enabled:
+            raise FutharkBackendUnavailable(
+                "Futhark execution requires an unsharded 3D simulation"
+            )
+        if program.sources and not source_groups_supported:
+            raise FutharkBackendUnavailable(
+                "Futhark execution requires batched slab sources; use backend='jax'"
+            )
+        if program.monitors and packed_graph_monitors is None:
+            raise FutharkBackendUnavailable(
+                "Futhark execution supports only float32 vector DFT monitors; "
+                "use backend='jax' for recorders, flux or power monitors"
+            )
     native_graph_calls = None
     if cfg.cuda_storage_axes != (0, 1, 2) and not step_context.low_memory:
         if not (
@@ -846,7 +864,22 @@ def build_scan(program, *, donate_state: bool = False):
             coeffs = coeffs._replace(**scales)
         # 4. Run the same transition through scan or fori_loop. The choice changes the
         # lowering strategy, not timestep semantics.
-        if cuda_multi_step:
+        if futhark_program:
+            from beamz.simulation.futhark import run_program
+
+            # One native call owns the whole run; Futhark loops on the device.
+            scan_out = run_program(
+                state,
+                step_context,
+                coeffs,
+                graph_source_groups if program.sources else (None,) * 9,
+                packed_graph_monitors,
+                cfg.num_steps,
+            )._replace(
+                t=state.t + dt_scalar * cfg.num_steps,
+                current_step=state.current_step + cfg.num_steps,
+            )
+        elif cuda_multi_step:
             from beamz.simulation.cuda import (
                 run_program_steps,
                 run_source_group_steps,

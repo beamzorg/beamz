@@ -186,6 +186,10 @@ def _elide_uniform_grid(value):
 
 _CUDA_CODEBOOK_CHUNK_CELLS = 1 << 20
 
+# Backends whose native multi-step program consumes precomputed 3D decay/source
+# coefficients instead of the constitutive grids used by JAX.
+NATIVE_PROGRAM_BACKENDS = frozenset({"cuda_streamed", "futhark"})
+
 
 def _pack_cuda_coefficient_ids(value, *, max_values: int = 256):
     """Pack four low-cardinality FP32 coefficient IDs into each int32 word.
@@ -776,7 +780,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
 
     empty3 = jnp.zeros((0, 0, 0), dtype=jnp.float32)
     if use_3d_material_coefficients:
-        if request.run.backend == "cuda_streamed":
+        if request.run.backend in NATIVE_PROGRAM_BACKENDS:
             (
                 (h_decay_x, h_source_x),
                 (h_decay_y, h_source_y),
@@ -816,7 +820,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         h_sigma_m_x = h_sigma_m_y = h_sigma_m_z = empty3
 
     if use_3d_material_coefficients:
-        if request.run.backend == "cuda_streamed":
+        if request.run.backend in NATIVE_PROGRAM_BACKENDS:
             (
                 (e_decay_x, e_source_x),
                 (e_decay_y, e_source_y),
@@ -954,11 +958,11 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         polarization_2d=request.domain.polarization_2d,
     )
 
-    # Native CUDA consumes the precomputed decay/source coefficients, not the
+    # Native programs consume the precomputed decay/source coefficients, not the
     # original constitutive grids used by JAX. Do not transfer a second material
     # representation with every runtime invocation. The grid still owns setup
     # materials, and coupled CUDA updates retain their explicit inverse tensors.
-    if request.run.backend == "cuda_streamed":
+    if request.run.backend in NATIVE_PROGRAM_BACKENDS:
         h_sigma_m_x = h_sigma_m_y = h_sigma_m_z = empty3
         e_conductivity_x = e_conductivity_y = e_conductivity_z = empty3
         e_permittivity_x = e_permittivity_y = e_permittivity_z = empty3

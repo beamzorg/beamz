@@ -1841,6 +1841,12 @@ class StepUpdateKernel:
 def select_update_kernel(ctx: CompiledStepContext) -> StepUpdateKernel:
     """Select the static update-kernel variant before JAX tracing."""
 
+    if ctx.config.backend == "futhark":
+        # The Futhark program owns entire runs; there is no per-phase kernel.
+        def unsupported(state, ctx, coeffs):
+            raise NotImplementedError("Futhark has no per-phase update kernel")
+
+        return StepUpdateKernel("futhark", unsupported, unsupported)
     if ctx.config.backend != "jax":
         if not ctx.is_3d:
             raise ValueError(
