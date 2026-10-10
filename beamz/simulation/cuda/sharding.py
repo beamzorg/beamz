@@ -55,7 +55,7 @@ def _phase(state, ctx, coeffs, *, phase):
     ):
         from .storage import wrap_sharded_phase
 
-        phase_call = wrap_sharded_phase(phase_call, (2, 0, 1))
+        phase_call = wrap_sharded_phase(phase_call, ctx.config.cuda_storage_axes)
     spec = P(*(_MESH_AXIS if i == axis else None for i in range(3)))
     prefix = "h" if phase == 0 else "e"
     targets = tuple(getattr(state, prefix + c) for c in "xyz")

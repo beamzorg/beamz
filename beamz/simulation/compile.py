@@ -1142,7 +1142,9 @@ def compile_program(
     )
     cuda_flags = cuda_flags_from_env() if resolved_backend != "jax" else 0
     cuda_storage_axes = (
-        cuda_storage_axes_from_env() if resolved_backend != "jax" else (0, 1, 2)
+        cuda_storage_axes_from_env(sharded=multi_device)
+        if resolved_backend != "jax"
+        else (0, 1, 2)
     )
     if cuda_storage_axes != (0, 1, 2) and resolved_backend != "cuda_streamed":
         raise ValueError("CUDA storage-axis permutations require cuda_streamed")

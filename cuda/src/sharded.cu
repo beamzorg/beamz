@@ -47,8 +47,9 @@ __device__ __forceinline__ float BulkDifference(const BeamzLaunch& l,
   const int stride = Axis == 0 ? int(value.dims[1] * value.dims[2])
                    : Axis == 1 ? int(value.dims[2]) : 1;
   const auto* input = static_cast<const float*>(value.data);
-  return (Phase == 0 ? input[offset + sign*stride] - input[offset]
-                     : input[offset] - input[offset + sign*stride]) * l.inv_resolution;
+  return local::FixedDifference(
+      Phase == 0 ? input[offset + sign*stride] - input[offset]
+                 : input[offset] - input[offset + sign*stride], l.inv_resolution);
 }
 
 template<int Phase, int Component>
