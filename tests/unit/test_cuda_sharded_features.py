@@ -221,6 +221,45 @@ def run_case(case):
                 ]
             )
             compare(sim)
+        elif case == "storage":
+            sim = H100Workload(
+                name="sharded_storage",
+                shape_zyx=(13, 14, 21),
+                timesteps=24,
+                resolution=80e-9,
+                pml_cells=2,
+                cpml=True,
+            ).build()
+            state = seed_state(sim)
+            reference = sim.advance(
+                num_steps=24, state=state, backend="jax", progress=False
+            ).state
+            cfg = dict(axis="x", num_devices=4, backend="cpu")
+            results = []
+            programs = []
+            for order, expected_axes in (
+                ("012", (0, 1, 2)),
+                ("201", (2, 0, 1)),
+                ("120", (1, 2, 0)),
+            ):
+                with patch.dict(os.environ, {"BEAMZ_CUDA_STORAGE_AXES": order}):
+                    program = sim.compile(
+                        num_steps=24, backend="cuda_streamed", sharding=cfg
+                    )
+                    assert program.config.cuda_storage_axes == expected_axes
+                    programs.append(program)
+                    actual = sim.advance(
+                        num_steps=24,
+                        state=state,
+                        backend="cuda_streamed",
+                        sharding=cfg,
+                        progress=False,
+                    ).state
+                    assert_state_close(reference, actual)
+                    results.append(actual)
+            assert len({id(program) for program in programs}) == 3
+            for result in results[1:]:
+                assert_state_close(results[0], result)
         elif case == "precision":
             sim = H100Workload(
                 name="bf16_sharding",
@@ -255,7 +294,16 @@ def run_case(case):
 
 @pytest.mark.parametrize(
     "case",
-    ["cpml", "boundaries", "nonuniform", "tensor", "mode", "recording", "precision"],
+    [
+        "cpml",
+        "boundaries",
+        "nonuniform",
+        "tensor",
+        "mode",
+        "recording",
+        "precision",
+        "storage",
+    ],
 )
 def test_native_sharded_feature_parity_on_cpu(case):
     env = dict(

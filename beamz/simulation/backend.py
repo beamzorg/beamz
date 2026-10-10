@@ -86,9 +86,11 @@ def cuda_flags_from_env() -> int:
     return flags
 
 
-def cuda_storage_axes_from_env() -> tuple[int, int, int]:
+def cuda_storage_axes_from_env(*, sharded: bool = False) -> tuple[int, int, int]:
     """Snapshot an experimental, right-handed CUDA storage-axis order."""
-    value = os.environ.get("BEAMZ_CUDA_STORAGE_AXES", "012").strip()
+    value = os.environ.get(
+        "BEAMZ_CUDA_STORAGE_AXES", "201" if sharded else "012"
+    ).strip()
     orders = {"012": (0, 1, 2), "120": (1, 2, 0), "201": (2, 0, 1)}
     if value not in orders:
         raise ValueError("BEAMZ_CUDA_STORAGE_AXES must be 012, 120, or 201")

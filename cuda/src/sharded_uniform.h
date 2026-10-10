@@ -1,6 +1,7 @@
 #ifndef BEAMZ_CUDA_SHARDED_UNIFORM_H_
 #define BEAMZ_CUDA_SHARDED_UNIFORM_H_
 #include "sharded_cell.h"
+#include "sharded_numeric.h"
 #ifdef __CUDACC__
 #define BEAMZ_UNIFORM __host__ __device__ __forceinline__
 #else
@@ -37,17 +38,17 @@ BEAMZ_UNIFORM float UniformDifference(const BeamzLaunch& l, const int p[3],
   const int coordinate = global[Axis], stop = g[12 + 3 * Component + Axis];
   if constexpr (Phase == 0) {
     if (coordinate + 1 >= stop) return 0;
-    return (UniformSource<Component>(l, p, shard_axis, Axis, 1)
-          - UniformSource<Component>(l, p, shard_axis, Axis, 0)) * l.inv_resolution;
+    return FixedDifference(UniformSource<Component>(l, p, shard_axis, Axis, 1)
+          - UniformSource<Component>(l, p, shard_axis, Axis, 0), l.inv_resolution);
   }
   if (coordinate == 0)
     return (l.metallic_edges & (1 << (2 * Axis)))
-      ? UniformSource<Component>(l, p, shard_axis, Axis, 0) * l.inv_resolution : 0;
+      ? FixedDifference(UniformSource<Component>(l, p, shard_axis, Axis, 0), l.inv_resolution) : 0;
   if (coordinate == stop)
     return (l.metallic_edges & (1 << (2 * Axis + 1)))
-      ? -UniformSource<Component>(l, p, shard_axis, Axis, -1) * l.inv_resolution : 0;
-  return (UniformSource<Component>(l, p, shard_axis, Axis, 0)
-        - UniformSource<Component>(l, p, shard_axis, Axis, -1)) * l.inv_resolution;
+      ? FixedDifference(-UniformSource<Component>(l, p, shard_axis, Axis, -1), l.inv_resolution) : 0;
+  return FixedDifference(UniformSource<Component>(l, p, shard_axis, Axis, 0)
+        - UniformSource<Component>(l, p, shard_axis, Axis, -1), l.inv_resolution);
 }
 
 template<int Term, int Axis>
@@ -68,9 +69,9 @@ BEAMZ_UNIFORM float UniformCpml(const BeamzLaunch& l, float derivative,
   const float a = static_cast<const float*>(l.inputs[13 + 3*Term].data)[packed];
   const float b = static_cast<const float*>(l.inputs[14 + 3*Term].data)[packed];
   const float inv_kappa = static_cast<const float*>(l.inputs[15 + 3*Term].data)[packed];
-  const float next = b * static_cast<const float*>(psi.data)[offset] + a * derivative;
+  const float next = FixedPsi(b, static_cast<const float*>(psi.data)[offset], a, derivative);
   static_cast<float*>(l.outputs[3 + Term].data)[offset] = next;
-  return sign * (derivative * inv_kappa + next);
+  return FixedCorrection(sign, derivative, inv_kappa, next);
 }
 
 template<int Phase, int Component>
@@ -107,8 +108,8 @@ BEAMZ_UNIFORM void UpdateUniformCell(const BeamzLaunch& l, int z, int y, int x) 
   }
   const float decay = Read(l.inputs[6 + Component], Offset(l.inputs[6 + Component], p));
   const float source = Read(l.inputs[9 + Component], Offset(l.inputs[9 + Component], p));
-  const float next = decay * static_cast<const float*>(l.inputs[Component].data)[offset]
-      + (Phase == 0 ? -source : source) * curl;
+  const float next = FixedAdvance(Phase,
+      static_cast<const float*>(l.inputs[Component].data)[offset], decay, source, curl);
   static_cast<float*>(output.data)[offset] = constrained ? 0 : next;
 }
 

@@ -761,7 +761,11 @@ def build_scan(program, *, donate_state: bool = False):
         and (not program.sources or source_groups_supported)
     )
     native_graph_calls = None
-    if cfg.cuda_storage_axes != (0, 1, 2) and not step_context.low_memory:
+    if (
+        cfg.cuda_storage_axes != (0, 1, 2)
+        and not cfg.sharding.enabled
+        and not step_context.low_memory
+    ):
         if not (
             cuda_multi_step
             and cfg.is_3d

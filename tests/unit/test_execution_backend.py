@@ -374,6 +374,14 @@ def test_cuda_graph_cache_capacity_policy_is_bounded(monkeypatch):
         backend_runtime.cuda_graph_cache_capacity_from_env()
 
 
+def test_cuda_storage_axes_preserve_device_defaults(monkeypatch):
+    monkeypatch.delenv("BEAMZ_CUDA_STORAGE_AXES", raising=False)
+    assert backend_runtime.cuda_storage_axes_from_env() == (0, 1, 2)
+    assert backend_runtime.cuda_storage_axes_from_env(sharded=True) == (2, 0, 1)
+    monkeypatch.setenv("BEAMZ_CUDA_STORAGE_AXES", "012")
+    assert backend_runtime.cuda_storage_axes_from_env(sharded=True) == (0, 1, 2)
+
+
 def test_cuda_storage_axes_are_snapshotted_and_cache_separated(monkeypatch):
     monkeypatch.setattr(backend_runtime, "resolve_backend", lambda backend: backend)
     simulation = _rectilinear_3d_simulation()
