@@ -19,7 +19,8 @@ FDTD in 3D.
 **Where FIT-style ideas do help** (and transfer to Yee):
 - **Exact interface fractions.** In a 2D cavity, accuracy at a 1% target came 5–6.5× faster.
 - **Layer-aligned or graded rectilinear meshes for planar structures** (e.g. microstrip).
-  The same accuracy comes with far fewer cells.
+  The same accuracy comes with far fewer cells. Upstream Yee already provides this through
+  `GridSpec.auto()` graded meshing with snapping points (`docs/graded-meshing.md`).
 - **Full-tensor treatment of curved walls.** See
   [CURVED_INTERFACE_SMOOTHING.md](CURVED_INTERFACE_SMOOTHING.md); the native
   `farjadpour_full` option does this without a new backend.
@@ -79,6 +80,8 @@ mesh, not the FIT formulation.
 - Bring the transferable pieces into Yee FDTD:
   1. full-tensor interface smoothing for curved photonics, with its memory fixes;
   2. exact interface fractions where native sampling is approximate.
+
+  Graded/layer-aligned meshing is already upstream (`GridSpec.auto()`).
 - Revisit coupled FIT or published explicit tensor updates only with an open-boundary 3D
   implementation that beats `farjadpour_full` at equal accuracy. The 2D eight-triplet update
   (Werner et al., arXiv:1212.4857) was 7.57× faster at equal accuracy on a 2D ring cavity,
@@ -93,10 +96,10 @@ far. FIT is different in what it makes natural:
 - **Circuit quantities are the unknowns.** FIT stores edge voltages (∫E·dl) and face fluxes,
   so voltage/current ports, lumped R/L/C elements, impedance extraction and SPICE-style
   coupling are integrals over existing degrees of freedom, not post-processing.
-- **Metrics live in the operator.** Graded, layer-aligned rectilinear meshes, which suit thin
-  substrates, metal thickness and small gaps, use exact primal/dual lengths and areas. The
-  prototype already has this (`RectilinearFITMesh`, `insert_features`, `LayeredDielectric`,
-  grid-aligned PEC boxes).
+- **Metrics live in the operator.** Graded, layer-aligned rectilinear meshes use exact
+  primal/dual lengths and areas. The prototype has this (`RectilinearFITMesh`,
+  `insert_features`, `LayeredDielectric`, grid-aligned PEC boxes), but upstream Yee already
+  supports graded nonuniform meshes (`GridSpec.auto()`), so this alone is not a reason for FIT.
 - **Conformal metal.** Commercial RF FIT codes rely on conformal or partially filled PEC cells
   (e.g. the perfect boundary approximation) for oblique and curved traces, bond wires and
   vias. Yee needs the same, but FIT's metric form is where it is usually formulated.
@@ -108,13 +111,14 @@ far. FIT is different in what it makes natural:
 - grid-aligned PEC solids;
 - energy/divergence conservation.
 
-**Stage plan.** Every step needs a matched Yee control (same mesh, metrics and dt). FIT is
-credited only where it is more accurate at equal cost or adds a capability Yee lacks.
+**Stage plan.** Every step needs a matched control using **upstream graded Yee** (same mesh,
+metrics and dt). FIT is credited only where it is more accurate at equal cost or adds a
+capability Yee lacks.
 
 | Step | Deliverable | Acceptance gate |
 |---|---|---|
 | 1 | Voltage/current (lumped) ports on edge integrals; broadband S11/S21 for a microstrip line with CPML | Z0 and S-parameters within an agreed tolerance of FEM/analytic and a commercial reference (e.g. CST); port reflection below a set level |
-| 2 | Graded-mesh production path: CPML, sources, monitors and mode/port solver on nonuniform grids | Grading-transition reflection and convergence sweeps; wall time to target S21 error vs uniform Yee |
+| 2 | Ports and lumped sources on upstream's graded meshes (`GridSpec.auto()` with snapping to substrate/metal planes) | Same S21 accuracy as step 1 at lower wall time than uniform; FIT and graded-Yee results agree |
 | 3 | Conductor loss: finite-conductivity / surface-impedance metal, thin sheets | Attenuation constant vs a reference over frequency |
 | 4 | Conformal PEC for oblique or curved traces, with a published stable cut-cell scheme | Accuracy vs staircase PEC at equal wall time; no timestep collapse from small cells |
 | 5 | Lumped R/L/C elements and dispersive substrates (Debye/Lorentz) | Filter or resonator response vs reference; passivity |

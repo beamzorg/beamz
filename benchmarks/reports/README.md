@@ -10,5 +10,5 @@ beside the reports.
   that cuts memory for every method and lets fine full-tensor runs fit on an 8 GB GPU.
 - [FIT evaluation](FIT_EVALUATION.md): for photonics a separate Finite Integration Technique
   backend is not justified, because its gains transfer to Yee FDTD. For RF/microstrip a gated follow-up
-  stage is proposed: ports, S-parameters, graded meshes, conductor loss and conformal PEC,
-  each checked against a matched Yee control.
+  stage is proposed: ports, S-parameters, conductor loss and conformal PEC, each checked
+  against upstream's graded-mesh Yee solver.
