@@ -1107,9 +1107,13 @@ def _magnetic_conductivity_terms_3d(
     )
 
 
-def build_material_coefficients(fields):
-    """Collocate every material array once before runtime execution."""
+def _material_conductivities(fields):
+    """Return total electric loss and the electric-equivalent sponge loss.
 
+    Keep this split shared by static compilation and dynamic material binding.
+    Material conductivity is electric-only; only the artificial sponge has a
+    matched magnetic counterpart. CPML damping lives in its auxiliary state.
+    """
     total_sigma = _total_conductivity(fields)
     # Only the artificial sponge loss has a matched magnetic counterpart.
     # Material.conductivity describes electric current, not magnetic loss.
@@ -1119,6 +1123,13 @@ def build_material_coefficients(fields):
         if fields.has_pml and not fields.has_cpml
         else jnp.zeros((), dtype=jnp.asarray(total_sigma).dtype)
     )
+    return total_sigma, magnetic_sigma
+
+
+def build_material_coefficients(fields):
+    """Collocate every material array once before runtime execution."""
+
+    total_sigma, magnetic_sigma = _material_conductivities(fields)
     if fields.permittivity.ndim == 3:
         e_terms = tuple(
             _material_slice_for_e_3d(fields.permittivity, total_sigma, axis)

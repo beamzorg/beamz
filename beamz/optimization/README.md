@@ -54,8 +54,11 @@ plots, open [`cuda_autodiff_waveguide_bend.ipynb`](../../examples/notebooks/cuda
   Directly rasterized or nonuniform Yee materials should be supplied as an
   `(epsilon_x, epsilon_y, epsilon_z)` tuple on the compiled Ex/Ey/Ez supports.
   Conductivity accepts cell arrays, scalars, or corresponding Yee arrays. Cell
-  conductivity updates both electric losses and BeamZ's equivalent magnetic
-  losses; a Yee tuple updates electric losses only.
+  conductivity describes physical electric loss and uses the ordinary solver's
+  absorber-combination rule. Only the artificial sponge contribution receives
+  matched magnetic loss; CPML damping stays in its auxiliary state. A Yee tuple
+  directly replaces total electric losses (including any sponge contribution)
+  and preserves compiled magnetic losses.
 - `solver.monitor_fields(state, name)` returns complex DFT fields on canonical
   axes in `(Ex, Ey, Ez, Hx, Hy, Hz)` order, normalized by the actual window weight
   with H phasors aligned to E time. `solver.monitor_flux` returns signed planar

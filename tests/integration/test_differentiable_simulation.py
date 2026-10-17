@@ -9,10 +9,93 @@ import beamz as bz
 from beamz.design import MaterialGrid
 
 
+def _with_conductivity(sim, sigma):
+    from dataclasses import replace
+
+    return sim.updated_copy(
+        material_grid=replace(
+            sim.material_grid,
+            conductivity=np.full(sim.material_grid.shape, sigma, dtype=np.float32),
+        )
+    )
+
+
+@pytest.mark.parametrize("dimensions,polarization", [(3, "tm"), (2, "tm"), (2, "te")])
+@pytest.mark.parametrize("absorber", ["pec", "cpml", "sponge"])
+def test_conductivity_binding_matches_ordinary_materials(
+    dimensions, polarization, absorber
+):
+    sim, _ = make_simulation(
+        dimensions=dimensions,
+        polarization=polarization,
+        cpml=absorber == "cpml",
+        sponge=absorber == "sponge",
+    )
+    solver = sim.differentiable()
+    state = seeded_state(solver)
+    for sigma in (120.0, 240.0):
+        ordinary = _with_conductivity(sim, sigma)
+        program = ordinary.compile(backend="jax")
+        reference_coefficients = ordinary.differentiable().coefficients()
+        expected = ordinary.advance(state=state, backend="jax", performance=False).state
+        # Yee tuples are total electric losses, so include the ordinary sponge.
+        values = (
+            jnp.float32(sigma),
+            jnp.full(sim.material_grid.shape, sigma),
+        )
+        if sigma == 120.0:
+            values += (None, tuple(getattr(program.grid, f"sig_{a}") for a in "xyz"))
+        for conductivity in values:
+            coefficients = solver.coefficients(conductivity=conductivity)
+            for axis in "xyz":
+                for prefix in ("e_decay", "e_source", "h_decay", "h_source"):
+                    name = f"{prefix}_{axis}"
+                    np.testing.assert_allclose(
+                        getattr(coefficients, name),
+                        getattr(reference_coefficients, name),
+                        rtol=2e-6,
+                        atol=1e-12,
+                    )
+            actual = solver(conductivity=conductivity, state=state)
+            for name in ("ex", "ey", "ez", "hx", "hy", "hz"):
+                np.testing.assert_allclose(
+                    getattr(actual, name), getattr(expected, name), rtol=2e-5, atol=2e-8
+                )
+
+
+@pytest.mark.parametrize("absorber", ["pec", "cpml", "sponge"])
+def test_conductivity_gradient_matches_recompiled_forward_model(absorber):
+    sim, _ = make_simulation(cpml=absorber == "cpml", sponge=absorber == "sponge")
+    solver = sim.differentiable()
+    state = seeded_state(solver)
+
+    def energy(out):
+        return sum(
+            jnp.sum(getattr(out, a) ** 2) for a in ("ex", "ey", "ez")
+        ) + 1e5 * sum(jnp.sum(getattr(out, a) ** 2) for a in ("hx", "hy", "hz"))
+
+    gradient = jax.grad(lambda sigma: energy(solver(conductivity=sigma, state=state)))(
+        jnp.float32(120)
+    )
+    for delta in (1.0, 2.0):
+        values = [
+            energy(
+                _with_conductivity(sim, sigma)
+                .advance(state=state, backend="jax", performance=False)
+                .state
+            )
+            for sigma in (120 + delta, 120 - delta)
+        ]
+        finite_difference = (values[0] - values[1]) / (2 * delta)
+        np.testing.assert_allclose(gradient, finite_difference, rtol=0.02, atol=2e-7)
+    assert abs(float(gradient)) > 1e-7
+
+
 def make_simulation(
     *,
     dimensions=3,
     cpml=False,
+    sponge=False,
     mixed=False,
     monitors=False,
     sources=False,
@@ -24,6 +107,10 @@ def make_simulation(
     dx = 80e-9
     rng = np.random.default_rng(18)
     epsilon = (1.5 + rng.random(shape)).astype(np.float32)
+    if sponge:
+        # Keep absorber-normal material constant so this conductivity test does
+        # not trigger the separate PML geometry-quality warning.
+        epsilon.fill(2.0)
     grid = None
     if metric_kind != "isotropic_uniform":
         from beamz.design.grid import RectilinearGrid
@@ -55,12 +142,12 @@ def make_simulation(
         polarization=polarization if dimensions == 2 else None,
     )
     boundaries = [bz.PEC(edges="all")]
-    if cpml:
+    if cpml or sponge:
         boundaries = [
             bz.PML(
                 edges=("left", "top", "back") if mixed else "all",
                 thickness=2 * dx,
-                formulation="cpml",
+                formulation="cpml" if cpml else "sponge",
             )
         ]
         if mixed:

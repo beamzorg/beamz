@@ -17,6 +17,7 @@ import numpy as np
 
 from beamz.const import EPS_0, MU_0
 from beamz.lattice import (
+    _material_conductivities,
     sample_voxel_grid_at_component_2d,
     sample_voxel_grid_at_component_3d,
 )
@@ -296,9 +297,11 @@ class DifferentiableSimulation:
     ) -> UpdateCoefficients:
         """Form dynamic Yee coefficients without recompiling or host conversion.
 
-        Cell conductivity also updates the equivalent magnetic conductivity used
-        by BeamZ's lossy solver. A Yee conductivity tuple changes only E losses;
-        callers can supply independent H parameters through ``run_coefficients``.
+        Scalar/cell conductivity is physical electric loss, combined with the
+        compiled absorber using the ordinary material rule. Only the sponge
+        contribution has matched magnetic loss. A Yee tuple directly replaces
+        total E losses and preserves compiled H losses; use ``run_coefficients``
+        for independent H parameters.
         """
         program, grid = self.program, self.program.grid
         base, dt = program.coefficients, program.config.dt
@@ -316,13 +319,13 @@ class DifferentiableSimulation:
             cell_sigma = jnp.broadcast_to(
                 jnp.asarray(conductivity, dtype=jnp.float32), grid.permittivity.shape
             )
+            total_sigma, sponge_sigma = _material_conductivities(
+                replace(grid, conductivity=cell_sigma)
+            )
+            sig = self._sample(total_sigma, ("Ex", "Ey", "Ez"))
             if grid.has_pml and not grid.has_cpml:
-                from beamz.lattice import _total_conductivity
-
-                cell_sigma = _total_conductivity(replace(grid, conductivity=cell_sigma))
-                sig = self._sample(cell_sigma, ("Ex", "Ey", "Ez"))
-            sigma_m = cell_sigma * grid.permeability * (MU_0 / EPS_0)
-            h_sigma = self._sample(sigma_m, ("Hx", "Hy", "Hz"))
+                sigma_m = sponge_sigma * grid.permeability * (MU_0 / EPS_0)
+                h_sigma = self._sample(sigma_m, ("Hx", "Hy", "Hz"))
         updates = {}
         for axis, epsilon, sigma, magnetic_sigma, fixed_lossless in zip(
             "xyz", eps, sig, h_sigma, self._fixed_lossless_e, strict=True
