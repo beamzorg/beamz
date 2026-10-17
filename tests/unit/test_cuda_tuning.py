@@ -32,6 +32,15 @@ def test_manual_overrides_are_in_policy(monkeypatch):
         tuning.tuning_policy_from_env()
 
 
+@pytest.mark.parametrize("precision", ["fp32", "float32", "FP32", "", "bf16"])
+def test_explicit_default_precision_does_not_disable_selection(monkeypatch, precision):
+    name = "BEAMZ_CUDA_CPML_PSI_PRECISION"
+    monkeypatch.setenv(name, precision)
+    assert ((name, precision) in tuning.tuning_policy_from_env()[2]) == (
+        precision == "bf16"
+    )
+
+
 def test_persistent_identity_changes_for_workload_build_and_hardware(
     tmp_path, monkeypatch
 ):
@@ -87,6 +96,10 @@ def test_apply_changes_only_layout_and_shell():
     assert program.config.cuda_storage_axes == (0, 1, 2)
     with pytest.raises(ValueError):
         tuning._apply(program, dict(axes=[2, 1, 0], shell_tile="32x8"))
+    with pytest.raises(ValueError):
+        tuning._apply(
+            program, dict(axes=[0, 1, 2], shell_tile="64x4", schedule="mstep")
+        )
 
 
 def test_nonfinite_state_cannot_be_certified():

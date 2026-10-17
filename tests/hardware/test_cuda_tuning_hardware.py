@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from beamz.simulation import execute
+from beamz.simulation._cuda_abi import CUDA_MSTEP_TARGET
 from beamz.simulation.backend import cuda_backend_status
 from beamz.simulation.cuda import tuning
 from scripts.benchmark_cuda_realistic import build_simulation
@@ -39,13 +40,16 @@ def _seed_state(state):
 
 @pytest.mark.parametrize("setup_device", ["default", "cpu"])
 @pytest.mark.parametrize("steps", [33, 519])
+@pytest.mark.parametrize("schedule", ["streamed", "auto"])
 def test_seeded_candidate_parity_and_persistent_lookup(
-    monkeypatch, tmp_path, setup_device, steps
+    monkeypatch, tmp_path, setup_device, steps, schedule
 ):
+    if schedule == "auto" and CUDA_MSTEP_TARGET not in STATUS.targets:
+        pytest.skip("CUDA multistep target unavailable")
     monkeypatch.setenv("BEAMZ_CUDA_AUTOTUNE", "off")
     sim = build_simulation(
         SimpleNamespace(
-            shape=(37, 49, 65),
+            shape=(97, 105, 113),
             steps=steps,
             pml=12,
             monitors=2,
@@ -56,7 +60,7 @@ def test_seeded_candidate_parity_and_persistent_lookup(
         )
     )
     sim = sim.updated_copy(setup_device=setup_device)
-    program = sim.compile(num_steps=steps, backend="cuda_streamed")
+    program = sim.compile(num_steps=steps, backend="cuda", schedule=schedule)
     original_initial = execute.initial_program_state
 
     def seeded_initial(*args, **kwargs):
@@ -65,7 +69,7 @@ def test_seeded_candidate_parity_and_persistent_lookup(
     @dataclass
     class TestIdentity:
         t0: float = 0.0
-        profile: str = "seeded-smooth-37-49-65-33"
+        profile: str = "seeded-smooth-97-105-113"
 
     monkeypatch.setattr(execute, "initial_program_state", seeded_initial)
     # Exercise calibration at unit-test scale; production retains its large-grid gate.
@@ -77,7 +81,8 @@ def test_seeded_candidate_parity_and_persistent_lookup(
     assert report["calibration_steps"] == min(steps, 256)
     assert selected.config.num_steps == steps
     assert report["rejected"] == {}
-    assert len(report["samples_s"]) == 6
+    assert len(report["samples_s"]) == (9 if schedule == "auto" else 6)
+    assert selected.config.cuda_schedule in {"streamed", "mstep"}
     cached = tuning.select_program(program, TestIdentity(), policy)
     assert tuning.tuning_report(cached)["cache_hit"]
     assert cached.config == selected.config

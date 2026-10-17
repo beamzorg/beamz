@@ -445,9 +445,10 @@ print(predict_layout_time_to_result((1024, 256, 64), 4096)["choice"])  # 120
 
 `BEAMZ_CUDA_AUTOTUNE=auto` is the predictive default; `off` disables selection.
 Other explicit `BEAMZ_CUDA_*` overrides disable automatic selection, preserving
-manual experiments. Configuration is frozen into the immutable program and
-isolated in the compiled-program cache. Prediction reports have `validated=False`
-because no numerical validation trial was performed for the current request.
+manual experiments, except an explicit default FP32 CPML precision. Configuration
+is frozen into the immutable program and isolated in the compiled-program cache.
+Prediction reports have `validated=False` because no numerical validation trial
+was performed for the current request.
 
 The layout cost model is limited to the narrow-x family above on one RTX3090,
 at least 16 steps per call and 32 known total steps across expected reuse,
@@ -461,13 +462,20 @@ branch-versus-main CPML numerical differences remain unresolved.
 
 Explicit `BEAMZ_CUDA_AUTOTUNE=calibrate` enables the measured selector and its
 persistent cache; `refresh` forces recalibration after clearing the program cache
-or restarting. This mode compares all three orders and 64x4/32x8 shell tiles,
-requires bitwise complete-state parity against the branch canonical layout, and
-accepts a timing improvement only above 3% with wins in both balanced halves.
+or restarting. This mode compares all three orders and 64x4/32x8 shell tiles.
+With `sim.compile(backend="cuda", schedule="auto")`, it also tries multistepping
+in each order when supported by the extension and memory policy. Explicit
+streamed requests stay streamed; precision and absorber settings stay unchanged.
+Unsupported candidates are rejected. The selected schedule and layout are cached
+together. Calibration requires bitwise complete-state parity against canonical
+streamed execution and accepts a timing improvement only above 3% with wins in
+both balanced halves.
 It uses a private initial state, two additional warmups and six timing rounds,
 including conversion costs. Long runs probe at most 256 steps while retaining
-the requested execution horizon. First-use cost was 33–37 seconds in recorded
-large cases. This cost is absent in default predictive mode.
+the requested execution horizon. Calibration can take tens of seconds and minimizes
+warm execution time, not first-call latency; use it for long or repeated workloads.
+This cost is absent in default predictive mode. Inspect the choice with
+`beamz.simulation.cuda.tuning.tuning_report(program)`.
 
 Only explicit calibration uses GPU telemetry, a 4-GiB free-memory guard and an
 85-C temperature limit. It makes no power-limit changes. Profiles persist under

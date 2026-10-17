@@ -1,8 +1,8 @@
 """Predictive layout selection for large, ordinary RTX3090 CPML programs.
 
 Existing calls use geometry; explicit schedule='auto' also weighs startup costs.
-Explicit calibration considers existing storage orders and shell tiles on a
-private state; precision, physical shape and CPML stay unchanged in either mode.
+Explicit calibration compares storage orders, shell tiles and permitted schedules
+on private state; precision, physical shape and CPML stay unchanged.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ import numpy as np
 
 from beamz.simulation import _cuda_abi as abi
 
-_SCHEMA = 2
+_SCHEMA = 3
 _AXES = ((0, 1, 2), (1, 2, 0), (2, 0, 1))
 _TILES = ("64x4", "32x8")
 _REPORTS = OrderedDict()
@@ -58,6 +58,10 @@ def tuning_policy_from_env():
             (key, value)
             for key, value in os.environ.items()
             if key.startswith("BEAMZ_CUDA_")
+            and not (
+                key == "BEAMZ_CUDA_CPML_PSI_PRECISION"
+                and value.lower() in {"fp32", "float32", ""}
+            )
             and key
             not in {
                 "BEAMZ_CUDA_AUTOTUNE",
@@ -86,10 +90,14 @@ def _remember(program, report):
 def _apply(program, choice):
     axes = tuple(choice["axes"])
     tile = choice["shell_tile"]
+    schedule = choice.get("schedule", program.config.cuda_schedule)
     if (
         any(type(axis) is not int for axis in axes)
         or axes not in _AXES
         or tile not in _TILES
+        or schedule not in {"auto", "streamed", "mstep"}
+        or (schedule == "mstep" and tile != "64x4")
+        or (schedule == "mstep" and program.config.cuda_schedule == "streamed")
     ):
         raise ValueError("Invalid cached CUDA layout")
     flags = program.config.cuda_flags & ~(abi.CUDA_SHELL32X8 | abi.CUDA_SHELL32X4)
@@ -97,7 +105,12 @@ def _apply(program, choice):
         flags |= abi.CUDA_SHELL32X8
     return replace(
         program,
-        config=replace(program.config, cuda_storage_axes=axes, cuda_flags=flags),
+        config=replace(
+            program.config,
+            cuda_storage_axes=axes,
+            cuda_flags=flags,
+            cuda_schedule=schedule,
+        ),
     )
 
 
@@ -480,6 +493,7 @@ def _select_program(program, signature, policy):
             pass
 
     from beamz.simulation import observe, sharding
+    from beamz.simulation.backend import CudaBackendUnavailable, cuda_backend_status
     from beamz.simulation.execute import (
         CUDA_GRAPH_MAX_STEPS,
         build_scan,
@@ -496,9 +510,7 @@ def _select_program(program, signature, policy):
     calibration_steps = min(program.config.num_steps, CUDA_GRAPH_MAX_STEPS)
     probe = replace(
         program,
-        config=replace(
-            program.config, num_steps=calibration_steps, cuda_schedule="streamed"
-        ),
+        config=replace(program.config, num_steps=calibration_steps),
     )
     state = initial_program_state(
         program, t=signature.t0, current_step=0, monitor_steps=program.config.num_steps
@@ -509,10 +521,25 @@ def _select_program(program, signature, policy):
     coefficients = sharding.place_tree(program, program.coefficients)
     jax.block_until_ready(state)
     choices = {
-        "".join(map(str, axes)) + "/" + tile: dict(axes=axes, shell_tile=tile)
+        "".join(map(str, axes)) + "/" + tile: dict(
+            axes=axes, shell_tile=tile, schedule="streamed"
+        )
         for axes in _AXES
         for tile in _TILES
     }
+    if (
+        program.config.cuda_schedule == "auto"
+        and program.config.cuda_memory_policy != "capacity"
+        and abi.CUDA_MSTEP_TARGET in cuda_backend_status(register=False).targets
+    ):
+        choices.update(
+            {
+                "".join(map(str, axes)) + "/mstep": dict(
+                    axes=axes, shell_tile="64x4", schedule="mstep"
+                )
+                for axes in _AXES
+            }
+        )
     executables = {}
     rejected = {}
     reference = None
@@ -523,8 +550,15 @@ def _select_program(program, signature, policy):
             )
         candidate = _apply(probe, choice)
         try:
-            executable = build_scan(candidate).lower(state, coefficients).compile()
-        except ValueError as exc:
+            scan = build_scan(candidate)
+            if (
+                choice["schedule"] == "mstep"
+                and scan.cuda_schedule_decision["selected"] != "mstep"
+            ):
+                rejected[name] = scan.cuda_schedule_decision["reason"]
+                continue
+            executable = scan.lower(state, coefficients).compile()
+        except (ValueError, CudaBackendUnavailable) as exc:
             if name == "012/64x4":
                 raise
             rejected[name] = str(exc)
@@ -572,6 +606,7 @@ def _select_program(program, signature, policy):
         schema=_SCHEMA,
         key=key,
         choice=choices[winner],
+        objective="warm execution time including layout conversions",
         samples_s=samples,
         rejected=rejected,
         validated=True,
