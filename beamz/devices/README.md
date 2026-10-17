@@ -30,3 +30,18 @@ simulation.
 These files separate public values, numerical planning, and runtime execution. Avoid
 adding per-device facade modules; a new file should own a distinct numerical stage or
 be folded into the nearest existing owner.
+
+## 2D mode launch
+
+TM and TE launches orient their E/H pair by signed Poynting flux for each of
+`+x`, `-x`, `+y`, and `-y`. The source reference is an H cell centre; the electric
+current occupies the adjacent node on the launched side. Its complex profile
+includes the half-cell propagation phase and the half-timestep leapfrog phase,
+lowered through the waveform's in-phase and quadrature components. TE retains
+the mode solver's spatially varying impedance.
+
+The directional regression measures both reflected power on the launched side
+and unwanted outgoing power behind the source. It checks both polarizations,
+sponge and CPML boundaries, and multiple resolutions/reference-plane placements.
+A PEC-terminated guide is the positive control: it must return near-unit guided
+power in every direction and polarization, including through the source plane.

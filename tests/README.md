@@ -144,8 +144,10 @@ The pull-request gate now makes the following quantitative claims:
 - slab-waveguide effective index against the analytical dispersion equation;
 - straight-waveguide launch, reflection, transmission, reference-plane, and
   resolution metrics;
-- reciprocal forward/reverse straight-waveguide transmission, apart from the
-  strict named regression for reverse 2D mode-source leakage;
+- reciprocal forward/reverse straight-waveguide transmission and low extracted
+  reflection with direction-correct 2D Yee modal bases; physical launch checks
+  for all four 2D directions in TM and TE, including unwanted power behind the
+  source, two downstream monitors, sponge/CPML, and grid/monitor variations;
 - directional derivatives for the available optimization primitives;
 - one-step lossless Yee time reversibility and mutation-sensitive
   divergence-of-curl detection;

@@ -9,6 +9,7 @@ import numpy as np
 
 from beamz import (
     LIGHT_SPEED,
+    PEC,
     PML,
     Design,
     Material,
@@ -27,6 +28,11 @@ from beamz.analysis import s_parameters
 
 @dataclass(frozen=True)
 class StraightWaveguideSParamConfig:
+    axis: str = "x"
+    polarization: str = "tm"
+    monitor_behind_source: bool = False
+    mirror_on_grid: bool = False
+    reflecting_termination: bool = False
     wavelength_um: float = 1.55
     num_freqs: int = 5
     waveguide_width_um: float = 0.60
@@ -106,6 +112,7 @@ class StraightWaveguideSParamResult:
     phase_residual_rad_by_monitor: dict[str, float]
     phase_slope_s_by_monitor: dict[str, float]
     condition_numbers: dict[str, np.ndarray]
+    backward_launch: np.ndarray | None
 
 
 def _build_case(
@@ -116,6 +123,16 @@ def _build_case(
 ):
     if launch_direction not in {"+", "-"}:
         raise ValueError("launch_direction must be '+' or '-'")
+    if cfg.axis not in {"x", "y"}:
+        raise ValueError("axis must be 'x' or 'y'")
+
+    def xy(longitudinal, transverse):
+        return (
+            (longitudinal, transverse)
+            if cfg.axis == "x"
+            else (transverse, longitudinal)
+        )
+
     pml_m = cfg.pml_m
     width_m = cfg.guide_length_m + 2.0 * pml_m
     height_m = cfg.waveguide_width_m + 2.0 * (cfg.vertical_clearance_m + pml_m)
@@ -125,15 +142,19 @@ def _build_case(
         dims=2,
         safety_factor=cfg.courant_safety,
         points_per_wavelength=int(resolution_ppw),
-        width=width_m,
-        height=height_m,
+        width=xy(width_m, height_m)[0],
+        height=xy(width_m, height_m)[1],
     )
 
-    design = Design(width=width_m, height=height_m, material=Material(cfg.n_clad**2))
+    design = Design(
+        width=xy(width_m, height_m)[0],
+        height=xy(width_m, height_m)[1],
+        material=Material(cfg.n_clad**2),
+    )
     design += Rectangle(
-        position=(0.0, 0.5 * (height_m - cfg.waveguide_width_m)),
-        width=width_m,
-        height=cfg.waveguide_width_m,
+        position=xy(0.0, 0.5 * (height_m - cfg.waveguide_width_m)),
+        width=xy(width_m, cfg.waveguide_width_m)[0],
+        height=xy(width_m, cfg.waveguide_width_m)[1],
         material=Material(cfg.n_core**2),
     )
     freqs = np.asarray(cfg.dft_frequencies_hz, dtype=float)
@@ -166,12 +187,24 @@ def _build_case(
         if launch_direction == "+"
         else width_m - pml_m - float(cfg.source_offset_um) * µm
     )
+    normal_cells = int(np.ceil(width_m / dx))
+    if cfg.mirror_on_grid:
+        # The raster domain is rounded up to whole cells. Mirror the H-plane
+        # source reference about that domain, not the requested float extent.
+        forward_center = (
+            round((pml_m + cfg.source_offset_um * µm) / dx - 0.5) + 0.5
+        ) * dx
+        source_x = (
+            forward_center
+            if launch_direction == "+"
+            else normal_cells * dx - forward_center
+        )
     source = ModeSource(
-        center=(source_x, y_center, 0.0),
-        size=(0.0, source_span, cfg.waveguide_width_m),
+        center=(*xy(source_x, y_center), 0.0),
+        size=(*xy(0.0, source_span), cfg.waveguide_width_m),
         source_time=SampledSignal(pulse.signal, dt=dt, freq0=cfg.frequency_hz),
         direction=launch_direction,
-        mode_spec=ModeSpec(polarization="tm"),
+        mode_spec=ModeSpec(polarization=cfg.polarization),
     )
 
     if launch_direction == "+":
@@ -186,32 +219,71 @@ def _build_case(
             "mid": pml_m + float(cfg.output_monitor_offsets_um[0]) * µm,
             "far": pml_m + float(cfg.output_monitor_offsets_um[1]) * µm,
         }
+    if cfg.monitor_behind_source:
+        behind_offset = 0.5 * float(cfg.source_offset_um) * µm
+        monitor_x["behind"] = (
+            source_x - behind_offset
+            if launch_direction == "+"
+            else source_x + behind_offset
+        )
+    if cfg.mirror_on_grid:
+        forward_positions = {
+            "o1": pml_m + cfg.input_monitor_offset_um * µm,
+            "mid": width_m - pml_m - cfg.output_monitor_offsets_um[0] * µm,
+            "far": width_m - pml_m - cfg.output_monitor_offsets_um[1] * µm,
+            "behind": pml_m + 0.5 * cfg.source_offset_um * µm,
+        }
+        # Raw 2D monitor index i references H at (i+1/2)*dx; its mirror
+        # therefore has index N-1-i. All desired port separations match exactly.
+        monitor_x = {
+            name: (
+                round(forward_positions[name] / dx)
+                if launch_direction == "+"
+                else normal_cells - 1 - round(forward_positions[name] / dx)
+            )
+            * dx
+            for name in monitor_x
+        }
     monitors = {
         name: ModeMonitor(
-            center=(x_m, y_center, 0.0),
-            size=(0.0, source_span, cfg.waveguide_width_m),
+            center=(*xy(x_m, y_center), 0.0),
+            size=(*xy(0.0, source_span), cfg.waveguide_width_m),
             freqs=freqs,
             name=name,
-            mode_spec=ModeSpec(polarization="tm"),
+            mode_spec=ModeSpec(polarization=cfg.polarization),
         )
         for name, x_m in monitor_x.items()
     }
 
+    exit_edge = (
+        ("right" if cfg.axis == "x" else "top")
+        if launch_direction == "+"
+        else ("left" if cfg.axis == "x" else "bottom")
+    )
+    absorber_edges = (
+        tuple(edge for edge in ("left", "right", "bottom", "top") if edge != exit_edge)
+        if cfg.reflecting_termination
+        else "all"
+    )
+    boundaries = [
+        PML(
+            edges=absorber_edges,
+            thickness=pml_m,
+            formulation=cfg.pml_formulation,
+            kappa_max=float(cfg.cpml_kappa_max),
+            alpha_max=cfg.cpml_alpha_max,
+        )
+    ]
+    if cfg.reflecting_termination:
+        boundaries.append(PEC(edges=exit_edge))
     sim = Simulation(
         design=design,
         sources=[source],
         monitors=list(monitors.values()),
-        boundaries=[
-            PML(
-                edges="all",
-                thickness=pml_m,
-                formulation=cfg.pml_formulation,
-                kappa_max=float(cfg.cpml_kappa_max),
-                alpha_max=cfg.cpml_alpha_max,
-            )
-        ],
+        boundaries=boundaries,
         time=pulse.time,
         resolution=dx,
+        polarization=cfg.polarization,
     )
     return sim, monitors, monitor_x, freqs, pulse, dx, dt
 
@@ -250,28 +322,21 @@ def run_straight_waveguide_sparam_case(
         source_port="o1",
         ports=[
             Port(
-                center=monitors["o1"].center,
-                size=monitors["o1"].size,
-                name="o1",
-                direction=launch_direction,
-                mode_spec=ModeSpec(polarization="tm"),
-            ),
-            Port(
-                center=monitors["mid"].center,
-                size=monitors["mid"].size,
-                name="mid",
-                direction="-" if launch_direction == "+" else "+",
-                mode_spec=ModeSpec(polarization="tm"),
-            ),
-            Port(
-                center=monitors["far"].center,
-                size=monitors["far"].size,
-                name="far",
-                direction="-" if launch_direction == "+" else "+",
-                mode_spec=ModeSpec(polarization="tm"),
-            ),
+                center=monitor.center,
+                size=monitor.size,
+                name=name,
+                direction=(
+                    launch_direction
+                    if name in {"o1", "behind"}
+                    else "-"
+                    if launch_direction == "+"
+                    else "+"
+                ),
+                mode_spec=ModeSpec(polarization=cfg.polarization),
+            )
+            for name, monitor in monitors.items()
         ],
-        output_ports=["o1", "mid", "far"],
+        output_ports=list(monitors),
         frequencies=freqs,
         min_incident_db=-60.0,
     )
@@ -319,6 +384,11 @@ def run_straight_waveguide_sparam_case(
         phase_residual_rad_by_monitor=phase_residual,
         phase_slope_s_by_monitor=phase_slope,
         condition_numbers=cond,
+        backward_launch=(
+            np.asarray(s_matrix[("behind", "o1")], dtype=np.complex128)
+            if cfg.monitor_behind_source
+            else None
+        ),
     )
 
 

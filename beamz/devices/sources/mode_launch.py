@@ -414,107 +414,73 @@ def _plan_2d_entries(
     h_mode,
     neff,
     center_idx,
-    offset_idx,
     snapped,
     shape,
     resolution,
     polarization,
     measure=None,
+    dt=None,
+    normal_spacing=None,
 ):
     axis = source.axis
-    transverse_axis = "y" if axis == "x" else "x"
-    interval = snapped.axis_interval(transverse_axis)
+    interval = snapped.axis_interval("y" if axis == "x" else "x")
     start, end = int(interval.start), int(interval.stop)
     dir_sign = 1.0 if source.direction == "+" else -1.0
     z_target = np.sqrt(MU_0 / EPS_0) / max(np.real(neff), 1e-6)
-
     if polarization == "tm":
         h_raw = np.squeeze(h_mode[1 if axis == "x" else 0])
         e_raw = np.squeeze(e_mode[2])
-        phase_ref = np.angle(h_raw.flatten()[np.argmax(np.abs(h_raw))])
-        h_aligned = h_raw * np.exp(-1j * phase_ref)
-        e_aligned = _impedance_match_e_profile(
-            e_raw * np.exp(-1j * phase_ref), h_aligned, z_target
-        )
-        # TM tangential E/H live on transverse nodes. A cell interval [start,end)
-        # has end-start+1 bounding nodes; omitting the high node shifts the taper
-        # by half a cell and breaks an otherwise symmetric launch.
-        end = min(end + 1, len(h_aligned), len(e_aligned))
-        window = _make_1d_window(end - start)
-        h_crop, e_crop = h_aligned[start:end], e_aligned[start:end]
-        if len(h_crop) == len(window):
-            h_crop, e_crop = h_crop * window, e_crop * window
-        jz_profile = -dir_sign * h_crop
-        magnetic_profile = dir_sign * (1.0 if axis == "x" else -1.0) * e_crop
+        end = min(end + 1, len(h_raw), len(e_raw))
+        e_component, h_component = "Ez", "Hy" if axis == "x" else "Hx"
         flux_sign = -1.0 if axis == "x" else 1.0
-        jz_profile, magnetic_profile = _normalize_2d_launch_pair(
-            jz_profile,
-            magnetic_profile,
-            flux_sign=flux_sign,
-            resolution=resolution if measure is None else measure,
-            power=source.power,
-        )
-        support = slice(start, end)
-        h_component = "Hy" if axis == "x" else "Hx"
-        return (
-            ModePlanEntry(
-                h_component,
-                "h",
-                _plane_index(axis, offset_idx, support),
-                -np.asarray(magnetic_profile),
-            ),
-            ModePlanEntry(
-                "Ez",
-                "e",
-                _plane_index(axis, center_idx, support),
-                np.asarray(jz_profile),
-            ),
-        )
-
-    h_raw = np.squeeze(h_mode[2])
-    e_raw = np.squeeze(e_mode[1 if axis == "x" else 0])
-    h_staggered = 0.5 * (h_raw[:-1] + h_raw[1:])
-    e_staggered = 0.5 * (e_raw[:-1] + e_raw[1:])
-    phase_ref = np.angle(h_staggered.flatten()[np.argmax(np.abs(h_staggered))])
-    h_profile = h_staggered * np.exp(-1j * phase_ref)
-    e_profile = _impedance_match_e_profile(
-        e_staggered * np.exp(-1j * phase_ref), h_profile, z_target
-    )
-    stop = min(end, len(h_profile))
-    window = _make_1d_window(stop - start)
-    h_crop = h_profile[start:stop]
-    e_crop = e_profile[start : min(end, len(e_profile))]
-    if len(h_crop) == len(window):
-        h_crop, e_crop = h_crop * window, e_crop * window
-    electric_profile = dir_sign * h_crop
-    mz_profile = -dir_sign * e_crop
-    electric_profile, mz_profile = _normalize_2d_launch_pair(
-        electric_profile,
-        mz_profile,
-        flux_sign=1.0 if axis == "x" else -1.0,
+    else:
+        h_nodes = np.squeeze(h_mode[2])
+        e_nodes = np.squeeze(e_mode[1 if axis == "x" else 0])
+        h_raw = 0.5 * (h_nodes[:-1] + h_nodes[1:])
+        e_raw = 0.5 * (e_nodes[:-1] + e_nodes[1:])
+        end = min(end, len(h_raw), len(e_raw))
+        e_component, h_component = "Ey" if axis == "x" else "Ex", "Hz"
+        flux_sign = 1.0 if axis == "x" else -1.0
+    phase_ref = np.angle(h_raw.flatten()[np.argmax(np.abs(h_raw))])
+    h_profile = h_raw * np.exp(-1j * phase_ref)
+    e_profile = e_raw * np.exp(-1j * phase_ref)
+    if polarization == "tm":
+        e_profile = _impedance_match_e_profile(e_profile, h_profile, z_target)
+    # The legacy line-mode adapter does not use the same physical flux sign for
+    # both axes. Orient the pair by its Poynting flux, rather than that adapter.
+    if flux_sign * dir_sign * np.real(np.vdot(h_profile, e_profile)) < 0:
+        e_profile = -e_profile
+    window = _make_1d_window(end - start)
+    h_crop, e_crop = _normalize_2d_launch_pair(
+        h_profile[start:end] * window,
+        e_profile[start:end] * window,
+        flux_sign=flux_sign,
         resolution=resolution if measure is None else measure,
         power=source.power,
     )
+    # The snapped source plane is an H cell centre. Place E on the immediately
+    # adjacent node on the launched side. H updates first using E(t); E then
+    # needs H(t + dt/2) half a cell behind it. Include both phases in its drive.
     normal_cells = shape[1] if axis == "x" else shape[0]
-    hz_index = (
-        max(0, offset_idx - 1)
-        if source.direction == "+"
-        else min(normal_cells - 2, offset_idx)
-    )
-    support = slice(start, stop)
-    electric_component = "Ey" if axis == "x" else "Ex"
+    h_index = min(normal_cells - 2, center_idx)
+    e_index = h_index + 1 if dir_sign > 0 else h_index
+    omega = 2 * np.pi * source.frequency
+    spacing = float(normal_spacing or resolution)
+    k = _numeric_wave_number(omega, dt, spacing, neff)
+    electric_phase = np.exp(0.5j * (omega * (dt or 0.0) + k * spacing))
+    support = slice(start, end)
     return (
         ModePlanEntry(
-            "Hz",
+            h_component,
             "h",
-            _plane_index(axis, hz_index, support),
-            np.asarray(mz_profile),
+            _plane_index(axis, h_index, support),
+            dir_sign * flux_sign * e_crop,
         ),
         ModePlanEntry(
-            electric_component,
+            e_component,
             "e",
-            _plane_index(axis, offset_idx, support),
-            -np.asarray(electric_profile),
+            _plane_index(axis, e_index, support),
+            dir_sign * flux_sign * h_crop * electric_phase,
         ),
     )
 
@@ -581,7 +547,6 @@ def _plan_2d_mode_source(
     center_idx = int(snapped.plane_index)
     if snapped.companion_index is None:
         raise ValueError("A mode source launch needs a companion Yee plane.")
-    offset_idx = int(snapped.companion_index)
     material_grid = getattr(fields, "material_grid", None)
     if (
         material_grid is not None
@@ -625,23 +590,24 @@ def _plan_2d_mode_source(
         polarization,
         grid_edges=grid_edges,
     )
+    normal_spacing = (
+        float(metric_grid.cell_widths(axis)[center_idx])
+        if metric_grid is not None
+        else None
+    )
     entries = _plan_2d_entries(
         source,
         e_mode,
         h_mode,
         neff,
         center_idx,
-        offset_idx,
         snapped,
         (ny, nx),
         resolution,
         polarization,
         measure=measure,
-    )
-    normal_spacing = (
-        float(metric_grid.cell_widths(axis)[center_idx])
-        if metric_grid is not None
-        else None
+        dt=dt,
+        normal_spacing=normal_spacing,
     )
     return Mode2DLaunchPlan(entries=entries, normal_spacing=normal_spacing)
 

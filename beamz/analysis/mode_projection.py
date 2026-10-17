@@ -531,19 +531,21 @@ def _build_port_projection_2d(
     normalization = np.sqrt(max(abs(power), 1e-30))
     e_forward = e_profile / normalization
     h_forward = h_profile / normalization
+    mode_neff = float(np.real(np.asarray(neffs[mode_index])))
+    plane_delay = _modal_projection_plane_delay_s(sim, spec, frequency, mode_neff)
+    # Fit the two waves on the acquired Yee supports. Their E-to-H spatial
+    # phases have opposite signs; a single phase applied to measured E assumes
+    # a forward-only field and invents reflection for a backward wave.
+    phase = np.exp(1j * 2.0 * np.pi * float(frequency) * plane_delay)
     mode_matrix = np.column_stack(
         [
-            np.concatenate([e_forward, h_forward]),
-            np.concatenate([e_forward, -h_forward]),
+            np.concatenate([e_forward / phase, h_forward]),
+            np.concatenate([e_forward * phase, -h_forward]),
         ]
     )
     if np.ndim(weights) == 0:
-        # Preserve the established uniform-grid solve exactly.  Multiplying both
-        # sides by a tiny constant measure is algebraically redundant, but it can
-        # move the SVD pseudoinverse across a numerical rank threshold because E
-        # and H use very different SI scales.
         projection_weights = None
-        pinv = np.linalg.pinv(mode_matrix)
+        measure_scale = np.ones(mode_matrix.shape[0])
     else:
         projection_weights = np.concatenate(
             [
@@ -551,7 +553,16 @@ def _build_port_projection_2d(
                 np.broadcast_to(np.sqrt(weights), h_forward.shape),
             ]
         )
-        pinv = np.linalg.pinv(projection_weights[:, None] * mode_matrix)
+        measure_scale = projection_weights
+    # Lorentz overlaps pair measured E with modal H, and measured H with modal
+    # E. These reject power-orthogonal fields; a Euclidean fit dominated by E's
+    # SI scale can mix radiation into the extracted TE mode and break reciprocity.
+    overlap = np.zeros((2, mode_matrix.shape[0]), dtype=np.complex128)
+    count = e_forward.size
+    overlap[0, :count] = np.conjugate(h_forward)
+    overlap[1, count:] = np.conjugate(e_forward)
+    overlap *= measure_scale[None, :]
+    pinv = np.linalg.pinv(overlap @ (measure_scale[:, None] * mode_matrix)) @ overlap
     projection = {
         "e_component": parts["e_component"],
         "h_component": parts["h_component"],
@@ -559,16 +570,12 @@ def _build_port_projection_2d(
         "mode_matrix": mode_matrix,
         "condition_number": float(np.linalg.cond(mode_matrix)),
         "pinv": pinv,
-        "mode_neff": float(np.real(np.asarray(neffs[mode_index]))),
+        "mode_neff": mode_neff,
     }
     if projection_weights is not None:
         projection["projection_weights"] = projection_weights
-    projection["modal_plane_delay_s"] = _modal_projection_plane_delay_s(
-        sim,
-        spec,
-        frequency,
-        projection["mode_neff"],
-    )
+    # Spatial phase is already in each basis column, including its direction.
+    projection["modal_plane_delay_s"] = 0.0
     return projection
 
 

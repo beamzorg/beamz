@@ -676,7 +676,7 @@ def _lower_mode_source(
         source.source_time,
         ctx,
         offset_half_step=not is_3d,
-        include_quadrature=is_3d,
+        include_quadrature=True,
     )
     return _mode_launch_injection_plan(launch_plan, waveform, ctx)
 
