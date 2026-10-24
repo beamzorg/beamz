@@ -47,6 +47,19 @@ def topology_yee_permittivity(program, permittivity, mask):
     density_dtype = jnp.asarray(permittivity).dtype
     selected = jnp.asarray(mask, dtype=density_dtype)
     for component, axis in zip(("Ex", "Ey", "Ez"), "xyz", strict=True):
+        if program.sharding.layout.enabled:
+            from beamz.simulation import sharding
+            from beamz.simulation.distributed_differentiation import sample_material
+
+            fraction = sample_material(program, selected, component)
+            sampled = sample_material(program, selected * permittivity, component)
+            fixed = sharding._pad_high_to_shape(
+                getattr(program.grid, f"eps_{axis}"),
+                program.sharding.layout.padded_shapes[component],
+                pad_value=1,
+            )
+            values.append(sampled + (1.0 - fraction) * fixed)
+            continue
         fraction = _cell_centers_to_yee(
             selected,
             component,
@@ -93,7 +106,12 @@ def topology_material_grid(program, permittivity, mask):
     yee = dict(original.yee_materials)
     yee.update(
         {
-            f"eps_{axis}": np.asarray(value)
+            f"eps_{axis}": np.asarray(value)[
+                tuple(
+                    slice(0, n)
+                    for n in program.sharding.layout.logical_shapes[f"E{axis}"]
+                )
+            ]
             for axis, value in zip(
                 "xyz",
                 topology_yee_permittivity(program, permittivity, mask),
@@ -105,7 +123,9 @@ def topology_material_grid(program, permittivity, mask):
     # keep all electric metadata consistent with the new design cells.
     return replace(
         original,
-        permittivity=np.asarray(permittivity),
+        permittivity=np.asarray(permittivity)[
+            tuple(slice(0, n) for n in original.shape)
+        ],
         yee_materials=yee,
         smoothing="farjadpour_diagonal",
         tensors={},
