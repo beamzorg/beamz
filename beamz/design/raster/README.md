@@ -108,6 +108,22 @@ fine = compiled.rasterize(fine_grid)
 Passing `cache_directory=` enables atomic, schema-versioned NPZ caching with
 corrupt-cache recovery.
 
+For large domains with small occupied regions, see
+[`examples/mesh_raster_regions.py`](../../../examples/mesh_raster_regions.py).
+The opt-in helper in `beamz.design.raster._regions` rasters guarded x strips,
+reconstructs full-grid material fields, and returns a validated `RasterResult`.
+Pass it through `MaterialGrid.from_raster_result()` to the existing
+`Simulation(material_grid=...)` input. A remote, full-width substrate box can
+be supplied explicitly as `substrate_object=`. The helper currently accepts
+isotropic, nondispersive materials with nonperiodic boundaries and Box,
+ExtrudedPolygon, or Mesh objects. It rejects unsupported inputs rather than
+changing the default `Scene.rasterize()` behavior. Compare all cell and Yee
+tensors against a full raster of the same scene when applying it to another
+geometry. Simplifying an imported Gmsh scene is a separate geometry choice
+that can change the material map.
+When every material has unit relative permeability, the native rasterizer
+also fills magnetic Yee supports directly without integration.
+
 ## Standalone versus simulation use
 
 Standalone rasterization accepts uniform and nonuniform rectilinear grids.
