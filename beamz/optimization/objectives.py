@@ -10,6 +10,7 @@ import numpy as np
 from jax.scipy.special import logsumexp
 
 from beamz.analysis.data import analysis_data
+from beamz.analysis.far_field import FarFieldProjection, _vectors, surface_data
 from beamz.analysis.modal_projection.geometry import (
     _modal_projection_spatial_phase,
     _monitor_projection_phase,
@@ -25,7 +26,7 @@ from beamz.simulation.observe import normalization_from_result
 
 
 class ModalObjective:
-    """Composable scalar modal objective; all optimization objectives are maximized.
+    """Composable scalar objective; all optimization objectives are maximized.
 
     Combine objectives with ``+``, ``-``, and multiplication by finite real weights.
     For example, ``transmission - 0.2 * reflection`` rewards transmission while
@@ -66,7 +67,7 @@ class ModalObjective:
         return self + (-other)
 
     @property
-    def terms(self) -> tuple[ModePower, ...]:
+    def terms(self) -> tuple[ModalObjective, ...]:
         raise NotImplementedError
 
     @property
@@ -75,6 +76,23 @@ class ModalObjective:
 
     def bind(self, results, program, cache=None):
         raise NotImplementedError
+
+    def bind_spectrum(self, results, program, cache=None):
+        raise NotImplementedError
+
+    def __call__(self, data):
+        raise NotImplementedError
+
+    @property
+    def frequency_requests(self):
+        raise NotImplementedError
+
+    def canonical_spec(self):
+        return tuple(
+            (name, getattr(self, name))
+            for name in getattr(self, "__dataclass_fields__", {})
+            if not name.startswith("_")
+        )
 
 
 @dataclass(frozen=True)
@@ -143,6 +161,12 @@ class ModePower(ModalObjective):
     @property
     def weights(self):
         return (1.0,)
+
+    @property
+    def frequency_requests(self):
+        # A reference is evaluated at the selected target frequencies, so it
+        # does not add extra adjoint frequencies of its own.
+        return ((self.monitor, self.frequencies),)
 
     def __call__(self, data):
         frequencies = (
@@ -384,20 +408,25 @@ class SoftMinModePower(ModePower):
 
 @dataclass(frozen=True, init=False)
 class WeightedObjective(ModalObjective):
-    """A weighted sum of reduced modal powers, evaluated in one FDTD solve.
+    """A weighted sum of scalar modal/radiation terms, using one FDTD solve.
 
     Negative weights penalize unwanted powers. Weights are not automatically
     normalized, and no power values are clipped. Usually construct this through
     objective arithmetic, e.g. ``0.5 * (short_to_top + long_to_bottom) - leakage``.
     """
 
-    _terms: tuple[ModePower, ...]
+    _terms: tuple[ModalObjective, ...]
     _weights: tuple[float, ...]
 
     def __init__(self, terms, weights):
         terms, weights = tuple(terms), tuple(float(w) for w in weights)
-        if not terms or not all(isinstance(t, ModePower) for t in terms):
-            raise ValueError("WeightedObjective requires nonempty ModePower terms.")
+        if not terms or not all(
+            isinstance(t, ModalObjective) and not isinstance(t, WeightedObjective)
+            for t in terms
+        ):
+            raise ValueError(
+                "WeightedObjective requires nonempty scalar objective terms."
+            )
         if len(terms) != len(weights) or not np.isfinite(weights).all():
             raise ValueError("Objective weights must be finite and match the terms.")
         object.__setattr__(self, "_terms", terms)
@@ -410,6 +439,12 @@ class WeightedObjective(ModalObjective):
     @property
     def weights(self):
         return self._weights
+
+    @property
+    def frequency_requests(self):
+        return tuple(
+            request for term in self.terms for request in term.frequency_requests
+        )
 
     def __call__(self, data):
         return jnp.sum(
@@ -426,3 +461,151 @@ class WeightedObjective(ModalObjective):
         return lambda state: jnp.sum(
             weights * jnp.stack([objective(state) for objective in objectives])
         )
+
+
+@dataclass(frozen=True)
+class DirectionalPower(ModalObjective):
+    """Mean radiated intensity over projection frequencies/directions per W input.
+
+    Units are 1/sr. Use a one-direction projection for directional emission.
+    For finite collected power use CollectionConePower with angular quadrature.
+    """
+
+    projection: FarFieldProjection
+
+    def __post_init__(self):
+        if not isinstance(self.projection, FarFieldProjection):
+            raise TypeError("projection must be a FarFieldProjection.")
+
+    @property
+    def terms(self):
+        return (self,)
+
+    @property
+    def weights(self):
+        return (1.0,)
+
+    @property
+    def frequency_requests(self):
+        return tuple(
+            (s.monitor, self.projection.frequencies) for s in self.projection.surfaces
+        )
+
+    def _spectrum(self, far):
+        return jnp.mean(far.intensity, axis=-1)
+
+    def _power(self, data):
+        return data[self.projection.surfaces[0].monitor].source_power
+
+    def __call__(self, data):
+        if hasattr(data, "metadata"):
+            data = surface_data(data, [s.monitor for s in self.projection.surfaces])
+        return jnp.mean(self._spectrum(self.projection(data)) / self._power(data))
+
+    def bind_spectrum(self, results, program, cache=None):
+        from .data import bind_simulation_data
+
+        cache = {} if cache is None else cache
+        names = tuple(s.monitor for s in self.projection.surfaces)
+        key = ("surface_data", names)
+        if key not in cache:
+            cache[key] = bind_simulation_data(results, program, names, cache)
+        data = cache[key]
+        # Validate geometry, tangential components and frequency coverage now.
+        self.projection._inputs(surface_data(results, names))
+
+        def spectrum(state):
+            fields = data(state)
+            return self._spectrum(self.projection(fields)) / self._power(fields)
+
+        return spectrum
+
+    def bind(self, results, program, cache=None):
+        spectrum = self.bind_spectrum(results, program, cache)
+        return lambda state: jnp.mean(spectrum(state))
+
+
+@dataclass(frozen=True)
+class CollectionConePower(DirectionalPower):
+    """Collected power / source power within NA about a unit Cartesian axis.
+
+    NA = n sin(theta_max), 0 < NA <= n. Integrates the forward cone only;
+    weights must be solid-angle quadrature in steradians, including sin(theta).
+    The angular mask is fixed; derivatives flow through the projected fields.
+    """
+
+    numerical_aperture: float = 1.0
+    axis: tuple[float, float, float] = (0.0, 0.0, 1.0)
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.projection.solid_angle_weights is None:
+            raise ValueError("CollectionConePower requires solid_angle_weights.")
+        na = self.numerical_aperture
+        if (
+            isinstance(na, bool)
+            or not isinstance(na, Real)
+            or not np.isfinite(na)
+            or not 0 < na <= self.projection.refractive_index
+        ):
+            raise ValueError("numerical_aperture must lie in (0, refractive_index].")
+        object.__setattr__(self, "axis", _vectors([self.axis], "axis", unit=True)[0])
+
+    def _spectrum(self, far):
+        cosine = np.sqrt(
+            max(
+                0, 1 - (self.numerical_aperture / self.projection.refractive_index) ** 2
+            )
+        )
+        mask = np.asarray(self.projection.directions) @ np.asarray(self.axis) >= cosine
+        return far.power(jnp.asarray(self.projection.solid_angle_weights) * mask)
+
+
+@dataclass(frozen=True)
+class TargetBeamOverlap(DirectionalPower):
+    """Coherent angular target-beam power / source power, averaged in frequency.
+
+    Target shape is (directions, 3) or (selected frequencies, directions, 3).
+    Polarization and relative angular phase matter; target amplitude scale cancels.
+    """
+
+    target: object = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.projection.solid_angle_weights is None:
+            raise ValueError("TargetBeamOverlap requires solid_angle_weights.")
+        target = np.asarray(self.target, dtype=complex)
+        count = len(self.projection.directions)
+        if (
+            target.ndim not in (2, 3)
+            or target.shape[-2:] != (count, 3)
+            or not np.isfinite(target).all()
+        ):
+            raise ValueError("target must be a finite complex angular Cartesian field.")
+        s = np.asarray(self.projection.directions)
+        transverse = target - s * np.sum(target * s, axis=-1, keepdims=True)
+        if np.any(np.sum(abs(transverse) ** 2, axis=(-2, -1)) <= 0):
+            raise ValueError(
+                "target must have nonzero transverse norm at every frequency."
+            )
+        if target.ndim == 3:
+            object.__setattr__(
+                self,
+                "target",
+                tuple(
+                    tuple(tuple(complex(v) for v in xyz) for xyz in f) for f in target
+                ),
+            )
+        else:
+            object.__setattr__(
+                self, "target", tuple(tuple(complex(v) for v in xyz) for xyz in target)
+            )
+
+    def _spectrum(self, far):
+        target = jnp.asarray(self.target)
+        if target.ndim == 3 and target.shape[0] != len(far.frequencies):
+            raise ValueError(
+                "Target frequency axis must match the selected projection frequencies."
+            )
+        return far.overlap_power(target, self.projection.solid_angle_weights)

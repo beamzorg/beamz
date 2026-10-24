@@ -19,6 +19,7 @@ from beamz.simulation.differentiable import (
     topology_coefficients,
     topology_material_grid,
 )
+from beamz.simulation.differentiation import build_differentiable_scan
 from beamz.simulation.execute import (
     _compiled_source_launch_powers,
     _decode_monitor_results,
@@ -27,19 +28,20 @@ from beamz.simulation.execute import (
 )
 from beamz.simulation.results import SimulationResults
 
-from ._validation import check_density, step_count
+from ._validation import check_density, execution_backend, step_count
 from .autodiff import transform_density
-from .objectives import ModePower, WeightedObjective
+from .objectives import ModalObjective
 from .polygonize import density_to_polygons
 from .result import TopologyResult, load_result
 from .topology import TopologySpec, TopologyState, _readonly_array
 
 
 class TopologyProblem:
-    """Optimize a topology region against a scalar modal objective.
+    """Optimize a topology region against a scalar modal or radiation objective.
 
-    Both backends support uniform 2D xy or 3D grids, scalar lossless dielectrics,
-    a fixed mode or Gaussian-beam source, and spectral monitors. The default uses
+    Both gradient methods support JAX execution on uniform 2D xy or 3D grids,
+    scalar lossless dielectrics, a fixed mode or Gaussian-beam source, and
+    spectral monitors. Native CUDA supports 3D autodiff. The default uses
     the exact JAX derivative with chunk checkpointing, including CPML and DFT recurrences. Geometry,
     port modes, boundaries, timestep, and run length stay fixed across iterations.
 
@@ -49,17 +51,20 @@ class TopologyProblem:
         Base simulation containing the fixed geometry, source, and monitors.
     topology : TopologySpec
         Existing density transform, design mask, and optimizer configuration.
-    objective : ModePower, SoftMinModePower, or WeightedObjective
-        Modal power averaged across selected frequencies, or a weighted combination
-        rewarding transmission and penalizing reflection/unwanted-port power.
-        SoftMinModePower targets the weakest selected frequencies instead.
+    objective : composable modal or radiation objective
+        ModePower, SoftMinModePower, DirectionalPower, CollectionConePower,
+        TargetBeamOverlap, or a weighted combination. All objectives are maximized.
     checkpoint_interval : int, default=32
         Timestep chunk length for reverse-mode rematerialization. ``None`` retains
-        ordinary reverse-mode history and is intended for small reference tests.
+        ordinary JAX reverse-mode history and is intended for small reference
+        tests. For CUDA, ``None`` selects sqrt(T) chunking and zero disables it.
     gradient_backend : {"autodiff", "adjoint"}, default="autodiff"
         Exact checkpointed differentiation through FDTD, or a spectral Maxwell
         adjoint after a pulsed FDTD forward run. The latter runs adjoint FDTD
         simulations and requires decayed fields and full-run rectangular monitors.
+    backend : {"jax", "cuda"}, default="jax"
+        FDTD execution engine. Native CUDA supports first-order autodiff on an
+        unsharded 3D grid; the spectral adjoint requires JAX execution.
     adjoint_decay_tolerance : float, default=1e-4
         Maximum terminal/peak field norm for the spectral backend. This check is
         necessary, but run-duration convergence must still be verified.
@@ -69,16 +74,18 @@ class TopologyProblem:
         self,
         simulation,
         topology: TopologySpec,
-        objective: ModePower | WeightedObjective | None = None,
+        objective: ModalObjective | None = None,
         *,
         checkpoint_interval: int | None = 32,
         gradient_backend="autodiff",
         adjoint_decay_tolerance=1e-4,
         adjoint_source_grouping="frequency",
         output_monitor_names=None,
+        backend="jax",
     ):
         if gradient_backend not in ("autodiff", "adjoint"):
             raise ValueError("gradient_backend must be 'autodiff' or 'adjoint'.")
+        self.backend = execution_backend(backend, gradient_backend)
         if (
             isinstance(adjoint_decay_tolerance, bool)
             or not isinstance(adjoint_decay_tolerance, (int, float))
@@ -96,21 +103,19 @@ class TopologyProblem:
         self.simulation = simulation
         self.topology = topology
         self.objective = objective
-        if objective is not None and not isinstance(
-            objective, (ModePower, WeightedObjective)
-        ):
+        if objective is not None and not isinstance(objective, ModalObjective):
             raise TypeError(
-                "TopologyProblem supports ModePower and weighted modal objectives."
+                "TopologyProblem accepts composable modal objectives or radiation objectives."
             )
         if objective is None and not output_monitor_names:
             raise ValueError("Supply an objective or output_monitor_names.")
         self.frequency_requests = (
-            tuple((term.monitor, term.frequencies) for term in objective.terms)
+            objective.frequency_requests
             if objective is not None
             else tuple((name, None) for name in output_monitor_names or ())
         )
         self.checkpoint_interval = checkpoint_interval
-        self.program = simulation.compile(backend="jax")
+        self.program = simulation.compile(backend=self.backend)
         self._validate()
         self._mask = jnp.asarray(topology.region_mask)
         self._base_eps = jnp.asarray(self.program.grid.material_grid.permittivity)
@@ -137,7 +142,13 @@ class TopologyProblem:
             term.bind_spectrum(empty_results, self.program, cache)
             for term in (() if objective is None else objective.terms)
         ]
-        scan = build_scan(self.program, checkpoint_interval=checkpoint_interval)
+        scan = (
+            build_differentiable_scan(
+                self.program, checkpoint_interval=checkpoint_interval
+            )
+            if self.backend == "cuda"
+            else build_scan(self.program, checkpoint_interval=checkpoint_interval)
+        )
 
         def simulate(density, beta):
             eps = self._permittivity(density, beta)
@@ -174,33 +185,40 @@ class TopologyProblem:
                 gradient_backend,
                 self.adjoint_decay_tolerance,
                 adjoint_source_grouping,
+                self.backend,
             )
         )
         self.fingerprint = hashlib.sha256(repr(token).encode()).hexdigest()
 
     def simulation_data(self, density, *, beta=1.0, monitor_names=None):
-        """Run and return differentiable ``data[name].amps.sel(...).values``.
+        """Run and return differentiable modal amplitudes or planar DFT fields.
 
         Use inside a JAX scalar objective and call ``jax.value_and_grad``. Names,
         port modes, and coordinates are static; complex amplitude values retain
-        the selected simulation derivative. This modal subset is not xarray and
-        does not support arbitrary field-monitor or interpolation operations.
+        the selected simulation derivative. Surface fields support homogeneous
+        3D radiation projection. These lightweight data objects are not xarray.
         """
-        from .data import bind_modal_data
+        from .data import bind_simulation_data
 
         names = (
             tuple(monitor_names)
             if monitor_names is not None
             else tuple(
-                m.name for m in self.simulation.monitors if isinstance(m, ModeMonitor)
+                m.name
+                for m in self.simulation.monitors
+                if isinstance(m, (ModeMonitor, FieldMonitor))
             )
         )
         if not names or len(set(names)) != len(names):
             raise ValueError("monitor_names must be nonempty and unique.")
         if names not in self._modal_data_bindings:
-            self._modal_data_bindings[names] = bind_modal_data(
-                self._binding_results, self.program, names
-            )
+            # Bind fixed mode bases, geometry and source spectra even when the
+            # caller's first access is inside jit/value_and_grad. Never cache
+            # traced constants or convert traced source waveforms to NumPy.
+            with jax.ensure_compile_time_eval():
+                self._modal_data_bindings[names] = bind_simulation_data(
+                    self._binding_results, self.program, names
+                )
         values = jnp.asarray(density, dtype=jnp.float32)
         if values.shape != self.topology.region_mask.shape:
             raise ValueError("Density must match the topology mask shape.")
@@ -314,15 +332,7 @@ class TopologyProblem:
             np.argmin(m.size) == 2 for m in sim.monitors
         ):
             raise ValueError("2D spectral monitors must be lines normal to x or y.")
-        monitor_names = {monitor.name for monitor in sim.monitors}
-        for term in () if self.objective is None else self.objective.terms:
-            if term.monitor not in monitor_names:
-                raise ValueError("Objective monitor is not present in the simulation.")
-            if (
-                term.reference_monitor is not None
-                and term.reference_monitor not in monitor_names
-            ):
-                raise ValueError("Reference monitor is not present in the simulation.")
+        self._validate_objective_monitors()
         min_eps = min(spec.eps_min, float(np.min(grid.permittivity)))
         cfl = (
             sim.resolution
@@ -390,6 +400,16 @@ class TopologyProblem:
                 raise ValueError("Unsupported absorber mask for topology optimization.")
             if np.any(pml_mask & spec.region_mask):
                 raise ValueError("The design region must not overlap the absorber.")
+
+    def _validate_objective_monitors(self):
+        names = {monitor.name for monitor in self.simulation.monitors}
+        for name, _ in self.frequency_requests:
+            if name not in names:
+                raise ValueError("Objective monitor is not present in the simulation.")
+        for term in () if self.objective is None else self.objective.terms:
+            reference = getattr(term, "reference_monitor", None)
+            if reference is not None and reference not in names:
+                raise ValueError("Reference monitor is not present in the simulation.")
 
     def _physical_density(self, density, beta):
         return transform_density(
