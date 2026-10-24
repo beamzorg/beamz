@@ -980,6 +980,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         metallic_edges=boundary_data.metallic_edges,
         polarization_2d=request.domain.polarization_2d,
     )
+    cpml = replace(cpml, magnetic_edges=boundary_data.magnetic_edges)
 
     # Native CUDA consumes the precomputed decay/source coefficients, not the
     # original constitutive grids used by JAX. Do not transfer a second material

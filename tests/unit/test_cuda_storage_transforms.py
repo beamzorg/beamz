@@ -96,7 +96,9 @@ def test_rotated_native_boundary_preserves_physical_samples(axes, components, pa
         boundary=replace(
             context.boundary,
             cpml=replace(
-                context.boundary.cpml, metallic_edges=frozenset({"front", "right"})
+                context.boundary.cpml,
+                metallic_edges=frozenset({"front", "right"}),
+                magnetic_edges=frozenset({"back", "bottom"}),
             ),
         ),
     )
@@ -195,6 +197,10 @@ def test_rotated_native_boundary_preserves_physical_samples(axes, components, pa
         assert ctx.boundary.cpml.metallic_edges == {
             faces[axes.index(0)][0],
             faces[axes.index(2)][1],
+        }
+        assert ctx.boundary.cpml.magnetic_edges == {
+            faces[axes.index(0)][1],
+            faces[axes.index(1)][0],
         }
         for phase in "he":
             old_terms = getattr(context.boundary.cpml, phase + "_terms")

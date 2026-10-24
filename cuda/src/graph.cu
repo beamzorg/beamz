@@ -153,6 +153,7 @@ void AppendLaunch(std::string* key, const BeamzLaunch& value) {
   Append(key, value.dt_over_eps);
   Append(key, value.dt_over_mu);
   Append(key, value.metallic_edges);
+  Append(key, value.magnetic_edges);
   Append(key, value.uniform_cpml_thickness);
   for (const BeamzBuffer& buffer : value.inputs) AppendBuffer(key, buffer);
   for (const BeamzBuffer& buffer : value.metrics) AppendBuffer(key, buffer);

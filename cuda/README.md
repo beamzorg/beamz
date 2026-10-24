@@ -98,9 +98,13 @@ registers it lazily; `backend="cuda_streamed"` requests it explicitly. The first
 release supports float32 3D grids. `auto` retains JAX for multi-GPU and 2D
 simulations; only the explicitly selected CPML recurrence state may use BF16.
 
+PMC is supported on all six 3D faces, including mixed boundaries, stretched
+grids, continuation, and sharding. Rebuild the optional CUDA component for
+ABI **31** (version **0.31.0**). The 2D solver remains JAX-only.
+
 ## Streamed and multistep schedules
 
-`backend="cuda"` uses one CUDA component (**0.30.0 / ABI 30**) with two schedules.
+`backend="cuda"` uses one CUDA component (**0.31.0 / ABI 31**) with two schedules.
 Omitting `schedule` preserves main's streamed and geometry-based layout policy.
 The aliases `cuda_streamed` and `cuda_mstep` force their respective schedules.
 Explicit `schedule="auto"` enables the time-to-result selector:

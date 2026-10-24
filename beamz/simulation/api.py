@@ -602,7 +602,7 @@ class Simulation:
         Immutable source specifications to inject during execution.
     monitors : sequence of monitor specifications, optional
         Quantities to record. Results are keyed by monitor name.
-    boundaries : sequence of PEC, PML, Absorber, Periodic, or Bloch, optional
+    boundaries : sequence of PEC, PMC, PML, Absorber, Periodic, or Bloch, optional
         Domain boundary conditions. An all-edge PEC boundary is used when omitted.
     resolution : float, default=0.02 * um
         Uniform cell spacing in metres when ``grid_spec`` does not override it.

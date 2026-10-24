@@ -519,6 +519,7 @@ class CpmlPlan:
     metallic_edges: frozenset[str]
     h_terms: tuple[CpmlTerm, ...]
     e_terms: tuple[CpmlTerm, ...]
+    magnetic_edges: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True, eq=False)

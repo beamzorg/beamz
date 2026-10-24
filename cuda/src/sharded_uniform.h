@@ -42,11 +42,11 @@ BEAMZ_UNIFORM float UniformDifference(const BeamzLaunch& l, const int p[3],
           - UniformSource<Component>(l, p, shard_axis, Axis, 0), l.inv_resolution);
   }
   if (coordinate == 0)
-    return (l.metallic_edges & (1 << (2 * Axis)))
-      ? FixedDifference(UniformSource<Component>(l, p, shard_axis, Axis, 0), l.inv_resolution) : 0;
+    return FixedDifference(boundary::DerivativeFactor(l.metallic_edges, l.magnetic_edges, Axis, false)
+      * UniformSource<Component>(l, p, shard_axis, Axis, 0), l.inv_resolution);
   if (coordinate == stop)
-    return (l.metallic_edges & (1 << (2 * Axis + 1)))
-      ? FixedDifference(-UniformSource<Component>(l, p, shard_axis, Axis, -1), l.inv_resolution) : 0;
+    return FixedDifference(-boundary::DerivativeFactor(l.metallic_edges, l.magnetic_edges, Axis, true)
+      * UniformSource<Component>(l, p, shard_axis, Axis, -1), l.inv_resolution);
   return FixedDifference(UniformSource<Component>(l, p, shard_axis, Axis, 0)
         - UniformSource<Component>(l, p, shard_axis, Axis, -1), l.inv_resolution);
 }
