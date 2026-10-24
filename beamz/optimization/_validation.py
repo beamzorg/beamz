@@ -5,6 +5,18 @@ from numbers import Integral
 import numpy as np
 
 
+def execution_backend(backend, gradient_backend):
+    """Validate native execution separately from the gradient method."""
+    if backend not in ("jax", "cuda"):
+        raise ValueError("Inverse-design backend must be 'jax' or 'cuda'.")
+    if backend == "cuda" and gradient_backend != "autodiff":
+        raise ValueError(
+            "backend='cuda' requires gradient_backend='autodiff'; "
+            "the spectral adjoint requires backend='jax'."
+        )
+    return backend
+
+
 def step_count(value, name="step", *, minimum=0):
     if isinstance(value, bool) or not isinstance(value, Integral) or value < minimum:
         bound = "positive" if minimum == 1 else "nonnegative"
