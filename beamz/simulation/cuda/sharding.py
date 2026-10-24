@@ -229,8 +229,34 @@ def select_sharded_kernel(ctx):
     from beamz.simulation.kernels import StepUpdateKernel
 
     validate_sharded_config(ctx.config, ctx.boundary, ctx.sharding_plan)
+    phase_update = _differentiable_phase if ctx.differentiable else _phase
     return StepUpdateKernel(
         "cuda_streamed_sharded",
-        partial(_phase, phase=0),
-        partial(_phase, phase=1),
+        partial(phase_update, phase=0),
+        partial(phase_update, phase=1),
     )
+
+
+def _differentiable_phase(state, ctx, coeffs, *, phase):
+    """Native forward phase with a distributed JAX transpose of the same stencil.
+
+    The single-device native adjoint ABI has no sharded geometry/halo operands.
+    Keep the transpose in JAX until that ABI supports distributed reverse phases.
+    """
+    from beamz.simulation.jax_sharding import _phase as reference_phase
+
+    @jax.custom_vjp
+    def advance(state, coefficients):
+        return _phase(state, ctx, coefficients, phase=phase)
+
+    def forward(state, coefficients):
+        return advance(state, coefficients), (state, coefficients)
+
+    def backward(saved, cotangent):
+        def reference(state, coefficients):
+            return reference_phase(state, ctx, coefficients, phase=phase)
+
+        return jax.vjp(reference, *saved)[1](cotangent)
+
+    advance.defvjp(forward, backward)
+    return advance(state, coeffs)
