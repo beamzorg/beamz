@@ -4,6 +4,20 @@ Use `beamz.optimization` for topology inverse design with BeamZ simulations,
 metre units, and JAX objectives. The same workflow supports full autodiff and
 spectral adjoint gradients.
 
+Radiation objectives are also available for 3D planar `FieldMonitor` outputs:
+`DirectionalPower`, `CollectionConePower`, and `TargetBeamOverlap` use a
+differentiable homogeneous-medium `FarFieldProjection`. Combine them with modal
+objectives using ordinary arithmetic. See the
+[projection guide](../../docs/near-to-far-field.md). Layered output media are a follow-up.
+
+High-level inverse design accepts `backend="cuda"` with
+`gradient_backend="autodiff"` for native, single-GPU 3D execution. Modal and
+radiation objectives share the same native reverse-mode FDTD path; the
+projection itself compiles with JAX on the GPU. `backend="jax"` remains the
+default and supports both gradient methods. The small
+[`radiation_cuda.py`](../../examples/optimization/radiation_cuda.py) example
+evaluates a collection-cone objective and gradient on a six-face recording box.
+
 ## End-to-end FDTD autodiff
 
 `Simulation.differentiable()` builds a reusable, pure solver whose fields and raw
