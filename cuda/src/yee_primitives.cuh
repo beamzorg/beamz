@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "launch.h"
+#include "boundary.h"
 
 // Shared numerical conventions for every CUDA Yee implementation.  Launchers
 // may choose different staging and tiling, but they must agree on these fixed

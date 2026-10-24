@@ -15,7 +15,11 @@ from beamz.constitutive import fit_array_to_shape as fit_array_to_shape
 from beamz.lattice import (
     adjacent_difference as _adjacent_difference,
 )
-from beamz.lattice import build_h_boundary_views_for_e_3d, component_axis_offsets_3d
+from beamz.lattice import (
+    build_h_boundary_views_for_e_3d,
+    component_axis_offsets_3d,
+    magnetic_boundary_ghost,
+)
 from beamz.simulation.boundary_masks import AxisMask
 from beamz.simulation.material_blocks import material_values, reciprocal_material
 from beamz.simulation.model import (
@@ -616,6 +620,7 @@ def cpml_update_e_from_h_3d(
     periodic_axes=frozenset(),
     periodic_phases=(),
     source_scales=None,
+    magnetic_edges=frozenset(),
 ):
     """Advance 3D E fields and their six packed CPML memories."""
     views = build_h_boundary_views_for_e_3d(
@@ -623,6 +628,7 @@ def cpml_update_e_from_h_3d(
         hy,
         hz,
         metallic_edges,
+        magnetic_edges=magnetic_edges,
         logical_shapes=logical_shapes,
         periodic_axes=periodic_axes,
         periodic_phases=periodic_phases,
@@ -708,6 +714,7 @@ def cpml_update_e_from_h_3d_metric(
     logical_shapes=None,
     periodic_axes=frozenset(),
     periodic_phases=(),
+    magnetic_edges=frozenset(),
 ):
     """Advance 3D E/CPML using physical center-to-center distances."""
     views = build_h_boundary_views_for_e_3d(
@@ -715,6 +722,7 @@ def cpml_update_e_from_h_3d_metric(
         hy,
         hz,
         metallic_edges,
+        magnetic_edges=magnetic_edges,
         logical_shapes=logical_shapes,
         periodic_axes=periodic_axes,
         periodic_phases=periodic_phases,
@@ -811,7 +819,13 @@ def tm_xy_curl_e_to_h_2d(ez, resolution, hx_shape, hy_shape, metallic_edges):
 
 
 def _tm_xy_h_derivatives(
-    hx, hy, resolution, metallic_edges, periodic_axes=frozenset(), periodic_phases=()
+    hx,
+    hy,
+    resolution,
+    metallic_edges,
+    periodic_axes=frozenset(),
+    periodic_phases=(),
+    magnetic_edges=frozenset(),
 ):
     """Return padded H derivatives on the complete Ez node lattice."""
     resolution = _scalar_like(resolution, hy.dtype)
@@ -831,14 +845,10 @@ def _tm_xy_h_derivatives(
         if 0 in periodic_axes
         else (hx[:1, :], hx[-1:, :])
     )
-    if "left" in metallic_edges:
-        left = jnp.zeros_like(left)
-    if "right" in metallic_edges:
-        right = jnp.zeros_like(right)
-    if "bottom" in metallic_edges:
-        bottom = jnp.zeros_like(bottom)
-    if "top" in metallic_edges:
-        top = jnp.zeros_like(top)
+    left = magnetic_boundary_ghost(left, "left", metallic_edges, magnetic_edges)
+    right = magnetic_boundary_ghost(right, "right", metallic_edges, magnetic_edges)
+    bottom = magnetic_boundary_ghost(bottom, "bottom", metallic_edges, magnetic_edges)
+    top = magnetic_boundary_ghost(top, "top", metallic_edges, magnetic_edges)
     padded_hy = jnp.concatenate((left, hy, right), axis=1)
     padded_hx = jnp.concatenate((bottom, hx, top), axis=0)
     d_hy_dx = (padded_hy[:, 1:] - padded_hy[:, :-1]) / resolution
@@ -854,10 +864,17 @@ def tm_xy_curl_h_to_e_2d(
     metallic_edges=frozenset(),
     periodic_axes=frozenset(),
     periodic_phases=(),
+    magnetic_edges=frozenset(),
 ):
     """Differentiate Hx and Hy onto the native Ez support."""
     d_hy_dx, d_hx_dy = _tm_xy_h_derivatives(
-        hx, hy, resolution, metallic_edges, periodic_axes, periodic_phases
+        hx,
+        hy,
+        resolution,
+        metallic_edges,
+        periodic_axes,
+        periodic_phases,
+        magnetic_edges=magnetic_edges,
     )
     curl = d_hy_dx - d_hx_dy
     if curl.shape != ez_shape:
@@ -896,10 +913,17 @@ def tm_xy_cpml_curl_h_to_e_2d(
     *,
     terms,
     psi_e_terms,
+    magnetic_edges=frozenset(),
 ):
     """Correct the two H derivatives with canonical 2D CPML memory."""
     derivatives = _tm_xy_h_derivatives(
-        hx, hy, resolution, metallic_edges, periodic_axes, periodic_phases
+        hx,
+        hy,
+        resolution,
+        metallic_edges,
+        periodic_axes,
+        periodic_phases,
+        magnetic_edges=magnetic_edges,
     )
     corrected = tuple(
         correct_cpml_term(derivative, psi, term)
@@ -923,7 +947,12 @@ def te_xy_curl_e_to_h_2d(ex, ey, resolution, hz_shape):
 
 
 def _te_xy_h_derivatives(
-    hz, resolution, metallic_edges, periodic_axes=frozenset(), periodic_phases=()
+    hz,
+    resolution,
+    metallic_edges,
+    periodic_axes=frozenset(),
+    periodic_phases=(),
+    magnetic_edges=frozenset(),
 ):
     """Return padded Hz derivatives on the complete Ex and Ey supports."""
     resolution = _scalar_like(resolution, hz.dtype)
@@ -943,14 +972,10 @@ def _te_xy_h_derivatives(
         if 1 in periodic_axes
         else (hz[:, :1], hz[:, -1:])
     )
-    if "bottom" in metallic_edges:
-        bottom = jnp.zeros_like(bottom)
-    if "top" in metallic_edges:
-        top = jnp.zeros_like(top)
-    if "left" in metallic_edges:
-        left = jnp.zeros_like(left)
-    if "right" in metallic_edges:
-        right = jnp.zeros_like(right)
+    bottom = magnetic_boundary_ghost(bottom, "bottom", metallic_edges, magnetic_edges)
+    top = magnetic_boundary_ghost(top, "top", metallic_edges, magnetic_edges)
+    left = magnetic_boundary_ghost(left, "left", metallic_edges, magnetic_edges)
+    right = magnetic_boundary_ghost(right, "right", metallic_edges, magnetic_edges)
     padded_y = jnp.concatenate((bottom, hz, top), axis=0)
     padded_x = jnp.concatenate((left, hz, right), axis=1)
     return (
@@ -967,10 +992,16 @@ def te_xy_curl_h_to_e_2d(
     metallic_edges,
     periodic_axes=frozenset(),
     periodic_phases=(),
+    magnetic_edges=frozenset(),
 ):
     """Differentiate Hz onto the canonical Ex and Ey supports."""
     d_hz_dy, d_hz_dx = _te_xy_h_derivatives(
-        hz, resolution, metallic_edges, periodic_axes, periodic_phases
+        hz,
+        resolution,
+        metallic_edges,
+        periodic_axes,
+        periodic_phases,
+        magnetic_edges=magnetic_edges,
     )
     curls = d_hz_dy, -d_hz_dx
     if curls[0].shape != ex_shape or curls[1].shape != ey_shape:
@@ -1004,10 +1035,16 @@ def te_xy_cpml_curl_h_to_e_2d(
     *,
     terms,
     psi_e_terms,
+    magnetic_edges=frozenset(),
 ):
     """Correct the Hz derivatives used by the Ex and Ey updates."""
     derivatives = _te_xy_h_derivatives(
-        hz, resolution, metallic_edges, periodic_axes, periodic_phases
+        hz,
+        resolution,
+        metallic_edges,
+        periodic_axes,
+        periodic_phases,
+        magnetic_edges=magnetic_edges,
     )
     corrected = tuple(
         correct_cpml_term(derivative, psi, term)
@@ -1025,7 +1062,13 @@ def tm_xy_curl_e_to_h_2d_metric(ez, metrics):
 
 
 def _tm_xy_h_derivatives_metric(
-    hx, hy, metrics, metallic_edges, periodic_axes=frozenset(), periodic_phases=()
+    hx,
+    hy,
+    metrics,
+    metallic_edges,
+    periodic_axes=frozenset(),
+    periodic_phases=(),
+    magnetic_edges=frozenset(),
 ):
     left, right = (
         (
@@ -1043,14 +1086,10 @@ def _tm_xy_h_derivatives_metric(
         if 0 in periodic_axes
         else (hx[:1, :], hx[-1:, :])
     )
-    if "left" in metallic_edges:
-        left = jnp.zeros_like(left)
-    if "right" in metallic_edges:
-        right = jnp.zeros_like(right)
-    if "bottom" in metallic_edges:
-        bottom = jnp.zeros_like(bottom)
-    if "top" in metallic_edges:
-        top = jnp.zeros_like(top)
+    left = magnetic_boundary_ghost(left, "left", metallic_edges, magnetic_edges)
+    right = magnetic_boundary_ghost(right, "right", metallic_edges, magnetic_edges)
+    bottom = magnetic_boundary_ghost(bottom, "bottom", metallic_edges, magnetic_edges)
+    top = magnetic_boundary_ghost(top, "top", metallic_edges, magnetic_edges)
     padded_hy = jnp.concatenate((left, hy, right), axis=1)
     padded_hx = jnp.concatenate((bottom, hx, top), axis=0)
     return (
@@ -1067,10 +1106,17 @@ def tm_xy_curl_h_to_e_2d_metric(
     metallic_edges,
     periodic_axes=frozenset(),
     periodic_phases=(),
+    magnetic_edges=frozenset(),
 ):
     """Differentiate H onto Ez using physical center-to-center distances."""
     d_hy_dx, d_hx_dy = _tm_xy_h_derivatives_metric(
-        hx, hy, metrics, metallic_edges, periodic_axes, periodic_phases
+        hx,
+        hy,
+        metrics,
+        metallic_edges,
+        periodic_axes,
+        periodic_phases,
+        magnetic_edges=magnetic_edges,
     )
     curl = d_hy_dx - d_hx_dy
     if curl.shape != ez_shape:
@@ -1101,9 +1147,16 @@ def tm_xy_cpml_curl_h_to_e_2d_metric(
     *,
     terms,
     psi_e_terms,
+    magnetic_edges=frozenset(),
 ):
     derivatives = _tm_xy_h_derivatives_metric(
-        hx, hy, metrics, metallic_edges, periodic_axes, periodic_phases
+        hx,
+        hy,
+        metrics,
+        metallic_edges,
+        periodic_axes,
+        periodic_phases,
+        magnetic_edges=magnetic_edges,
     )
     corrected = tuple(
         correct_cpml_term(derivative, psi, term)
@@ -1127,7 +1180,12 @@ def te_xy_curl_e_to_h_2d_metric(ex, ey, metrics, hz_shape):
 
 
 def _te_xy_h_derivatives_metric(
-    hz, metrics, metallic_edges, periodic_axes=frozenset(), periodic_phases=()
+    hz,
+    metrics,
+    metallic_edges,
+    periodic_axes=frozenset(),
+    periodic_phases=(),
+    magnetic_edges=frozenset(),
 ):
     bottom, top = (
         (
@@ -1145,14 +1203,10 @@ def _te_xy_h_derivatives_metric(
         if 1 in periodic_axes
         else (hz[:, :1], hz[:, -1:])
     )
-    if "bottom" in metallic_edges:
-        bottom = jnp.zeros_like(bottom)
-    if "top" in metallic_edges:
-        top = jnp.zeros_like(top)
-    if "left" in metallic_edges:
-        left = jnp.zeros_like(left)
-    if "right" in metallic_edges:
-        right = jnp.zeros_like(right)
+    bottom = magnetic_boundary_ghost(bottom, "bottom", metallic_edges, magnetic_edges)
+    top = magnetic_boundary_ghost(top, "top", metallic_edges, magnetic_edges)
+    left = magnetic_boundary_ghost(left, "left", metallic_edges, magnetic_edges)
+    right = magnetic_boundary_ghost(right, "right", metallic_edges, magnetic_edges)
     padded_y = jnp.concatenate((bottom, hz, top), axis=0)
     padded_x = jnp.concatenate((left, hz, right), axis=1)
     return (
@@ -1169,9 +1223,15 @@ def te_xy_curl_h_to_e_2d_metric(
     metallic_edges,
     periodic_axes=frozenset(),
     periodic_phases=(),
+    magnetic_edges=frozenset(),
 ):
     d_hz_dy, d_hz_dx = _te_xy_h_derivatives_metric(
-        hz, metrics, metallic_edges, periodic_axes, periodic_phases
+        hz,
+        metrics,
+        metallic_edges,
+        periodic_axes,
+        periodic_phases,
+        magnetic_edges=magnetic_edges,
     )
     curls = d_hz_dy, -d_hz_dx
     if curls[0].shape != ex_shape or curls[1].shape != ey_shape:
@@ -1203,9 +1263,15 @@ def te_xy_cpml_curl_h_to_e_2d_metric(
     *,
     terms,
     psi_e_terms,
+    magnetic_edges=frozenset(),
 ):
     derivatives = _te_xy_h_derivatives_metric(
-        hz, metrics, metallic_edges, periodic_axes, periodic_phases
+        hz,
+        metrics,
+        metallic_edges,
+        periodic_axes,
+        periodic_phases,
+        magnetic_edges=magnetic_edges,
     )
     corrected = tuple(
         correct_cpml_term(derivative, psi, term)
@@ -1379,6 +1445,7 @@ def update_e_3d_cpml(eng, ctx, coeffs):
         terms=cpml.e_terms,
         psi_terms=eng.cpml_psi_e_terms,
         metallic_edges=cpml.metallic_edges,
+        magnetic_edges=cpml.magnetic_edges,
         dt=ctx.dt_scalar,
         source_scales=(
             (coeffs.e_source_x, coeffs.e_source_y, coeffs.e_source_z)
@@ -1434,6 +1501,7 @@ def update_e_3d_yee(eng, ctx, coeffs):
         eng.hy,
         eng.hz,
         ctx.boundary.cpml.metallic_edges,
+        magnetic_edges=ctx.boundary.cpml.magnetic_edges,
         logical_shapes=ctx.boundary.logical_component_shapes,
         periodic_axes=ctx.boundary.periodic_axes,
         periodic_phases=ctx.boundary.periodic_phases,
@@ -1529,6 +1597,7 @@ def update_e_2d_tm_xy(eng, ctx, coeffs):
         ctx.boundary.metallic_edges_2d,
         ctx.boundary.periodic_axes,
         ctx.boundary.periodic_phases,
+        magnetic_edges=ctx.boundary.cpml.magnetic_edges,
     )
     return _update_e_tm_from_curl(eng, ctx, coeffs, curl_ez)
 
@@ -1546,6 +1615,7 @@ def update_e_2d_tm_xy_cpml(eng, ctx, coeffs):
         ctx.boundary.periodic_phases,
         terms=cpml.e_terms,
         psi_e_terms=eng.cpml_psi_e_terms,
+        magnetic_edges=ctx.boundary.cpml.magnetic_edges,
     )
     return _update_e_tm_from_curl(eng, ctx, coeffs, curl_ez, psi_e=psi_e)
 
@@ -1603,6 +1673,7 @@ def update_e_2d_te_xy(eng, ctx, coeffs):
         ctx.boundary.metallic_edges_2d,
         ctx.boundary.periodic_axes,
         ctx.boundary.periodic_phases,
+        magnetic_edges=ctx.boundary.cpml.magnetic_edges,
     )
     return _update_e_te_from_curls(eng, ctx, coeffs, curls)
 
@@ -1616,6 +1687,7 @@ def update_e_2d_te_xy_cpml(eng, ctx, coeffs):
         ctx.boundary.periodic_phases,
         terms=ctx.boundary.cpml.e_terms,
         psi_e_terms=eng.cpml_psi_e_terms,
+        magnetic_edges=ctx.boundary.cpml.magnetic_edges,
     )
     return _update_e_te_from_curls(eng, ctx, coeffs, curls, psi_e=psi_e)
 
@@ -1655,6 +1727,7 @@ def update_e_3d_cpml_metric(eng, ctx, coeffs):
         terms=cpml.e_terms,
         psi_terms=eng.cpml_psi_e_terms,
         metallic_edges=cpml.metallic_edges,
+        magnetic_edges=cpml.magnetic_edges,
         dt=ctx.dt_scalar,
         conductivities=(
             coeffs.e_conductivity_x,
@@ -1708,6 +1781,7 @@ def update_e_3d_yee_metric(eng, ctx, coeffs):
         eng.hy,
         eng.hz,
         ctx.boundary.cpml.metallic_edges,
+        magnetic_edges=ctx.boundary.cpml.magnetic_edges,
         logical_shapes=ctx.boundary.logical_component_shapes,
         periodic_axes=ctx.boundary.periodic_axes,
         periodic_phases=ctx.boundary.periodic_phases,
@@ -1758,6 +1832,7 @@ def update_e_2d_tm_xy_metric(eng, ctx, coeffs):
         ctx.boundary.metallic_edges_2d,
         ctx.boundary.periodic_axes,
         ctx.boundary.periodic_phases,
+        magnetic_edges=ctx.boundary.cpml.magnetic_edges,
     )
     return _update_e_tm_from_curl(eng, ctx, coeffs, curl)
 
@@ -1783,6 +1858,7 @@ def update_e_2d_tm_xy_cpml_metric(eng, ctx, coeffs):
         ctx.boundary.periodic_phases,
         terms=ctx.boundary.cpml.e_terms,
         psi_e_terms=eng.cpml_psi_e_terms,
+        magnetic_edges=ctx.boundary.cpml.magnetic_edges,
     )
     return _update_e_tm_from_curl(eng, ctx, coeffs, curl, psi_e=psi_e)
 
@@ -1801,6 +1877,7 @@ def update_e_2d_te_xy_metric(eng, ctx, coeffs):
         ctx.boundary.metallic_edges_2d,
         ctx.boundary.periodic_axes,
         ctx.boundary.periodic_phases,
+        magnetic_edges=ctx.boundary.cpml.magnetic_edges,
     )
     return _update_e_te_from_curls(eng, ctx, coeffs, curls)
 
@@ -1825,6 +1902,7 @@ def update_e_2d_te_xy_cpml_metric(eng, ctx, coeffs):
         ctx.boundary.periodic_phases,
         terms=ctx.boundary.cpml.e_terms,
         psi_e_terms=eng.cpml_psi_e_terms,
+        magnetic_edges=ctx.boundary.cpml.magnetic_edges,
     )
     return _update_e_te_from_curls(eng, ctx, coeffs, curls, psi_e=psi_e)
 

@@ -78,6 +78,8 @@ def cuda_device_kind():
 
 
 def measured_boundary_family(cpml):
+    if cpml.magnetic_edges:
+        return None
     if not cpml.enabled:
         return "pec" if len(cpml.metallic_edges) == 6 else None
     terms = (*cpml.h_terms, *cpml.e_terms)

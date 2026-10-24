@@ -101,6 +101,7 @@ def test_cuda_program_boundary_code_requires_matching_h_and_e_cpml_slabs():
             cpml=SimpleNamespace(
                 enabled=True,
                 metallic_edges=frozenset({"front"}),
+                magnetic_edges=frozenset(),
                 h_terms=uniform_h,
                 e_terms=uniform_h,
             )
@@ -123,6 +124,7 @@ def test_cuda_program_boundary_code_requires_matching_h_and_e_cpml_slabs():
             cpml=SimpleNamespace(
                 enabled=True,
                 metallic_edges=frozenset({"front"}),
+                magnetic_edges=frozenset(),
                 h_terms=uniform_h,
                 e_terms=staggered_e,
             )
@@ -968,3 +970,66 @@ def test_mstep_degenerate_runs_never_allocate_pair_workspace(monkeypatch, steps)
     scan(state, program.coefficients)
     assert calls == [(True, steps)]
     assert scan.cuda_schedule_decision["selected"] == "streamed"
+
+
+@pytest.mark.parametrize(
+    "edge,bit",
+    [("front", 0), ("back", 1), ("bottom", 2), ("top", 3), ("left", 4), ("right", 5)],
+)
+def test_cuda_pmc_boundary_code_preserves_face_and_cpml_bits(edge, bit):
+    terms = tuple(
+        SimpleNamespace(slab=SimpleNamespace(low=12, high=12)) for _ in range(6)
+    )
+    code = cuda_runtime._boundary_code(
+        frozenset(), terms, magnetic_edges=frozenset({edge})
+    )
+    assert code & 63 == 0
+    assert (code >> abi.BOUNDARY_PMC_SHIFT) & 63 == 1 << bit
+    assert (code >> 8) & abi.BOUNDARY_CPML_THICKNESS_MASK == 12
+
+
+def test_cuda_boundary_code_rejects_conflicting_walls_and_oversized_cpml():
+    with pytest.raises(ValueError, match="both PEC and PMC"):
+        cuda_runtime._boundary_code(
+            frozenset({"left"}), magnetic_edges=frozenset({"left"})
+        )
+    terms = tuple(
+        SimpleNamespace(slab=SimpleNamespace(low=65536, high=65536)) for _ in range(6)
+    )
+    with pytest.raises(ValueError, match="thickness exceeds"):
+        cuda_runtime._boundary_code(frozenset(), terms)
+
+
+def test_cuda_program_and_phase_calls_forward_pmc_faces(monkeypatch):
+    program, state, context = _program_and_state(cpml=False)
+    context = replace(
+        context,
+        boundary=replace(
+            context.boundary,
+            cpml=replace(
+                context.boundary.cpml,
+                metallic_edges=frozenset({"front"}),
+                magnetic_edges=frozenset({"right"}),
+            ),
+        ),
+    )
+    expected = (1 << 5 << abi.BOUNDARY_PMC_SHIFT) | 1
+    plan = cuda_runtime.NativeSchedulePlan(abi.PROGRAM_LAYOUT_YEE_IN_PLACE, 0)
+    assert (
+        cuda_runtime._program_attributes(context, 3, plan)["boundary_code"] == expected
+    )
+    calls = []
+
+    def ffi_call(target, outputs, aliases):
+        def call(*args, **attributes):
+            calls.append(attributes)
+            return outputs
+
+        return call
+
+    monkeypatch.setattr(cuda_runtime, "_ffi_call", ffi_call)
+    cuda_runtime.update_h(state, context, program.coefficients)
+    cuda_runtime.update_e(state, context, program.coefficients)
+    assert len(calls) == 2
+    assert all(call["boundary_code"] == expected for call in calls)
+    assert not cuda_runtime._temporal_yee_supported(context, program.coefficients, 8)

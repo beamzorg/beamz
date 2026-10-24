@@ -157,6 +157,7 @@ def _phase(state, ctx, coeffs, *, phase):
             resolution=ctx.resolution,
             cuda_flags=ctx.config.cuda_flags,
             metallic_edges=ctx.boundary.cpml.metallic_edges,
+            magnetic_edges=ctx.boundary.cpml.magnetic_edges,
             shard_geometry=geometry,
             shard_halos=tuple(
                 face

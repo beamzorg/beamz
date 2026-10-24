@@ -26,7 +26,7 @@ The supported `beamz.simulation` surface is intentionally small:
 - `Simulation`, `SimulationState`, `SimulationRun`, `SimulationResults`, `MonitorResults`
 - `AutoTermination`, `RunTermination`
 - `GridSpec`, `GaussianPulse`, `ModeSpec`
-- `Absorber`, `PML`, `PEC`, `Periodic`, `Bloch`, `Port`
+- `Absorber`, `PML`, `PEC`, `PMC`, `Periodic`, `Bloch`, `Port`
 
 `Periodic` means zero-phase periodicity. `Bloch(axes=("x", "y"),
 wavevector=(kx, ky, 0))` applies `F(r + L_i e_i) = exp(1j * k_i * L_i) F(r)`,

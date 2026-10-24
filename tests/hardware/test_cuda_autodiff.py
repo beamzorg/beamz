@@ -605,3 +605,27 @@ def test_native_fixed_material_state_chunk_needs_no_primal_tape(
         jax.tree.leaves(outcomes[1]), jax.tree.leaves(outcomes[0]), strict=True
     ):
         assert_close(actual, expected)
+
+
+@pytest.mark.parametrize("cpml", [False, True])
+@pytest.mark.parametrize("metric_kind", ["isotropic_uniform", "rectilinear"])
+def test_pmc_material_and_initial_field_gradients_match_jax(cpml, metric_kind):
+    from beamz import PMC
+
+    sim, epsilon = make_simulation(cpml=cpml, metric_kind=metric_kind, timesteps=4)
+    sim = sim.updated_copy(boundaries=[*sim.boundaries, PMC()])
+    reference = sim.differentiable(backend="jax", checkpoint_interval=0)
+    native = sim.differentiable(backend="cuda", checkpoint_interval=2)
+    state = seeded_state(reference)
+
+    def objective(solver, eps, ez):
+        return field_loss(solver(eps, state=state._replace(ez=ez)))
+
+    expected = jax.value_and_grad(
+        lambda eps, ez: objective(reference, eps, ez), argnums=(0, 1)
+    )(epsilon, state.ez)
+    actual = jax.value_and_grad(
+        lambda eps, ez: objective(native, eps, ez), argnums=(0, 1)
+    )(epsilon, state.ez)
+    for a, e in zip(jax.tree.leaves(actual), jax.tree.leaves(expected), strict=True):
+        assert_close(a, e)

@@ -72,7 +72,11 @@ def _program(shape=(256, 512, 512), steps=256, runs=1):
         for _ in range(6)
     )
     cpml = SimpleNamespace(
-        enabled=True, h_terms=terms, e_terms=terms, metallic_edges=frozenset()
+        enabled=True,
+        h_terms=terms,
+        e_terms=terms,
+        metallic_edges=frozenset(),
+        magnetic_edges=frozenset(),
     )
     supports = component_shapes(shape)
     return SimpleNamespace(
@@ -407,3 +411,10 @@ def test_progress_uses_known_chunk_reuse_and_preserves_state(monkeypatch):
         jax.tree.leaves(expected.state), jax.tree.leaves(actual.state), strict=True
     ):
         np.testing.assert_allclose(result, reference, rtol=1e-5, atol=1e-8)
+
+
+def test_pmc_does_not_reuse_measured_pec_or_cpml_performance_models():
+    from beamz.simulation.cuda.schedule import measured_boundary_family
+
+    cpml = SimpleNamespace(magnetic_edges=frozenset({"left"}))
+    assert measured_boundary_family(cpml) is None
