@@ -21,7 +21,7 @@ from beamz.lattice import (
     sample_voxel_grid_at_component_2d,
     sample_voxel_grid_at_component_3d,
 )
-from beamz.simulation import kernels
+from beamz.simulation import distributed_monitors, jax_sharding, kernels, sharding
 from beamz.simulation._cuda_abi import (
     CUDA_BF16_PSI,
     CUDA_CPML_PAIR,
@@ -31,6 +31,7 @@ from beamz.simulation._cuda_abi import (
     CUDA_TEMPORAL_PAIR,
 )
 from beamz.simulation.execute import (
+    build_step_context,
     compiled_source_batches,
     forward_step,
     initial_program_state,
@@ -65,10 +66,13 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
     cfg = program.config
     if cfg.backend != "jax" and program.coefficients.e_inverse_offdiagonal.size:
         raise ValueError("Full-tensor CUDA autodiff requires backend='jax'.")
-    if cfg.sharding.enabled:
-        raise ValueError(
-            "Differentiable execution currently requires an unsharded grid"
-        )
+    distributed = program.sharding.layout.enabled
+    if distributed:
+        from beamz.simulation.distributed_differentiation import validate
+
+        validate(program)
+        if checkpoint_interval == 0:
+            raise ValueError("Sharded autodiff requires checkpointing")
     if cfg.backend != "jax" and cfg.cuda_flags & CUDA_BF16_PSI:
         raise ValueError("CUDA autodiff requires BEAMZ_CUDA_CPML_PSI_PRECISION=fp32")
     if cfg.num_steps < 1:
@@ -80,7 +84,7 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
         raise ValueError(
             "Differentiable material binding requires nondispersive materials"
         )
-    if cfg.backend != "jax" and cfg.cuda_storage_axes != (0, 1, 2):
+    if cfg.backend != "jax" and cfg.cuda_storage_axes != (0, 1, 2) and not distributed:
         raise ValueError("CUDA autodiff requires BEAMZ_CUDA_STORAGE_AXES=012")
     # Differentiable fields use contiguous logical Yee supports. Forward-only
     # padding and temporal schedules do not define native adjoint layouts.
@@ -96,21 +100,22 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
         if cfg.backend != "jax"
         else cfg
     )
-    context = kernels.CompiledStepContext(
+    context = replace(
+        build_step_context(program),
         config=config,
-        boundary=program.boundary,
         source_batches=None,
-        metrics=program.metrics,
-        resolution=float(cfg.resolution),
-        dt=float(cfg.dt),
-        dt_scalar=jnp.asarray(cfg.dt, dtype=jnp.float32),
-        is_3d=cfg.is_3d,
         differentiable=True,
     )
-    update_kernel = kernels.select_update_kernel(context)
+    update_kernel = (
+        jax_sharding.select_kernel()
+        if jax_sharding.supported(program, differentiable=True)
+        else kernels.select_update_kernel(context)
+    )
     source_count = max((spec.source_index for spec in program.sources), default=-1) + 1
 
     def split_dft(state):
+        if distributed:
+            return state
         if not any(mon.dft_enabled for mon in program.monitors):
             return state
         values, weights = [], []
@@ -137,7 +142,7 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
         )
 
     native_step = None
-    if cfg.backend != "jax":
+    if cfg.backend != "jax" and not distributed:
         from beamz.simulation.cuda.differentiation import build_native_step
 
         native_step = build_native_step(
@@ -145,12 +150,22 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
         )
 
     def run(state, coefficients, source_amplitudes=None):
-        if cfg.backend != "jax":
+        if cfg.backend != "jax" and not distributed:
             from beamz.simulation.cuda.material_blocks import (
                 differentiable_coefficients,
             )
 
             coefficients = differentiable_coefficients(coefficients, state)
+        if distributed:
+            from beamz.simulation.distributed import scan_local_cpml
+
+            coefficients = sharding.place_tree(
+                program,
+                sharding._lower_coefficients(coefficients, program.sharding.layout),
+            )
+            state = scan_local_cpml(state, program)
+            if program.monitors:
+                state = distributed_monitors.scan_local_dft(state, program)
         state = split_dft(state)
         if source_amplitudes is None:
             sources = program.sources
@@ -229,6 +244,10 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
                 lambda carry: jax.lax.scan(step, carry, xs=None, length=tail)[0],
                 prevent_cse=False,
             )(out)
+        if distributed:
+            out = scan_local_cpml(out, program, assemble=True)
+            if program.monitors:
+                out = distributed_monitors.scan_local_dft(out, program, assemble=True)
         return pack_dft(out)
 
     return jax.jit(run)
@@ -254,10 +273,46 @@ class DifferentiableSimulation:
             program, checkpoint_interval=checkpoint_interval
         )
         self.initial_state = initial_program_state(program, t=t0, current_step=0)
+        if program.sharding.layout.enabled:
+            from beamz.simulation.observe import MONITOR_FIELDS
+
+            self.initial_state = sharding.prepare_state(
+                program, self.initial_state, replicated_fields=MONITOR_FIELDS
+            )
         self._run = jax.jit(self._advance)
+
+    def prepare_permittivity(self, values):
+        """Place scalar or host cell parameters before applying ``jit``/``grad``.
+
+        Distributed arrays include storage padding; returned material gradients
+        use the same placement and have zero sensitivity in that padding.
+        """
+        if isinstance(values, tuple):
+            if len(values) != 3:
+                raise ValueError("Yee materials require three component arrays")
+            return tuple(
+                sharding.place_tree(
+                    self.program,
+                    sharding._prepare_component(self.program, f"E{a}", value),
+                )
+                if self.program.sharding.layout.enabled
+                else jnp.asarray(value, dtype=jnp.float32)
+                for a, value in zip("xyz", values, strict=True)
+            )
+        if self.program.sharding.layout.enabled:
+            from beamz.simulation.distributed_differentiation import place_parameter
+
+            if not isinstance(values, jax.Array):
+                values = np.asarray(values, dtype=np.float32)
+            return place_parameter(self.program, values)
+        return jnp.asarray(values, dtype=jnp.float32)
 
     def _sample(self, values, components):
         grid = self.program.grid
+        if self.program.sharding.layout.enabled:
+            from beamz.simulation.distributed_differentiation import sample_material
+
+            return tuple(sample_material(self.program, values, c) for c in components)
         if self.program.config.is_3d:
             return tuple(
                 sample_voxel_grid_at_component_3d(values, component)
@@ -273,9 +328,19 @@ class DifferentiableSimulation:
     def _electric_material(self, value, prefix):
         grid = self.program.grid
         if value is None:
-            return tuple(
-                jnp.asarray(getattr(grid, f"{prefix}_{axis}")) for axis in "xyz"
-            )
+            if self.program.sharding.layout.enabled:
+                return sharding.place_tree(
+                    self.program,
+                    tuple(
+                        sharding._pad_high_to_shape(
+                            getattr(grid, f"{prefix}_{a}"),
+                            self.program.sharding.layout.padded_shapes[f"E{a}"],
+                            pad_value=1 if prefix == "eps" else 0,
+                        )
+                        for a in "xyz"
+                    ),
+                )
+            return tuple(jnp.asarray(getattr(grid, f"{prefix}_{a}")) for a in "xyz")
         if isinstance(value, tuple):
             if len(value) != 3:
                 raise ValueError(
@@ -284,7 +349,9 @@ class DifferentiableSimulation:
             values = tuple(
                 jnp.asarray(component, dtype=jnp.float32) for component in value
             )
-            expected = tuple(getattr(grid, f"{prefix}_{axis}").shape for axis in "xyz")
+            expected = tuple(
+                self.program.sharding.layout.padded_shapes[f"E{a}"] for a in "xyz"
+            )
             if tuple(component.shape for component in values) != expected:
                 raise ValueError(f"Yee material component shapes must be {expected}")
             return values
@@ -294,6 +361,8 @@ class DifferentiableSimulation:
                 "tuple to preserve its material sampling"
             )
         values = jnp.asarray(value, dtype=jnp.float32)
+        if self.program.sharding.layout.enabled:
+            return self._sample(values, ("Ex", "Ey", "Ez"))
         if values.ndim == 0:
             values = jnp.broadcast_to(values, grid.permittivity.shape)
         if values.shape != grid.permittivity.shape:
@@ -313,6 +382,8 @@ class DifferentiableSimulation:
         """
         program, grid = self.program, self.program.grid
         base, dt = program.coefficients, program.config.dt
+        if program.sharding.layout.enabled and conductivity is not None:
+            raise ValueError("Sharded autodiff supports fixed zero conductivity only")
         if (
             permittivity is not None or conductivity is not None
         ) and base.e_inverse_offdiagonal.size:
@@ -321,6 +392,27 @@ class DifferentiableSimulation:
                 "coefficients through run_coefficients"
             )
         eps = self._electric_material(permittivity, "eps")
+        if program.sharding.layout.enabled:
+            updates = {}
+            for axis, epsilon in zip("xyz", eps, strict=True):
+                valid = jnp.asarray(True)
+                for d, size in enumerate(
+                    program.sharding.layout.logical_shapes[f"E{axis}"]
+                ):
+                    shape = [1, 1, 1]
+                    shape[d] = epsilon.shape[d]
+                    valid = valid & (jnp.arange(epsilon.shape[d]).reshape(shape) < size)
+                epsilon = jnp.where(valid, epsilon, 1)
+                updates.update(
+                    {
+                        f"e_decay_{axis}": jnp.float32(1),
+                        f"e_source_{axis}": dt / (EPS_0 * epsilon),
+                        f"e_permittivity_{axis}": epsilon,
+                        f"h_decay_{axis}": jnp.float32(1),
+                        f"h_source_{axis}": jnp.float32(dt / MU_0),
+                    }
+                )
+            return base._replace(**updates)
         sig = self._electric_material(conductivity, "sig")
         h_sigma = tuple(getattr(grid, f"sigma_m_h{axis}") for axis in "xyz")
         if conductivity is not None and not isinstance(conductivity, tuple):

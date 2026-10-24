@@ -231,6 +231,14 @@ result = problem.run(steps=20, checkpoint="results/topology.npz")
 geometry = problem.export_design(result)
 ```
 
+For resident multi-GPU checkpointed gradients, pass `sharding=dict(axis="x",
+num_devices=2, backend="gpu")` to `TopologyProblem` with `gradient_backend="autodiff"`.
+Density and optimizer moments are partitioned; result snapshots are copied to
+host memory. Its public `value_and_grad` preserves NumPy gradient returns.
+The [distributed support matrix](../simulation/README.md#differentiable-execution)
+lists physics and observation restrictions. `InverseDesign` and spectral-adjoint
+distribution are separate follow-up interfaces.
+
 `ModePower` and `SoftMinModePower` combine using arithmetic, for example
 `transmission - 0.2 * reflection`. `autodiff.py`, `projections.py`, and
 `polygonize.py` contain the density transforms, SSP projection, and geometry export
