@@ -43,5 +43,13 @@ int main() {
     if (tensor_baseline == BeamzGraphKey("test", nullptr, program)) return 5;
     buffer->dims[0] = 0;
   }
+  BeamzLaunch* phases[] = {&program.h_ab, &program.e_ab,
+                           &program.h_ba, &program.e_ba};
+  const auto wall_baseline = BeamzGraphKey("test", nullptr, program);
+  for (auto* phase : phases) {
+    phase->magnetic_edges = 1;
+    if (BeamzGraphKey("test", nullptr, program) == wall_baseline) return 6;
+    phase->magnetic_edges = 0;
+  }
   return 0;
 }

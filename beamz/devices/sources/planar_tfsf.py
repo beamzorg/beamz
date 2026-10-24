@@ -608,7 +608,10 @@ def advance_incident_e_3d(
     fields, state, h_next, dt, *, resolution: float
 ) -> dict[str, np.ndarray]:
     """Advance an incident 3D state through the source-free E half-step."""
-    from beamz.devices._boundary_compile import resolve_metallic_edges
+    from beamz.devices._boundary_compile import (
+        resolve_magnetic_edges,
+        resolve_metallic_edges,
+    )
 
     ex = jnp.asarray(state["Ex"])
     ey = jnp.asarray(state["Ey"])
@@ -618,7 +621,11 @@ def advance_incident_e_3d(
     hz = jnp.asarray(h_next["Hz"])
     boundaries = getattr(fields, "boundaries", None)
     boundary_views = build_h_boundary_views_for_e_3d(
-        hx, hy, hz, frozenset(resolve_metallic_edges(boundaries, is_3d=True))
+        hx,
+        hy,
+        hz,
+        resolve_metallic_edges(boundaries, is_3d=True),
+        magnetic_edges=resolve_magnetic_edges(boundaries, is_3d=True),
     )
     grid = getattr(fields, "geometry", None)
     curl_kwargs = dict(

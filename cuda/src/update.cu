@@ -173,7 +173,7 @@ bool IsCpmlPsi(const BeamzBuffer& value, const BeamzBuffer& target, int axis) {
 cudaError_t ValidatePhase(const BeamzLaunch& launch) {
   if (launch.phase < 0 || launch.phase > 1 || launch.metric_kind < 0 ||
       launch.metric_kind > 2 || (launch.nterms != 0 && launch.nterms != 6) ||
-      launch.metallic_edges < 0 || launch.metallic_edges > 63 ||
+      !beamz::cuda::boundary::ValidFaces(launch.metallic_edges, launch.magnetic_edges) ||
       !std::isfinite(launch.dt) || !std::isfinite(launch.resolution) ||
       !std::isfinite(launch.inv_resolution) || launch.dt <= 0.0f ||
       launch.resolution <= 0.0f || launch.inv_resolution <= 0.0f ||
@@ -374,36 +374,15 @@ __device__ __forceinline__ float ForwardDifference(const BeamzBuffer& value,
       MetricScale<MetricKind>(launch, axis, coordinate));
 }
 
-template <int MetricKind, bool HasMetallicEdges = true, bool Compact = false>
+template <int MetricKind, bool HasWalls = true, bool Compact = false>
 __device__ __forceinline__ float BoundaryDifference(const BeamzBuffer& value,
                                                     int axis, int z, int y,
                                                     int x, int edge_mask,
                                                     const BeamzLaunch& launch) {
   const int coordinate = axis == 0 ? z : (axis == 1 ? y : x);
-  const float inv_dx = MetricScale<MetricKind>(launch, axis, coordinate);
-  const int size = static_cast<int>(value.dims[axis]);
-  if (coordinate == 0) {
-    if constexpr (!HasMetallicEdges) return 0.0f;
-    const bool metallic = edge_mask & (1 << (2 * axis));
-    return metallic ? beamz::cuda::yee::ScaleYeeDifference(
-                          Read3D<Compact>(value, z, y, x), inv_dx) : 0.0f;
-  }
-  if (coordinate == size) {
-    if constexpr (!HasMetallicEdges) return 0.0f;
-    int last_z = z, last_y = y, last_x = x;
-    if (axis == 0) last_z = size - 1;
-    if (axis == 1) last_y = size - 1;
-    if (axis == 2) last_x = size - 1;
-    const bool metallic = edge_mask & (1 << (2 * axis + 1));
-    return metallic ? beamz::cuda::yee::ScaleYeeDifference(
-                          -Read3D<Compact>(value, last_z, last_y, last_x), inv_dx) : 0.0f;
-  }
-  int low_z = z, low_y = y, low_x = x;
-  if (axis == 0) --low_z;
-  if (axis == 1) --low_y;
-  if (axis == 2) --low_x;
-  return beamz::cuda::yee::ScaleYeeDifference(
-      Read3D<Compact>(value, z, y, x) - Read3D<Compact>(value, low_z, low_y, low_x), inv_dx);
+  return beamz::cuda::boundary::BackwardDifference<HasWalls, Compact>(
+      value, axis, z, y, x, edge_mask, launch.magnetic_edges,
+      MetricScale<MetricKind>(launch, axis, coordinate));
 }
 
 template <int Term, bool UniformCpml = false, int PsiType = -1>
@@ -488,7 +467,7 @@ __device__ __forceinline__ float CorrectCpml(float derivative, int z, int y,
 
 // Only mstep edge kernels opt into compact field addressing.
 template <int Phase, int Component, bool Cpml, int MetricKind,
-          bool HasMetallicEdges = true, bool UniformCpml = false,
+          bool HasWalls = true, bool UniformCpml = false,
           int PsiType = -1, bool PackedLosslessMaterial = false, bool Compact = false,
           bool Tensor = false>
 __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
@@ -501,7 +480,7 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
                          static_cast<int>(output.dims[2]) +
                      x;
   bool zero_on_wall = false;
-  if constexpr (HasMetallicEdges) {
+  if constexpr (HasWalls) {
     zero_on_wall = beamz::cuda::yee::PecConstrained(
         output, Phase, Component, launch.metallic_edges, z, y, x);
   }
@@ -525,9 +504,9 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
         ForwardDifference<MetricKind, Compact>(second, second_term.derivative_axis, z, y, x,
                                       launch);
   } else {
-    derivative0 = BoundaryDifference<MetricKind, HasMetallicEdges, Compact>(
+    derivative0 = BoundaryDifference<MetricKind, HasWalls, Compact>(
         first, first_term.derivative_axis, z, y, x, launch.metallic_edges, launch);
-    derivative1 = BoundaryDifference<MetricKind, HasMetallicEdges, Compact>(
+    derivative1 = BoundaryDifference<MetricKind, HasWalls, Compact>(
         second, second_term.derivative_axis, z, y, x, launch.metallic_edges, launch);
   }
   float curl;
@@ -572,18 +551,18 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
 
 #include "tensor.cuh"
 
-template <int Phase, bool Cpml, int MetricKind, bool HasMetallicEdges = true,
+template <int Phase, bool Cpml, int MetricKind, bool HasWalls = true,
           bool UniformCpml = false, int PsiType = -1,
           bool PackedLosslessMaterial = false>
 __global__ void UpdateFusedComponents(BeamzLaunch launch) {
   const int x = blockIdx.x * blockDim.x + threadIdx.x;
   const int y = blockIdx.y * blockDim.y + threadIdx.y;
   const int z = blockIdx.z * blockDim.z + threadIdx.z;
-  UpdateComponent<Phase, 0, Cpml, MetricKind, HasMetallicEdges, UniformCpml,
+  UpdateComponent<Phase, 0, Cpml, MetricKind, HasWalls, UniformCpml,
                   PsiType, PackedLosslessMaterial>(launch, z, y, x);
-  UpdateComponent<Phase, 1, Cpml, MetricKind, HasMetallicEdges, UniformCpml,
+  UpdateComponent<Phase, 1, Cpml, MetricKind, HasWalls, UniformCpml,
                   PsiType, PackedLosslessMaterial>(launch, z, y, x);
-  UpdateComponent<Phase, 2, Cpml, MetricKind, HasMetallicEdges, UniformCpml,
+  UpdateComponent<Phase, 2, Cpml, MetricKind, HasWalls, UniformCpml,
                   PsiType, PackedLosslessMaterial>(launch, z, y, x);
 }
 
@@ -805,7 +784,7 @@ __device__ __forceinline__ float FusedEValue(const FusedYeePhase& launch,
 }
 
 template <int Phase, int PsiType, bool PackedLosslessMaterial,
-          bool HasMetallicEdges, bool WarpTile = false, int TileX = 64,
+          bool HasWalls, bool WarpTile = false, int TileX = 64,
           int TileY = 4, int CoreTileX = TileX, int CoreTileY = TileY>
 __device__ __forceinline__ void UpdateCombinedCpmlQueueBlock(
     const BeamzLaunch& launch, int max_z, int max_y, int max_x, int high_z,
@@ -861,11 +840,11 @@ __device__ __forceinline__ void UpdateCombinedCpmlQueueBlock(
       x = local_x < low ? local_x : high_x + local_x - low;
       if (y >= high_y || local_x >= outer_x) return;
     }
-    UpdateComponent<Phase, 0, true, 0, HasMetallicEdges, true, PsiType,
+    UpdateComponent<Phase, 0, true, 0, HasWalls, true, PsiType,
                     PackedLosslessMaterial>(launch, z, y, x);
-    UpdateComponent<Phase, 1, true, 0, HasMetallicEdges, true, PsiType,
+    UpdateComponent<Phase, 1, true, 0, HasWalls, true, PsiType,
                     PackedLosslessMaterial>(launch, z, y, x);
-    UpdateComponent<Phase, 2, true, 0, HasMetallicEdges, true, PsiType,
+    UpdateComponent<Phase, 2, true, 0, HasWalls, true, PsiType,
                     PackedLosslessMaterial>(launch, z, y, x);
     return;
   }
@@ -884,23 +863,23 @@ __device__ __forceinline__ void UpdateCombinedCpmlQueueBlock(
   y = low + block_y * core_tile_y + core_y_thread;
   x = low + block_x * core_tile_x + core_x_thread;
   if (z >= high_z || y >= high_y || x >= high_x) return;
-  UpdateComponent<Phase, 0, false, 0, HasMetallicEdges, false, -1,
+  UpdateComponent<Phase, 0, false, 0, HasWalls, false, -1,
                   PackedLosslessMaterial>(launch, z, y, x);
-  UpdateComponent<Phase, 1, false, 0, HasMetallicEdges, false, -1,
+  UpdateComponent<Phase, 1, false, 0, HasWalls, false, -1,
                   PackedLosslessMaterial>(launch, z, y, x);
-  UpdateComponent<Phase, 2, false, 0, HasMetallicEdges, false, -1,
+  UpdateComponent<Phase, 2, false, 0, HasWalls, false, -1,
                   PackedLosslessMaterial>(launch, z, y, x);
 }
 
 template <int Phase, int PsiType, bool PackedLosslessMaterial,
-          bool HasMetallicEdges, int TileX, int TileY, int CoreTileX,
+          bool HasWalls, int TileX, int TileY, int CoreTileX,
           int CoreTileY>
 __global__ void UpdateCombinedCpmlQueue(
     BeamzLaunch launch, int max_z, int max_y, int max_x, int high_z,
     int high_y, int high_x, int z_region_blocks, int y_region_blocks,
     int shell_blocks, int core_x_blocks, int core_y_blocks) {
   UpdateCombinedCpmlQueueBlock<Phase, PsiType, PackedLosslessMaterial,
-                               HasMetallicEdges, false, TileX, TileY,
+                               HasWalls, false, TileX, TileY,
                                CoreTileX, CoreTileY>(
       launch, max_z, max_y, max_x, high_z, high_y, high_x, z_region_blocks,
       y_region_blocks, shell_blocks, core_x_blocks, core_y_blocks, blockIdx.x);
@@ -1121,7 +1100,7 @@ __global__ __launch_bounds__(Tile::X* Tile::Y, 6) void FusedCpmlCore(
 #include "mstep.cuh"
 // clang-format on
 
-template <int MetricKind, bool HasMetallicEdges, bool UniformCpml>
+template <int MetricKind, bool HasWalls, bool UniformCpml>
 void LaunchFusedUpdate(cudaStream_t stream, const BeamzLaunch& launch,
                        dim3 blocks, dim3 threads) {
   int psi_type = -1;
@@ -1146,65 +1125,65 @@ void LaunchFusedUpdate(cudaStream_t stream, const BeamzLaunch& launch,
       launch.inputs[10].element_type == kBeamzS32 &&
       launch.inputs[11].element_type == kBeamzS32;
   if (launch.phase == 0 && launch.nterms == 0) {
-    UpdateFusedComponents<0, false, MetricKind, HasMetallicEdges, UniformCpml>
+    UpdateFusedComponents<0, false, MetricKind, HasWalls, UniformCpml>
         <<<blocks, threads, 0, stream>>>(launch);
   } else if (launch.phase == 0) {
     if (psi_type == kBeamzBF16) {
-      UpdateFusedComponents<0, true, MetricKind, HasMetallicEdges, UniformCpml,
+      UpdateFusedComponents<0, true, MetricKind, HasWalls, UniformCpml,
                             kBeamzBF16>
           <<<blocks, threads, 0, stream>>>(launch);
     } else if (psi_type == kBeamzF32) {
-      UpdateFusedComponents<0, true, MetricKind, HasMetallicEdges, UniformCpml,
+      UpdateFusedComponents<0, true, MetricKind, HasWalls, UniformCpml,
                             kBeamzF32>
           <<<blocks, threads, 0, stream>>>(launch);
     } else {
-      UpdateFusedComponents<0, true, MetricKind, HasMetallicEdges, UniformCpml>
+      UpdateFusedComponents<0, true, MetricKind, HasWalls, UniformCpml>
           <<<blocks, threads, 0, stream>>>(launch);
     }
   } else if (launch.nterms == 0) {
     if (packed_lossless_material) {
-      UpdateFusedComponents<1, false, MetricKind, HasMetallicEdges, UniformCpml,
+      UpdateFusedComponents<1, false, MetricKind, HasWalls, UniformCpml,
                             -1, true><<<blocks, threads, 0, stream>>>(launch);
     } else {
-      UpdateFusedComponents<1, false, MetricKind, HasMetallicEdges, UniformCpml>
+      UpdateFusedComponents<1, false, MetricKind, HasWalls, UniformCpml>
           <<<blocks, threads, 0, stream>>>(launch);
     }
   } else {
     if (psi_type == kBeamzBF16 && packed_lossless_material) {
-      UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml,
+      UpdateFusedComponents<1, true, MetricKind, HasWalls, UniformCpml,
                             kBeamzBF16, true>
           <<<blocks, threads, 0, stream>>>(launch);
     } else if (psi_type == kBeamzF32 && packed_lossless_material) {
-      UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml,
+      UpdateFusedComponents<1, true, MetricKind, HasWalls, UniformCpml,
                             kBeamzF32, true>
           <<<blocks, threads, 0, stream>>>(launch);
     } else if (packed_lossless_material) {
-      UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml,
+      UpdateFusedComponents<1, true, MetricKind, HasWalls, UniformCpml,
                             -1, true><<<blocks, threads, 0, stream>>>(launch);
     } else if (psi_type == kBeamzBF16) {
-      UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml,
+      UpdateFusedComponents<1, true, MetricKind, HasWalls, UniformCpml,
                             kBeamzBF16>
           <<<blocks, threads, 0, stream>>>(launch);
     } else if (psi_type == kBeamzF32) {
-      UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml,
+      UpdateFusedComponents<1, true, MetricKind, HasWalls, UniformCpml,
                             kBeamzF32>
           <<<blocks, threads, 0, stream>>>(launch);
     } else {
-      UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml>
+      UpdateFusedComponents<1, true, MetricKind, HasWalls, UniformCpml>
           <<<blocks, threads, 0, stream>>>(launch);
     }
   }
 }
 
-template <int MetricKind, bool HasMetallicEdges>
+template <int MetricKind, bool HasWalls>
 void LaunchFusedUpdateForBoundary(cudaStream_t stream,
                                   const BeamzLaunch& launch, dim3 blocks,
                                   dim3 threads) {
   if (launch.nterms != 0 && launch.uniform_cpml_thickness > 0) {
-    LaunchFusedUpdate<MetricKind, HasMetallicEdges, true>(stream, launch,
+    LaunchFusedUpdate<MetricKind, HasWalls, true>(stream, launch,
                                                           blocks, threads);
   } else {
-    LaunchFusedUpdate<MetricKind, HasMetallicEdges, false>(stream, launch,
+    LaunchFusedUpdate<MetricKind, HasWalls, false>(stream, launch,
                                                            blocks, threads);
   }
 }
@@ -1243,7 +1222,7 @@ int BeamzLaunchStreamed(void* raw_stream, const BeamzLaunch& launch) {
       launch.inputs[9].rank == 0 && launch.inputs[10].rank == 0 &&
       launch.inputs[11].rank == 0;
   if (launch.metric_kind == 0 && scalar_coefficients &&
-      launch.metallic_edges == 63) {
+      launch.metallic_edges == 63 && launch.magnetic_edges == 0) {
     if (launch.phase == 0) {
       UpdateFusedFullPecScalarComponents<0>
           <<<fused_blocks, threads, 0, stream>>>(launch);
@@ -1252,7 +1231,7 @@ int BeamzLaunchStreamed(void* raw_stream, const BeamzLaunch& launch) {
           <<<fused_blocks, threads, 0, stream>>>(launch);
     }
   } else if (launch.metric_kind == 0) {
-    if (launch.metallic_edges == 0) {
+    if (launch.metallic_edges == 0 && launch.magnetic_edges == 0) {
       LaunchFusedUpdateForBoundary<0, false>(stream, launch, fused_blocks,
                                               threads);
     } else {
@@ -1260,7 +1239,7 @@ int BeamzLaunchStreamed(void* raw_stream, const BeamzLaunch& launch) {
                                              threads);
     }
   } else if (launch.metric_kind == 1) {
-    if (launch.metallic_edges == 0) {
+    if (launch.metallic_edges == 0 && launch.magnetic_edges == 0) {
       LaunchFusedUpdateForBoundary<1, false>(stream, launch, fused_blocks,
                                               threads);
     } else {
@@ -1268,7 +1247,7 @@ int BeamzLaunchStreamed(void* raw_stream, const BeamzLaunch& launch) {
                                              threads);
     }
   } else {
-    if (launch.metallic_edges == 0) {
+    if (launch.metallic_edges == 0 && launch.magnetic_edges == 0) {
       LaunchFusedUpdateForBoundary<2, false>(stream, launch, fused_blocks,
                                               threads);
     } else {
@@ -1341,7 +1320,7 @@ void LaunchCpmlQueueTile(cudaStream_t stream,
       (high_y - low + core_tile_y - 1) / core_tile_y;
   const int core_blocks = core_x_blocks * core_y_blocks * (high_z - low);
   const dim3 threads(tile_x, tile_y, 1);
-  if (launch.metallic_edges == 0) {
+  if (launch.metallic_edges == 0 && launch.magnetic_edges == 0) {
     UpdateCombinedCpmlQueue<Phase, PsiType, PackedLosslessMaterial, false,
                             tile_x, tile_y, core_tile_x, core_tile_y>
         <<<shell_blocks + (shell_only ? 0 : core_blocks), threads, 0, stream>>>(

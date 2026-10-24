@@ -16,6 +16,7 @@ from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.design.discretization import MaterialGrid
 from beamz.devices.boundaries import (
     PEC,
+    PMC,
     PML,
     Absorber,
     Periodic,
@@ -75,6 +76,7 @@ class BoundaryData:
     profiles: Mapping[str, Any] | None
     masks: Mapping[str, Any]
     metallic_edges: frozenset[str]
+    magnetic_edges: frozenset[str]
     periodic_axes: frozenset[int]
 
 
@@ -143,12 +145,21 @@ class _BoundaryGrid:
 
 def resolve_metallic_edges(boundaries, is_3d: bool) -> frozenset[str]:
     """Apply boundary precedence and return walls that remain metallic."""
+    return _resolve_wall_edges(boundaries, is_3d, PEC)
+
+
+def resolve_magnetic_edges(boundaries, is_3d: bool) -> frozenset[str]:
+    """Return PMC faces after applying last-specification-wins precedence."""
+    return _resolve_wall_edges(boundaries, is_3d, PMC)
+
+
+def _resolve_wall_edges(boundaries, is_3d, wall_type):
     metallic: set[str] = set()
     for boundary in normalize_boundaries(boundaries):
         if isinstance(boundary, Periodic):
             continue
         edges = edges_for_dimension(boundary.edges, bool(is_3d))
-        if isinstance(boundary, PEC):
+        if isinstance(boundary, wall_type):
             metallic.update(edges)
         else:
             metallic.difference_update(edges)
@@ -976,6 +987,7 @@ def lower_boundaries(
             region_setup=region_setup,
         ),
         resolve_metallic_edges(boundaries, len(material_grid.shape) == 3),
+        resolve_magnetic_edges(boundaries, len(material_grid.shape) == 3),
         periodic_storage_axes(
             boundaries,
             is_3d=len(material_grid.shape) == 3,

@@ -192,6 +192,7 @@ CONFIGURATION_CASES = (
     PublicConfigCase("ModeSpec", bz.ModeSpec),
     PublicConfigCase("PML", bz.PML),
     PublicConfigCase("PEC", bz.PEC),
+    PublicConfigCase("PMC", bz.PMC),
     PublicConfigCase("Absorber", bz.Absorber),
     PublicConfigCase("Periodic", bz.Periodic),
 )

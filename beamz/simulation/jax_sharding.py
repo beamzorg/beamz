@@ -136,6 +136,16 @@ def _phase(state, ctx, coeffs, *, phase):
                         allowed = allowed | (coordinate == 0)
                     if _EDGES[derivative_axis][1] in edges:
                         allowed = allowed | (coordinate == source_stop)
+                    # Tangential H is half a cell inside a PMC wall. Its odd
+                    # exterior image doubles the wall derivative on the E node.
+                    magnetic = ctx.boundary.cpml.magnetic_edges
+                    wall = jnp.asarray(False)
+                    if _EDGES[derivative_axis][0] in magnetic:
+                        wall = wall | (coordinate == 0)
+                    if _EDGES[derivative_axis][1] in magnetic:
+                        wall = wall | (coordinate == source_stop)
+                    derivative = jnp.where(wall, 2 * derivative, derivative)
+                    allowed = allowed | wall
                     derivative = cast(jax.Array, jnp.where(allowed, derivative, 0))
                 term_index = 2 * component + which
                 term = terms[term_index]

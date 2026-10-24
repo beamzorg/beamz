@@ -27,7 +27,7 @@
 - **Multi-GPU** runs, handling **large-scale simulations** with _billions of cells_.
 - CPU-capable for **fast prototyping**, even on your laptop.
 - Dedicated CUDA-backend for acceleration beyond default Jax.
-- **CPML**, absorbing layers and PEC boundaries.
+- **CPML**, absorbing layers, PEC and PMC boundaries.
 - **Unidirectional mode sources** (single freq. and broadband, Huygens fields + TFSF, TE/TM).
 - **3D Gaussian sources**, e.g. for grating coupler simulations.
 - **DFT monitors** and S-parameter extraction workflow for compact modeling.
@@ -56,6 +56,7 @@ Try out notebooks from our growing **[example library](https://beamz.tech/simula
 - [10) Scheduled Four-channel WDM](examples/notebooks/topology_wdm_4channel.ipynb)
 - [11) Choosing Interface Smoothing: Volume, Diagonal or Full Tensor (3D)](examples/notebooks/interface_smoothing_choice.ipynb)
 
+A small local [PMC boundary notebook](examples/notebooks/pmc_boundaries.ipynb) demonstrates a magnetic-wall cavity and checks its discrete standing-wave solution.
 
 ## Integration 
 

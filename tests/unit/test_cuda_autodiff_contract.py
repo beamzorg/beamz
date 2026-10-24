@@ -388,6 +388,17 @@ def test_material_transpose_ffi_layout(monkeypatch, cpml, axes):
     from tests.unit.test_cuda_runtime_contract import _program_and_state
 
     program, state, ctx = _program_and_state(cpml=cpml)
+    ctx = replace(
+        ctx,
+        boundary=replace(
+            ctx.boundary,
+            cpml=replace(
+                ctx.boundary.cpml,
+                metallic_edges=ctx.boundary.cpml.metallic_edges.difference({"right"}),
+                magnetic_edges=frozenset({"right"}),
+            ),
+        ),
+    )
     nterms = len(ctx.boundary.cpml.h_terms)
     banks = tuple(
         jnp.stack((v, v)) for v in (*state.cpml_psi_h_terms, *state.cpml_psi_e_terms)
@@ -419,6 +430,8 @@ def test_material_transpose_ffi_layout(monkeypatch, cpml, axes):
         jnp.int32(1),
     )
     target, results, aliases, inputs, attrs = captured[0]
+    assert (int(attrs["boundary_code_h"]) >> runtime.abi.BOUNDARY_PMC_SHIFT) & 63 == 32
+    assert (int(attrs["boundary_code_e"]) >> runtime.abi.BOUNDARY_PMC_SHIFT) & 63 == 32
     assert target == runtime.abi.CUDA_MATERIAL_ADJOINT_TARGET
     start = 23 + 7 * nterms
     material_start = 6 + 2 * nterms

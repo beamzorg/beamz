@@ -16,7 +16,8 @@ constexpr float kEps0 = 8.8541878128e-12f;
 constexpr float kMu0 = 1.25663706212e-6f;
 void SetBoundaryCode(BeamzLaunch* launch, int32_t code) {
   launch->metallic_edges = code & 0x3f;
-  launch->uniform_cpml_thickness = code >> 8;
+  launch->magnetic_edges = (code >> kBoundaryPmcShift) & 0x3f;
+  launch->uniform_cpml_thickness = (code >> 8) & kBoundaryCpmlThicknessMask;
 }
 
 BeamzLaunch InitializeLaunch(int32_t abi_version, int32_t cuda_flags,
