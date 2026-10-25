@@ -68,6 +68,10 @@ BeamZ is used by several other OSS packages as an FDTD engine and integrates wit
 
 ## Installation
 
+BeamZ requires Python 3.11–3.14. Python 3.10 is no longer supported because
+the patched Pillow image backend requires Python 3.11 or newer. Upgrade your
+Python environment before installing this version.
+
 Install BeamZ using pip:
 
 ```bash

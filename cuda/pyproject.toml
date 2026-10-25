@@ -2,8 +2,7 @@
 requires = [
   "scikit-build-core>=0.10",
   "nanobind>=2.4",
-  "jax==0.6.2; python_version < '3.11'",
-  "jax==0.9.0; python_version >= '3.11'",
+  "jax==0.9.0",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -11,11 +10,10 @@ build-backend = "scikit_build_core.build"
 name = "beamz-cuda-component"
 version = "0.31.0"
 description = "Private optional CUDA component built from the BeamZ source tree"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 classifiers = ["Private :: Do Not Upload"]
 dependencies = [
-  "jax==0.6.2; python_version < '3.11'",
-  "jax==0.9.0; python_version >= '3.11'",
+  "jax==0.9.0",
 ]
 
 [tool.scikit-build]
