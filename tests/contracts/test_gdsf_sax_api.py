@@ -482,9 +482,9 @@ def test_project_modal_coefficients_3d_group_recovers_multiple_modes():
 
 
 @pytest.mark.parametrize("force_symmetry", [False, True])
+@pytest.mark.parametrize("nonuniform", [False, True])
 def test_build_port_projection_2d_preserves_requested_mode_index_without_seed(
-    monkeypatch,
-    force_symmetry,
+    monkeypatch, force_symmetry, nonuniform
 ):
     sim = SimpleNamespace()
     sim.is_3d = False
@@ -498,7 +498,8 @@ def test_build_port_projection_2d_preserves_requested_mode_index_without_seed(
 
     def fake_profile(self, monitor, axis, pad_cells):
         del self, monitor, axis, pad_cells
-        return np.ones((5,), dtype=np.complex128), np.arange(5, dtype=int), 1.0
+        profile = (np.ones((5,), dtype=np.complex128), np.arange(5, dtype=int), 1.0)
+        return (*profile, np.array([0, 1, 2, 4, 6, 9])) if nonuniform else profile
 
     monkeypatch.setattr(mp, "_monitor_profile_slice", fake_profile)
 
@@ -523,8 +524,9 @@ def test_build_port_projection_2d_preserves_requested_mode_index_without_seed(
         target_neff,
         return_fields,
         force_symmetry=False,
+        grid_edges=None,
     ):
-        requested.append(force_symmetry)
+        requested.append((force_symmetry, grid_edges))
         del eps, omega, dL, m, direction, filter_pol, target_neff, return_fields
         return (
             np.array([2.3, 1.8], dtype=float),
@@ -556,7 +558,11 @@ def test_build_port_projection_2d_preserves_requested_mode_index_without_seed(
         cache={},
     )
 
-    assert requested == [force_symmetry]
+    assert len(requested) == 1 and requested[0][0] == force_symmetry
+    if nonuniform:
+        np.testing.assert_array_equal(requested[0][1][0], [0, 1, 2, 4, 6, 9])
+    else:
+        assert requested[0][1] is None
     assert projection["mode_neff"] == pytest.approx(1.8)
     assert int(np.argmax(np.abs(projection["mode_matrix"][:5, 0]))) == 1
     assert np.count_nonzero(np.abs(projection["mode_matrix"][:5, 0]) > 1e-12) == 1
