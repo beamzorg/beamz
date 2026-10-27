@@ -14,5 +14,6 @@ preserved in the [immutable pre-cleanup snapshot](https://github.com/beamzorg/be
 The [layout prediction study](https://github.com/beamzorg/beamz/blob/dabecdc231f82194ecb8f9f352d5654be12a8c0c/docs/reviews/cuda-layout-prediction-2026-09-18.md)
 and its [replay script](https://github.com/beamzorg/beamz/blob/dabecdc231f82194ecb8f9f352d5654be12a8c0c/scripts/analyze_cuda_layout_prediction.py)
 record the historical method and limits. Check out that commit to reproduce the
-analysis against its original data and code. These experimental settings are
-not current defaults.
+analysis against its original data and code. The retired [wavefront geometry](https://github.com/beamzorg/beamz/blob/dabecdc231f82194ecb8f9f352d5654be12a8c0c/scripts/analyze_cuda_wavefront_geometry.py)
+and [schedule oracle](https://github.com/beamzorg/beamz/blob/dabecdc231f82194ecb8f9f352d5654be12a8c0c/scripts/verify_cuda_wavefront_schedule.py)
+also remain there. These experimental settings are not current defaults.
