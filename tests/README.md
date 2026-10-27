@@ -94,10 +94,8 @@ wrong-sign operator mutations are rejected by the numerical invariants.
 
 ## Local gates
 
-The pull-request gate includes the current `slow` simulations because they add
-less than a minute locally. Its main coverage job excludes external PDKs and
-hardware-specific work, while a parallel job runs the fake-CPU sharding
-contracts. Both jobs exclude tests explicitly marked `release`:
+The pull-request coverage job excludes external PDKs and hardware-specific
+work; a parallel job runs CPU sharding contracts. Both exclude `release` tests:
 
 ```bash
 python -m pytest -m "not release and not pdk and not hardware"
@@ -148,31 +146,23 @@ The pull-request gate now makes the following quantitative claims:
   reflection with direction-correct 2D Yee modal bases; physical launch checks
   for all four 2D directions in TM and TE, including unwanted power behind the
   source, two downstream monitors, sponge/CPML, and grid/monitor variations;
-- directional derivatives for the available optimization primitives;
+- topology gradients against finite differences and full-loop autodiff,
+  including pulsed spectral-adjoint cases in 2D;
 - one-step lossless Yee time reversibility and mutation-sensitive
   divergence-of-curl detection;
 - execution of all notebooks in reduced mode against an isolated built wheel.
 
-These claims are emitted as structured JSON. The pull-request gate enforces
-combined statement-and-branch coverage at 80%, changed-line coverage at 85%,
-and the risk-weighted floors in `tests/coverage_policy.json`: 87% for public
-configuration, 90.5% for the solver core, 77% for PIC analysis, and 93.5% for
-numerical kernels. The top-level public API also has an executable inventory:
-adding an export requires classifying it, and every public configuration object
-shares frozen-state and nested-immutability contracts. Available functional
-copy APIs are checked as well. The longer-term 90% global branch-inclusive
-target remains a target, not a current claim.
+The validation report records outcomes and metrics where emitted. The coverage
+gate enforces the floors in `tests/coverage_policy.json` and 85% changed-line
+coverage. The public API inventory and configuration immutability contracts
+also gate changes.
 
-The suite deliberately does **not** yet claim complete Mie scattering, cavity
-resonance/Q validation, end-to-end FDTD adjoints, external-solver consensus,
-CUDA parity, multi-GPU equivalence, or stable performance trends. Those require,
-respectively, closed-contour flux/TFSF support, calibrated long ringdowns,
-integrated adjoint execution, installed external adapters, real accelerators,
-and a controlled benchmark host. Their schemas and evidence directories are in
-place, but promoting them to validation requires the missing independent
-observable or execution environment. Large 3D sweeps, long-time CPML stability,
-and broad convergence/performance matrices belong in the release gate or
-controlled hardware runs rather than the pull-request gate.
+These focused gradient checks do not establish accuracy for every objective,
+material or backend. The suite does not claim complete Mie scattering or cavity
+Q validation, external-solver consensus, comprehensive CUDA and multi-GPU
+parity, or stable performance trends. Large 3D sweeps, long-time CPML stability,
+and broad convergence/performance matrices require controlled runs beyond the
+pull-request gate.
 
 ## Dependency security
 
