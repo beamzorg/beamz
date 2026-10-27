@@ -243,6 +243,37 @@ def _inactive_sampling_plan(point_count: int):
     return jnp.zeros(shape, dtype=jnp.int32), jnp.zeros(shape, dtype=jnp.float32)
 
 
+def _compile_3d_quadrature(monitor, fields, resolution, grid):
+    """Build the shared Yee plane used by recorders and DFT monitors."""
+    shapes = {
+        name: tuple(getattr(fields, name).shape)
+        for name in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
+    }
+    base_shape = common_grid_shape_3d(fields)
+    region = (
+        snap_plane_region_grid(
+            center=monitor.center,
+            size=monitor.size,
+            plane_normal=monitor.plane_normal,
+            grid=grid,
+        )
+        if grid is not None
+        else monitor.get_snapped_region(
+            dx=resolution, dy=resolution, dz=resolution, field_shape=base_shape
+        )
+    )
+    return region, compile_yee_plane_quadrature_3d(
+        center=monitor.center,
+        size=monitor.size,
+        normal_axis=monitor.plane_normal,
+        region=region,
+        resolution=resolution,
+        grid_shape=base_shape,
+        component_shapes=shapes,
+        grid=grid,
+    )
+
+
 def compile_monitor_specs(
     monitors: tuple[_Monitor, ...],
     fields,
@@ -361,37 +392,10 @@ def compile_monitor_specs(
                     interp_indices.append(flat_idx)
                     interp_weights.append(weights)
             else:
-                field_shapes = {
-                    component: tuple(getattr(fields, component).shape)
-                    for component in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
-                }
-                base_shape = common_grid_shape_3d(fields)
-                region = (
-                    snap_plane_region_grid(
-                        center=monitor.center,
-                        size=monitor.size,
-                        plane_normal=monitor.plane_normal,
-                        grid=active_grid,
-                    )
-                    if use_geometry
-                    else monitor.get_snapped_region(
-                        dx=resolution,
-                        dy=resolution,
-                        dz=resolution,
-                        field_shape=base_shape,
-                    )
+                region, quadrature = _compile_3d_quadrature(
+                    monitor, fields, resolution, active_grid if use_geometry else None
                 )
                 sample_region = _compact_sample_region(region)
-                quadrature = compile_yee_plane_quadrature_3d(
-                    center=monitor.center,
-                    size=monitor.size,
-                    normal_axis=monitor.plane_normal,
-                    region=region,
-                    resolution=resolution,
-                    grid_shape=base_shape,
-                    component_shapes=field_shapes,
-                    grid=active_grid if use_geometry else None,
-                )
                 output_shape = tuple(
                     int(values.size) for values in quadrature.coordinates
                 )
@@ -644,44 +648,15 @@ def compile_monitor_specs(
                 )
             )
         else:
-            shape_3d = {
-                "Ex": tuple(fields.Ex.shape),
-                "Ey": tuple(fields.Ey.shape),
-                "Ez": tuple(fields.Ez.shape),
-                "Hx": tuple(fields.Hx.shape),
-                "Hy": tuple(fields.Hy.shape),
-                "Hz": tuple(fields.Hz.shape),
-            }
-            base_shape_3d = common_grid_shape_3d(fields)
-            region = (
-                snap_plane_region_grid(
-                    center=monitor.center,
-                    size=monitor.size,
-                    plane_normal=monitor.plane_normal,
-                    grid=active_grid,
-                )
-                if use_geometry
-                else monitor.get_snapped_region(
-                    dx=resolution,
-                    dy=resolution,
-                    dz=resolution,
-                    field_shape=base_shape_3d,
-                )
-            )
-            quadrature = compile_yee_plane_quadrature_3d(
-                center=monitor.center,
-                size=monitor.size,
-                normal_axis=monitor.plane_normal,
-                region=region,
-                resolution=resolution,
-                grid_shape=base_shape_3d,
-                component_shapes=shape_3d,
-                grid=active_grid if use_geometry else None,
+            region, quadrature = _compile_3d_quadrature(
+                monitor, fields, resolution, active_grid if use_geometry else None
             )
             point_count = quadrature.point_count
             sample_plans = []
             dft_plans = []
-            for component_index, name in enumerate(shape_3d):
+            for component_index, name in enumerate(
+                ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
+            ):
                 needs_dft = bool(dft_component_mask[component_index] > 0.0)
                 if needs_dft:
                     flat_idx, weights = quadrature.plan(name)
