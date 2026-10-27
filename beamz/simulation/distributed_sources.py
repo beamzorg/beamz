@@ -7,6 +7,8 @@ import jax
 import jax.numpy as jnp
 from jax.sharding import PartitionSpec as P
 
+from beamz.simulation.distributed import _shard_map
+
 
 def _clamped_starts(value, group):
     return tuple(
@@ -67,10 +69,7 @@ def apply_batched_slabs(value, abs_step, group, plan):
     spec = P(*("fdtd" if d == axis else None for d in range(value.ndim)))
     extent = value.shape[axis] // count
     starts = _clamped_starts(value, group)
-    try:
-        shard_map = jax.shard_map
-    except AttributeError:
-        from jax.experimental.shard_map import shard_map
+    shard_map = _shard_map()
 
     @partial(shard_map, mesh=plan.mesh, in_specs=(spec, P(), P(), P()), out_specs=spec)
     def inject(local, step, coefficients, waveforms):

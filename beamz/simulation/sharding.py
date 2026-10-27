@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from beamz._region_array import RegionArray, place_region_array
+from beamz.constitutive import _fit_array_to_shape
 from beamz.simulation.model import (
     CpmlPackedSlabSpec,
     DerivativeMetricPlan,
@@ -238,28 +239,7 @@ def _pad_high_to_shape(arr, shape: tuple[int, ...], *, pad_value=0.0):
     if isinstance(arr, RegionArray):
         return arr.padded(target_shape, pad_value)
     xp = np if _is_host_array(arr) else jnp
-    arr = xp.asarray(arr)
-    if tuple(arr.shape) == target_shape:
-        return arr
-    if arr.ndim != len(target_shape):
-        raise ValueError(
-            f"Cannot fit rank-{arr.ndim} array to rank-{len(target_shape)} shape"
-        )
-    out = arr[
-        tuple(
-            slice(0, min(int(size), target))
-            for size, target in zip(arr.shape, target_shape, strict=True)
-        )
-    ]
-    padding = tuple(
-        (0, max(0, target - int(size)))
-        for size, target in zip(out.shape, target_shape, strict=True)
-    )
-    return (
-        xp.pad(out, padding, mode="constant", constant_values=pad_value)
-        if any(high for _, high in padding)
-        else out
-    )
+    return _fit_array_to_shape(arr, target_shape, pad_value=pad_value, xp=xp)
 
 
 def _crop_high_to_shape(arr, shape: tuple[int, ...]) -> jnp.ndarray:
