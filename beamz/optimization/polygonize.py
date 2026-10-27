@@ -7,7 +7,6 @@ from scipy.ndimage import map_coordinates
 from shapely.geometry import GeometryCollection, box
 from shapely.geometry import Polygon as ShapelyPolygon
 from shapely.ops import unary_union
-from skimage.measure import find_contours
 
 from beamz.design.structures import Polygon
 
@@ -32,20 +31,17 @@ def _iter_shapely_polygons(geometry):
 
 
 def _build_parent_map(polygons):
-    parents: list[int | None] = [None] * len(polygons)
+    parents = []
     for idx, polygon in enumerate(polygons):
         point = polygon.representative_point()
-        best_parent = None
-        best_area = None
-        for parent_idx in range(idx + 1, len(polygons)):
-            candidate = polygons[parent_idx]
-            if not candidate.covers(point):
-                continue
-            area = candidate.area
-            if best_area is None or area < best_area:
-                best_parent = parent_idx
-                best_area = area
-        parents[idx] = best_parent
+        candidates = (
+            parent
+            for parent in range(idx + 1, len(polygons))
+            if polygons[parent].covers(point)
+        )
+        parents.append(
+            min(candidates, key=lambda parent: polygons[parent].area, default=None)
+        )
     return parents
 
 
@@ -75,6 +71,8 @@ def _pixel_geometry(mask, *, x0, y0, dx, dy):
 
 
 def _contour_geometry(array, *, level, x0, y0, dx, dy, sample_spacing):
+    from skimage.measure import find_contours
+
     # Repeat boundary samples beyond the cell-edge domain. Contours close outside
     # that domain; clipping below puts solid edges exactly on the physical frame.
     extended = np.pad(array, 1, mode="edge")

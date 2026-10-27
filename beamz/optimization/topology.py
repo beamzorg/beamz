@@ -324,12 +324,8 @@ class TopologySpec:
         return fold_high_side_yee_padding_to_shape(grad_eps, self.region_mask.shape)
 
     def _optimizer(self):
-        try:
-            import optax
-        except ImportError as exc:
-            raise ImportError(
-                "optax is required for optimization. Install with: pip install optax"
-            ) from exc
+        import optax
+
         factory = optax.adam if self.optimizer == "adam" else optax.sgd
         return factory(learning_rate=self.learning_rate)
 
