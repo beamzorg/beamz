@@ -2,7 +2,7 @@ name: CUDA extension
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, dev/consolidation]
     paths:
       - ".github/workflows/cuda.yml"
       - "beamz/simulation/backend.py"
