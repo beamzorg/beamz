@@ -327,20 +327,11 @@ def snap_mode_source_region(
     companion_coord = (float(companion_index) + 1.0) * float(resolution)
 
     intervals: dict[str, SnappedInterval] = {}
-    if axis == "x":
-        intervals["y"] = snap_centered_extent(center[1], width, resolution, counts["y"])
-        if is_3d:
-            z_center = (
-                center[2] if len(center) > 2 else 0.5 * counts["z"] * float(resolution)
-            )
-            intervals["z"] = snap_centered_extent(
-                z_center,
-                float(height if height is not None else width),
-                resolution,
-                counts["z"],
-            )
-    elif axis == "y":
-        intervals["x"] = snap_centered_extent(center[0], width, resolution, counts["x"])
+    if axis in ("x", "y"):
+        transverse = "y" if axis == "x" else "x"
+        intervals[transverse] = snap_centered_extent(
+            center[_axis_pos(transverse)], width, resolution, counts[transverse]
+        )
         if is_3d:
             z_center = (
                 center[2] if len(center) > 2 else 0.5 * counts["z"] * float(resolution)
