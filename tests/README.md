@@ -150,7 +150,7 @@ The pull-request gate now makes the following quantitative claims:
   including pulsed spectral-adjoint cases in 2D;
 - one-step lossless Yee time reversibility and mutation-sensitive
   divergence-of-curl detection;
-- execution of all notebooks in reduced mode against an isolated built wheel.
+- execution of documentation examples and the installed-wheel quickstart.
 
 The validation report records outcomes and metrics where emitted. The coverage
 gate enforces the floors in `tests/coverage_policy.json` and 85% changed-line

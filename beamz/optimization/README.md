@@ -38,9 +38,8 @@ plots, open [`cuda_autodiff_waveguide_bend.ipynb`](../../examples/notebooks/cuda
 
 - `backend="jax"` supports the portable 2D TM/TE and 3D solvers.
 - `backend="cuda"` uses native streamed forward and reverse-mode Yee/CPML
-  kernels for the existing single-GPU, float32 3D physics. Both lossy materials
-  and mixed absorbing/PEC faces are supported. The CUDA component must be
-  rebuilt for ABI 28.
+  kernels for single-GPU, float32 3D physics, including lossy materials and
+  mixed absorbing/PEC faces. Rebuild for the ABI in [`cuda/abi_layout.json`](../../cuda/abi_layout.json).
 - `checkpoint_interval=None` selects approximately sqrt(T) steps per chunk;
   a positive integer controls the memory/recomputation tradeoff. Zero retains
   the trajectory for small reference problems. Chunk recomputation works with

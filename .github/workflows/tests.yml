@@ -2,7 +2,7 @@ name: Trust Gate
 
 on:
   push:
-    branches: [main, master, refactor]
+    branches: [main, master, refactor, dev/consolidation]
   pull_request:
   workflow_dispatch:
 
