@@ -14,16 +14,11 @@ from beamz._cache_tokens import cache_token
 from beamz.design.core import Design
 from beamz.design.materials import Material
 from beamz.design.structures import Structure
+from beamz.devices._immutable import readonly_array as _readonly_array
 
 from ._validation import fixed_density_masks
 from .autodiff import compute_parameter_gradient_vjp, transform_density
 from .projections import validate_projection_options
-
-
-def _readonly_array(value, dtype=None):
-    array = np.array(value, dtype=dtype, copy=True)
-    array.setflags(write=False)
-    return array
 
 
 @dataclass(frozen=True, slots=True, eq=False)

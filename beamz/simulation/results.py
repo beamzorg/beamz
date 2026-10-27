@@ -162,12 +162,6 @@ class RunTermination:
                 object.__setattr__(self, name, float(value))
 
 
-def _array_snapshot(value: Any, dtype=None) -> np.ndarray:
-    # Copy only analysis-required data so results remain reproducible without live
-    # simulation ownership.
-    return readonly_array(value, dtype=dtype)
-
-
 def _analysis_function(module: str, name: str):
     """Resolve analysis lazily so result values do not import it eagerly."""
     return getattr(import_module(f"beamz.analysis.{module}"), name)
@@ -436,7 +430,7 @@ class SimulationMetadata:
             raise ValueError(
                 "SimulationMetadata.coordinate_offset must have three values."
             )
-        time = _array_snapshot(self.time, dtype=float)
+        time = readonly_array(self.time, dtype=float)
         if time.ndim != 1 or not np.all(np.isfinite(time)):
             raise ValueError("SimulationMetadata.time must be a finite 1D array.")
         plane_2d = str(self.plane_2d).lower()
@@ -558,7 +552,7 @@ class SimulationMetadata:
             is_3d=bool(simulation.is_3d),
             plane_2d=str(simulation.plane_2d),
             coordinate_offset=(offset[0], offset[1], offset[2]),
-            time=_array_snapshot(simulation.time, dtype=float),
+            time=simulation.time,
             width=float(design.width),
             height=float(design.height),
             depth=float(design.depth),
@@ -695,7 +689,7 @@ class MonitorResults:
             "dft_weight_sum",
             "integration_weights",
         ):
-            object.__setattr__(self, name, _array_snapshot(getattr(self, name)))
+            object.__setattr__(self, name, readonly_array(getattr(self, name)))
         if self.field_times.shape != self.field_steps.shape:
             raise ValueError(
                 "Recorded field times and steps must have matching shapes."
@@ -714,7 +708,7 @@ class MonitorResults:
             else self._raw_power_spectrum
         )
         object.__setattr__(self, "_raw_dft_fields", immutable_snapshot(raw_fields))
-        object.__setattr__(self, "_raw_power_spectrum", _array_snapshot(raw_power))
+        object.__setattr__(self, "_raw_power_spectrum", readonly_array(raw_power))
 
     def get_dft_frequencies(self):
         """Return frequencies associated with frequency-domain acquisitions.
@@ -1412,9 +1406,7 @@ class SimulationResults:
         if completed_steps is not None:
             metadata = replace(
                 metadata,
-                time=_array_snapshot(
-                    simulation.time[: int(completed_steps)], dtype=float
-                ),
+                time=simulation.time[: int(completed_steps)],
             )
         monitor_results_dict = {
             name: replace(

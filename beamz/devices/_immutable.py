@@ -8,7 +8,7 @@ from typing import Any, cast
 import numpy as np
 
 
-def readonly_array(value: Any, *, dtype: Any | None = None) -> np.ndarray:
+def readonly_array(value: Any, dtype: Any | None = None) -> np.ndarray:
     arr = np.array(value, dtype=dtype, copy=True)
     arr.setflags(write=False)
     return arr
