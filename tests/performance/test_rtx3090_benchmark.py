@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import replace
 
 import pytest
@@ -9,10 +10,26 @@ from scripts.rtx3090_benchmark import (
     BackendMeasurement,
     RTX3090Comparison,
     RTX3090Matrix,
+    source_environment,
     summarize_timings,
     write_matrix_artifacts,
     write_report_artifacts,
 )
+
+
+def test_source_environment_prioritizes_both_checkouts_and_disables_cache(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("PYTHONPATH", "/unrelated")
+    monkeypatch.setenv("JAX_COMPILATION_CACHE_DIR", "/cached")
+    env = source_environment(tmp_path / "source", tmp_path / "runner")
+    assert env["PYTHONPATH"].split(os.pathsep) == [
+        str(tmp_path / "source"),
+        str(tmp_path / "runner"),
+        "/unrelated",
+    ]
+    assert env["BEAMZ_DISABLE_JAX_PERSISTENT_CACHE"] == "1"
+    assert "JAX_COMPILATION_CACHE_DIR" not in env
 
 
 def _measurement(label: str, samples: tuple[float, ...]) -> BackendMeasurement:

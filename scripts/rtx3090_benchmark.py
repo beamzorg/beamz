@@ -9,11 +9,34 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import random
 import statistics
+import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
+
+
+def source_revision(root: Path) -> str:
+    def git(*args):
+        return subprocess.run(
+            ("git", *args), cwd=root, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    commit = git("rev-parse", "HEAD")
+    return commit + ("-dirty" if git("status", "--porcelain") else "")
+
+
+def source_environment(*roots: Path) -> dict[str, str]:
+    environment = os.environ.copy()
+    paths = [str(root) for root in roots]
+    if previous := environment.get("PYTHONPATH"):
+        paths.append(previous)
+    environment["PYTHONPATH"] = os.pathsep.join(paths)
+    environment["BEAMZ_DISABLE_JAX_PERSISTENT_CACHE"] = "1"
+    environment.pop("JAX_COMPILATION_CACHE_DIR", None)
+    return environment
 
 
 def _validate_samples(samples: Iterable[float]) -> tuple[float, ...]:
