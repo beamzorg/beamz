@@ -257,7 +257,7 @@ x extent at least 384 use an H/E
 interior kernel with a two-plane shared-memory ring. H sources are included in
 interior and halo recomputation; CPML shell updates remain separate. Smaller or
 narrower grids and unmeasured architectures retain separate phase queues.
-See the [local RTX3090 measurements](../docs/reviews/cuda-optimization-2026-09-17.md)
+See the [local RTX3090 measurements](https://github.com/beamzorg/beamz/blob/dabecdc231f82194ecb8f9f352d5654be12a8c0c/docs/reviews/cuda-optimization-2026-09-17.md)
 for the measured envelope, remaining validation gates, and limitations.
 
 `BEAMZ_CUDA_CPML_CORE_FUSION=0` disables interior fusion; `=1` forces it for
@@ -337,16 +337,16 @@ program's CUDA flags. Returned fields always have the original logical shapes.
 Inspect `native_plans` in benchmark JSON to confirm whether the requested
 temporal depth was eligible. Run `scripts/benchmark_cuda_shapes.py --help` for
 controlled layout comparisons with 12-cell CPML and lossless mode-source cases.
-The [RTX3090 layout and temporal study](../docs/reviews/cuda-layout-temporal-study-2026-09-18.md)
+The [RTX3090 layout and temporal study](https://github.com/beamzorg/beamz/blob/dabecdc231f82194ecb8f9f352d5654be12a8c0c/docs/reviews/cuda-layout-temporal-study-2026-09-18.md)
 records the measured regressions and shape dependence. These controls are
 experimental; padding and two-timestep blocking are not enabled automatically.
-The [expanded CPML and bare temporal study](../docs/reviews/cuda-cpml-tiles-and-bare-temporal-2026-09-18.md)
+The [expanded CPML and bare temporal study](https://github.com/beamzorg/beamz/blob/dabecdc231f82194ecb8f9f352d5654be12a8c0c/docs/reviews/cuda-cpml-tiles-and-bare-temporal-2026-09-18.md)
 tests tile generality and a separate rolling-plane temporal prototype. Two-step
 rolling reuse helps the tested bare periodic stencil. Its rolling design is now
 available through the backend's temporal flag; realistic CPML coupling adds
 substantial cost. The standalone source is
 `cuda/tests/temporal_bulk_benchmark.cu`.
-The [realistic integration study](../docs/reviews/cuda-realistic-temporal-integration-2026-09-18.md)
+The [realistic integration study](https://github.com/beamzorg/beamz/blob/dabecdc231f82194ecb8f9f352d5654be12a8c0c/docs/reviews/cuda-realistic-temporal-integration-2026-09-18.md)
 records paired source/monitor integration, correctness checks and large-domain
 comparisons. `scripts/benchmark_cuda_cpml_tiles.py --study temporal_schedule`
 compares the ordinary schedule, rolling two-step core and paired monitors on the
@@ -433,7 +433,7 @@ experimental CPML temporal blocking is not selected. The estimate repairs the
 recorded narrow-x cases once longer execution repays startup. It is not a
 guarantee of the global optimum on every workload. See the
 [validation summary](../docs/reviews/pr334-post-merge-validation-2026-10-17.md) for results and archived studies
-and the [earlier geometry study](../docs/reviews/cuda-layout-prediction-2026-09-18.md)
+and the [earlier geometry study](https://github.com/beamzorg/beamz/blob/dabecdc231f82194ecb8f9f352d5654be12a8c0c/docs/reviews/cuda-layout-prediction-2026-09-18.md)
 for the work estimate.
 
 ```python
