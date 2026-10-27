@@ -14,7 +14,6 @@ from beamz.simulation._cuda_abi import (
     CUDA_ABI_VERSION,
     CUDA_ADJOINT_TARGET,
     CUDA_BF16_PSI,
-    CUDA_CPML_PAIR,
     CUDA_DEFAULT_FLAGS,
     CUDA_FIELD_PAD32,
     CUDA_FIELD_PAD64,
@@ -80,8 +79,9 @@ def cuda_flags_from_env() -> int:
         raise ValueError("BEAMZ_CUDA_TEMPORAL_STEPS must be 1 or 2")
     if temporal_steps == "2":
         flags |= CUDA_TEMPORAL_PAIR
-    if _env_enabled("BEAMZ_CUDA_CPML_TEMPORAL", default=False):
-        flags |= CUDA_TEMPORAL_PAIR | CUDA_CPML_PAIR
+    for name in ("BEAMZ_CUDA_CPML_TEMPORAL", "BEAMZ_CUDA_CPML_SPATIAL"):
+        if _env_enabled(name, default=False):
+            raise ValueError(f"{name} was removed; use the established CPML schedule")
     shell_tile = os.environ.get("BEAMZ_CUDA_CPML_SHELL_TILE", "64x4")
     shell_tiles = {"64x4": 0, "32x8": CUDA_SHELL32X8, "32x4": CUDA_SHELL32X4}
     if shell_tile not in shell_tiles:

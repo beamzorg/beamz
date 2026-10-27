@@ -89,9 +89,9 @@ def main():
         ("bf16_pair", "bf16", True),
     ):
         os.environ["BEAMZ_CUDA_CPML_PSI_PRECISION"] = precision
-        os.environ["BEAMZ_CUDA_CPML_TEMPORAL"] = "1" if paired else "0"
+        os.environ["BEAMZ_CUDA_CPML_TEMPORAL"] = "0"
+        os.environ["BEAMZ_CUDA_CPML_SPATIAL"] = "0"
         os.environ["BEAMZ_CUDA_TEMPORAL_STEPS"] = "2" if paired else "1"
-        os.environ["BEAMZ_CUDA_CPML_PAIR_TILE"] = "oriented"
         os.environ.pop("BEAMZ_CUDA_CPML_CORE_FUSION", None)
         state = None
         previous = 0

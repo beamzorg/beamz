@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Removed the slower experimental complete temporal-CPML and spatial CPML
+  schedules. Enabled `BEAMZ_CUDA_CPML_TEMPORAL` or `BEAMZ_CUDA_CPML_SPATIAL`
+  settings now raise an error; ordinary and rolling-interior schedules remain.
+
 ## v0.6.0 - 2026-10-25
 
 ### Added

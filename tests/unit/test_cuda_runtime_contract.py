@@ -180,6 +180,45 @@ def test_cuda_cpml_bf16_state_is_explicit_and_preserves_continuation(monkeypatch
     )
 
 
+@pytest.mark.parametrize(
+    "name", ["BEAMZ_CUDA_CPML_TEMPORAL", "BEAMZ_CUDA_CPML_SPATIAL"]
+)
+def test_retired_cpml_experiments_are_not_silently_ignored(monkeypatch, name):
+    for option in ("BEAMZ_CUDA_CPML_TEMPORAL", "BEAMZ_CUDA_CPML_SPATIAL"):
+        monkeypatch.setenv(option, "0")
+    backend_runtime.cuda_flags_from_env()
+    monkeypatch.setenv(name, "1")
+    with pytest.raises(ValueError, match=name):
+        backend_runtime.cuda_flags_from_env()
+
+
+@pytest.mark.parametrize("steps", [1, 2, 3, 4, 5, 6])
+def test_temporal_pair_returns_the_last_field_and_psi_banks(steps):
+    _, state, _ = _program_and_state(cpml=True)
+    fields = cuda_runtime._fields(state)
+    psi = (*state.cpml_psi_h_terms, *state.cpml_psi_e_terms)
+
+    def bank(arrays, value):
+        return tuple(jnp.full_like(a, value) for a in arrays)
+
+    outputs = (
+        *bank(fields, 1),
+        *bank(fields, 2),
+        *bank(psi, 3),
+        *bank(psi, 4),
+        *bank(fields, 5),
+    )
+    result = cuda_runtime._replace_temporal_cpml_outputs(state, outputs, steps, 2)
+    expected_field = 5 if steps % 4 == 2 else 2 if steps % 2 else 1
+    assert all(
+        np.all(np.asarray(a) == expected_field) for a in cuda_runtime._fields(result)
+    )
+    assert all(
+        np.all(np.asarray(a) == (4 if steps % 2 else 3))
+        for a in (*result.cpml_psi_h_terms, *result.cpml_psi_e_terms)
+    )
+
+
 def test_cuda_policy_rejects_unknown_psi_precision(monkeypatch):
     monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "fp8")
 

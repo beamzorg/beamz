@@ -260,20 +260,11 @@ cudaError_t ValidateProgram(const BeamzProgramLaunch& program) {
   if (program.nsteps < 1 || program.graph_cache_capacity < 0 ||
       (program.field_bank_count < 1 || program.field_bank_count > 3) ||
       program.h_ab.phase != 0 || program.e_ab.phase != 1 ||
-      program.h_ab.nterms != program.e_ab.nterms) {
+      program.h_ab.nterms != program.e_ab.nterms ||
+      FlagEnabled(program.h_ab, kBeamzCpmlPair)) {
     return cudaErrorInvalidValue;
   }
   if (program.field_bank_count == 3) {
-    if (FlagEnabled(program.h_ab, kBeamzCpmlPair)) {
-      const int type=program.h_ab.inputs[31].element_type;
-      if(type!=kBeamzF32 && type!=kBeamzBF16) return cudaErrorInvalidValue;
-      for (int t=0;t<6;++t)
-        if (program.h_ab.inputs[31+t].element_type != type ||
-            program.e_ab.inputs[31+t].element_type != type ||
-            program.h_ab.outputs[3+t].element_type != type ||
-            program.e_ab.outputs[3+t].element_type != type)
-          return cudaErrorInvalidValue;
-    }
     if (program.source_group_count != 9 || !CombinedCpmlCoreSupported(program))
       return cudaErrorInvalidValue;
     for (int c = 0; c < 3; ++c) {
@@ -512,7 +503,7 @@ bool FuseCpmlCore(const BeamzProgramLaunch &program) {
 cudaError_t EnqueueTemporalPairProgram(cudaStream_t stream,
                                        const BeamzProgramLaunch &program,
                                        int tile, int pair_tile,
-                                       bool fused_core, int cpml_tile, bool spatial) {
+                                       bool fused_core) {
   BeamzBuffer a[6], b[6];
   for (int c = 0; c < 3; ++c) {
     a[c] = program.h_ab.inputs[c];
@@ -533,12 +524,6 @@ cudaError_t EnqueueTemporalPairProgram(cudaStream_t stream,
   };
   auto boundary_step = [&](const BeamzLaunch &h, const BeamzLaunch &e, int step,
                            bool band, bool observe = true) -> cudaError_t {
-    if (spatial) {
-      auto error=BeamzEnqueueSpatialCpml(stream,h,e,program.source_groups,step);
-      if(error!=cudaSuccess)return error;
-      return observe && program.monitors
-          ? ObserveProgramStep(stream, program, h, e, step) : cudaSuccess;
-    }
     if (pair_tile >= 3 && !fused_core) {
       auto sources = [&](int timing) -> cudaError_t {
         for (int index = 0; index < program.source_group_count; ++index) {
@@ -592,7 +577,6 @@ cudaError_t EnqueueTemporalPairProgram(cudaStream_t stream,
                ? ObserveProgramStep(stream, program, h, e, step)
                : cudaSuccess;
   };
-  const bool cpml_pair = FlagEnabled(program.h_ab, kBeamzCpmlPair);
   for (int pair = 0; pair < program.nsteps / 2; ++pair) {
     const auto *input = (pair & 1) ? program.pair_fields : a;
     const auto *output = (pair & 1) ? a : program.pair_fields;
@@ -600,33 +584,21 @@ cudaError_t EnqueueTemporalPairProgram(cudaStream_t stream,
     auto h2 = program.h_ba, e2 = program.e_ba;
     bind(h1, e1, input, b);
     bind(h2, e2, b, output);
-    const bool rolling = pair_tile < 3 && !spatial;
+    const bool rolling = pair_tile < 3;
     auto error = cudaSuccess;
-    if (cpml_pair) {
-      const auto &hp = (pair & 1) ? program.h_ba : program.h_ab;
-      const auto &ep = (pair & 1) ? program.e_ba : program.e_ab;
-      for (int t=0;t<6;++t) {
-        h1.inputs[31+t]=hp.inputs[31+t]; h1.outputs[3+t]=hp.outputs[3+t];
-        e1.inputs[31+t]=ep.inputs[31+t]; e1.outputs[3+t]=ep.outputs[3+t];
-      }
-      error = BeamzEnqueueTemporalCpml(stream,h1,e1,output,program.source_groups,
-                                      2*pair,program.pair_publication,cpml_tile);
-      if (error != cudaSuccess) return error;
-    } else if (rolling) {
+    if (rolling) {
       error = BeamzEnqueueCpmlPairCore(stream, h1, e1, output,
                                        program.source_groups, 2 * pair,
                                        program.pair_publication, pair_tile);
       if (error != cudaSuccess)
         return error;
     }
-    if (!cpml_pair) {
     error = boundary_step(h1, e1, 2 * pair, rolling, false);
     if (error != cudaSuccess)
       return error;
     error = boundary_step(h2, e2, 2 * pair + 1, rolling, false);
     if (error != cudaSuccess)
       return error;
-    }
     if (program.monitors) {
       error = BeamzEnqueueDftPair(stream, h1, e1, h2, e2, *program.monitors,
                                   2 * pair);
@@ -636,8 +608,8 @@ cudaError_t EnqueueTemporalPairProgram(cudaStream_t stream,
   }
   if (program.nsteps & 1) {
     const auto *input = ((program.nsteps / 2) & 1) ? program.pair_fields : a;
-    auto h = cpml_pair && ((program.nsteps / 2) & 1) ? program.h_ba : program.h_ab;
-    auto e = cpml_pair && ((program.nsteps / 2) & 1) ? program.e_ba : program.e_ab;
+    auto h = program.h_ab;
+    auto e = program.e_ab;
     bind(h, e, input, b);
     return boundary_step(h, e, program.nsteps - 1, false);
   }
@@ -688,29 +660,12 @@ int LaunchTemporalCpmlProgram(void *raw_stream,
   }
   graph_key.append(reinterpret_cast<const char *>(&pair_tile),
                    sizeof(pair_tile));
-  int cpml_tile=0;
-  if (FlagEnabled(h_ab,kBeamzCpmlPair)) {
-    if (const char *choice=std::getenv("BEAMZ_CUDA_CPML_PAIR_TILE")) {
-      if (std::strcmp(choice,"16x8x4")==0) cpml_tile=1;
-      else if (std::strcmp(choice,"oriented")==0) cpml_tile=2;
-      else if (std::strcmp(choice,"16x8x16")!=0) return cudaErrorInvalidValue;
-    }
-  }
-  graph_key.append(reinterpret_cast<const char *>(&cpml_tile),sizeof(cpml_tile));
-  const char *spatial_choice=std::getenv("BEAMZ_CUDA_CPML_SPATIAL");
-  bool spatial=spatial_choice && std::strcmp(spatial_choice,"1")==0 &&
-      CombinedCpmlCoreSupported(program) && !FlagEnabled(h_ab,kBeamzCpmlPair);
-  const int psi_type=h_ab.inputs[31].element_type;
-  for(int t=0;t<6;++t)
-    spatial &= h_ab.inputs[31+t].element_type==psi_type &&
-               e_ab.inputs[31+t].element_type==psi_type;
-  graph_key.append(reinterpret_cast<const char *>(&spatial),sizeof(spatial));
   const bool cache_enabled = FlagEnabled(h_ab, kBeamzGraphCache);
 
   auto enqueue = [&]() {
     if (program.field_bank_count == 3)
       return EnqueueTemporalPairProgram(stream, program, tile, pair_tile,
-                                        fused_core, cpml_tile, spatial);
+                                        fused_core);
     cudaError_t error = cudaSuccess;
     auto enqueue_sources = [&](const BeamzLaunch &h_launch,
                                const BeamzLaunch &e_launch, int timing,
@@ -741,9 +696,7 @@ int LaunchTemporalCpmlProgram(void *raw_stream,
       enqueue_sources(h_launch, e_launch, 0, step);
       if (error != cudaSuccess)
         return error;
-      if (spatial) {
-        error=BeamzEnqueueSpatialCpml(stream,h_launch,e_launch,source_groups,step);
-      } else if (fused_core) {
+      if (fused_core) {
         error = BeamzEnqueueCpmlShell(stream, h_launch);
         if (error != cudaSuccess)
           return error;
@@ -775,7 +728,7 @@ int LaunchTemporalCpmlProgram(void *raw_stream,
       }
       if (error != cudaSuccess)
         return error;
-      if (!spatial) enqueue_sources(h_launch, e_launch, 2, step);
+      enqueue_sources(h_launch, e_launch, 2, step);
       if (error != cudaSuccess)
         return error;
       if (monitors != nullptr) {

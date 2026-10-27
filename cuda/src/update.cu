@@ -1117,7 +1117,6 @@ __global__ __launch_bounds__(Tile::X* Tile::Y, 6) void FusedCpmlCore(
 // These implementation fragments depend on the preceding stage definitions.
 // clang-format off
 #include "temporal_pair.cuh"
-#include "temporal_cpml.cuh"
 #include "mstep.cuh"
 // clang-format on
 
@@ -1610,103 +1609,6 @@ cudaError_t BeamzEnqueueCpmlPairBand(cudaStream_t stream, const BeamzLaunch &h,
   return cudaPeekAtLastError();
 }
 
-
-template <bool Packed, bool Half, int X, int Y, int Z, int Mask, int Steps>
-cudaError_t LaunchTemporalCpmlMask(cudaStream_t stream,
-    const PairCpmlPhase &h, const PairCpmlPhase &e, const PairFieldOutputs &final,
-    const FusedHSources &hs, const FusedHSources &es, BeamzBuffer publication,
-    PairCpmlGrid grid) {
-  int counts[3];
-  const int sizes[3]={Z,Y,X};
-  for (int a=0;a<3;++a) {
-    counts[a]=(Mask & (1<<a)) ? (grid.high[a]+sizes[a]-1)/sizes[a]+(grid.extent[a]-grid.boundary[a]+sizes[a]-1)/sizes[a]
-                            : (grid.boundary[a]-grid.high[a]+sizes[a]-1)/sizes[a];
-    if (!counts[a]) return cudaSuccess;
-  }
-  constexpr size_t bytes=Steps==1 ? PairStage<X-2,Y-2,1>::offset*sizeof(float)
-      : PairPsiStage<X,Y,1,Mask,Half>::offset*sizeof(float)+
-        2*PairPsiTerms(Mask)*(X+2)*(Y+2)*(Half?sizeof(__nv_bfloat16):sizeof(float));
-  TemporalCpmlPair<Packed,Half,X,Y,Z,Mask,Steps>
-      <<<dim3(counts[2],counts[1],counts[0]),
-         (Steps == 2 && ((Mask == 4 && X == 15 && Y == 16) || (Mask == 2 && X == 16 && Y == 15))) ? 384 : 256,
-         bytes,stream>>>(h,e,final,hs,es,publication,grid);
-  return cudaPeekAtLastError();
-}
-
-template <bool Packed, bool Half, int Tile, int Steps=2>
-cudaError_t LaunchTemporalCpmlMasks(cudaStream_t stream, const BeamzLaunch &h,
-    const BeamzLaunch &e, const BeamzBuffer *final_fields,
-    const BeamzSourceGroupLaunch *groups, int step, BeamzBuffer publication) {
-  PairFieldOutputs final{};
-  FusedHSources hs{}, es{};
-  hs.step = es.step = step;
-  int extents[3]{};
-  for (int c=0;c<6;++c) {
-    final.fields[c]=final_fields[c];
-    for (int a=0;a<3;++a)
-      extents[a]=std::max(extents[a],static_cast<int>(final_fields[c].dims[a]));
-  }
-  for (int c=0;c<3;++c) {hs.groups[c]=groups[3+c];es.groups[c]=groups[6+c];}
-  PairCpmlGrid grid{};
-  for (int a=0;a<3;++a) {
-    int limit=static_cast<int>(h.outputs[0].dims[a]);
-    for(int c=1;c<3;++c)limit=std::min(limit,static_cast<int>(h.outputs[c].dims[a]));
-    grid.field_high[a]=limit;
-    grid.extent[a]=extents[a];
-    grid.high[a]=h.uniform_cpml_thickness+Steps;
-    grid.boundary[a]=limit-h.uniform_cpml_thickness-Steps;
-  }
-  const auto hp=MakePairCpmlPhase(h), ep=MakePairCpmlPhase(e);
-#define LAUNCH_MASK(M) { \
-    constexpr bool face=(M==1||M==2||M==4); \
-    constexpr int X=Steps==1 ? ((M&4)?15:31) : M==0?16:Tile==2&&face?(M==4?15:M==2?16:32):16; \
-    constexpr int Y=Steps==1 ? ((M&4)?15:7) : M==0?8:Tile==2&&face?(M==4?16:M==2?15:4):8; \
-    constexpr int Z=Steps==1 ? 16 : M==0||Tile==0||Tile==2&&face?16:4; \
-    auto error=LaunchTemporalCpmlMask<Packed,Half,X,Y,Z,M,Steps>( \
-        stream,hp,ep,final,hs,es,publication,grid); \
-    if(error!=cudaSuccess)return error; \
-  }
-  LAUNCH_MASK(0); LAUNCH_MASK(1); LAUNCH_MASK(2); LAUNCH_MASK(4);
-  LAUNCH_MASK(3); LAUNCH_MASK(5); LAUNCH_MASK(6); LAUNCH_MASK(7);
-#undef LAUNCH_MASK
-  return cudaSuccess;
-}
-
-cudaError_t BeamzEnqueueTemporalCpml(cudaStream_t stream, const BeamzLaunch &h,
-    const BeamzLaunch &e, const BeamzBuffer *final_fields,
-    const BeamzSourceGroupLaunch *groups, int step, BeamzBuffer publication, int tile) {
-#define LAUNCH_TILE(T) \
-  if (HasPackedLosslessMaterial(e)) { \
-    if(h.inputs[31].element_type==kBeamzBF16) \
-      return LaunchTemporalCpmlMasks<true,true,T>(stream,h,e,final_fields,groups,step,publication); \
-    return LaunchTemporalCpmlMasks<true,false,T>(stream,h,e,final_fields,groups,step,publication); \
-  } \
-  if(h.inputs[31].element_type==kBeamzBF16) \
-    return LaunchTemporalCpmlMasks<false,true,T>(stream,h,e,final_fields,groups,step,publication); \
-  return LaunchTemporalCpmlMasks<false,false,T>(stream,h,e,final_fields,groups,step,publication);
-  switch(tile) {
-    case 0: {LAUNCH_TILE(0)}
-    case 1: {LAUNCH_TILE(1)}
-    case 2: {LAUNCH_TILE(2)}
-    default: return cudaErrorInvalidValue;
-  }
-#undef LAUNCH_TILE
-}
-
-
-cudaError_t BeamzEnqueueSpatialCpml(cudaStream_t stream, const BeamzLaunch &h,
-    const BeamzLaunch &e, const BeamzSourceGroupLaunch *groups, int step) {
-  BeamzBuffer final[6];
-  for(int c=0;c<3;++c){final[c]=h.outputs[c];final[3+c]=e.outputs[c];}
-  if (HasPackedLosslessMaterial(e)) {
-    if(h.inputs[31].element_type==kBeamzBF16)
-      return LaunchTemporalCpmlMasks<true,true,2,1>(stream,h,e,final,groups,step,{});
-    return LaunchTemporalCpmlMasks<true,false,2,1>(stream,h,e,final,groups,step,{});
-  }
-  if(h.inputs[31].element_type==kBeamzBF16)
-    return LaunchTemporalCpmlMasks<false,true,2,1>(stream,h,e,final,groups,step,{});
-  return LaunchTemporalCpmlMasks<false,false,2,1>(stream,h,e,final,groups,step,{});
-}
 
 template <bool Packed, bool ScalarH, int X, int Y>
 cudaError_t LaunchMstepColumn(cudaStream_t stream, const BeamzLaunch &h,
