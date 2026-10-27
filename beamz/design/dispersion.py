@@ -150,13 +150,7 @@ class PoleResidue(Material):
         )
 
 
-def fit_nk(wavelengths, n, k, *, num_poles=9, weights=(1.0, 1.0), max_nfev=300):
-    """Fit passive Lorentz oscillators to tabulated n,k (wavelengths in metres).
-
-    Returns ``(material, diagnostics)``. Positive strengths and damping guarantee
-    passive Lorentz terms. The weighted complex-index residual is minimized;
-    an error report is returned rather than silently claiming a target tolerance.
-    """
+def _validate_nk(wavelengths, n, k, *, unique=False):
     wl, n, k = [np.asarray(x, dtype=float) for x in (wavelengths, n, k)]
     if (
         wl.ndim != 1
@@ -167,10 +161,25 @@ def fit_nk(wavelengths, n, k, *, num_poles=9, weights=(1.0, 1.0), max_nfev=300):
         or np.any(wl <= 0)
         or np.any(n <= 0)
         or np.any(k < 0)
+        or (unique and len(np.unique(wl)) != len(wl))
     ):
-        raise ValueError(
-            "Expected matching finite wavelength,n,k vectors with wavelength,n>0 and k>=0."
+        message = (
+            "Require matching finite, unique wavelengths>0, n>0, k>=0."
+            if unique
+            else "Expected matching finite wavelength,n,k vectors with wavelength,n>0 and k>=0."
         )
+        raise ValueError(message)
+    return wl, n, k
+
+
+def fit_nk(wavelengths, n, k, *, num_poles=9, weights=(1.0, 1.0), max_nfev=300):
+    """Fit passive Lorentz oscillators to tabulated n,k (wavelengths in metres).
+
+    Returns ``(material, diagnostics)``. Positive strengths and damping guarantee
+    passive Lorentz terms. The weighted complex-index residual is minimized;
+    an error report is returned rather than silently claiming a target tolerance.
+    """
+    wl, n, k = _validate_nk(wavelengths, n, k)
     if num_poles < 1 or len(weights) != 2 or min(weights) <= 0:
         raise ValueError("Require positive pole count and residual weights.")
     f = LIGHT_SPEED / wl
