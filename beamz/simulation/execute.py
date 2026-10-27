@@ -1053,8 +1053,8 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
                         tail_steps,
                         full_chunks * CUDA_GRAPH_MAX_STEPS,
                     )
-        elif checkpoint_interval is not None:
-
+        else:
+            # All JAX loop forms share the same transition and absolute clock.
             def step(carry, step_index):
                 return forward_step(
                     carry,
@@ -1067,64 +1067,34 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
                     * (observation_offset + step_index + 1).astype(jnp.float32),
                 ), None
 
-            def chunk(carry, chunk_index):
-                indices = chunk_index * checkpoint_interval + jnp.arange(
-                    checkpoint_interval, dtype=jnp.int32
-                )
-                return jax.lax.scan(jax.checkpoint(step), carry, indices)[0], None
+            if checkpoint_interval is not None:
 
-            chunks, tail = divmod(cfg.num_steps, checkpoint_interval)
-            scan_out, _ = jax.lax.scan(
-                jax.checkpoint(chunk), state, jnp.arange(chunks, dtype=jnp.int32)
-            )
-            if tail:
+                def chunk(carry, chunk_index):
+                    indices = chunk_index * checkpoint_interval + jnp.arange(
+                        checkpoint_interval, dtype=jnp.int32
+                    )
+                    return jax.lax.scan(jax.checkpoint(step), carry, indices)[0], None
+
+                chunks, tail = divmod(cfg.num_steps, checkpoint_interval)
                 scan_out, _ = jax.lax.scan(
-                    jax.checkpoint(step),
-                    scan_out,
-                    jnp.arange(
-                        chunks * checkpoint_interval, cfg.num_steps, dtype=jnp.int32
-                    ),
+                    jax.checkpoint(chunk), state, jnp.arange(chunks, dtype=jnp.int32)
                 )
-        # Every observation uses the simulation origin and absolute integer
-        # step, including continuation calls, as native CUDA does.
-        elif cfg.loop_kind == "scan":
-
-            def _scan_body(carry, step_index):
-                # Emit no per-step output because final state and explicit buffers hold results.
-                return (
-                    forward_step(
-                        carry,
-                        ctx=step_context,
-                        coeffs=coeffs,
-                        program=runtime_program,
-                        update_kernel=update_kernel,
-                        observation_time=observation_origin
-                        + dt_scalar
-                        * (observation_offset + step_index + 1).astype(jnp.float32),
-                    ),
-                    None,
+                if tail:
+                    scan_out, _ = jax.lax.scan(
+                        jax.checkpoint(step),
+                        scan_out,
+                        jnp.arange(
+                            chunks * checkpoint_interval, cfg.num_steps, dtype=jnp.int32
+                        ),
+                    )
+            elif cfg.loop_kind == "scan":
+                scan_out, _ = jax.lax.scan(
+                    step, state, xs=jnp.arange(cfg.num_steps, dtype=jnp.int32)
                 )
-
-            scan_out, _ = jax.lax.scan(
-                _scan_body,
-                state,
-                xs=jnp.arange(cfg.num_steps, dtype=jnp.int32),
-            )
-        else:
-            scan_out = jax.lax.fori_loop(
-                0,
-                cfg.num_steps,
-                lambda _i, c: forward_step(
-                    c,
-                    ctx=step_context,
-                    coeffs=coeffs,
-                    program=runtime_program,
-                    update_kernel=update_kernel,
-                    observation_time=observation_origin
-                    + dt_scalar * (observation_offset + _i + 1).astype(jnp.float32),
-                ),
-                state,
-            )
+            else:
+                scan_out = jax.lax.fori_loop(
+                    0, cfg.num_steps, lambda index, carry: step(carry, index)[0], state
+                )
         if local_cuda_cpml or local_jax_cpml:
             scan_out = scan_local_cpml(scan_out, program, assemble=True)
         if local_dft:
