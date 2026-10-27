@@ -209,6 +209,11 @@ def _snapshot_material_region(runtime_fields, crop, origin):
     material_grid = runtime_fields.material_grid
     tensors = {}
     yee = {}
+    # Node-aligned components include an upper sample beyond the voxel crop.
+    component_crop = tuple(
+        slice(index.start, None if index.stop is None else index.stop + 1)
+        for index in crop
+    )
     if permittivity.ndim in (2, 3):
         tensors = {
             name: np.asarray(values)[(slice(None), *crop)]
@@ -216,21 +221,11 @@ def _snapshot_material_region(runtime_fields, crop, origin):
             if name in {"epsilon", "mu"}
         }
         if material_grid.uses_direct_yee_materials:
-            # Node-aligned components have one more sample than the voxel grid.
-            # Keep that upper sample so local mode crops retain their Yee support.
-            component_crop = tuple(
-                slice(index.start, None if index.stop is None else index.stop + 1)
-                for index in crop
-            )
             yee = {
                 name: np.asarray(values)[component_crop]
                 for name, values in material_grid.yee_materials.items()
                 if name in {"eps_x", "eps_y", "eps_z", "mu_hx", "mu_hy", "mu_hz"}
             }
-    component_crop = tuple(
-        slice(index.start, None if index.stop is None else index.stop + 1)
-        for index in crop
-    )
     support_tensors = {
         name: np.asarray(values)[(slice(None), *component_crop)]
         for name, values in material_grid.yee_tensors.items()
@@ -872,12 +867,13 @@ class MonitorResults:
         fc = int(spec.freq_count)
         pc = int(spec.dft_point_count)
         count = int(np.asarray(state.counts[i]))
+        # __post_init__ makes the detached, read-only snapshots of these buffers.
         if spec.recorder_index >= 0:
             recorder_count = int(np.asarray(state.recorded_counts[spec.recorder_index]))
             fields = {
                 component: np.asarray(
                     state.recorded_fields[buffer_index][:recorder_count]
-                ).copy()
+                )
                 for component, buffer_index in zip(
                     spec.components, spec.field_buffer_indices, strict=True
                 )
@@ -891,11 +887,11 @@ class MonitorResults:
                 field_times=np.asarray(
                     state.recorded_times[spec.recorder_index][:recorder_count],
                     dtype=float,
-                ).copy(),
+                ),
                 field_steps=np.asarray(
                     state.recorded_steps[spec.recorder_index][:recorder_count],
                     dtype=int,
-                ).copy(),
+                ),
                 sample_region=spec.sample_region,
             )
         dft_fields: dict[str, np.ndarray] = {}
@@ -944,19 +940,17 @@ class MonitorResults:
         return cls(
             monitor=monitor,
             fields={},
-            power_history=np.asarray(state.powers[i, :count], dtype=float).copy(),
-            power_timestamps=np.asarray(
-                state.timestamps[i, :count], dtype=float
-            ).copy(),
-            power_spectrum=np.asarray(power_spectrum, dtype=np.complex64).copy(),
+            power_history=np.asarray(state.powers[i, :count], dtype=float),
+            power_timestamps=np.asarray(state.timestamps[i, :count], dtype=float),
+            power_spectrum=np.asarray(power_spectrum, dtype=np.complex64),
             dft_fields=dft_fields,
-            dft_frequencies=dft_frequencies.copy(),
+            dft_frequencies=dft_frequencies,
             dft_weight_sum=np.asarray(
                 state.dft_weight_sum[
                     spec.dft_weight_offset : spec.dft_weight_offset + fc
                 ],
                 dtype=np.float64,
-            ).copy(),
+            ),
             dft_base_dt=float(config.dt),
             dft_amplitude_scale=1.0
             if np.iscomplexobj(getattr(state, "ex", 0.0))
