@@ -1427,8 +1427,7 @@ def update_h_3d_yee(eng, ctx, coeffs):
     return _replace_h(eng, hx, hy, hz)
 
 
-def update_e_3d_yee(eng, ctx, coeffs):
-    # Return a new SimulationState so the timestep remains a pure JAX transformation.
+def _update_e_3d_yee(eng, ctx, coeffs, update, spacing):
     boundary_views = build_h_boundary_views_for_e_3d(
         eng.hx,
         eng.hy,
@@ -1438,7 +1437,7 @@ def update_e_3d_yee(eng, ctx, coeffs):
         periodic_axes=ctx.boundary.periodic_axes,
         periodic_phases=ctx.boundary.periodic_phases,
     )
-    ex, ey, ez = fused_update_e_lossy_3d_material(
+    ex, ey, ez = update(
         eng.hx,
         eng.hy,
         eng.hz,
@@ -1452,7 +1451,7 @@ def update_e_3d_yee(eng, ctx, coeffs):
         coeffs.e_conductivity_z,
         reciprocal_material(coeffs.e_permittivity_z),
         ctx.dt_scalar,
-        ctx.resolution,
+        spacing,
         boundary_views=boundary_views,
         inverse_diagonals=(
             (
@@ -1468,6 +1467,12 @@ def update_e_3d_yee(eng, ctx, coeffs):
         ),
     )
     return _replace_e(eng, ex, ey, ez)
+
+
+def update_e_3d_yee(eng, ctx, coeffs):
+    return _update_e_3d_yee(
+        eng, ctx, coeffs, fused_update_e_lossy_3d_material, ctx.resolution
+    )
 
 
 def _update_h_tm_from_curls(eng, ctx, coeffs, curl_tm_hx, curl_tm_hy, psi_h=None):
@@ -1703,45 +1708,9 @@ def update_h_3d_yee_metric(eng, ctx, coeffs):
 
 
 def update_e_3d_yee_metric(eng, ctx, coeffs):
-    boundary_views = build_h_boundary_views_for_e_3d(
-        eng.hx,
-        eng.hy,
-        eng.hz,
-        ctx.boundary.cpml.metallic_edges,
-        logical_shapes=ctx.boundary.logical_component_shapes,
-        periodic_axes=ctx.boundary.periodic_axes,
-        periodic_phases=ctx.boundary.periodic_phases,
+    return _update_e_3d_yee(
+        eng, ctx, coeffs, fused_update_e_lossy_3d_material_metric, ctx.metrics
     )
-    ex, ey, ez = fused_update_e_lossy_3d_material_metric(
-        eng.hx,
-        eng.hy,
-        eng.hz,
-        eng.ex,
-        eng.ey,
-        eng.ez,
-        coeffs.e_conductivity_x,
-        reciprocal_material(coeffs.e_permittivity_x),
-        coeffs.e_conductivity_y,
-        reciprocal_material(coeffs.e_permittivity_y),
-        coeffs.e_conductivity_z,
-        reciprocal_material(coeffs.e_permittivity_z),
-        ctx.dt_scalar,
-        ctx.metrics,
-        boundary_views=boundary_views,
-        inverse_diagonals=(
-            (
-                coeffs.e_inverse_diagonal_x,
-                coeffs.e_inverse_diagonal_y,
-                coeffs.e_inverse_diagonal_z,
-            )
-            if coeffs.e_inverse_offdiagonal.size
-            else None
-        ),
-        inverse_offdiagonal=(
-            coeffs.e_inverse_offdiagonal if coeffs.e_inverse_offdiagonal.size else None
-        ),
-    )
-    return _replace_e(eng, ex, ey, ez)
 
 
 def update_h_2d_tm_xy_metric(eng, ctx, coeffs):
