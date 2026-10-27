@@ -223,8 +223,8 @@ def test_blocks_phase_path_and_dynamic_coefficient_values(full):
             np.testing.assert_array_equal(np.asarray(x), np.asarray(y))
 
 
-def test_blocks_temporal_cpml(monkeypatch):
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_TEMPORAL", "1")
+def test_blocks_temporal_pair(monkeypatch):
+    monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "2")
     p = simulation(128, 6).compile(num_steps=6, backend="cuda_streamed")
     state = seeded_state(p)
     assert p.coefficients.e_source_x.ndim == 2

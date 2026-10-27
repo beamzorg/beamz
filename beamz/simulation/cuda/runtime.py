@@ -700,17 +700,12 @@ def _temporal_cpml_graph_io(state, ctx, coeffs, temporal_steps=1):
     return arguments, result_values, aliases
 
 
-def _replace_temporal_cpml_outputs(
-    state, outputs, nsteps, temporal_steps=1, cpml_pair=False
-):
+def _replace_temporal_cpml_outputs(state, outputs, nsteps, temporal_steps=1):
     field_start = 0 if nsteps % 2 == 0 else _FIELD_COUNT
     if temporal_steps == 2 and nsteps % 4 == 2:
         field_start = 2 * _FIELD_COUNT + 4 * _CPML_TERM_COUNT
     psi_start = 2 * _FIELD_COUNT
-    psi_swaps = (
-        nsteps // 2 + nsteps % 2 if cpml_pair and temporal_steps == 2 else nsteps
-    )
-    if psi_swaps % 2:
+    if nsteps % 2:
         psi_start += 2 * _CPML_TERM_COUNT
     fields = tuple(
         value[tuple(slice(0, n) for n in original.shape)]
@@ -1018,7 +1013,6 @@ def run_source_group_steps(state, ctx, coeffs, groups, nsteps: int) -> Simulatio
             outputs,
             nsteps,
             plan.temporal_steps,
-            bool(ctx.config.cuda_flags & abi.CUDA_CPML_PAIR),
         )
     if ctx.boundary.cpml.enabled:
         return _replace_graph_outputs(state, outputs)
@@ -1324,7 +1318,6 @@ def run_program_steps(
             outputs,
             nsteps,
             plan.temporal_steps,
-            bool(ctx.config.cuda_flags & abi.CUDA_CPML_PAIR),
         )
     elif ctx.boundary.cpml.enabled:
         next_state = _replace_graph_outputs(state, outputs)

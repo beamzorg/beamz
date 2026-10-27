@@ -305,23 +305,13 @@ Experimental layout and temporal-blocking controls (ABI 20):
   preserves the ordinary, automatically selected field kernels and pairs only
   monitor processing; it avoids the temporal coupling band. This override is
   read at native invocation and included in the graph key.
-- `BEAMZ_CUDA_CPML_TEMPORAL=1` opts into complete two-step CPML tiles,
-  including on-chip intermediate auxiliary state and source injection. This
-  also requests temporal depth two. Final auxiliary banks swap once per pair;
-  odd tails retain one-step semantics. FP32 and BF16 auxiliary storage are
-  supported. This experiment is currently slower than the established schedule.
-- `BEAMZ_CUDA_CPML_PAIR_TILE=16x8x16|16x8x4|oriented` selects those CPML
-  boundary tiles while retaining the winning 16x8x16 two-step interior.
-  The oriented family uses 15x16x16 x-face and 16x15x16 y-face tiles with
-  384 threads, 32x4x16 z-face tiles and 16x8x4 edge/corner tiles. The y-face
-  kernel bounds register use to permit three resident blocks on SM86.
-- `BEAMZ_CUDA_CPML_SPATIAL=1` selects an experimental fused single H/E step
-  across the domain, including CPML. It is a control for measuring the cost of
-  temporal halos and intermediate auxiliary storage. Complete temporal CPML
-  takes precedence if both controls are set. Both native tile controls and the
-  spatial choice are included in graph-cache keys.
+The complete temporal CPML and spatial control experiments were removed after
+they measured slower than the established schedule. Setting either
+`BEAMZ_CUDA_CPML_TEMPORAL` or `BEAMZ_CUDA_CPML_SPATIAL` to an enabled value now
+raises an error. The [historical study](https://github.com/beamzorg/beamz/blob/dabecdc231f82194ecb8f9f352d5654be12a8c0c/docs/reviews/cuda-realistic-temporal-integration-2026-09-18.md)
+and its data remain in Git history.
 
-Both paired schedules gather each monitor point at both times once, share the
+The paired schedule gathers each monitor point at both times once, shares the
 interpolation geometry, reuse the samples across frequencies, and accumulate
 DFTs in chronological order. Record intervals, Hann windows, normalization,
 masked components, odd trailing steps and continuation retain their semantics.
@@ -428,8 +418,8 @@ storage. Known executable reuse contributes to the cost check.
 The shell tile remains 64x4, and padding stays off.
 
 The physical grid, CPML12, source/monitor sampling and FP32 precision remain
-unchanged. Existing automatic H/E fusion still applies within each layout;
-experimental CPML temporal blocking is not selected. The estimate repairs the
+unchanged. Existing automatic H/E fusion still applies within each layout. The
+estimate repairs the
 recorded narrow-x cases once longer execution repays startup. It is not a
 guarantee of the global optimum on every workload. See the
 [validation summary](../docs/reviews/pr334-post-merge-validation-2026-10-17.md) for results and archived studies

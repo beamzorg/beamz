@@ -13,13 +13,6 @@ cudaError_t BeamzEnqueueMstepCore(cudaStream_t stream, const BeamzLaunch &h,
 cudaError_t BeamzEnqueueMstepEdge(cudaStream_t stream, const BeamzLaunch &phase,
                                   const BeamzBuffer &cells, int ny, int nx);
 
-cudaError_t BeamzEnqueueTemporalCpml(cudaStream_t stream, const BeamzLaunch &h,
-    const BeamzLaunch &e, const BeamzBuffer *final_fields,
-    const BeamzSourceGroupLaunch *groups, int step, BeamzBuffer publication, int tile = 0);
-
-cudaError_t BeamzEnqueueSpatialCpml(cudaStream_t stream, const BeamzLaunch &h,
-    const BeamzLaunch &e, const BeamzSourceGroupLaunch *groups, int step);
-
 // Leaf launchers enqueue one operation and own no graph or timestep policy.
 cudaError_t BeamzValidatePhase(const BeamzLaunch &launch);
 cudaError_t BeamzEnqueuePhase(void *stream, const BeamzLaunch &launch);

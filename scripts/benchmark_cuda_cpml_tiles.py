@@ -60,41 +60,13 @@ def variant_flags(study):
             "pair_64x4": abi.CUDA_TEMPORAL_PAIR,
             "pair_32x8": abi.CUDA_TEMPORAL_PAIR | abi.CUDA_SHELL32X8,
         }
-        mask |= abi.CUDA_TEMPORAL_PAIR | abi.CUDA_CPML_PAIR
+        mask |= abi.CUDA_TEMPORAL_PAIR
         if study == "temporal_schedule":
             tile_flags = {
                 "one_step": 0,
                 "16x8x16": abi.CUDA_TEMPORAL_PAIR,
                 "single": abi.CUDA_TEMPORAL_PAIR,
             }
-        if study == "cpml_temporal":
-            tile_flags = {
-                "one_step": 0,
-                "single": abi.CUDA_TEMPORAL_PAIR,
-                "cpml_pair": abi.CUDA_TEMPORAL_PAIR | abi.CUDA_CPML_PAIR,
-            }
-        if study == "cpml_spatial":
-            tile_flags = {
-                "one_step": 0,
-                "single": abi.CUDA_TEMPORAL_PAIR,
-                "spatial": abi.CUDA_TEMPORAL_PAIR,
-            }
-        if study == "cpml_pair_tiles":
-            tile_flags = {
-                t: abi.CUDA_TEMPORAL_PAIR | abi.CUDA_CPML_PAIR
-                for t in ("16x8x16", "16x8x4", "oriented")
-            }
-        if study == "cpml_pair_padding":
-            tile_flags = {
-                "none": abi.CUDA_TEMPORAL_PAIR | abi.CUDA_CPML_PAIR,
-                "pad32": abi.CUDA_TEMPORAL_PAIR
-                | abi.CUDA_CPML_PAIR
-                | abi.CUDA_FIELD_PAD32,
-                "pad64": abi.CUDA_TEMPORAL_PAIR
-                | abi.CUDA_CPML_PAIR
-                | abi.CUDA_FIELD_PAD64,
-            }
-            mask |= abi.CUDA_FIELD_PAD32 | abi.CUDA_FIELD_PAD64 | abi.CUDA_FIELD_PAD_Y8
         if study == "pair_tiles":
             tile_flags = {
                 t: abi.CUDA_TEMPORAL_PAIR for t in ("16x8x16", "32x4x16", "32x8x16")
@@ -183,14 +155,9 @@ def worker(args, case):
         )
 
     def run(tile):
-        if args.study == "cpml_spatial":
-            os.environ["BEAMZ_CUDA_CPML_SPATIAL"] = "1" if tile == "spatial" else "0"
-            os.environ["BEAMZ_CUDA_PAIR_TILE"] = "single"
-        if args.study == "cpml_pair_tiles":
-            os.environ["BEAMZ_CUDA_CPML_PAIR_TILE"] = tile
-        if args.study in {"pair_tiles", "temporal_schedule", "cpml_temporal"}:
+        if args.study in {"pair_tiles", "temporal_schedule"}:
             os.environ["BEAMZ_CUDA_PAIR_TILE"] = (
-                "16x8x16" if tile in {"one_step", "cpml_pair"} else tile
+                "16x8x16" if tile == "one_step" else tile
             )
         return executables[tile](state, base.coefficients)
 
@@ -219,18 +186,9 @@ def worker(args, case):
     for tile in tile_flags:
         comparison = baseline
         reference_name = (
-            "pair_16x8x16"
-            if args.study == "cpml_pair_tiles"
-            else "pair_unpadded"
-            if args.study == "cpml_pair_padding"
-            else "auto_one_step"
-            if args.study in {"temporal_schedule", "cpml_temporal", "cpml_spatial"}
-            else "fused_one_step"
+            "auto_one_step" if args.study == "temporal_schedule" else "fused_one_step"
         )
-        if (args.study == "temporal_schedule" and tile == "16x8x16") or (
-            args.study in {"cpml_temporal", "cpml_spatial"}
-            and tile in {"cpml_pair", "spatial"}
-        ):
+        if args.study == "temporal_schedule" and tile == "16x8x16":
             os.environ["BEAMZ_CUDA_CPML_CORE_FUSION"] = "1"
             comparison = jax.device_get(run(baseline_name))
             if old_fusion is None:
@@ -278,11 +236,7 @@ def worker(args, case):
                             variants[tile]["native_plans"][0]["flags"]
                             & abi.NATIVE_SCHEDULE_PACKED_MATERIAL
                         )
-                        if (
-                            dense_rolling
-                            or tile in {"cpml_pair", "spatial"}
-                            or args.study.startswith("cpml_pair_")
-                        ):
+                        if dense_rolling:
                             # A separate diagnostic fixing the multiply/FMA
                             # order eliminates this dense-core rounding delta.
                             # Retain the existing rotated hardware parity gate.
@@ -390,10 +344,6 @@ def main():
             "pair_padding",
             "pair_tiles",
             "temporal_schedule",
-            "cpml_temporal",
-            "cpml_spatial",
-            "cpml_pair_tiles",
-            "cpml_pair_padding",
         ),
         default="tiles",
     )
