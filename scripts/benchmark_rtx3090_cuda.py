@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -21,24 +20,18 @@ try:  # ``python scripts/...`` exposes the sibling module directly.
     from rtx3090_benchmark import (
         BackendMeasurement,
         RTX3090Comparison,
+        source_environment,
+        source_revision,
         write_report_artifacts,
     )
 except ModuleNotFoundError:  # ``import scripts.benchmark...`` is useful in tests.
     from scripts.rtx3090_benchmark import (
         BackendMeasurement,
         RTX3090Comparison,
+        source_environment,
+        source_revision,
         write_report_artifacts,
     )
-
-
-def _git(root: Path, *args: str) -> str:
-    return subprocess.run(
-        ("git", *args),
-        cwd=root,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
 
 
 def _nvidia_smi() -> dict[str, str | None]:
@@ -76,17 +69,7 @@ def _nvidia_smi() -> dict[str, str | None]:
 
 
 def _child_environment(source_root: Path, runner_root: Path) -> dict[str, str]:
-    environment = os.environ.copy()
-    source_paths = (str(source_root), str(runner_root))
-    previous_path = environment.get("PYTHONPATH")
-    paths = [*source_paths]
-    if previous_path:
-        paths.append(previous_path)
-    environment["PYTHONPATH"] = os.pathsep.join(paths)
-    # Persisted executables can turn a source-level comparison into a cache comparison.
-    environment["BEAMZ_DISABLE_JAX_PERSISTENT_CACHE"] = "1"
-    environment.pop("JAX_COMPILATION_CACHE_DIR", None)
-    return environment
+    return source_environment(source_root, runner_root)
 
 
 def _run_child(
@@ -510,7 +493,7 @@ def _run_child_benchmark(args: argparse.Namespace) -> None:
         str(state.cpml_psi_h_terms[0].dtype) if state.cpml_psi_h_terms else "float32"
     )
     payload = {
-        "revision": _revision(Path.cwd()),
+        "revision": source_revision(Path.cwd()),
         "backend": resolved_backend,
         "device": str(getattr(device, "device_kind", device)),
         "grid_zyx": shape,
@@ -532,11 +515,6 @@ def _run_child_benchmark(args: argparse.Namespace) -> None:
         "cuda_flags": int(getattr(program.config, "cuda_flags", 0)),
     }
     print(json.dumps(payload, allow_nan=False))
-
-
-def _revision(root: Path) -> str:
-    commit = _git(root, "rev-parse", "HEAD")
-    return commit + ("-dirty" if _git(root, "status", "--porcelain") else "")
 
 
 def _parser() -> argparse.ArgumentParser:
