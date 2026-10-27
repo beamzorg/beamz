@@ -174,7 +174,7 @@ def predict_layout(shape) -> dict[str, Any]:
     32x8 has no established benefit after repairing the narrow-x layout.
 
     Runtime selection separately checks device and supported workload scope.
-    See docs/reviews/cuda-layout-prediction-2026-09-18.md for evidence and limits.
+    See the archived layout prediction study linked from docs/reviews/README.md.
     """
     try:
         shape = tuple(operator.index(n) for n in shape)

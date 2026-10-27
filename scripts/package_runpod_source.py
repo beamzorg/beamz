@@ -54,12 +54,6 @@ def main():
             }
         ):
             names.add(name)
-    names.update(
-        {
-            "docs/reviews/cuda-random-final-comparison-2026-09-18.md",
-            "docs/reviews/rtx3090-2026-09-18-random-final/analysis.json",
-        }
-    )
     files = [ROOT / name for name in sorted(names) if name]
     files = [
         p for p in files if p.is_file() and not p.is_symlink() and p.suffix != ".so"
