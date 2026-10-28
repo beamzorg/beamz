@@ -13,6 +13,19 @@ import jax.numpy as jnp
 import numpy as np
 
 
+def _rotate_monitor_indices(flat, shape, axes, array):
+    """Map flattened physical indices to cyclic storage, preserving sentinels."""
+    coord = (
+        flat // (shape[1] * shape[2]),
+        (flat // shape[2]) % shape[1],
+        flat % shape[2],
+    )
+    remapped = (coord[axes[0]] * shape[axes[1]] + coord[axes[1]]) * shape[
+        axes[2]
+    ] + coord[axes[2]]
+    return array.where((flat >= 0) & (flat < math.prod(shape)), remapped, -1)
+
+
 def mstep_plan_inputs(program, groups, monitors):
     """Rotate only dependency metadata; the executable shares the full transform."""
     from types import SimpleNamespace
@@ -70,15 +83,7 @@ def mstep_plan_inputs(program, groups, monitors):
             # Monitor component lanes use E,H order; native banks use H,E.
             shape = shapes[(old + 3) % 6]
             flat = original[:, old]
-            coord = (
-                flat // (shape[1] * shape[2]),
-                (flat // shape[2]) % shape[1],
-                flat % shape[2],
-            )
-            remapped = (coord[axes[0]] * shape[axes[1]] + coord[axes[1]]) * shape[
-                axes[2]
-            ] + coord[axes[2]]
-            rows.append(np.where((flat >= 0) & (flat < math.prod(shape)), remapped, -1))
+            rows.append(_rotate_monitor_indices(flat, shape, axes, np))
         indices = np.stack(rows, axis=1)
     return stored_shapes, cpml, stored_groups, indices
 
@@ -273,17 +278,7 @@ def wrap_program_call(original, axes):
                 name = ("ex", "ey", "ez", "hx", "hy", "hz")[old]
                 shape = getattr(state, name).shape
                 flat = monitors[0][:, old]
-                coord = (
-                    flat // (shape[1] * shape[2]),
-                    (flat // shape[2]) % shape[1],
-                    flat % shape[2],
-                )
-                remapped = (coord[axes[0]] * shape[axes[1]] + coord[axes[1]]) * shape[
-                    axes[2]
-                ] + coord[axes[2]]
-                new_indices.append(
-                    jnp.where((flat >= 0) & (flat < math.prod(shape)), remapped, -1)
-                )
+                new_indices.append(_rotate_monitor_indices(flat, shape, axes, jnp))
             new_monitors = (
                 jnp.stack(new_indices, axis=1),
                 monitors[1][:, six_components],
