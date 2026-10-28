@@ -8,7 +8,7 @@ authors:
   - family-names: Wach
     given-names: Quentin
     orcid: "https://orcid.org/0009-0009-7731-890X"
-version: "0.5.3"
+version: "0.6.0"
 license: Apache-2.0
 abstract: >-
   BeamZ is an open-source electromagnetic simulation framework for photonic

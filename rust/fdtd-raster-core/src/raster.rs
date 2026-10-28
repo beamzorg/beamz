@@ -424,6 +424,11 @@ fn rasterize_impl(
         && epsilon_components == 1
         && mu_components == 1
         && conductivity_components == 1;
+    let constant_unit_mu = !scene.materials.is_empty()
+        && scene
+            .materials
+            .iter()
+            .all(|material| material.mu_r == SymmetricTensor::isotropic(1.0));
     let maximum_components = if options.smoothing == SmoothingMode::FarjadpourDiagonal {
         3
     } else {
@@ -468,7 +473,9 @@ fn rasterize_impl(
     let mut mu = Vec::with_capacity(3);
     for component in [Component::Hx, Component::Hy, Component::Hz] {
         if options.output_components.includes(component) {
-            if scalar_volume {
+            if constant_unit_mu {
+                mu.push(constant_unit_tensor(component, grid));
+            } else if scalar_volume {
                 let (shape, samples) =
                     raster_scalar_support(scene, &index, grid, options, component);
                 record_diagnostics(&mut diagnostics, &samples);
@@ -601,6 +608,14 @@ fn omitted_tensor(component: Component, grid: &Grid) -> TensorArray {
     TensorArray {
         shape: [0, logical_shape[2], logical_shape[1], logical_shape[0]],
         values: Vec::new(),
+    }
+}
+
+fn constant_unit_tensor(component: Component, grid: &Grid) -> TensorArray {
+    let [nx, ny, nz] = component.support().logical_shape(grid);
+    TensorArray {
+        shape: [1, nz, ny, nx],
+        values: vec![1.0; nx * ny * nz],
     }
 }
 
@@ -1723,6 +1738,43 @@ mod tests {
         assert_eq!(result.mu[1].shape, [1, 4, 4, 2]);
         assert_eq!(result.mu[2].shape, [1, 5, 3, 2]);
         assert!(result.epsilon[0].values.iter().all(|value| *value == 4.0));
+        assert!(
+            result
+                .mu
+                .iter()
+                .all(|tensor| tensor.values.iter().all(|value| *value == 1.0))
+        );
+    }
+
+    #[test]
+    fn nonunit_mu_keeps_material_integration() {
+        let scene = Scene::new(
+            vec![Material::default(), Material::new(4.0, 2.0, 0.0).unwrap()],
+            vec![Object {
+                id: 1,
+                material_id: 1,
+                priority: 0,
+                geometry: Geometry::Box {
+                    bounds: Aabb::new([0.0; 3], [1.0; 3]).unwrap(),
+                },
+            }],
+            0,
+        )
+        .unwrap();
+        let grid = UniformGrid {
+            min: [0.0; 3],
+            max: [1.0; 3],
+            shape: [2, 3, 4],
+        }
+        .build()
+        .unwrap();
+        let result = rasterize(&scene, &grid, &IntegrationOptions::default()).unwrap();
+        assert!(
+            result
+                .mu
+                .iter()
+                .all(|tensor| tensor.values.iter().all(|value| *value == 2.0))
+        );
     }
 
     #[test]

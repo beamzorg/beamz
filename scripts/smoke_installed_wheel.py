@@ -45,7 +45,8 @@ import json
 import beamz
 from beamz.design.raster import _native
 
-assert beamz.__version__ == _native.ENGINE_VERSION
+# ENGINE_VERSION also includes the raster cache compatibility revision.
+assert beamz.__version__ == _native.ENGINE_VERSION.partition("-geometry-")[0]
 report = json.loads(
     _native.inspect_mesh(
         [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],

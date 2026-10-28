@@ -1,16 +1,59 @@
 # Changelog
 
-## Unreleased
+## v0.6.0 - 2026-10-25
 
-- Fix topology contours shrinking away from design-region boundaries (#331).
+### Added
+
+- Added end-to-end differentiable FDTD with portable JAX and accelerated native
+  CUDA reverse-mode execution, checkpointing, and differentiable modal objectives.
+- Added 2D and volumetric 3D topology inverse design with autodiff and spectral
+  adjoint gradients, broadband objectives, schedules, and fabrication-aware exports.
+- Added dispersive materials, a bundled optical material library, Bloch-periodic
+  boundaries, and executed metasurface and CMOS RGB sensor examples.
+- Added consistent full-tensor dielectric ports on uniform and rectilinear grids,
+  native CUDA full-tensor updates, and compact JAX/CUDA material storage.
+- Added experimental CUDA multistep scheduling and opt-in region rasterization
+  for Gmsh-derived scenes.
+- Added passive SOI differential benchmarks and expanded inverse-design,
+  grating-coupler, and interface-smoothing notebooks and validation reports.
+
+### Changed
+
+- BeamZ now requires Python 3.11–3.14. Python 3.10 users must upgrade their
+  environment before installing v0.6.0.
+- The optional CUDA component is now version 0.30.0 / ABI 30. Rebuild the
+  extension when upgrading from an earlier ABI.
+- Reduced CPML and material storage overhead, reused modal solves, and improved
+  sharded CUDA storage selection and arithmetic consistency.
+- Updated dependencies for security fixes and added locked Python and Rust
+  dependency audits in CI.
+
+### Fixed
+
+- Corrected 2D mode launch and extraction in all four directions, normal Yee
+  sampling in 3D modal projection, tensor-axis mapping, and symmetric mode seeds.
+- Made forced mode mirror symmetry opt-in and stabilized CPML coefficients,
+  including timestep-independent default alpha and compact 2D profiles.
+- Fixed electrical conductivity binding in differentiable simulations.
+
+- Fixed topology contours shrinking away from design-region boundaries (#331).
   Region clearing now uses exact cell footprints and fixed geometry supplies
   interpolation context in `TopologyProblem`.
-- Add `mode="pixel_exact"` and optional bilinear contour `sample_spacing` to both
+- Added `mode="pixel_exact"` and optional bilinear contour `sample_spacing` to both
   optimization export workflows, and fixed solid/void masks for port cells.
-- Add explicit GDS coordinate precision and material/layer selection, preserving
+- Added explicit GDS coordinate precision and material/layer selection, preserving
   holes without intermediate quantization through a global layout grid.
-- Add a runnable mode-converter export showcase with GDS round-trip geometry and
+- Added a runnable mode-converter export showcase with GDS round-trip geometry and
   transmission comparisons on 100 nm and 50 nm meshes.
+
+### Execution limits
+
+- Native CUDA full-tensor updates require canonical, unpadded float32 streamed
+  storage. Full-tensor gradients use JAX; CUDA multistep scheduling has a narrower
+  supported physics and storage envelope. See [CUDA documentation](cuda/README.md)
+  for backend requirements and measured performance limits.
+
+**Full Changelog**: https://github.com/beamzorg/beamz/compare/v0.5.3...v0.6.0
 
 ## v0.5.3 - 2026-10-04
 

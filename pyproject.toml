@@ -4,14 +4,14 @@ build-backend = "maturin"
 
 [project]
 name = "beamz"
-version = "0.5.3"
+version = "0.6.0"
 dynamic = []
 authors = [
     { name = "Quentin Wach", email = "quentin.wach+beamz@gmail.com" },
 ]
 description = "Open GPU-accelerated FDTD for photonic chip designers."
 readme = "README.md"
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.11,<3.15"
 license = { file = "LICENSE" }
 keywords = ["computational physics", "electromagnetics", "photonics", "inverse design", "simulation"]
 classifiers = [
@@ -20,7 +20,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -34,6 +33,8 @@ dependencies = [
     "jax>=0.4.0",
     "optax>=0.1.0",
     "matplotlib>=3.8.0",
+    # Security floor for the image backend used by matplotlib and scikit-image.
+    "pillow>=13.0.0",
     "scikit-image>=0.21.0",
     "xarray>=2024.0.0",
 ]
@@ -99,7 +100,7 @@ patch = ["subprocess"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py311"
 extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
@@ -112,7 +113,7 @@ select = ["E4", "E7", "E9", "F", "I", "B", "C90", "SIM"]
 [tool.pyright]
 include = ["beamz"]
 typeCheckingMode = "basic"
-pythonVersion = "3.10"
+pythonVersion = "3.11"
 reportMissingTypeStubs = false
 strict = [
     "beamz/devices/ports.py",

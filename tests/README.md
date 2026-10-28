@@ -173,3 +173,26 @@ place, but promoting them to validation requires the missing independent
 observable or execution environment. Large 3D sweeps, long-time CPML stability,
 and broad convergence/performance matrices belong in the release gate or
 controlled hardware runs rather than the pull-request gate.
+
+## Dependency security
+
+The `Dependency Security` workflow audits `uv.lock` with every supported Python
+version (3.11–3.14) on Linux, including all optional extras, and audits
+`Cargo.lock` against RustSec. It runs on pull requests, pushes to `main`, weekly,
+and on demand. Audit reports are uploaded even when a check fails. These checks
+cover the locked Python and Rust dependencies, not system packages in CUDA or
+RunPod base images.
+
+To reproduce the Python audit, choose a supported interpreter and run:
+
+```bash
+uv lock --check
+uv export --frozen --all-extras --no-emit-project --no-hashes --output-file /tmp/beamz-audit-requirements.txt
+uv tool run --python 3.11 pip-audit==2.10.1 --requirement /tmp/beamz-audit-requirements.txt --no-deps --disable-pip
+```
+
+For Rust, install `cargo-audit` 0.22.2 with `cargo install cargo-audit --version
+0.22.2 --locked`, then run `cargo audit --file Cargo.lock`. Fix reported vulnerable
+versions rather than adding blanket ignores. After security updates, rebuild
+images and resync existing environments; merging a lockfile does not update
+already installed packages.

@@ -6,7 +6,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.5.3"
+version = "0.6.0"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/beamzorg/beamz"
@@ -17,7 +17,7 @@ blake3 = "1.8"
 geo = "0.33"
 numpy = "0.29"
 parry3d-f64 = "0.31"
-pyo3 = { version = "0.29", features = ["abi3-py310", "extension-module"] }
+pyo3 = { version = "0.29", features = ["abi3-py311", "extension-module"] }
 rayon = "1.11"
 robust = "1.2"
 serde = { version = "1.0", features = ["derive"] }

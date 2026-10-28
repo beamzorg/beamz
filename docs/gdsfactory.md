@@ -59,20 +59,31 @@ The first release supports axis-aligned optical ports, fundamental TE-like
 mode 1, and local 3D FDTD. Use `setup.simulation_for(...)` plus
 `Simulation.updated_copy(...)` to make non-default numerical choices explicit.
 
-## Export optimized geometry
+## Export geometry
 
 `export_gds` accepts metre-valued `precision` and an optional mapping from
 `Material` values to GDS `(layer, datatype)` pairs. The mapping selects the
 materials to export; other materials, including clearing polygons, are omitted.
 Without a mapping, material layers are assigned automatically as before.
+Export the prepared component directly:
 
 ```python
-from beamz import Material
 from beamz.design import export_gds
 
-layout = result.export_design(mode="contour", sample_spacing=10e-9)
-export_gds(layout, "optimized.gds", precision=1e-9,
-           layer_map={Material(4.0): (1, 0)})
+gds_path = export_gds(setup.design, "component.gds", precision=1e-9)
+assert gds_path.is_file()
+```
+
+For optimized geometry, use the `InverseDesignResult` returned by an optimization
+run. This is a different result type from the S-parameter result above. Given
+that optimization result as `optimized_result`:
+
+```pycon
+>>> from beamz import Material
+>>> layout = optimized_result.export_design(mode="contour", sample_spacing=10e-9)
+>>> export_gds(layout, "optimized.gds", precision=1e-9,
+...            layer_map={Material(4.0): (1, 0)})
+PosixPath('optimized.gds')
 ```
 
 Use the permittivity of your actual core material in the mapping. For an exact

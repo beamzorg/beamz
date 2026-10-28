@@ -133,3 +133,6 @@ normalized_to
 # JAX calls registered pytree protocols dynamically.
 tree_flatten
 tree_unflatten
+
+# Region rasterization is opt-in from examples and external benchmark scripts.
+rasterize_regions

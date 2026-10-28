@@ -144,6 +144,30 @@ class RasterResult:
         assign(self, "scene_hash", str(scene_hash))
         assign(self, "cache_hit", bool(cache_hit))
 
+    @classmethod
+    def _from_arrays(
+        cls,
+        *,
+        grid_edges: tuple[np.ndarray, np.ndarray, np.ndarray],
+        smoothing: str,
+        yee_tensors: Mapping[str, Any],
+        tensors: Mapping[str, Any],
+        diagnostics: Mapping[str, Any],
+        scene_hash: str,
+    ) -> RasterResult:
+        """Validate and freeze fields assembled outside the native raster call."""
+        result = cls.__new__(cls)
+        result._assign(
+            grid_edges,
+            smoothing,
+            yee_tensors,
+            tensors,
+            diagnostics,
+            scene_hash,
+            cache_hit=False,
+        )
+        return result
+
     @property
     def is_uniform(self) -> bool:
         return all(
