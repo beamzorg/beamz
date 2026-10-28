@@ -90,14 +90,6 @@ def _rasterize_design(
                     "terminal cell of padding per active axis."
                 )
         representative_resolution = min(native_grid.min_spacings[:dimensions])
-        if dimensions == 3:
-            scene = from_beamz(design, padded_size=native_grid.extent)
-        else:
-            scene = from_beamz(
-                design,
-                two_dimensional_depth=native_grid.extent[2],
-                padded_size=(native_grid.extent[0], native_grid.extent[1], 0.0),
-            )
     else:
         resolution = float(resolution)
         if not np.isfinite(resolution) or resolution <= 0:
@@ -116,27 +108,23 @@ def _rasterize_design(
             )
         nx = _cell_count(design.width, resolution)
         ny = _cell_count(design.height, resolution)
-        if kind == "3d":
-            nz = _cell_count(design.depth, resolution_z)
-            z_max = nz * resolution_z
-            scene = from_beamz(
-                design,
-                padded_size=(nx * resolution, ny * resolution, z_max),
-            )
-        else:
-            nz = 1
-            z_max = 1.0
-            scene = from_beamz(
-                design,
-                two_dimensional_depth=z_max,
-                padded_size=(nx * resolution, ny * resolution, 0.0),
-            )
+        nz = _cell_count(design.depth, resolution_z) if kind == "3d" else 1
+        z_max = nz * resolution_z if kind == "3d" else 1.0
         native_grid = Grid.uniform(
             (0.0, 0.0, 0.0),
             (nx * resolution, ny * resolution, z_max),
             (nx, ny, nz),
         )
         representative_resolution = resolution
+
+    if kind == "3d":
+        scene = from_beamz(design, padded_size=native_grid.extent)
+    else:
+        scene = from_beamz(
+            design,
+            two_dimensional_depth=native_grid.extent[2],
+            padded_size=(native_grid.extent[0], native_grid.extent[1], 0.0),
+        )
 
     if progress:
         print(
