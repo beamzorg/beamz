@@ -10,23 +10,19 @@ def _modal_projection_reconstruction_residual(field_vec, projection, coeff):
         projection.get("mode_matrix", np.zeros((0, 0), dtype=np.complex128)),
         dtype=np.complex128,
     )
-    if mode_matrix.ndim != 2 or mode_matrix.shape[0] <= 0 or mode_matrix.shape[1] < 2:
-        return np.nan
     field = np.asarray(field_vec, dtype=np.complex128).reshape(-1)
-    if field.size <= 0:
-        return np.nan
-    n = int(min(field.size, mode_matrix.shape[0]))
-    if n <= 0:
-        return np.nan
     coeff_arr = np.asarray(coeff, dtype=np.complex128).reshape(-1)
-    if coeff_arr.size < 2:
+    if (
+        mode_matrix.ndim != 2
+        or mode_matrix.shape[0] <= 0
+        or mode_matrix.shape[1] < 2
+        or field.size <= 0
+        or coeff_arr.size < 2
+    ):
         return np.nan
-    recon = mode_matrix[:n, :2] @ coeff_arr[:2]
-    target = field[:n]
-    denom = float(np.linalg.norm(target))
-    if denom <= 1e-30 or not np.isfinite(denom):
-        return np.nan
-    return float(np.linalg.norm(target - recon) / denom)
+    return _modal_projection_reconstruction_diagnostics_from_matrix(
+        field, mode_matrix[:, :2], coeff_arr[:2]
+    )["residual"]
 
 
 def _modal_projection_reconstruction_diagnostics_from_matrix(

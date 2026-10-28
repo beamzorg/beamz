@@ -19,6 +19,12 @@ from beamz.lattice import (
 from .geometry import _monitor_component_plane_coords_3d, _plane_axes_for_port_axis
 
 
+def _interp_complex(sample_at, source_at, values):
+    return np.interp(sample_at, source_at, np.real(values)) + 1j * np.interp(
+        sample_at, source_at, np.imag(values)
+    )
+
+
 def _interpolate_plane_matrix_2d(
     values: np.ndarray,
     src0: np.ndarray,
@@ -40,18 +46,10 @@ def _interpolate_plane_matrix_2d(
         return arr.copy()
     mid = np.empty((src0.size, dst1.size), dtype=np.complex128)
     for row in range(src0.size):
-        mid[row, :] = np.interp(dst1, src1, np.real(arr[row, :])) + 1j * np.interp(
-            dst1,
-            src1,
-            np.imag(arr[row, :]),
-        )
+        mid[row, :] = _interp_complex(dst1, src1, arr[row, :])
     out = np.empty((dst0.size, dst1.size), dtype=np.complex128)
     for col in range(dst1.size):
-        out[:, col] = np.interp(dst0, src0, np.real(mid[:, col])) + 1j * np.interp(
-            dst0,
-            src0,
-            np.imag(mid[:, col]),
-        )
+        out[:, col] = _interp_complex(dst0, src0, mid[:, col])
     return out
 
 
@@ -165,14 +163,11 @@ def _discrete_mode_projection_grids_3d(
     discrete_mode,
     profiles,
     *,
-    monitor,
     axis,
     components,
     analysis_coords0,
     analysis_coords1,
 ):
-    del monitor
-    grids = {}
     samples = {}
     for name in components:
         if name not in profiles:
@@ -195,9 +190,8 @@ def _discrete_mode_projection_grids_3d(
             np.asarray(analysis_coords0, dtype=np.float64),
             np.asarray(analysis_coords1, dtype=np.float64),
         )
-        grids[name] = grid
         samples[name] = grid.reshape(-1)
-    return grids, samples
+    return samples
 
 
 def _sample_modal_basis_normal_3d(
