@@ -884,30 +884,21 @@ def _pml_average_all_sides(
     """Average diagonal material components on each boundary side."""
     nx, ny = shape
 
-    # Region order is xmin, xmax, ymin, ymax.
-    regions: list[list[complex]] = [[], [], [], []]
-    for comp in range(3):
-        for ix in range(nx):
-            for iy in range(ny):
-                value = complex(tensor[comp, comp, ix * ny + iy])
-
-                # Collect only cells that lie inside the requested PML thickness.
-                if ix < num_pml[0]:
-                    regions[0].append(value)
-                if ix >= max(nx - num_pml[0], 0):
-                    regions[1].append(value)
-                if iy < num_pml[1]:
-                    regions[2].append(value)
-                if iy >= max(ny - num_pml[1], 0):
-                    regions[3].append(value)
-    out = np.ones(4, dtype=np.complex128)
-
-    # If a side has no PML cells, leave its average at one so it does not affect
-    # unused stretch factors.
-    for index, values in enumerate(regions):
-        if values:
-            out[index] = sum(values) / len(values)
-    return out
+    diagonal = np.asarray(
+        [tensor[comp, comp] for comp in range(3)], dtype=np.complex128
+    ).reshape(3, nx, ny)
+    # Region order is xmin, xmax, ymin, ymax. Clamp high-side starts so zero
+    # thickness produces an empty slice and oversized PML covers the full axis.
+    regions = (
+        diagonal[:, : max(num_pml[0], 0), :],
+        diagonal[:, max(nx - num_pml[0], 0) :, :],
+        diagonal[:, :, : max(num_pml[1], 0)],
+        diagonal[:, :, max(ny - num_pml[1], 0) :],
+    )
+    return np.asarray(
+        [region.mean() if region.size else 1.0 for region in regions],
+        dtype=np.complex128,
+    )
 
 
 def _create_sfactor(
