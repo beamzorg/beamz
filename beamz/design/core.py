@@ -17,7 +17,6 @@ _DEFAULT_DOMAIN_SIZE = object()
 
 
 def _material_key(material):
-    """Return a hashable key for a material based on its physical properties."""
     if hasattr(material, "cache_spec"):
         return material.cache_spec()
     return (
@@ -28,11 +27,7 @@ def _material_key(material):
 
 
 def _merge_group_key(structure):
-    """Return a hashable key for planar-union compatibility.
-
-    Structures can only be merged safely when both their material properties and
-    their z/depth placement match; the shapely union ignores z entirely.
-    """
+    """Group only shapes whose union cannot change extrusion or material."""
     return (
         _material_key(getattr(structure, "material", None)),
         getattr(structure, "z", None),
@@ -43,210 +38,85 @@ def _merge_group_key(structure):
 
 
 def _to_shapely(structure):
-    """Convert a beamz structure to a Shapely polygon, or None if not possible."""
-    if hasattr(structure, "interiors") and structure.interiors:
-        valid_interiors = [list(i_path) for i_path in structure.interiors if i_path]
-        if structure.vertices and valid_interiors:
-            poly = ShapelyPolygon(shell=structure.vertices, holes=valid_interiors)
-        elif structure.vertices:
-            poly = ShapelyPolygon(shell=structure.vertices)
-        else:
-            return None
-    elif hasattr(structure, "vertices") and structure.vertices:
-        poly = ShapelyPolygon(shell=structure.vertices)
-    else:
+    vertices = getattr(structure, "vertices", ())
+    if not vertices:
         return None
-    return poly if poly.is_valid else None
+    holes = [list(path) for path in getattr(structure, "interiors", ()) if path]
+    polygon = (
+        ShapelyPolygon(shell=vertices, holes=holes)
+        if holes
+        else ShapelyPolygon(shell=vertices)
+    )
+    return polygon if polygon.is_valid else None
 
 
-def _group_by_material(structures):
-    """Group structures by material key and convert to Shapely polygons.
-
-    Returns (material_groups, structures_to_remove) where material_groups maps
-    material_key -> list of (structure, shapely_polygon) tuples.
-    """
-    material_groups = {}
-    structures_to_remove = []
-    for structure in structures:
-        material = getattr(structure, "material", None)
-        if not material:
-            continue
-        key = _merge_group_key(structure)
-        shapely_poly = _to_shapely(structure)
-        if shapely_poly is None:
-            continue
-        material_groups.setdefault(key, []).append((structure, shapely_poly))
-        structures_to_remove.append(structure)
-    return material_groups, structures_to_remove
-
-
-def _find_rings_to_preserve(material_groups, structures_to_remove):
-    """Identify Ring structures that should not be merged (they have interiors)."""
-    rings_to_preserve = []
-    for structure_group in material_groups.values():
-        if len(structure_group) <= 1:
-            continue
-        for _idx, (struct, _shapely) in enumerate(structure_group):
-            if isinstance(struct, Ring):
-                rings_to_preserve.append(struct)
-                if struct in structures_to_remove:
-                    structures_to_remove.remove(struct)
-    return rings_to_preserve
-
-
-def _shapely_to_polygons(merged, material, first_structure):
-    """Convert a merged Shapely geometry back to beamz Polygon(s).
-
-    Returns a list of Polygon objects, or None if conversion fails.
-    """
-    depth = getattr(first_structure, "depth", 0)
-    z = getattr(first_structure, "z", 0)
-    sidewall_angle = getattr(first_structure, "sidewall_angle", 0.0)
-    width_to_z = getattr(first_structure, "width_to_z", 0.0)
-
-    def _geom_to_polygon(geom):
-        exterior_coords = list(geom.exterior.coords[:-1])
-        if not exterior_coords or len(exterior_coords) < 3:
+def _polygons_from_shapely(merged, material, first):
+    if merged.geom_type not in {"Polygon", "MultiPolygon"}:
+        return None
+    depth = getattr(first, "depth", 0)
+    z = getattr(first, "z", 0)
+    geoms = (merged,) if merged.geom_type == "Polygon" else merged.geoms
+    polygons = []
+    for geom in geoms:
+        shell = list(geom.exterior.coords[:-1])
+        if len(shell) < 3:
             return None
-        interior_coords_lists = [
-            list(interior.coords[:-1]) for interior in geom.interiors
-        ]
-        return Polygon(
-            vertices=exterior_coords,
-            interiors=interior_coords_lists,
-            material=material,
-            depth=depth,
-            z=z,
-            sidewall_angle=sidewall_angle,
-            width_to_z=width_to_z,
+        polygons.append(
+            Polygon(
+                vertices=shell,
+                interiors=[list(ring.coords[:-1]) for ring in geom.interiors],
+                material=material,
+                depth=depth,
+                z=z,
+                sidewall_angle=getattr(first, "sidewall_angle", 0.0),
+                width_to_z=getattr(first, "width_to_z", 0.0),
+            )
         )
-
-    if merged.geom_type == "Polygon":
-        poly = _geom_to_polygon(merged)
-        return [poly] if poly else None
-    elif merged.geom_type == "MultiPolygon":
-        polys = []
-        for geom in merged.geoms:
-            poly = _geom_to_polygon(geom)
-            if poly is None:
-                return None
-            polys.append(poly)
-        return polys
-    return None
+    return polygons
 
 
-def _merge_groups(material_groups, rings_to_preserve, structures_to_remove):
-    """Merge each material group using Shapely union.
+def _union_replacements(structures):
+    """Map indexes of merged polygons to their replacements.
 
-    Returns (new_structures, updated structures_to_remove).
+    Rings are left in place so a neighbor cannot fill their holes. Groups of
+    one, and unions Shapely cannot turn back into polygons, stay unchanged.
     """
-    new_structures = []
-    for structure_group in material_groups.values():
-        filtered_group = [s for s in structure_group if s[0] not in rings_to_preserve]
-        if len(filtered_group) <= 1:
-            new_structures.extend([s[0] for s in filtered_group])
-            for s in filtered_group:
-                if s[0] in structures_to_remove:
-                    structures_to_remove.remove(s[0])
+    groups = {}
+    for index, structure in enumerate(structures):
+        if not getattr(structure, "material", None):
             continue
-
-        shapely_polygons = [p[1] for p in filtered_group]
-        material = filtered_group[0][0].material
-        merged = unary_union(shapely_polygons)
-        result = _shapely_to_polygons(merged, material, filtered_group[0][0])
-
-        if result is not None:
-            new_structures.extend(result)
-        else:
-            # Fallback: keep originals
-            new_structures.extend([s[0] for s in structure_group])
-            for s_tuple in structure_group:
-                if s_tuple[0] in structures_to_remove:
-                    structures_to_remove.remove(s_tuple[0])
-
-    return new_structures, structures_to_remove
-
-
-def _rebuild_structure_list(
-    original, structures_to_remove, new_structures, material_groups
-):
-    """Rebuild the structure list, replacing merged groups at their original position."""
-    material_replacements = {}
-    for new_struct in new_structures:
-        if not (hasattr(new_struct, "material") and new_struct.material):
+        polygon = _to_shapely(structure)
+        if polygon is None:
             continue
-        key = _merge_group_key(new_struct)
-        for mat_key, group in material_groups.items():
-            if len(group) > 1 and mat_key == key:
-                material_replacements.setdefault(mat_key, []).append(new_struct)
-                break
-
-    rebuilt, used = [], set()
-    for structure in original:
-        if structure in structures_to_remove:
-            if not (hasattr(structure, "material") and structure.material):
-                continue
-            key = _merge_group_key(structure)
-            if key not in used and key in material_replacements:
-                rebuilt.extend(material_replacements[key])
-                used.add(key)
-        else:
-            rebuilt.append(structure)
-    return rebuilt
+        groups.setdefault(_merge_group_key(structure), []).append(
+            (index, structure, polygon)
+        )
+    replacements = {}
+    for group in groups.values():
+        mergeable = [item for item in group if not isinstance(item[1], Ring)]
+        if len(group) <= 1 or len(mergeable) <= 1:
+            continue
+        merged = _polygons_from_shapely(
+            unary_union([item[2] for item in mergeable]),
+            mergeable[0][1].material,
+            mergeable[0][1],
+        )
+        if merged is None:
+            continue
+        replacements[mergeable[0][0]] = merged
+        for index, _structure, _polygon in mergeable[1:]:
+            replacements[index] = ()
+    return replacements
 
 
 @dataclass(frozen=True, slots=True, eq=False, init=False)
 class Design:
-    """Immutable geometry specification with a functional convenience facade.
+    """Immutable geometry in metres, ``(x, y, z)``, painter's order.
 
-    ``background`` is the sole background material. ``structures`` contains only
-    user geometry, in painter's order. Python's augmented assignment still gives
-    a friendly workflow because ``design += structure`` rebinds ``design`` to the
-    new value returned by :meth:`with_structure`.
-
-    Parameters
-    ----------
-    width : float, default=4 um
-        Domain extent along x in metres; must be finite and positive.
-    height : float, default=4 um
-        Domain extent along y in metres; must be finite and positive.
-    depth : float, default=0
-        Domain extent along z in metres. Zero selects a 2D design.
-    material : Material, optional
-        Backward-compatible name for the background material.
-    background : Material, optional
-        Material filling cells not covered by a structure. Do not pass together
-        with a different ``material`` value.
-    structures : iterable, optional
-        Geometry primitives in painter's order; later structures overwrite
-        earlier structures during rasterization.
-
-    Raises
-    ------
-    ValueError
-        If an extent is invalid or both background aliases disagree.
-    TypeError
-        If ``structures`` contains unsupported mutable geometry.
-
-    Notes
-    -----
-    Public geometry coordinates use ``(x, y, z)`` order and SI units. A design
-    is immutable: methods such as ``with_structure`` return a new value.
-
-    Examples
-    --------
-    >>> import beamz as bz
-    >>> design = bz.Design(
-    ...     width=6 * bz.um,
-    ...     height=3 * bz.um,
-    ...     background=bz.Material(permittivity=1.44**2),
-    ... )
-    >>> design += bz.Rectangle(
-    ...     position=(1 * bz.um, 1.25 * bz.um),
-    ...     width=4 * bz.um,
-    ...     height=0.5 * bz.um,
-    ...     material=bz.Material(permittivity=3.48**2),
-    ... )
+    ``background`` fills uncovered cells. ``material`` is the same argument;
+    passing both with different values is an error. ``design += structure``
+    rebinds to the design returned by :meth:`with_structure`. Omitting the
+    domain size and passing only ``background`` marks the design as centered.
     """
 
     width: float
@@ -353,25 +223,12 @@ class Design:
         return self.with_structure(structure)
 
     def with_structure(self, structure):
-        """Return a design with one geometry appended in painter's order.
-
-        Parameters
-        ----------
-        structure : Polygon or Box
-            Immutable geometry to place above existing structures.
-        """
+        """Return a design with one geometry appended in painter's order."""
         self._validate_structure(structure)
         return self.updated_copy(structures=(*self.structures, structure))
 
     def updated_copy(self, **changes):
-        """Return a new design with the requested fields replaced.
-
-        Parameters
-        ----------
-        **changes
-            Any of ``width``, ``height``, ``depth``, ``background``, or
-            ``structures`` and their replacement values.
-        """
+        """Return a design with domain, background, or structures replaced."""
         unknown = set(changes) - {
             "width",
             "height",
@@ -399,17 +256,14 @@ class Design:
 
     def unified_polygons(self):
         """Return a design with compatible overlapping polygons merged."""
-        material_groups, structures_to_remove = _group_by_material(self.structures)
-        rings_to_preserve = _find_rings_to_preserve(
-            material_groups, structures_to_remove
-        )
-        new_structures, structures_to_remove = _merge_groups(
-            material_groups, rings_to_preserve, structures_to_remove
-        )
-        structures = _rebuild_structure_list(
-            self.structures, structures_to_remove, new_structures, material_groups
-        )
-        return self.updated_copy(structures=structures)
+        replacements = _union_replacements(self.structures)
+        structures = []
+        for index, structure in enumerate(self.structures):
+            if index in replacements:
+                structures.extend(replacements[index])
+            else:
+                structures.append(structure)
+        return self.updated_copy(structures=tuple(structures))
 
     def rasterize(
         self,
@@ -432,42 +286,20 @@ class Design:
         )
 
     def discretize(self, resolution, **kwargs):
-        """Return design-owned material grids at the requested resolution.
-
-        Parameters
-        ----------
-        resolution : float
-            In-plane cell spacing in metres.
-        **kwargs
-            Additional options forwarded to :func:`build_material_grid`.
-        """
+        """Return material grids at ``resolution`` metres per cell."""
         from beamz.design.discretization import build_material_grid
 
         return build_material_grid(self, resolution, **kwargs)
 
     def plot(self, **kwargs):
-        """Plot the design layout using the matplotlib backend.
-
-        Parameters
-        ----------
-        **kwargs
-            Plotting options forwarded to the design plotting backend. ``show``
-            defaults to false.
-        """
+        """Plot the layout. ``show`` defaults to false."""
         from beamz.analysis.plotting import plot_design
 
         kwargs.setdefault("show", False)
         return plot_design(self, **kwargs)
 
     def show(self, **kwargs):
-        """Display the design layout using the matplotlib backend.
-
-        Parameters
-        ----------
-        **kwargs
-            Plotting options forwarded to :meth:`plot`. ``show`` defaults to
-            true.
-        """
+        """Plot the layout. ``show`` defaults to true."""
         kwargs.setdefault("show", True)
         return self.plot(**kwargs)
 

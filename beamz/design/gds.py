@@ -23,19 +23,7 @@ Layer = tuple[int, int]
 
 @dataclass(frozen=True, slots=True)
 class ImportedComponent:
-    """A layout component converted into simulation-ready BeamZ objects.
-
-    Attributes
-    ----------
-    design
-        Imported and extruded simulation geometry in local design coordinates.
-    ports
-        Canonical modal ports at the original component port planes.
-    component_name
-        Name reported by the source layout component.
-    world_origin
-        Translation from local design coordinates to centered world coordinates.
-    """
+    """Layout geometry, ports, and the shift into centered world coordinates."""
 
     design: Design
     ports: tuple[Port, ...]
@@ -291,30 +279,31 @@ def _extend_ports(
     enabled: bool,
     overlap: float,
 ) -> Design:
+    """Grow each waveguide from its port plane out to the domain edge."""
     if not enabled:
         return design
     edges = {"+x": design.width, "-x": 0.0, "+y": design.height, "-y": 0.0}
+    depth = profile.core_zmax - profile.core_zmin
     for port in ports:
-        direction = str(port["direction"])
-        outward = ("-" if direction.startswith("+") else "+") + direction[1]
+        inward = str(port["direction"])
+        outward = ("-" if inward.startswith("+") else "+") + inward[1]
         cx, cy = port["center"]
-        shift = -float(overlap)
-        sx = cx + shift * ({"+x": 1, "-x": -1}.get(outward, 0))
-        sy = cy + shift * ({"+y": 1, "-y": -1}.get(outward, 0))
         width = float(port["width"])
-        if outward.endswith("x"):
-            edge = edges[outward]
-            position = (min(sx, edge), cy - 0.5 * width, profile.core_zmin)
-            size = (abs(edge - sx), width)
-        else:
-            edge = edges[outward]
-            position = (cx - 0.5 * width, min(sy, edge), profile.core_zmin)
-            size = (width, abs(edge - sy))
+        along_x = outward.endswith("x")
+        center = cx if along_x else cy
+        start = center - float(overlap) * (1 if outward.startswith("+") else -1)
+        edge = edges[outward]
+        span = abs(edge - start)
+        position = (
+            (min(start, edge), cy - 0.5 * width, profile.core_zmin)
+            if along_x
+            else (cx - 0.5 * width, min(start, edge), profile.core_zmin)
+        )
         design += Rectangle(
             position=position,
-            width=size[0],
-            height=size[1],
-            depth=profile.core_zmax - profile.core_zmin,
+            width=span if along_x else width,
+            height=width if along_x else span,
+            depth=depth,
             material=material,
             sidewall_angle=profile.sidewall_angle,
             width_to_z=profile.width_to_z,
@@ -369,36 +358,11 @@ def import_component(
 ) -> ImportedComponent:
     """Convert a gdsfactory component or active-PDK cell into a BeamZ design.
 
-    Optional PDK stack interpretation is explicit: pass a gdsfactory
-    ``LayerStack`` through ``layer_stack``. Cell names are resolved by
-    ``gdsfactory.get_component``, so the active PDK remains the authority for
-    component discovery.
-
-    Parameters
-    ----------
-    component
-        Component object, callable, or cell specification understood by
-        gdsfactory.
-    layer
-        GDS layer and datatype containing the imported core geometry.
-    n_core, n_clad
-        Refractive indices used for core and simple cladding materials.
-    core_thickness, clad_below, clad_above
-        Simple vertical geometry in metres, used when ``layer_stack`` is absent.
-    xy_padding, z_padding
-        Domain padding in metres.
-    extend_ports
-        Extend imported waveguides from their port planes to the domain edges.
-    port_overlap
-        Inward overlap between imported polygons and port extensions.
-    settings
-        Settings forwarded to gdsfactory component resolution.
-    layer_stack
-        Optional explicit gdsfactory PDK layer stack.
-    material_map
-        Mapping from PDK material names to BeamZ materials or permittivities.
-    unify
-        Merge compatible touching polygons after import.
+    Pass ``layer_stack`` to interpret a PDK stack; otherwise the simple
+    ``core_thickness`` / cladding arguments apply. Cell names go through
+    ``gdsfactory.get_component``. Lengths are metres. ``extend_ports`` draws
+    each waveguide out to the domain edge, and ``unify`` merges touching
+    polygons of the same material.
     """
     component = _resolve_component(component, settings)
     polygons = _polygons_on_layer(component, layer)
@@ -529,16 +493,13 @@ def export_gds(
     precision: float = 1e-9,
     layer_map: Mapping[Material, Layer] | None = None,
 ) -> Path:
-    """Export planar structures to GDS with an explicit coordinate precision.
+    """Export planar structures to GDS.
 
-    ``precision`` is the database grid in metres (default 1 nm). A private
-    KLayout database avoids quantization through gdsfactory's global grid.
-    Coordinates remain in GDS micrometres. Interior rings remain holes.
-
-    By default, equal materials share automatically assigned layers. An explicit
-    ``layer_map={material: (layer, datatype)}`` selects only those materials,
-    e.g. the core mask without low-index region-clearing polygons. Volumetric
-    structures without a planar projection are rejected explicitly.
+    ``precision`` is the database grid in metres (default 1 nm) on a private
+    KLayout layout, so it does not follow gdsfactory's global grid. Coordinates
+    are GDS micrometres and interior rings stay holes. Equal materials share a
+    layer unless ``layer_map`` selects specific materials. Shapes with no planar
+    polygon are rejected.
     """
     if not np.isfinite(precision) or precision <= 0:
         raise ValueError("precision must be finite and positive (metres).")
