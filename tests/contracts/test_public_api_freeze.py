@@ -80,6 +80,12 @@ EXPECTED_EXPORTS = {
         "SParameterResult",
     ),
     "beamz.analysis": (
+        "FarFieldData",
+        "FarFieldProjection",
+        "FarFieldSurface",
+        "SurfaceFieldData",
+        "near_field_box",
+        "near_to_far",
         "ModeMonitorData",
         "SParameterResult",
         "SourceNormalization",
@@ -148,6 +154,9 @@ EXPECTED_EXPORTS = {
         "CustomSource",
     ),
     "beamz.optimization": (
+        "CollectionConePower",
+        "DirectionalPower",
+        "TargetBeamOverlap",
         "LinearSchedule",
         "OptimizationSchedule",
         "StepSchedule",

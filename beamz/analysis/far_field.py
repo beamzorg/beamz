@@ -14,7 +14,6 @@ from typing import Any, NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jax.ad_checkpoint import checkpoint
 
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.devices.monitors import FieldMonitor
@@ -153,7 +152,7 @@ def near_to_far(
 
     # Recompute each direction's phase in reverse mode instead of retaining a
     # direction-by-frequency-by-point residual tensor for the gradient.
-    angular_e = jax.lax.map(checkpoint(project), directions).transpose(1, 0, 2)
+    angular_e = jax.lax.map(jax.checkpoint(project), directions).transpose(1, 0, 2)
     angular_h = jnp.cross(directions, angular_e) / impedance
     return FarFieldData(
         angular_e, angular_h, directions, frequencies, jnp.asarray(impedance)
