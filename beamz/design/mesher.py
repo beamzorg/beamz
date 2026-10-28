@@ -6,6 +6,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
+# Below this slope a spacing segment is treated as constant, avoiding a log of 1.
+_FLAT_GRADIENT = 32.0 * np.finfo(float).eps
+_WIDTH_TOLERANCE = 128.0 * np.finfo(float).eps
+
 
 def _positive_array(values, name: str) -> np.ndarray:
     array = np.asarray(values, dtype=np.float64)
@@ -32,6 +36,62 @@ def _refined_cell_count(current: int, required_factor: float) -> int:
     return int(current) + increment
 
 
+def _density_integral(length: float, start_spacing: float, end_spacing: float):
+    """Integrate 1/h along a linearly changing spacing segment."""
+    gradient = (end_spacing - start_spacing) / length
+    if abs(gradient) <= _FLAT_GRADIENT:
+        return length / start_spacing
+    return np.log(end_spacing / start_spacing) / gradient
+
+
+def _offset_at_density(local_density: float, start_spacing: float, gradient: float):
+    """Invert a linear spacing segment to a coordinate offset."""
+    if abs(gradient) <= _FLAT_GRADIENT:
+        return local_density * start_spacing
+    return start_spacing * np.expm1(gradient * local_density) / gradient
+
+
+def _profile_coordinates(
+    lower: float,
+    upper: float,
+    cap: float,
+    left: float,
+    right: float,
+    slope: float,
+) -> list[float]:
+    """Breakpoints where a capped linear spacing envelope changes slope."""
+    candidates = [lower, upper]
+    if slope > 0.0:
+        candidates.extend(
+            (
+                lower + (cap - left) / slope,
+                upper - (cap - right) / slope,
+                0.5 * (lower + upper + (right - left) / slope),
+            )
+        )
+    tolerance = 64.0 * np.finfo(float).eps * max(1.0, abs(lower), abs(upper))
+    coordinates = []
+    for value in sorted(candidates):
+        clipped = float(np.clip(value, lower, upper))
+        if not coordinates or clipped - coordinates[-1] > tolerance:
+            coordinates.append(clipped)
+    if coordinates[-1] != upper:
+        coordinates[-1] = upper
+    return coordinates
+
+
+def _cumulative_density(coordinates: np.ndarray, spacings: np.ndarray) -> np.ndarray:
+    density = np.zeros(coordinates.size, dtype=np.float64)
+    for index, (x0, x1, h0, h1) in enumerate(
+        zip(
+            coordinates[:-1], coordinates[1:], spacings[:-1], spacings[1:], strict=True
+        ),
+        start=1,
+    ):
+        density[index] = density[index - 1] + _density_integral(x1 - x0, h0, h1)
+    return density
+
+
 @dataclass(frozen=True, slots=True)
 class _SpacingProfile:
     """Piecewise-linear spacing profile and its integrated cell density."""
@@ -50,41 +110,14 @@ class _SpacingProfile:
         right: float,
         slope: float,
     ) -> _SpacingProfile:
-        candidates = [lower, upper]
-        if slope > 0.0:
-            candidates.extend(
-                (
-                    lower + (cap - left) / slope,
-                    upper - (cap - right) / slope,
-                    0.5 * (lower + upper + (right - left) / slope),
-                )
-            )
-        tolerance = 64.0 * np.finfo(float).eps * max(1.0, abs(lower), abs(upper))
-        coordinates = []
-        for value in sorted(candidates):
-            clipped = float(np.clip(value, lower, upper))
-            if not coordinates or clipped - coordinates[-1] > tolerance:
-                coordinates.append(clipped)
-        if coordinates[-1] != upper:
-            coordinates[-1] = upper
+        coordinates = _profile_coordinates(lower, upper, cap, left, right, slope)
         x = np.asarray(coordinates, dtype=np.float64)
         h = np.minimum(
             cap,
             np.minimum(left + slope * (x - lower), right + slope * (upper - x)),
         )
         h = np.maximum(h, np.finfo(float).tiny)
-        density = np.zeros(x.size, dtype=np.float64)
-        for index, (x0, x1, h0, h1) in enumerate(
-            zip(x[:-1], x[1:], h[:-1], h[1:], strict=True), start=1
-        ):
-            delta = x1 - x0
-            gradient = (h1 - h0) / delta
-            if abs(gradient) <= 32.0 * np.finfo(float).eps:
-                integral = delta / h0
-            else:
-                integral = np.log(h1 / h0) / gradient
-            density[index] = density[index - 1] + integral
-        return cls(x, h, density)
+        return cls(x, h, _cumulative_density(x, h))
 
     @property
     def total_density(self) -> float:
@@ -94,25 +127,88 @@ class _SpacingProfile:
         values = np.asarray(density, dtype=np.float64)
         result = np.empty_like(values)
         for output_index, target in np.ndenumerate(values):
-            if target <= 0.0:
-                result[output_index] = self.coordinates[0]
-                continue
-            if target >= self.cumulative_density[-1]:
-                result[output_index] = self.coordinates[-1]
-                continue
-            segment = int(
-                np.searchsorted(self.cumulative_density, target, side="right") - 1
-            )
-            x0, x1 = self.coordinates[segment : segment + 2]
-            h0, h1 = self.spacings[segment : segment + 2]
-            local_density = target - self.cumulative_density[segment]
-            gradient = (h1 - h0) / (x1 - x0)
-            if abs(gradient) <= 32.0 * np.finfo(float).eps:
-                offset = local_density * h0
-            else:
-                offset = h0 * np.expm1(gradient * local_density) / gradient
-            result[output_index] = x0 + offset
+            result[output_index] = self._coordinate_at(float(target))
         return result
+
+    def _coordinate_at(self, target: float) -> float:
+        if target <= 0.0:
+            return float(self.coordinates[0])
+        if target >= self.cumulative_density[-1]:
+            return float(self.coordinates[-1])
+        segment = int(
+            np.searchsorted(self.cumulative_density, target, side="right") - 1
+        )
+        x0, x1 = self.coordinates[segment : segment + 2]
+        h0, h1 = self.spacings[segment : segment + 2]
+        gradient = (h1 - h0) / (x1 - x0)
+        offset = _offset_at_density(
+            target - self.cumulative_density[segment], h0, gradient
+        )
+        return float(x0 + offset)
+
+
+def _axis_inputs(interval_coords, max_spacings) -> tuple[np.ndarray, np.ndarray]:
+    coords = np.asarray(interval_coords, dtype=np.float64)
+    if (
+        coords.ndim != 1
+        or coords.size < 2
+        or not np.all(np.isfinite(coords))
+        or np.any(np.diff(coords) <= 0.0)
+    ):
+        raise ValueError(
+            "interval_coords must be finite, one-dimensional, and strictly increasing."
+        )
+    caps = _positive_array(max_spacings, "max_spacings")
+    if caps.size != coords.size - 1:
+        raise ValueError("max_spacings must contain one value per coordinate interval.")
+    return coords, caps
+
+
+def _neighbor_ratios(widths: np.ndarray) -> np.ndarray:
+    return np.maximum(widths[1:] / widths[:-1], widths[:-1] / widths[1:])
+
+
+def _increase_counts_over_cap(
+    counts: np.ndarray,
+    owners: np.ndarray,
+    widths: np.ndarray,
+    target_limits: np.ndarray,
+) -> None:
+    for interval in np.unique(owners[widths > target_limits]):
+        selected = owners == interval
+        required_factor = float(np.max(widths[selected] / target_limits[selected]))
+        counts[interval] = _refined_cell_count(int(counts[interval]), required_factor)
+
+
+def _refine_ratio_violations(
+    counts: np.ndarray,
+    owners: np.ndarray,
+    widths: np.ndarray,
+    max_scale: float,
+    violating_pairs: np.ndarray,
+) -> bool:
+    """Grow intervals that own the larger cell of a violating pair.
+
+    Returns False when a violation sits inside one interval. Adding cells cannot
+    repair that case, so the caller must try a gentler spacing slope.
+    """
+    refinement_factors: dict[int, float] = {}
+    for pair in violating_pairs:
+        left_owner, right_owner = owners[pair : pair + 2]
+        if left_owner == right_owner:
+            return False
+        larger_cell = pair if widths[pair] > widths[pair + 1] else pair + 1
+        smaller_cell = pair + 1 if larger_cell == pair else pair
+        interval = int(owners[larger_cell])
+        required_factor = float(
+            widths[larger_cell] / (max_scale * widths[smaller_cell])
+        )
+        refinement_factors[interval] = max(
+            refinement_factors.get(interval, 1.0), required_factor
+        )
+    for interval, required_factor in refinement_factors.items():
+        counts[interval] = _refined_cell_count(counts[interval], required_factor)
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,23 +293,9 @@ class _GradedMesher:
     def _boundary_spacings(
         lengths: np.ndarray, caps: np.ndarray, slope: float
     ) -> np.ndarray:
-        boundaries = np.empty(caps.size + 1, dtype=np.float64)
-        boundaries[0] = caps[0]
-        boundaries[-1] = caps[-1]
-        if caps.size > 1:
-            boundaries[1:-1] = np.minimum(caps[:-1], caps[1:])
-        for index in range(caps.size):
-            boundaries[index + 1] = min(
-                boundaries[index + 1],
-                caps[index],
-                boundaries[index] + slope * lengths[index],
-            )
-        for index in range(caps.size - 1, -1, -1):
-            boundaries[index] = min(
-                boundaries[index],
-                caps[index],
-                boundaries[index + 1] + slope * lengths[index],
-            )
+        boundaries = _seed_boundary_caps(caps)
+        _limit_boundaries_forward(boundaries, lengths, caps, slope)
+        _limit_boundaries_backward(boundaries, lengths, caps, slope)
         return boundaries
 
     @staticmethod
@@ -267,120 +349,152 @@ class _GradedMesher:
         axis_name: str | None = None,
     ) -> np.ndarray:
         """Return graded edges satisfying interval and neighbor constraints."""
-        coords = np.asarray(interval_coords, dtype=np.float64)
-        if (
-            coords.ndim != 1
-            or coords.size < 2
-            or not np.all(np.isfinite(coords))
-            or np.any(np.diff(coords) <= 0.0)
-        ):
-            raise ValueError(
-                "interval_coords must be finite, one-dimensional, and strictly increasing."
-            )
-        caps = _positive_array(max_spacings, "max_spacings")
-        if caps.size != coords.size - 1:
-            raise ValueError(
-                "max_spacings must contain one value per coordinate interval."
-            )
-
-        theoretical_slope = 2.0 * (self.max_scale - 1.0) / (self.max_scale + 1.0)
-        slope = theoretical_slope * self.transition_safety
-        target_tolerance = 128.0 * np.finfo(float).eps
-
+        coords, caps = _axis_inputs(interval_coords, max_spacings)
+        slope = self._opening_slope()
         for _slope_pass in range(self.max_slope_passes):
-            profiles = self._profiles(coords, caps, slope)
-            initial_counts = [
-                _cell_count(profile.total_density) for profile in profiles
-            ]
-            self._check_cell_budget(
-                initial_counts,
-                max_cells=max_cells,
-                axis_name=axis_name,
-                coords=coords,
-                caps=caps,
-                reason="initial graded-spacing envelope",
-            )
-            counts = np.asarray(initial_counts, dtype=np.int64)
-            # Keep a mandatory interval as one cell when it already satisfies its
-            # hard cap. Its profile density can be just above one because the
-            # envelope also grades neighboring cells; blindly taking ceil would
-            # split it into the new sliver that this propagation is meant to avoid.
-            interval_lengths = np.diff(coords)
-            counts[interval_lengths <= caps * (1.0 + target_tolerance)] = 1
-            for _refinement_pass in range(self.max_refinement_passes):
-                self._check_cell_budget(
-                    counts,
-                    max_cells=max_cells,
-                    axis_name=axis_name,
-                    coords=coords,
-                    caps=caps,
-                    reason="neighbor-ratio refinement",
-                )
-                edges, owners = self._realize(profiles, counts)
-                widths = np.diff(edges)
-                target_limits = caps[owners]
-                if np.any(widths > target_limits * (1.0 + target_tolerance)):
-                    for interval in np.unique(owners[widths > target_limits]):
-                        selected = owners == interval
-                        required_factor = float(
-                            np.max(widths[selected] / target_limits[selected])
-                        )
-                        counts[interval] = _refined_cell_count(
-                            int(counts[interval]), required_factor
-                        )
-                    self._check_cell_budget(
-                        counts,
-                        max_cells=max_cells,
-                        axis_name=axis_name,
-                        coords=coords,
-                        caps=caps,
-                        reason="hard-spacing refinement",
-                    )
-                    continue
-                if widths.size < 2:
-                    return edges
-                ratios = np.maximum(widths[1:] / widths[:-1], widths[:-1] / widths[1:])
-                violating_pairs = np.flatnonzero(
-                    ratios > self.max_scale * (1.0 + target_tolerance)
-                )
-                if violating_pairs.size == 0:
-                    return edges
-                internal_violation = False
-                refinement_factors: dict[int, float] = {}
-                for pair in violating_pairs:
-                    left_owner, right_owner = owners[pair : pair + 2]
-                    if left_owner == right_owner:
-                        internal_violation = True
-                        break
-                    larger_cell = pair if widths[pair] > widths[pair + 1] else pair + 1
-                    smaller_cell = pair + 1 if larger_cell == pair else pair
-                    interval = int(owners[larger_cell])
-                    required_factor = float(
-                        widths[larger_cell] / (self.max_scale * widths[smaller_cell])
-                    )
-                    refinement_factors[interval] = max(
-                        refinement_factors.get(interval, 1.0), required_factor
-                    )
-                if internal_violation:
-                    break
-                for interval, required_factor in refinement_factors.items():
-                    counts[interval] = _refined_cell_count(
-                        counts[interval], required_factor
-                    )
-                self._check_cell_budget(
-                    counts,
-                    max_cells=max_cells,
-                    axis_name=axis_name,
-                    coords=coords,
-                    caps=caps,
-                    reason="neighbor-ratio refinement",
-                )
+            edges = self._grade_at_slope(coords, caps, slope, max_cells, axis_name)
+            if edges is not None:
+                return edges
             slope *= 0.65
-
         raise RuntimeError(
             "Could not construct a graded axis within the configured pass limits. "
             "Relax max_scale, remove near-coincident snapped boundaries, or increase "
             "the mesher pass limits."
+        )
+
+    def _opening_slope(self) -> float:
+        """Largest spacing slope that can still meet ``max_scale`` after sampling."""
+        theoretical_slope = 2.0 * (self.max_scale - 1.0) / (self.max_scale + 1.0)
+        return theoretical_slope * self.transition_safety
+
+    def _grade_at_slope(
+        self,
+        coords: np.ndarray,
+        caps: np.ndarray,
+        slope: float,
+        max_cells: int | None,
+        axis_name: str | None,
+    ) -> np.ndarray | None:
+        """Realize one slope, or return None so the caller can ease the slope."""
+        profiles = self._profiles(coords, caps, slope)
+        counts = self._initial_counts(profiles, coords, caps, max_cells, axis_name)
+        for _refinement_pass in range(self.max_refinement_passes):
+            self._check_cell_budget(
+                counts,
+                max_cells=max_cells,
+                axis_name=axis_name,
+                coords=coords,
+                caps=caps,
+                reason="neighbor-ratio refinement",
+            )
+            edges, owners = self._realize(profiles, counts)
+            if self._repair_cap_violations(
+                counts, owners, edges, caps, coords, max_cells, axis_name
+            ):
+                continue
+            widths = np.diff(edges)
+            if widths.size < 2:
+                return edges
+            violating_pairs = np.flatnonzero(
+                _neighbor_ratios(widths) > self.max_scale * (1.0 + _WIDTH_TOLERANCE)
+            )
+            if violating_pairs.size == 0:
+                return edges
+            if not _refine_ratio_violations(
+                counts, owners, widths, self.max_scale, violating_pairs
+            ):
+                return None
+            self._check_cell_budget(
+                counts,
+                max_cells=max_cells,
+                axis_name=axis_name,
+                coords=coords,
+                caps=caps,
+                reason="neighbor-ratio refinement",
+            )
+        return None
+
+    def _initial_counts(
+        self,
+        profiles: list[_SpacingProfile],
+        coords: np.ndarray,
+        caps: np.ndarray,
+        max_cells: int | None,
+        axis_name: str | None,
+    ) -> np.ndarray:
+        counts = np.asarray(
+            [_cell_count(profile.total_density) for profile in profiles], dtype=np.int64
+        )
+        self._check_cell_budget(
+            counts,
+            max_cells=max_cells,
+            axis_name=axis_name,
+            coords=coords,
+            caps=caps,
+            reason="initial graded-spacing envelope",
+        )
+        # Keep a mandatory interval as one cell when it already satisfies its
+        # hard cap. Its profile density can be just above one because the
+        # envelope also grades neighboring cells; blindly taking ceil would
+        # split it into the new sliver that this propagation is meant to avoid.
+        counts[np.diff(coords) <= caps * (1.0 + _WIDTH_TOLERANCE)] = 1
+        return counts
+
+    def _repair_cap_violations(
+        self,
+        counts: np.ndarray,
+        owners: np.ndarray,
+        edges: np.ndarray,
+        caps: np.ndarray,
+        coords: np.ndarray,
+        max_cells: int | None,
+        axis_name: str | None,
+    ) -> bool:
+        """Subdivide intervals whose realized cells exceed their hard cap."""
+        widths = np.diff(edges)
+        target_limits = caps[owners]
+        if not np.any(widths > target_limits * (1.0 + _WIDTH_TOLERANCE)):
+            return False
+        _increase_counts_over_cap(counts, owners, widths, target_limits)
+        self._check_cell_budget(
+            counts,
+            max_cells=max_cells,
+            axis_name=axis_name,
+            coords=coords,
+            caps=caps,
+            reason="hard-spacing refinement",
+        )
+        return True
+
+
+def _seed_boundary_caps(caps: np.ndarray) -> np.ndarray:
+    boundaries = np.empty(caps.size + 1, dtype=np.float64)
+    boundaries[0] = caps[0]
+    boundaries[-1] = caps[-1]
+    if caps.size > 1:
+        boundaries[1:-1] = np.minimum(caps[:-1], caps[1:])
+    return boundaries
+
+
+def _limit_boundaries_forward(
+    boundaries: np.ndarray, lengths: np.ndarray, caps: np.ndarray, slope: float
+) -> None:
+    for index in range(caps.size):
+        boundaries[index + 1] = min(
+            boundaries[index + 1],
+            caps[index],
+            boundaries[index] + slope * lengths[index],
+        )
+
+
+def _limit_boundaries_backward(
+    boundaries: np.ndarray, lengths: np.ndarray, caps: np.ndarray, slope: float
+) -> None:
+    for index in range(caps.size - 1, -1, -1):
+        boundaries[index] = min(
+            boundaries[index],
+            caps[index],
+            boundaries[index + 1] + slope * lengths[index],
         )
 
 
