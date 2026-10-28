@@ -42,6 +42,14 @@ def _material_arrays(sim):
     )
 
 
+def _line_crop(profile, sample_idx, pad_cells):
+    lo = max(0, int(np.min(sample_idx)) - int(pad_cells))
+    hi = min(len(profile), int(np.max(sample_idx)) + int(pad_cells) + 1)
+    local_idx = np.clip(sample_idx - lo, 0, max(hi - lo - 1, 0))
+    window = np.asarray(profile[lo:hi], dtype=np.complex128)
+    return window, local_idx, lo, hi
+
+
 def _monitor_profile_slice(sim, monitor, axis, pad_cells):
     materials = _material_arrays(sim)
     if materials is None:
@@ -50,49 +58,10 @@ def _monitor_profile_slice(sim, monitor, axis, pad_cells):
             "store_full_materials=True."
         )
     perm, _mu, origin, full_shape = materials
-    if perm.ndim == 3:
-        z_idx, y_idx, x_idx = monitor.get_grid_slice_3d(
-            sim.resolution,
-            sim.resolution,
-            sim.resolution,
-            full_shape,
-        )
-
-        def _clamp(idx, limit):
-            if isinstance(idx, slice):
-                start = 0 if idx.start is None else int(idx.start)
-                stop = limit if idx.stop is None else int(idx.stop)
-                start = max(0, min(start, max(limit - 1, 0)))
-                stop = max(start + 1, min(stop, limit))
-                return slice(start, stop)
-            ii = int(idx)
-            return max(0, min(ii, limit - 1))
-
-        z_idx = _clamp(z_idx, full_shape[0])
-        y_idx = _clamp(y_idx, full_shape[1])
-        x_idx = _clamp(x_idx, full_shape[2])
-        global_indices = (z_idx, y_idx, x_idx)
-        local_indices = []
-        for idx, offset in zip(global_indices, origin, strict=True):
-            if isinstance(idx, slice):
-                local_indices.append(
-                    slice(
-                        None if idx.start is None else int(idx.start) - offset,
-                        None if idx.stop is None else int(idx.stop) - offset,
-                    )
-                )
-            else:
-                local_indices.append(int(idx) - offset)
-        z_idx, y_idx, x_idx = local_indices
-        eps_slice = np.asarray(perm[z_idx, y_idx, x_idx], dtype=np.complex128)
-        if eps_slice.ndim != 2:
-            eps_slice = np.atleast_2d(eps_slice)
-        npts = int(eps_slice.size)
-        local_idx = np.arange(npts, dtype=int)
-        d_area = float(sim.resolution) * float(sim.resolution)
-        return eps_slice, local_idx, d_area
     if perm.ndim != 2:
-        raise NotImplementedError("Modal extraction supports 2D or 3D only.")
+        raise NotImplementedError(
+            "Modal line extraction supports 2D permittivity only."
+        )
     grid = sim.coordinates.grid
     if grid is not None and grid.metric_kind_for(("x", "y")) != "isotropic_uniform":
         snapped = snap_axis_aligned_line_region_grid(monitor.start, monitor.end, grid)
@@ -101,37 +70,29 @@ def _monitor_profile_slice(sim, monitor, axis, pad_cells):
         points = line_region_points(snapped)
         if not points:
             raise ValueError(f"Monitor '{monitor.name}' contains no sample points.")
+        plane = int(snapped.plane_index)
         if axis == "x":
-            plane = int(snapped.plane_index)
-            eps_profile_full = perm[:, plane - origin[1]]
+            profile = perm[:, plane - origin[1]]
             sample_idx = np.asarray(
                 [point[1] - origin[0] for point in points], dtype=int
             )
-            transverse_axis = "y"
+            transverse_axis, sample_origin = "y", origin[0]
         else:
-            plane = int(snapped.plane_index)
-            eps_profile_full = perm[plane - origin[0], :]
+            profile = perm[plane - origin[0], :]
             sample_idx = np.asarray(
                 [point[0] - origin[1] for point in points], dtype=int
             )
-            transverse_axis = "x"
-        lo = max(0, int(np.min(sample_idx)) - int(pad_cells))
-        hi = min(len(eps_profile_full), int(np.max(sample_idx)) + int(pad_cells) + 1)
-        local_idx = np.clip(sample_idx - lo, 0, max(hi - lo - 1, 0))
+            transverse_axis, sample_origin = "x", origin[1]
+        window, local_idx, lo, hi = _line_crop(profile, sample_idx, pad_cells)
         edges = np.asarray(grid.axis_edges(transverse_axis))[lo : hi + 1]
         weights = np.asarray(grid.cell_widths(transverse_axis))[
-            sample_idx + (origin[0] if axis == "x" else origin[1])
+            sample_idx + sample_origin
         ]
-        return (
-            np.asarray(eps_profile_full[lo:hi], dtype=np.complex128),
-            local_idx,
-            weights,
-            edges,
-        )
+        return window, local_idx, weights, edges
     points = monitor.get_grid_points_2d(sim.resolution, sim.resolution)
     if not points:
         raise ValueError(f"Monitor '{monitor.name}' contains no sample points.")
-    p = np.asarray(points, dtype=float)
+    coordinates = np.asarray(points, dtype=float)
     node_sampled = sim.coordinates.polarization_2d == "tm"
 
     def transverse_material(profile):
@@ -145,42 +106,32 @@ def _monitor_profile_slice(sim, monitor, axis, pad_cells):
         return 0.5 * (extended[:-1] + extended[1:])
 
     if axis == "x":
-        x_idx = int(np.clip(round(float(np.mean(p[:, 0]))), 0, full_shape[1] - 1))
-        eps_profile_full = transverse_material(perm[:, x_idx - origin[1]])
-        sample_idx = np.asarray(
-            [
-                int(np.clip(pi[1], 0, full_shape[0] - int(not node_sampled)))
-                - origin[0]
-                for pi in points
-            ],
-            dtype=int,
+        normal = int(
+            np.clip(round(float(np.mean(coordinates[:, 0]))), 0, full_shape[1] - 1)
         )
+        profile = transverse_material(perm[:, normal - origin[1]])
+        component, limit, sample_origin = 1, full_shape[0], origin[0]
     else:
-        y_idx = int(np.clip(round(float(np.mean(p[:, 1]))), 0, full_shape[0] - 1))
-        eps_profile_full = transverse_material(perm[y_idx - origin[0], :])
-        sample_idx = np.asarray(
-            [
-                int(np.clip(pi[0], 0, full_shape[1] - int(not node_sampled)))
-                - origin[1]
-                for pi in points
-            ],
-            dtype=int,
+        normal = int(
+            np.clip(round(float(np.mean(coordinates[:, 1]))), 0, full_shape[0] - 1)
         )
-    lo = max(0, int(np.min(sample_idx)) - int(pad_cells))
-    hi = min(len(eps_profile_full), int(np.max(sample_idx)) + int(pad_cells) + 1)
-    local_idx = np.clip(sample_idx - lo, 0, max(hi - lo - 1, 0))
+        profile = transverse_material(perm[normal - origin[0], :])
+        component, limit, sample_origin = 0, full_shape[1], origin[1]
+    sample_idx = np.asarray(
+        [
+            int(np.clip(point[component], 0, limit - int(not node_sampled)))
+            - sample_origin
+            for point in points
+        ],
+        dtype=int,
+    )
+    window, local_idx, _, _ = _line_crop(profile, sample_idx, pad_cells)
     if len(points) > 1:
         step_idx = np.diff(np.asarray(points, dtype=float), axis=0)
         dl = float(np.mean(np.linalg.norm(step_idx, axis=1))) * float(sim.resolution)
     else:
         dl = float(sim.resolution)
-    dl = max(dl, float(sim.resolution) * 1e-9)
-    return (
-        np.asarray(eps_profile_full[lo:hi], dtype=np.complex128),
-        local_idx,
-        dl,
-        None,
-    )
+    return window, local_idx, max(dl, float(sim.resolution) * 1e-9), None
 
 
 def _build_discrete_port_projection_3d(
@@ -314,48 +265,35 @@ def _build_discrete_port_projection_3d(
         )
     else:
         integration_weights = float(d_area)
-    _, plus_components = _discrete_mode_projection_grids_3d(
-        sim,
-        discrete_mode,
-        discrete_mode.backward_profiles,
-        monitor=monitor,
-        axis=axis,
-        components=proj_components,
-        analysis_coords0=analysis_coords0,
-        analysis_coords1=analysis_coords1,
-    )
-    _, minus_components = _discrete_mode_projection_grids_3d(
-        sim,
-        discrete_mode,
-        discrete_mode.profiles,
-        monitor=monitor,
-        axis=axis,
-        components=proj_components,
-        analysis_coords0=analysis_coords0,
-        analysis_coords1=analysis_coords1,
-    )
-    if any(
-        name not in plus_components or name not in minus_components
-        for name in proj_components
-    ):
-        missing_components = [
-            name
+
+    def sampled(profiles):
+        raw = _discrete_mode_projection_grids_3d(
+            sim,
+            discrete_mode,
+            profiles,
+            axis=axis,
+            components=proj_components,
+            analysis_coords0=analysis_coords0,
+            analysis_coords1=analysis_coords1,
+        )
+        return {
+            name: np.asarray(raw[name], dtype=np.complex128)
             for name in proj_components
-            if name not in plus_components or name not in minus_components
-        ]
+            if name in raw
+        }
+
+    plus_components = sampled(discrete_mode.backward_profiles)
+    minus_components = sampled(discrete_mode.profiles)
+    missing_components = [
+        name
+        for name in proj_components
+        if name not in plus_components or name not in minus_components
+    ]
+    if missing_components:
         raise RuntimeError(
             "Discrete mode is missing projection components: "
             + ", ".join(missing_components)
         )
-
-    plus_components = {
-        name: np.asarray(plus_components[name], dtype=np.complex128)
-        for name in proj_components
-    }
-    minus_components = {
-        name: np.asarray(minus_components[name], dtype=np.complex128)
-        for name in proj_components
-    }
     if discrete_mode.diagnostics.get("full_tensor_operator", False):
         # Launch phasors use exp(+i omega t); recorded DFTs use exp(+i omega t)
         # in the integral, and therefore store their complex conjugates.
@@ -365,20 +303,15 @@ def _build_discrete_port_projection_3d(
         minus_components = {
             name: np.conjugate(value) for name, value in minus_components.items()
         }
-    _normalize_profiles(
-        plus_components,
-        axis=axis,
-        measure=integration_weights,
-        direction_sign=float(direction_sign),
-        max_scale=1e6,
-    )
-    _normalize_profiles(
-        minus_components,
-        axis=axis,
-        measure=integration_weights,
-        direction_sign=float(direction_sign),
-        max_scale=1e6,
-    )
+    signed_direction = float(direction_sign)
+    for profiles in (plus_components, minus_components):
+        _normalize_profiles(
+            profiles,
+            axis=axis,
+            measure=integration_weights,
+            direction_sign=signed_direction,
+            max_scale=1e6,
+        )
     # Preserve the directional measurement response, then normalize each
     # measured basis to the same discrete flux watt as the source and monitor.
     sampling = dict(
@@ -390,50 +323,36 @@ def _build_discrete_port_projection_3d(
         resolution=sim.resolution,
         grid=grid,
     )
-    plus_components = _sample_modal_basis_normal_3d(
-        plus_components, direction=-1, direction_sign=float(direction_sign), **sampling
-    )
-    minus_components = _sample_modal_basis_normal_3d(
-        minus_components, direction=1, direction_sign=float(direction_sign), **sampling
+    plus_components, minus_components = (
+        _sample_modal_basis_normal_3d(
+            profiles,
+            direction=direction,
+            direction_sign=signed_direction,
+            **sampling,
+        )
+        for profiles, direction in (
+            (plus_components, -1),
+            (minus_components, 1),
+        )
     )
     if axis == "z" and discrete_mode.diagnostics.get("canonical_axis_rotation", False):
         # The canonical x-frame solver carries +z in its forward profiles.
         # Keep the established z-port convention: a_plus is the +z branch.
         plus_components, minus_components = minus_components, plus_components
+    branches = (plus_components, minus_components)
     overlap_matrix = np.asarray(
         [
             [
                 _modal_overlap(
-                    plus_components,
-                    plus_components,
+                    left,
+                    right,
                     axis,
                     integration_weights,
                     direction_sign=direction_sign,
-                ),
-                _modal_overlap(
-                    plus_components,
-                    minus_components,
-                    axis,
-                    integration_weights,
-                    direction_sign=direction_sign,
-                ),
-            ],
-            [
-                _modal_overlap(
-                    minus_components,
-                    plus_components,
-                    axis,
-                    integration_weights,
-                    direction_sign=direction_sign,
-                ),
-                _modal_overlap(
-                    minus_components,
-                    minus_components,
-                    axis,
-                    integration_weights,
-                    direction_sign=direction_sign,
-                ),
-            ],
+                )
+                for right in branches
+            ]
+            for left in branches
         ],
         dtype=np.complex128,
     )
@@ -456,7 +375,6 @@ def _build_discrete_port_projection_3d(
             name: np.asarray(minus_components[name], dtype=np.complex128)
             for name in proj_components
         },
-        "overlap_matrix": overlap_matrix,
         "axis": axis,
         "direction_sign": float(direction_sign),
         "d_area": float(d_area),
@@ -646,50 +564,73 @@ def _build_port_projection(
     return projection
 
 
+_TANGENTIAL_PAIRS = {
+    "x": (("Ey", "Hz"), ("Ez", "Hy")),
+    "y": (("Ez", "Hx"), ("Ex", "Hz")),
+    "z": (("Ex", "Hy"), ("Ey", "Hx")),
+}
+
+
+def _overlap_row(mode, components, pairs, measure, direction_sign):
+    row = {}
+    for (electric, magnetic), sign in zip(pairs, (1, -1), strict=True):
+        weights = np.asarray(
+            measure[electric] if isinstance(measure, dict) else measure
+        ).reshape(-1)
+        scale = 0.25 * direction_sign * sign * weights
+        row[electric] = scale * np.conj(np.asarray(mode[magnetic]).ravel())
+        row[magnetic] = scale * np.conj(np.asarray(mode[electric]).ravel())
+    return np.concatenate([row[name] for name in components])
+
+
+def _coupled_modal_system(projections):
+    first = projections[0]
+    components = first["components"]
+    measure = first.get("integration_weights", first["d_area"])
+    basis = [
+        projection[key]
+        for projection in projections
+        for key in ("mode_components", "mode_components_bwd")
+    ]
+    rhs_rows = np.asarray(
+        [
+            _overlap_row(
+                mode,
+                components,
+                _TANGENTIAL_PAIRS[first["axis"]],
+                measure,
+                first["direction_sign"],
+            )
+            for mode in basis
+        ]
+    )
+    mode_matrix = np.column_stack(
+        [
+            np.concatenate([np.asarray(mode[name]).ravel() for name in components])
+            for mode in basis
+        ]
+    )
+    return rhs_rows, mode_matrix, rhs_rows @ mode_matrix
+
+
+def _solve_coupled_system(system, rhs, condition=None):
+    if condition is None:
+        condition = np.linalg.cond(system)
+    if condition < 1e8:
+        return np.linalg.solve(system, rhs)
+    return np.linalg.pinv(system) @ rhs
+
+
 def _modal_coefficient_rows_3d(projections):
     """Linear rows for the ordinary coupled forward/backward overlap system.
 
     Rows multiply concatenated, colocated tangential E/H samples. Keeping this
     reduction explicit lets optimization differentiate the same modal measurement.
     """
-    first = projections[0]
-    components = first["components"]
-    axis = first["axis"]
-    pairs = {
-        "x": (("Ey", "Hz"), ("Ez", "Hy")),
-        "y": (("Ez", "Hx"), ("Ex", "Hz")),
-        "z": (("Ex", "Hy"), ("Ey", "Hx")),
-    }[axis]
-    measure = first.get("integration_weights", first["d_area"])
-    basis = [
-        p[key]
-        for p in projections
-        for key in ("mode_components", "mode_components_bwd")
-    ]
-    rhs_rows = []
-    for mode in basis:
-        row = {}
-        for (e, h), sign in zip(pairs, (1, -1), strict=True):
-            weights = np.asarray(
-                measure[e] if isinstance(measure, dict) else measure
-            ).reshape(-1)
-            scale = 0.25 * first["direction_sign"] * sign * weights
-            row[e] = scale * np.conj(np.asarray(mode[h]).ravel())
-            row[h] = scale * np.conj(np.asarray(mode[e]).ravel())
-        rhs_rows.append(np.concatenate([row[c] for c in components]))
-    rhs_rows = np.asarray(rhs_rows)
-    mode_matrix = np.column_stack(
-        [
-            np.concatenate([np.asarray(mode[c]).ravel() for c in components])
-            for mode in basis
-        ]
-    )
-    system = rhs_rows @ mode_matrix
+    rhs_rows, _, system = _coupled_modal_system(projections)
     if not np.isfinite(system).all():
         raise ValueError("Invalid 3D modal overlap system.")
-    if np.linalg.cond(system) < 1e8:
-        return np.linalg.solve(system, rhs_rows)
-    return np.linalg.pinv(system) @ rhs_rows
+    return _solve_coupled_system(system, rhs_rows)
 
 
 def _project_modal_coefficients_3d_group(field_components, projections):
@@ -701,66 +642,26 @@ def _project_modal_coefficients_3d_group(field_components, projections):
     first = projections[0]
     components = tuple(first.get("components", ()))
     axis = str(first.get("axis", "")).lower()
-    d_area = first.get("integration_weights", first.get("d_area", 1.0))
-    direction_sign = float(first.get("direction_sign", 1.0))
     if len(components) == 0 or axis not in {"x", "y", "z"}:
         raise ValueError("3D modal group projection is missing components or axis.")
-
-    basis = []
     for proj in projections:
         if tuple(proj.get("components", ())) != components:
             raise ValueError("Grouped 3D modal projections must share components.")
         if str(proj.get("axis", "")).lower() != axis:
             raise ValueError("Grouped 3D modal projections must share an axis.")
-        basis.append(
-            {
-                name: np.asarray(
-                    proj.get("mode_components", {}).get(name, []),
-                    dtype=np.complex128,
-                ).reshape(-1)
-                for name in components
-            }
-        )
-        basis.append(
-            {
-                name: np.asarray(
-                    proj.get("mode_components_bwd", {}).get(name, []),
-                    dtype=np.complex128,
-                ).reshape(-1)
-                for name in components
-            }
-        )
 
-    rhs = np.asarray(
-        [
-            _modal_overlap(
-                field_components,
-                mode,
-                axis,
-                d_area,
-                direction_sign=direction_sign,
-            )
-            for mode in basis
-        ],
-        dtype=np.complex128,
-    )
-    overlap = np.asarray(
-        [
-            [
-                _modal_overlap(
-                    basis_i,
-                    basis_j,
-                    axis,
-                    d_area,
-                    direction_sign=direction_sign,
-                )
-                for basis_j in basis
-            ]
-            for basis_i in basis
-        ],
-        dtype=np.complex128,
-    )
-    system = overlap.T
+    rhs_rows, mode_matrix, system = _coupled_modal_system(projections)
+    offset = 0
+    field_parts = []
+    component_slices = []
+    for name in components:
+        part = np.asarray(field_components[name], dtype=np.complex128).reshape(-1)
+        field_parts.append(part)
+        next_offset = offset + int(part.size)
+        component_slices.append((name, offset, next_offset))
+        offset = next_offset
+    field_vec = np.concatenate(field_parts)
+    rhs = rhs_rows @ field_vec
     cond = float(np.linalg.cond(system))
     if (
         not np.all(np.isfinite(system))
@@ -768,33 +669,7 @@ def _project_modal_coefficients_3d_group(field_components, projections):
         or not np.isfinite(cond)
     ):
         raise ValueError("Invalid grouped 3D modal overlap system.")
-    if cond < 1e8:
-        coeff = np.linalg.solve(system, rhs)
-    else:
-        coeff = np.linalg.pinv(system) @ rhs
-
-    field_parts = [
-        np.asarray(field_components[name], dtype=np.complex128).reshape(-1)
-        for name in components
-    ]
-    component_slices = []
-    offset = 0
-    for name, part in zip(components, field_parts, strict=True):
-        next_offset = offset + int(part.size)
-        component_slices.append((name, offset, next_offset))
-        offset = next_offset
-    field_vec = np.concatenate(field_parts)
-    mode_matrix = np.column_stack(
-        [
-            np.concatenate(
-                [
-                    np.asarray(mode[name], dtype=np.complex128).reshape(-1)
-                    for name in components
-                ]
-            )
-            for mode in basis
-        ]
-    )
+    coeff = _solve_coupled_system(system, rhs, cond)
     diagnostics = _modal_projection_reconstruction_diagnostics_from_matrix(
         field_vec,
         mode_matrix,
@@ -802,15 +677,14 @@ def _project_modal_coefficients_3d_group(field_components, projections):
         component_slices=component_slices,
     )
     diagnostics["projected_signed_power"] = float(
-        np.real(np.dot(coeff, overlap @ np.conjugate(coeff)))
+        np.real(np.dot(coeff, system.T @ np.conjugate(coeff)))
     )
-    residual = diagnostics["residual"]
     return (
         [
             (np.complex128(coeff[2 * idx]), np.complex128(coeff[2 * idx + 1]))
             for idx in range(len(projections))
         ],
-        residual,
+        diagnostics["residual"],
         cond,
         diagnostics,
     )

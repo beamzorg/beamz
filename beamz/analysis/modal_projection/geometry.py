@@ -101,10 +101,7 @@ def _modal_projection_plane_delay_s(sim, spec, frequency, mode_neff):
         d_axis = float(getattr(sim, "resolution", 0.0) or 0.0)
     if (not np.isfinite(d_axis)) or d_axis <= 0.0:
         return 0.0
-
-    direction_sign = +1.0
-    delta_s = direction_sign * 0.5 * d_axis
-    return float(delta_s * neff / LIGHT_SPEED)
+    return float(0.5 * d_axis * neff / LIGHT_SPEED)
 
 
 def _apply_modal_projection_spatial_phase(component, values, frequency, projection):
@@ -145,7 +142,6 @@ def _mode_components_for_port(spec):
         "e_mode_index": e_idx,
         "h_mode_index": h_idx,
         "signed_flux_sign": sign,
-        "projection_components": (e_comp, h_comp),
         "projection_components_3d": proj_components_3d,
     }
 
@@ -220,39 +216,15 @@ def _monitor_analysis_plane_3d(
             np.asarray(coord1, dtype=np.float64),
         )
     coordinate_method = getattr(monitor, "get_analysis_plane_coords_3d", None)
-    if callable(coordinate_method):
-        coord0, coord1 = cast(Any, coordinate_method)(
-            dx=sim.resolution,
-            dy=sim.resolution,
-            dz=sim.resolution,
-            field_shape=_grid_shape(sim),
-        )
-        return np.asarray(coord0, dtype=np.float64), np.asarray(
-            coord1, dtype=np.float64
-        )
-
-    snapped = monitor.get_snapped_region(
+    if not callable(coordinate_method):
+        raise ValueError(f"Monitor '{monitor.name}' has no 3D analysis plane.")
+    coord0, coord1 = cast(Any, coordinate_method)(
         dx=sim.resolution,
         dy=sim.resolution,
         dz=sim.resolution,
         field_shape=_grid_shape(sim),
     )
-    if snapped is None:
-        raise ValueError(f"Monitor '{monitor.name}' has no snapped 3D region.")
-    axis0, axis1 = _plane_axes_for_port_axis(axis)
-    interval0, interval1 = snapped.axis_interval(axis0), snapped.axis_interval(axis1)
-    if interval0 is None or interval1 is None:
-        raise ValueError(
-            f"Monitor '{monitor.name}' is missing tangential intervals for axis '{axis}'."
-        )
-    coord0 = (
-        np.arange(int(interval0.start), int(interval0.stop), dtype=np.float64) + 0.5
-    ) * float(sim.resolution)
-    coord1 = (
-        np.arange(int(interval1.start), int(interval1.stop), dtype=np.float64) + 0.5
-    ) * float(sim.resolution)
-    common0, common1 = _monitor_common_plane_shape_3d(sim, monitor)
-    return coord0[:common0], coord1[:common1]
+    return np.asarray(coord0, dtype=np.float64), np.asarray(coord1, dtype=np.float64)
 
 
 def _monitor_component_plane_coords_3d(
@@ -262,10 +234,9 @@ def _monitor_component_plane_coords_3d(
     axis: str,
 ) -> tuple[np.ndarray, np.ndarray]:
     grid = _analysis_grid(sim)
-    if grid is not None and grid.metric_kind != "isotropic_uniform":
-        return _monitor_analysis_plane_3d(sim, monitor, axis)
-    coordinate_method = getattr(monitor, "get_analysis_plane_coords_3d", None)
-    if callable(coordinate_method):
+    if (grid is not None and grid.metric_kind != "isotropic_uniform") or callable(
+        getattr(monitor, "get_analysis_plane_coords_3d", None)
+    ):
         return _monitor_analysis_plane_3d(sim, monitor, axis)
 
     field_shape = _component_shape(sim, component)
