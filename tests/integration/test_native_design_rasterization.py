@@ -744,7 +744,7 @@ def test_imported_grid_results_keep_local_metadata_and_public_coordinates(
     )
     dataset = bz.analysis.to_xarray(results)
 
-    from beamz.analysis.plotting import _coord_extent_um
+    from beamz.analysis._plot_fields import _coord_extent_um
 
     assert results.metadata.grid == program.grid.geometry
     assert results.metadata.grid.origin == (0.0, 0.0, 0.0)

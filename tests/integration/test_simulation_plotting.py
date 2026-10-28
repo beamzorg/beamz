@@ -9,8 +9,8 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import to_hex
 
 import beamz as bz
+from beamz.analysis._plot_fields import _plot_image
 from beamz.analysis.plotting import (
-    _plot_image,
     extract_axis_aligned_slice,
     plot_field_view,
 )
