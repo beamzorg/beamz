@@ -33,45 +33,54 @@ def _support_diagonal(values, axis: int) -> np.ndarray:
     return tensor[0 if tensor.shape[0] == 1 else axis]
 
 
+# Solver field, raster source, and the diagonal axis used for that field.
+_SUPPORTS = (
+    ("eps_x", "epsilon_ex", 0),
+    ("eps_y", "epsilon_ey", 1),
+    ("eps_z", "epsilon_ez", 2),
+    ("sig_x", "conductivity_ex", 0),
+    ("sig_y", "conductivity_ey", 1),
+    ("sig_z", "conductivity_ez", 2),
+    ("mu_hx", "mu_hx", 0),
+    ("mu_hy", "mu_hy", 1),
+    ("mu_hz", "mu_hz", 2),
+)
+_ACTIVE = {
+    "3": frozenset(target for target, _source, _axis in _SUPPORTS),
+    "tm": frozenset(("eps_z", "sig_z", "mu_hx", "mu_hy")),
+    "te": frozenset(("eps_x", "eps_y", "sig_x", "sig_y", "mu_hz")),
+}
+_YEE_FIELD = {
+    target: ("H" if target.startswith("mu_") else "E") + target[-1]
+    for target, _source, _axis in _SUPPORTS
+}
+_CELL_GROUP = {"eps": "permittivity", "sig": "conductivity", "mu": "permeability"}
+
+
+def _active_supports(kind: str) -> dict[str, set[str]]:
+    groups: dict[str, set[str]] = {
+        "permittivity": set(),
+        "conductivity": set(),
+        "permeability": set(),
+    }
+    for target, _source, _axis in _SUPPORTS:
+        if target in _ACTIVE[kind]:
+            groups[_CELL_GROUP[target.split("_", 1)[0]]].add(target)
+    return groups
+
+
+def _raster_sources(kind: str) -> set[str]:
+    return {source for target, source, _axis in _SUPPORTS if target in _ACTIVE[kind]}
+
+
 @dataclass(frozen=True, slots=True, eq=False)
 class MaterialGrid:
-    """Store immutable cell summaries and optional direct Yee coefficients.
+    """Immutable cell summaries and optional direct Yee coefficients.
 
-    Parameters
-    ----------
-    permittivity : array-like
-        Relative-permittivity samples in ``(y, x)`` or ``(z, y, x)`` order.
-    conductivity : array-like
-        Electrical-conductivity samples in siemens per metre.
-    permeability : array-like
-        Relative-permeability samples matching ``permittivity``.
-    resolution : float
-        Legacy representative cell size in metres. Numerical consumers use
-        ``grid``; for rectilinear grids this is the smallest active-axis spacing.
-    shape : tuple of int
-        Material array shape. It must follow array storage order, not public
-        coordinate order.
-    yee_materials : mapping, optional
-        Componentwise material arrays already sampled at Yee supports.
-    tensors : mapping, optional
-        Packed symmetric cell tensors retained for compatible mode solving.
-    yee_tensors : mapping, optional
-        Full symmetric permittivity tensors sampled at electric Yee supports and,
-        for cross coupling, at the shared grid nodes.
-    smoothing : str, default="volume"
-        Raster smoothing policy that produced the coefficients.
-    origin : tuple of float, default=(0, 0, 0)
-        Physical coordinate of the first x, y, and z grid edges.
-    polarization : {"tm", "te"}, optional
-        Active component family for a two-dimensional solver grid. Three-dimensional
-        grids leave this unset.
-    grid : RectilinearGrid, optional
-        Realized physical cell edges. When omitted, a uniform grid is constructed
-        from ``shape``, ``resolution``, and ``origin``.
-
-    Notes
-    -----
-    Input arrays are copied and made read-only during construction.
+    Arrays are copied and made read-only. ``resolution`` is a legacy
+    representative cell size; numerical consumers use ``grid``. ``yee_tensors``
+    holds symmetric permittivity at electric supports and, for cross coupling,
+    at grid nodes. ``polarization`` applies only to two-dimensional grids.
     """
 
     permittivity: npt.ArrayLike
@@ -177,51 +186,21 @@ class MaterialGrid:
             # differencing may differ from it by a few floating-point ulps.
             realized_resolution = resolution
         object.__setattr__(self, "resolution", realized_resolution)
-        allowed_yee = {
-            "eps_x": "Ex",
-            "eps_y": "Ey",
-            "eps_z": "Ez",
-            "sig_x": "Ex",
-            "sig_y": "Ey",
-            "sig_z": "Ez",
-            "mu_hx": "Hx",
-            "mu_hy": "Hy",
-            "mu_hz": "Hz",
-        }
-        unknown_yee = set(self.yee_materials) - set(allowed_yee)
+        unknown_yee = set(self.yee_materials) - set(_YEE_FIELD)
         if unknown_yee:
             raise ValueError(
                 f"Unknown Yee material fields: {', '.join(sorted(unknown_yee))}."
             )
         if self.yee_materials:
             for name, values in self.yee_materials.items():
-                expected = shapes[allowed_yee[name]]
+                expected = shapes[_YEE_FIELD[name]]
                 if np.asarray(values).shape != expected:
                     raise ValueError(
                         f"{name} has shape {np.asarray(values).shape}, expected {expected}."
                     )
         if grid.metric_kind_for(active_axes) != "isotropic_uniform":
-            active_supports = (
-                {
-                    "permittivity": {"eps_x", "eps_y", "eps_z"},
-                    "conductivity": {"sig_x", "sig_y", "sig_z"},
-                    "permeability": {"mu_hx", "mu_hy", "mu_hz"},
-                }
-                if len(shape) == 3
-                else (
-                    {
-                        "permittivity": {"eps_z"},
-                        "conductivity": {"sig_z"},
-                        "permeability": {"mu_hx", "mu_hy"},
-                    }
-                    if polarization == "tm"
-                    else {
-                        "permittivity": {"eps_x", "eps_y"},
-                        "conductivity": {"sig_x", "sig_y"},
-                        "permeability": {"mu_hz"},
-                    }
-                )
-            )
+            kind = "3" if len(shape) == 3 else polarization
+            active_supports = _active_supports(kind)
             required = set()
             for cell_name, support_names in active_supports.items():
                 values = np.asarray(getattr(self, cell_name))
@@ -268,7 +247,7 @@ class MaterialGrid:
                 expected = (
                     tuple(value + 1 for value in self.shape)
                     if name == "eps_node"
-                    else shapes[{"eps_x": "Ex", "eps_y": "Ey", "eps_z": "Ez"}[name]]
+                    else shapes[_YEE_FIELD[name]]
                 )
                 actual = np.asarray(values).shape
                 if actual[0:1] not in ((1,), (3,), (6,)) or actual[1:] != expected:
@@ -339,25 +318,9 @@ class MaterialGrid:
             raise ValueError("RasterResult must retain x, y, and z grid edges.")
         if dimensions is None:
             available = set(support_tensors)
-            full_output = {
-                "epsilon_ex",
-                "epsilon_ey",
-                "epsilon_ez",
-                "conductivity_ex",
-                "conductivity_ey",
-                "conductivity_ez",
-                "mu_hx",
-                "mu_hy",
-                "mu_hz",
-            }
-            tm_output = {"epsilon_ez", "conductivity_ez", "mu_hx", "mu_hy"}
-            te_output = {
-                "epsilon_ex",
-                "epsilon_ey",
-                "conductivity_ex",
-                "conductivity_ey",
-                "mu_hz",
-            }
+            full_output = _raster_sources("3")
+            tm_output = _raster_sources("tm")
+            te_output = _raster_sources("te")
             if full_output <= available:
                 dimensions = 3
             elif (tm_output <= available and not (te_output & available)) or (
@@ -372,36 +335,8 @@ class MaterialGrid:
         if dimensions not in (2, 3):
             raise ValueError("dimensions must be 2 or 3.")
         polarization = normalize_polarization_2d(polarization)
-        component_specs = (
-            (
-                ("eps_x", "epsilon_ex", 0),
-                ("eps_y", "epsilon_ey", 1),
-                ("eps_z", "epsilon_ez", 2),
-                ("sig_x", "conductivity_ex", 0),
-                ("sig_y", "conductivity_ey", 1),
-                ("sig_z", "conductivity_ez", 2),
-                ("mu_hx", "mu_hx", 0),
-                ("mu_hy", "mu_hy", 1),
-                ("mu_hz", "mu_hz", 2),
-            )
-            if dimensions == 3
-            else (
-                (
-                    ("eps_z", "epsilon_ez", 2),
-                    ("sig_z", "conductivity_ez", 2),
-                    ("mu_hx", "mu_hx", 0),
-                    ("mu_hy", "mu_hy", 1),
-                )
-                if polarization == "tm"
-                else (
-                    ("eps_x", "epsilon_ex", 0),
-                    ("eps_y", "epsilon_ey", 1),
-                    ("sig_x", "conductivity_ex", 0),
-                    ("sig_y", "conductivity_ey", 1),
-                    ("mu_hz", "mu_hz", 2),
-                )
-            )
-        )
+        kind = "3" if dimensions == 3 else polarization
+        component_specs = tuple(row for row in _SUPPORTS if row[0] in _ACTIVE[kind])
         required = {source for _target, source, _axis in component_specs}
         missing = required - set(support_tensors)
         if missing:
@@ -445,8 +380,7 @@ class MaterialGrid:
             raise ValueError(
                 "A 2D simulation requires permittivity without xz or yz coupling."
             )
-        has_full_permittivity = dimensions == 3 or polarization == "te"
-        has_full_permittivity = has_full_permittivity and any(
+        has_full_permittivity = (dimensions == 3 or polarization == "te") and any(
             np.any(np.abs(np.asarray(values)[3:]) > 1e-10)
             for values in yee_tensors.values()
         )
@@ -508,11 +442,7 @@ class MaterialGrid:
             materials,
             tensors,
             smoothing,
-            (
-                float(np.asarray(edges[0])[0]),
-                float(np.asarray(edges[1])[0]),
-                float(np.asarray(edges[2])[0]),
-            ),
+            tuple(float(np.asarray(axis)[0]) for axis in edges),
             polarization if dimensions == 2 else None,
             yee_tensors=yee_tensors,
             grid=grid,
@@ -594,28 +524,10 @@ def build_material_grid(
     progress: bool = False,
     **kwargs,
 ) -> MaterialGrid:
-    """Discretize a design into the immutable solver material grid.
+    """Discretize a design into an immutable solver material grid.
 
-    Parameters
-    ----------
-    design : Design
-        Immutable geometry and material specification to rasterize.
-    resolution : float or RectilinearGrid
-        Uniform spatial cell size or explicit physical cell edges.
-    grid_type : str, default="auto"
-        Dimensionality policy: ``"auto"``, ``"2d"``, or ``"3d"``.
-    force_recompute : bool, default=False
-        Rebuild the grid even when a matching cached discretization exists.
-    progress : bool, default=False
-        Emit rasterization progress when the design supports it.
-    **kwargs
-        Additional rasterizer-specific options.
-
-    Returns
-    -------
-    MaterialGrid
-        Read-only cell summaries and compatible direct Yee coefficients.
-
+    ``resolution`` is a cell size or a ``RectilinearGrid``. ``grid_type`` is
+    ``auto``, ``2d``, or ``3d``.
     """
     return design.rasterize(
         resolution,

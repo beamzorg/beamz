@@ -22,13 +22,10 @@ from beamz.design.materials import Material
 class PoleResidue(Material):
     """Scalar dispersive material with stable conjugate pole/residue pairs.
 
-    ``poles`` contains (pole, residue) in rad/s. ``frequency_range`` (Hz)
-    declares the validated fit band. Passivity is checked on a dense frequency
-    grid; this is a numerical check, not a global mathematical certificate.
-    Dielectric interfaces default to causal diagonal Farjadpour averaging;
-    metals default to point-sampled staircasing. RasterOptions controls the
-    metal policy and reference frequency. Explicit volume averaging is available.
-    Only JAX single-device execution is supported.
+    ``poles`` are (pole, residue) in rad/s. ``frequency_range`` is the fit band
+    in Hz. Passivity is a dense numerical check, not a global certificate.
+    Interfaces default to diagonal Farjadpour averaging and metals to
+    staircasing (see RasterOptions). Only JAX single-device execution is supported.
     """
 
     poles: tuple[tuple[complex, complex], ...]
@@ -175,9 +172,8 @@ def _validate_nk(wavelengths, n, k, *, unique=False):
 def fit_nk(wavelengths, n, k, *, num_poles=9, weights=(1.0, 1.0), max_nfev=300):
     """Fit passive Lorentz oscillators to tabulated n,k (wavelengths in metres).
 
-    Returns ``(material, diagnostics)``. Positive strengths and damping guarantee
-    passive Lorentz terms. The weighted complex-index residual is minimized;
-    an error report is returned rather than silently claiming a target tolerance.
+    Returns ``(material, diagnostics)``. Positive strengths and damping keep
+    the Lorentz terms passive; the report does not claim a target tolerance.
     """
     wl, n, k = _validate_nk(wavelengths, n, k)
     if num_poles < 1 or len(weights) != 2 or min(weights) <= 0:

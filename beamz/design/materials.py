@@ -77,13 +77,11 @@ def _compact(tensor: tuple[float, ...]):
 
 @dataclass(frozen=True, init=False)
 class Material:
-    """Describe one homogeneous scalar or symmetric-tensor material.
+    """One homogeneous scalar or symmetric-tensor material.
 
-    ``permittivity`` and ``permeability`` are the BeamZ design names;
-    ``epsilon_r`` and ``mu_r`` are equivalent aliases accepted by raster
-    workflows. Each coefficient accepts a scalar, three diagonal values, six
-    packed symmetric values ``(xx, yy, zz, xy, xz, yz)``, or a symmetric 3×3
-    matrix.
+    ``epsilon_r`` and ``mu_r`` alias permittivity and permeability. Each
+    coefficient accepts a scalar, three diagonal values, six packed values
+    ``(xx, yy, zz, xy, xz, yz)``, or a symmetric 3×3 matrix.
     """
 
     _epsilon_r: tuple[float, float, float, float, float, float]

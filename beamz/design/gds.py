@@ -6,7 +6,7 @@ before calling its public functions.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
@@ -210,14 +210,7 @@ def _vertical_profile(
     stack_zmax = max(layer.zmax for layer in layers)
     z_offset = float(z_padding) - stack_zmin
     shifted_layers = tuple(
-        _StackLayer(
-            name=layer.name,
-            zmin=layer.zmin + z_offset,
-            zmax=layer.zmax + z_offset,
-            material=layer.material,
-            sidewall_angle=layer.sidewall_angle,
-            width_to_z=layer.width_to_z,
-        )
+        replace(layer, zmin=layer.zmin + z_offset, zmax=layer.zmax + z_offset)
         for layer in layers
         if not np.isclose(layer.material.permittivity, core_epsilon)
     )

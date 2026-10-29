@@ -35,6 +35,11 @@ def _same_coordinate(first: float, second: float) -> bool:
     return abs(first - second) <= tolerance
 
 
+def _high_side(value: float, physical: float, padded: float) -> float:
+    value = float(value)
+    return float(padded) if _same_coordinate(value, physical) else value
+
+
 def _extend_clipped_polygon(
     vertices: tuple[tuple[float, float], ...],
     *,
@@ -104,27 +109,23 @@ def from_beamz(
             objects.append(Object(geometry, _material_id, _index, _index))
 
         if isinstance(structure, BeamZBox):
-            lower_values = tuple(float(value) for value in structure.lower)
-            upper_values = tuple(float(value) for value in structure.upper)
-            lower = (lower_values[0], lower_values[1], lower_values[2])
-            upper = (upper_values[0], upper_values[1], upper_values[2])
+            lower = tuple(float(value) for value in structure.lower)
+            upper = tuple(float(value) for value in structure.upper)
             if design.depth == 0:
                 lower = (lower[0], lower[1], 0.0)
                 upper = (upper[0], upper[1], float(two_dimensional_depth))
             elif lower[2] == upper[2]:
                 lower = (lower[0], lower[1], 0.0)
                 upper = (upper[0], upper[1], padded_size[2])
-            adjusted_upper = tuple(
-                padded_size[axis]
-                if _same_coordinate(upper[axis], physical_size[axis])
-                else upper[axis]
-                for axis in range(3)
+            add(
+                Box(
+                    lower,
+                    tuple(
+                        _high_side(upper[axis], physical_size[axis], padded_size[axis])
+                        for axis in range(3)
+                    ),
+                )
             )
-            geometry = Box(
-                lower,
-                (adjusted_upper[0], adjusted_upper[1], adjusted_upper[2]),
-            )
-            add(geometry)
             continue
         if isinstance(structure, BeamZSphere):
             center = np.asarray(structure.center, dtype=np.float64)
@@ -154,37 +155,30 @@ def from_beamz(
 
         sidewall = float(getattr(structure, "sidewall_angle", 0.0) or 0.0)
         if isinstance(structure, BeamZRectangle) and sidewall == 0.0:
-            z_min = (
-                0.0
-                if design.depth == 0
-                else float(structure.z if structure.z is not None else 0.0)
+            if design.depth == 0:
+                z_min, depth = 0.0, float(two_dimensional_depth)
+            else:
+                z_min = float(structure.z if structure.z is not None else 0.0)
+                depth = float(structure.depth or design.depth)
+            x_min, y_min, *_rest = structure.vertices[0]
+            add(
+                Box(
+                    (float(x_min), float(y_min), z_min),
+                    (
+                        _high_side(
+                            float(x_min) + float(structure.width),
+                            physical_size[0],
+                            padded_size[0],
+                        ),
+                        _high_side(
+                            float(y_min) + float(structure.height),
+                            physical_size[1],
+                            padded_size[1],
+                        ),
+                        _high_side(z_min + depth, physical_size[2], padded_size[2]),
+                    ),
+                )
             )
-            depth = (
-                float(two_dimensional_depth)
-                if design.depth == 0
-                else float(structure.depth or design.depth)
-            )
-            x_min, y_min, *_ = structure.vertices[0]
-            geometry = Box(
-                (float(x_min), float(y_min), z_min),
-                (
-                    padded_size[0]
-                    if _same_coordinate(
-                        float(x_min + structure.width), physical_size[0]
-                    )
-                    else float(x_min + structure.width),
-                    padded_size[1]
-                    if _same_coordinate(
-                        float(y_min + structure.height), physical_size[1]
-                    )
-                    else float(y_min + structure.height),
-                    padded_size[2]
-                    if design.depth > 0
-                    and _same_coordinate(z_min + depth, physical_size[2])
-                    else z_min + depth,
-                ),
-            )
-            add(geometry)
             continue
 
         vertices = _extend_clipped_polygon(
@@ -205,9 +199,7 @@ def from_beamz(
             depth = float(two_dimensional_depth)
         elif depth == 0:
             depth = float(design.depth)
-        z_max = z_min + depth
-        if design.depth > 0 and _same_coordinate(z_max, physical_size[2]):
-            z_max = padded_size[2]
+        z_max = _high_side(z_min + depth, physical_size[2], padded_size[2])
         polygon = Polygon(vertices, holes)
         geometry = (
             TaperedExtrudedPolygon(

@@ -213,27 +213,12 @@ def _refine_ratio_violations(
 
 @dataclass(frozen=True, slots=True)
 class _GradedMesher:
-    """Generate smoothly graded cell edges across constrained 1D intervals.
+    """Smoothly graded edges that honor interval caps and ``max_scale``.
 
-    Parameters
-    ----------
-    max_scale : float, default=1.3
-        Maximum permitted ratio between the widths of adjacent cells.
-    transition_safety : float, default=0.85
-        Fraction of the theoretical spacing-profile slope used before the exact
-        cell-ratio verification pass. Values below one leave room for cell-count
-        quantization at snapped interval boundaries.
-    max_refinement_passes : int, default=64
-        Maximum number of local cell-count corrections for one slope attempt.
-    max_slope_passes : int, default=12
-        Maximum number of progressively gentler spacing-envelope attempts.
-
-    Notes
-    -----
-    ``interval_coords`` passed to :meth:`make_axis_edges` are mandatory grid
-    boundaries. ``max_spacings[i]`` is an upper bound on cell width within the
-    corresponding interval. The result preserves every boundary, never exceeds
-    an interval limit, and verifies the adjacent-cell ratio before returning.
+    ``interval_coords`` are mandatory boundaries. ``max_spacings`` caps cell
+    width in each interval. The result preserves every boundary and checks the
+    adjacent-cell ratio before returning. ``transition_safety`` leaves room for
+    cell-count quantization at snapped boundaries.
     """
 
     max_scale: float = 1.3
