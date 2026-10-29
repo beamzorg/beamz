@@ -1868,23 +1868,3 @@ class Simulation:
         field instead of the design layout.
         """
         return _analysis_function("plotting", "view_simulation_3d")(self, **kwargs)
-
-    def show3d(self, **kwargs):
-        """Return the same static 3D-oriented view as :meth:`view3d`.
-
-        Parameters
-        ----------
-        **kwargs : object
-            Cross-section and Matplotlib options forwarded to :meth:`view3d`.
-
-        Returns
-        -------
-        tuple
-            Matplotlib figure and axes for the selected cross sections.
-
-        Notes
-        -----
-        ``show3d`` is currently an alias and does not force interactive display.
-        """
-        # Route display through the plotting API while changing only the presentation flag.
-        return self.view3d(**kwargs)

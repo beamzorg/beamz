@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import ClassVar
 
 import numpy as np
 
 from beamz.const import µm
+from beamz.devices._immutable import _Replaceable
 
 BoundaryEdges = tuple[str, ...] | str
 BoundaryAxes = tuple[str, ...] | str
@@ -56,8 +57,18 @@ def edges_for_dimension(edges: BoundaryEdges, is_3d: bool) -> tuple[str, ...]:
     return resolved
 
 
+class _EdgeBoundary(_Replaceable):
+    """Edge selection shared by reflective and absorbing boundaries."""
+
+    __slots__ = ()
+
+    def _get_edges_for_dimensionality(self, is_3d):
+        """Compatibility adapter for older low-level callers."""
+        return list(edges_for_dimension(self.edges, bool(is_3d)))
+
+
 @dataclass(frozen=True, slots=True)
-class PEC:
+class PEC(_EdgeBoundary):
     """Request perfect-electric-conductor behavior on domain edges.
 
     Parameters
@@ -84,33 +95,9 @@ class PEC:
         object.__setattr__(self, "edges", normalize_edges(self.edges))
         object.__setattr__(self, "thickness", 0.0)
 
-    def updated_copy(self, **changes):
-        """Return a validated boundary with selected fields replaced.
-
-        Parameters
-        ----------
-        **changes : object
-            Dataclass fields to replace.
-
-        Returns
-        -------
-        PEC
-            New immutable boundary specification.
-
-        Raises
-        ------
-        TypeError or ValueError
-            If a field is unknown or a replacement is invalid.
-        """
-        return replace(self, **changes)
-
-    def _get_edges_for_dimensionality(self, is_3d):
-        """Compatibility adapter for older low-level callers."""
-        return list(edges_for_dimension(self.edges, bool(is_3d)))
-
 
 @dataclass(frozen=True, slots=True)
-class PML:
+class PML(_EdgeBoundary):
     """Request a graded absorbing layer on selected domain edges.
 
     Parameters
@@ -179,33 +166,9 @@ class PML:
         object.__setattr__(self, "alpha_max", None if self.alpha_max is None else float(self.alpha_max))  # fmt: skip
         object.__setattr__(self, "target_reflection", float(self.target_reflection))
 
-    def updated_copy(self, **changes):
-        """Return a validated boundary with selected fields replaced.
-
-        Parameters
-        ----------
-        **changes : object
-            Dataclass fields to replace.
-
-        Returns
-        -------
-        PML
-            New immutable absorbing-boundary specification.
-
-        Raises
-        ------
-        TypeError or ValueError
-            If a field is unknown or a replacement is invalid.
-        """
-        return replace(self, **changes)
-
-    def _get_edges_for_dimensionality(self, is_3d):
-        """Compatibility adapter for older low-level callers."""
-        return list(edges_for_dimension(self.edges, bool(is_3d)))
-
 
 @dataclass(frozen=True, slots=True)
-class Absorber:
+class Absorber(_EdgeBoundary):
     """Request a graded-conductivity sponge on selected domain edges.
 
     Parameters
@@ -255,33 +218,9 @@ class Absorber:
         object.__setattr__(self, "m", int(self.m))
         object.__setattr__(self, "target_reflection", float(self.target_reflection))
 
-    def updated_copy(self, **changes):
-        """Return a validated boundary with selected fields replaced.
-
-        Parameters
-        ----------
-        **changes : object
-            Dataclass fields to replace.
-
-        Returns
-        -------
-        Absorber
-            New immutable sponge specification.
-
-        Raises
-        ------
-        TypeError or ValueError
-            If a field is unknown or a replacement is invalid.
-        """
-        return replace(self, **changes)
-
-    def _get_edges_for_dimensionality(self, is_3d):
-        """Compatibility adapter for older low-level callers."""
-        return list(edges_for_dimension(self.edges, bool(is_3d)))
-
 
 @dataclass(frozen=True, slots=True)
-class Periodic:
+class Periodic(_Replaceable):
     """Identify axes whose opposite domain faces are periodically coupled.
 
     Parameters
@@ -321,26 +260,6 @@ class Periodic:
         if len(set(normalized)) != len(normalized):
             raise ValueError("Periodic axes must be unique.")
         object.__setattr__(self, "axes", normalized)
-
-    def updated_copy(self, **changes):
-        """Return a validated periodic boundary with selected fields replaced.
-
-        Parameters
-        ----------
-        **changes : object
-            Dataclass fields to replace.
-
-        Returns
-        -------
-        Periodic
-            New immutable periodic-boundary specification.
-
-        Raises
-        ------
-        TypeError or ValueError
-            If a field is unknown or a replacement is invalid.
-        """
-        return replace(self, **changes)
 
 
 @dataclass(frozen=True, slots=True)

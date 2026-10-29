@@ -93,3 +93,29 @@ def normalize_source_signal(signal: Any, *, name: str = "signal") -> Any:
     if arr.dtype == object:
         return signal
     return readonly_array(arr)
+
+
+class _Replaceable:
+    """Shared ``updated_copy`` for frozen configuration dataclasses."""
+
+    __slots__ = ()
+
+    def updated_copy(self, **changes):
+        """Return a validated copy with selected fields replaced.
+
+        Parameters
+        ----------
+        **changes : object
+            Dataclass fields to replace.
+
+        Returns
+        -------
+        object
+            New immutable value. The original is unchanged.
+
+        Raises
+        ------
+        TypeError or ValueError
+            If a field is unknown or a replacement fails validation.
+        """
+        return replace(self, **changes)

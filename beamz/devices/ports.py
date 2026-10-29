@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence
 import numpy as np
 
 from beamz.devices._immutable import (
+    _Replaceable,
     finite_tuple,
     immutable_snapshot,
     nonnegative_finite_extents,
@@ -22,7 +23,7 @@ PortDirection = Literal["+", "-"]
 
 
 @dataclass(frozen=True)
-class Port:
+class Port(_Replaceable):
     """Define a modal S-parameter port on a finite plane.
 
     A port owns geometry and mode-solver settings, then creates matching
@@ -165,26 +166,6 @@ class Port:
         basis and the port's :attr:`direction`.
         """
         return f"+{self.axis}"
-
-    def updated_copy(self, **changes: Any) -> Port:
-        """Return a validated port with selected fields replaced.
-
-        Parameters
-        ----------
-        **changes : object
-            Dataclass fields to replace.
-
-        Returns
-        -------
-        Port
-            New immutable port; the original is unchanged.
-
-        Raises
-        ------
-        TypeError or ValueError
-            If a field is unknown or the new geometry is invalid.
-        """
-        return replace(self, **changes)
 
     def shifted(self, offset: Iterable[float]) -> Port:
         """Return a translated copy of this port.

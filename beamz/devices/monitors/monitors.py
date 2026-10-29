@@ -162,15 +162,11 @@ class _Monitor:
         end_x_grid = int(round(self.end[0] / dx))
         end_y_grid = int(round(self.end[1] / dy))
 
-        if abs(end_x_grid - start_x_grid) > abs(end_y_grid - start_y_grid):
-            num_points = abs(end_x_grid - start_x_grid) + 1
-            x_indices = np.linspace(start_x_grid, end_x_grid, num_points, dtype=int)
-            y_indices = np.linspace(start_y_grid, end_y_grid, num_points, dtype=int)
-        else:
-            num_points = abs(end_y_grid - start_y_grid) + 1
-            x_indices = np.linspace(start_x_grid, end_x_grid, num_points, dtype=int)
-            y_indices = np.linspace(start_y_grid, end_y_grid, num_points, dtype=int)
-
+        num_points = (
+            max(abs(end_x_grid - start_x_grid), abs(end_y_grid - start_y_grid)) + 1
+        )
+        x_indices = np.linspace(start_x_grid, end_x_grid, num_points, dtype=int)
+        y_indices = np.linspace(start_y_grid, end_y_grid, num_points, dtype=int)
         return list(zip(x_indices, y_indices, strict=True))
 
     def _line_sample_coords_2d(self, dx, dy, field_shape=None):
@@ -224,31 +220,18 @@ class _Monitor:
         if snapped is not None:
             return plane_region_slices(snapped)
 
-        if self.plane_normal == "z":
-            # xy plane at fixed z
-            z_idx = int(round(self.plane_position / dz))
-            x_start = int(round(self.start[0] / dx))
-            x_end = int(round(self.end[0] / dx))
-            y_start = int(round(self.start[1] / dy))
-            y_end = int(round(self.end[1] / dy))
-            return z_idx, slice(y_start, y_end), slice(x_start, x_end)
-
-        elif self.plane_normal == "y":
-            # xz plane at fixed y
-            y_idx = int(round(self.plane_position / dy))
-            x_start = int(round(self.start[0] / dx))
-            x_end = int(round(self.end[0] / dx))
-            z_start = int(round(self.start[2] / dz))
-            z_end = int(round(self.end[2] / dz))
-            return slice(z_start, z_end), y_idx, slice(x_start, x_end)
-        else:  # x normal
-            # yz plane at fixed x
-            x_idx = int(round(self.plane_position / dx))
-            y_start = int(round(self.start[1] / dy))
-            y_end = int(round(self.end[1] / dy))
-            z_start = int(round(self.start[2] / dz))
-            z_end = int(round(self.end[2] / dz))
-            return slice(z_start, z_end), slice(y_start, y_end), x_idx
+        spacing = {"x": dx, "y": dy, "z": dz}
+        normal = self.plane_normal
+        indices = []
+        for axis in ("z", "y", "x"):
+            if axis == normal:
+                indices.append(int(round(self.plane_position / spacing[axis])))
+                continue
+            position = {"x": 0, "y": 1, "z": 2}[axis]
+            start = int(round(self.start[position] / spacing[axis]))
+            end = int(round(self.end[position] / spacing[axis]))
+            indices.append(slice(start, end))
+        return tuple(indices)
 
     def get_analysis_plane_coords_3d(
         self,

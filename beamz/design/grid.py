@@ -224,15 +224,6 @@ class RectilinearGrid:
         return z_size, y_size, x_size
 
     @property
-    def is_axis_uniform(self) -> bool:
-        return all(
-            _widths_are_equal(
-                self.cell_widths(axis), self.cell_widths(axis)[0], self.axis_edges(axis)
-            )
-            for axis in _AXES
-        )
-
-    @property
     def is_uniform(self) -> bool:
         reference = float(self.cell_widths("x")[0])
         return all(
@@ -347,13 +338,6 @@ class RectilinearGrid:
     def cell_volume(self) -> np.ndarray:
         dx, dy, dz = (self.cell_widths(axis) for axis in _AXES)
         return dz[:, None, None] * dy[None, :, None] * dx[None, None, :]
-
-    def face_area(self, normal_axis: Axis | int) -> np.ndarray:
-        normal = _axis_name(normal_axis)
-        widths = {axis: self.cell_widths(axis) for axis in _AXES}
-        transverse = tuple(axis for axis in _AXES if axis != normal)
-        first, second = transverse
-        return widths[first][:, None] * widths[second][None, :]
 
     def cfl_time_step(
         self,

@@ -285,12 +285,6 @@ class Design:
             **kwargs,
         )
 
-    def discretize(self, resolution, **kwargs):
-        """Return material grids at ``resolution`` metres per cell."""
-        from beamz.design.discretization import build_material_grid
-
-        return build_material_grid(self, resolution, **kwargs)
-
     def plot(self, **kwargs):
         """Plot the layout. ``show`` defaults to false."""
         from beamz.analysis.plotting import plot_design
