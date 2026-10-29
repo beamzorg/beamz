@@ -326,12 +326,30 @@ class SampledSignal:
 
 @dataclass(frozen=True)
 class GaussianPulse:
-    """Analytic Gaussian-modulated carrier.
+    """Analytic Gaussian-modulated carrier pulse.
 
-    ``freq0`` and ``fwidth`` are hertz. ``offset`` is the pulse center in
-    inverse-bandwidth units. ``remove_dc_component`` subtracts the analytic DC
-    term and does not depend on how the pulse is sampled. :meth:`sample` returns
-    in-phase and quadrature ``float32`` waveforms.
+    Parameters
+    ----------
+    freq0 : float
+        Carrier frequency in hertz.
+    fwidth : float
+        Gaussian frequency width in hertz.
+    amplitude : float, default=1.0
+        Peak envelope amplitude.
+    offset : float, default=4.0
+        Pulse-center offset measured in inverse-bandwidth units.
+    remove_dc_component : bool, default=True
+        Remove the analytic DC component with a Gaussian-envelope correction.
+        Sampling a pulse in chunks or extending the run does not change it.
+
+    Notes
+    -----
+    :meth:`sample` returns in-phase and quadrature ``float32`` waveforms.
+
+    Examples
+    --------
+    >>> pulse = GaussianPulse(freq0=193.5e12, fwidth=20e12)
+    >>> signal, quadrature = pulse.sample([0.0, 1e-15, 2e-15])
     """
 
     freq0: float
@@ -349,9 +367,23 @@ class GaussianPulse:
         *,
         normalize: bool = False,
     ) -> np.ndarray:
-        """Return the analytic spectrum at frequencies in hertz.
+        """Return the analytic positive-frequency source spectrum.
 
-        ``normalize`` divides by the carrier-frequency magnitude.
+        Parameters
+        ----------
+        freqs : array-like
+            Frequencies in hertz.
+        normalize : bool, default=False
+            Divide by the magnitude of the spectrum at the carrier frequency.
+
+        Returns
+        -------
+        numpy.ndarray
+            Complex analytic spectrum with the same shape as ``freqs``.
+
+        Examples
+        --------
+        >>> spectrum = pulse.spectrum([190e12, 193.5e12, 200e12], normalize=True)
         """
         freq_arr = np.asarray(freqs, dtype=float)
         fwidth = max(float(self.fwidth), 1e-30)
@@ -372,14 +404,44 @@ class GaussianPulse:
         return np.asarray(spectrum, dtype=np.complex128)
 
     def dft_normalization_spectrum(self, freqs: npt.ArrayLike) -> np.ndarray:
-        """Return the monitor-DFT spectrum. Prefer ``SimulationResults.renormalize``."""
+        """Return the source spectrum in BeamZ's native monitor normalization.
+
+        Parameters
+        ----------
+        freqs : array-like
+            Frequencies in hertz.
+
+        Returns
+        -------
+        numpy.ndarray
+            Complex normalized spectrum in BeamZ's monitor-DFT convention.
+
+        Notes
+        -----
+        This method supplies source normalization for frequency-domain monitor
+        results. Most users should call ``SimulationResults.renormalize`` rather
+        than applying it manually.
+        """
         return self.spectrum(freqs, normalize=True) / (2.0 * np.pi)
 
     def sample(self, time: npt.ArrayLike) -> tuple[np.ndarray, np.ndarray]:
-        """Sample in-phase and quadrature ``float32`` waveforms at times in seconds.
+        """Sample in-phase and quadrature waveforms at times in seconds.
 
-        With ``remove_dc_component``, both quadratures lose the analytic carrier
-        integral, so the pulse has zero continuous-time integral.
+        Parameters
+        ----------
+        time : array-like
+            Physical sample times in seconds.
+
+        Returns
+        -------
+        signal, quadrature : tuple of numpy.ndarray
+            In-phase and quadrature ``float32`` samples matching ``time``.
+
+        Notes
+        -----
+        When ``remove_dc_component`` is enabled, subtract the analytically
+        integrated carrier from its envelope in both quadratures. The resulting
+        pulse has zero continuous-time integral and no window-dependent pedestal.
         """
         t = np.asarray(time, dtype=float)
         width = self._time_width()

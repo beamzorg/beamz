@@ -42,6 +42,14 @@ _COMPONENTS = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
 DISCRETE_MODE_CONTRACT = "beamz.devices.modes.DiscreteMode/v1"
 _AXIS_INDEX: dict[AxisName, Literal[0, 1, 2]] = {"x": 0, "y": 1, "z": 2}
 _AXIS_NAMES: tuple[AxisName, AxisName, AxisName] = ("x", "y", "z")
+# Transverse profile arrays are stored as (row, column) in this order.
+_PROFILE_AXES: dict[AxisName, tuple[AxisName, AxisName]] = {
+    "x": ("z", "y"),
+    "y": ("z", "x"),
+    "z": ("y", "x"),
+}
+# ``grid_shape`` and component indices use array storage order (z, y, x).
+_STORAGE_AXIS: dict[AxisName, Literal[0, 1, 2]] = {"z": 0, "y": 1, "x": 2}
 _YEE_OFFSETS_3D = {
     "Ex": {"z": 0.0, "y": 0.0, "x": 0.5},
     "Ey": {"z": 0.0, "y": 0.5, "x": 0.0},
@@ -939,7 +947,7 @@ def _stagger_transverse_component(
     field: np.ndarray, spec: ModePlaneSpec, component: str
 ) -> np.ndarray:
     """Move one component onto the transverse Yee locations of ``spec.axis``."""
-    row_axis, col_axis = {"x": ("z", "y"), "y": ("z", "x"), "z": ("y", "x")}[spec.axis]
+    row_axis, col_axis = _PROFILE_AXES[spec.axis]
     offsets = _YEE_OFFSETS_3D[component]
     stagger_row = offsets[row_axis] == 0.5
     stagger_col = offsets[col_axis] == 0.5
@@ -972,25 +980,25 @@ def _build_transverse_profiles(
     spec: ModePlaneSpec,
 ) -> tuple[dict[str, np.ndarray], dict[str, ComponentIndex], dict[str, float]]:
     """Crop, window, and index all six components for one propagation axis."""
-    row_axis, col_axis = {"x": ("z", "y"), "y": ("z", "x"), "z": ("y", "x")}[spec.axis]
-    axis_pos = {"z": 0, "y": 1, "x": 2}
+    row_axis, col_axis = _PROFILE_AXES[spec.axis]
     staggered = {
         component: _stagger_transverse_component(fields[component], spec, component)
         for component in _COMPONENTS
     }
+    # ``center`` is public (x, y, z). ``grid_shape`` is storage order (z, y, x).
     row_start, row_stop = _padded_bounds(
-        spec.center[axis_pos[row_axis]],
+        spec.center[_AXIS_INDEX[row_axis]],
         spec.height,
         spec.resolution,
-        spec.grid_shape[axis_pos[row_axis]],
+        spec.grid_shape[_STORAGE_AXIS[row_axis]],
         spec.aperture_pad_cells,
         edges=_axis_edges(spec, row_axis),
     )
     col_start, col_stop = _padded_bounds(
-        spec.center[axis_pos[col_axis]],
+        spec.center[_AXIS_INDEX[col_axis]],
         spec.width,
         spec.resolution,
-        spec.grid_shape[axis_pos[col_axis]],
+        spec.grid_shape[_STORAGE_AXIS[col_axis]],
         spec.aperture_pad_cells,
         edges=_axis_edges(spec, col_axis),
     )
@@ -1047,7 +1055,7 @@ def _solver_axes_for_axis(axis: AxisName) -> tuple[AxisName, AxisName]:
 
 
 def _axis_edges(spec: ModePlaneSpec, axis: AxisName) -> np.ndarray:
-    count = spec.grid_shape[{"z": 0, "y": 1, "x": 2}[axis]]
+    count = spec.grid_shape[_STORAGE_AXIS[axis]]
     if spec.grid is None:
         return np.arange(count + 1, dtype=float) * float(spec.resolution)
     return np.asarray(spec.grid.axis_edges(axis), dtype=float)
@@ -1138,7 +1146,7 @@ def _support_slices(
     col_stop: int,
     field_shape: tuple[int, int],
 ) -> tuple[slice, slice]:
-    row_axis, col_axis = {"x": ("z", "y"), "y": ("z", "x"), "z": ("y", "x")}[axis]
+    row_axis, col_axis = _PROFILE_AXES[axis]
     row_stop = _support_stop_for_offset(
         row_start, row_stop, _YEE_OFFSETS_3D[component][row_axis]
     )
@@ -1167,7 +1175,7 @@ def _crop_window_all(
     spec: ModePlaneSpec,
 ) -> dict[str, np.ndarray]:
     profiles = {}
-    row_axis, col_axis = {"x": ("z", "y"), "y": ("z", "x"), "z": ("y", "x")}[spec.axis]
+    row_axis, col_axis = _PROFILE_AXES[spec.axis]
     for component, values in staggered.items():
         comp_row_stop = _support_stop_for_offset(
             row_start, row_stop, _YEE_OFFSETS_3D[component][row_axis]
@@ -1211,22 +1219,16 @@ def _profile_integration_weights(
 ) -> dict[str, np.ndarray]:
     """Return component-staggered transverse area weights for modal flux."""
     weights = {}
-    transverse_axes: dict[AxisName, tuple[AxisName, AxisName]] = {
-        "x": ("z", "y"),
-        "y": ("z", "x"),
-        "z": ("y", "x"),
-    }
-    row_axis, col_axis = transverse_axes[spec.axis]
-    axis_pos = {"z": 0, "y": 1, "x": 2}
+    row_axis, col_axis = _PROFILE_AXES[spec.axis]
     for component in _COMPONENTS:
         if component not in profiles or component not in indices:
             continue
         index = indices[component]
         row = _component_axis_measure(
-            spec, component, row_axis, index[axis_pos[row_axis]]
+            spec, component, row_axis, index[_STORAGE_AXIS[row_axis]]
         )
         col = _component_axis_measure(
-            spec, component, col_axis, index[axis_pos[col_axis]]
+            spec, component, col_axis, index[_STORAGE_AXIS[col_axis]]
         )
         shape = np.atleast_2d(np.asarray(profiles[component])).shape
         weights[component] = row[: shape[0], None] * col[None, : shape[1]]

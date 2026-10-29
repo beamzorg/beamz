@@ -59,12 +59,46 @@ class TopologyState:
 class TopologySpec:
     """Immutable density-based topology optimization.
 
-    ``region_mask`` is ``(y, x)``. ``resolution`` is required and is metres.
-    ``projection_type`` is ``"heaviside"``, ``"ssp"``, or ``"identity"``; use
-    identity with zero filter radius for externally mapped densities.
-    ``fixed_solid`` and ``fixed_void`` pin cells inside the mask to density 1
-    and 0, including during export. Masks are copied read-only. Evolving values
-    live in :class:`TopologyState`.
+    Parameters
+    ----------
+    design : Design
+        Base design containing fixed geometry and background material.
+    region_mask : array-like of bool
+        Cells that optimization may modify, in ``(y, x)`` order.
+    optimizer : {"adam", "sgd"}, default="adam"
+        Gradient-ascent optimizer.
+    learning_rate : float, default=0.1
+        Optimizer step size in latent-density units.
+    filter_radius : float, default=0
+        Physical density-filter radius in metres.
+    projection_eta : float, default=0.5
+        Threshold of the smooth Heaviside projection.
+    projection_type : {"heaviside", "ssp", "identity"}, default="heaviside"
+        Density projection applied after filtering. Use ``identity`` with a zero
+        filter radius when supplying externally mapped physical densities.
+    ssp_smoothing_radius : float, default=0.55
+        Hammond SSP smoothing radius in density-grid cell units.
+    beta_schedule : tuple, default=(1.0, 20.0)
+        Initial and final projection sharpness.
+    eps_min : float, default=1.0
+        Relative permittivity represented by zero physical density.
+    eps_max : float, default=12.0
+        Relative permittivity represented by unit physical density.
+    resolution : float
+        Design-grid cell size in metres; required explicitly.
+    filter_type : str, default="conic"
+        Spatial density-filter implementation.
+    morphology_operation : str, default="openclose"
+        Optional smooth morphology applied after filtering.
+    morphology_smooth_tau : float, default=0.01
+        Smooth min/max temperature used by morphology.
+
+    Notes
+    -----
+    Optional ``fixed_solid`` and ``fixed_void`` boolean masks pin cells inside
+    ``region_mask`` to physical density 1 and 0, including during export.
+    The region and fixed-structure masks are copied and made read-only. Evolving
+    density and optimizer values live in :class:`TopologyState`.
     """
 
     design: Design

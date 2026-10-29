@@ -21,9 +21,12 @@ from .schema import _CACHE_SCHEMA_VERSION, _ENGINE_VERSION, Grid, Scene
 class RasterOptions:
     """Dielectric smoothing and a separate metal-interface policy.
 
-    Metals have principal Re(epsilon_r) < 1 at ``reference_frequency`` (Hz).
+    Metals have a principal Re(epsilon_r) < 1 at ``reference_frequency`` (Hz).
+    Simulation uses the mean positive source center frequency when unspecified;
+    standalone rasterization uses each dispersive material's fit-band midpoint.
     ``metal_smoothing="inherit"`` applies ``smoothing`` to every material.
-    ``periodic_axes`` joins material fractions across those domain faces.
+    ``periodic_axes`` joins material fractions across the specified domain faces
+    before smoothing. Simulation derives these axes from its boundaries.
     """
 
     quality: str = "balanced"

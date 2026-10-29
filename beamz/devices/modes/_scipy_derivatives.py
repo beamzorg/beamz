@@ -108,11 +108,3 @@ def _make_dxf(sparse, dls: np.ndarray, shape: tuple[int, int], pmc: bool):
 
 def _make_dxb(sparse, dls: np.ndarray, shape: tuple[int, int], pmc: bool):
     return _yee_derivative(sparse, dls, shape, pmc, axis=0, forward=False)
-
-
-def _make_dyf(sparse, dls: np.ndarray, shape: tuple[int, int], pmc: bool):
-    return _yee_derivative(sparse, dls, shape, pmc, axis=1, forward=True)
-
-
-def _make_dyb(sparse, dls: np.ndarray, shape: tuple[int, int], pmc: bool):
-    return _yee_derivative(sparse, dls, shape, pmc, axis=1, forward=False)

@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import numpy as np
 
 from beamz.analysis.data import AnalysisData
@@ -409,7 +411,11 @@ def _build_port_projection_2d(
             operation="2D modal extraction",
         )
     mode_spec = getattr(monitor, "mode_spec", spec.mode_spec)
-    profile_slice = _monitor_profile_slice(sim, monitor, parts["axis"], mode_pad_cells)
+    # Production slices are (profile, index, spacing, edges). Callers and tests
+    # may still omit edges, which means a uniform line.
+    profile_slice = cast(
+        Any, _monitor_profile_slice(sim, monitor, parts["axis"], mode_pad_cells)
+    )
     if len(profile_slice) == 3:
         eps_profile, local_idx, dl = profile_slice
         grid_edges = None
