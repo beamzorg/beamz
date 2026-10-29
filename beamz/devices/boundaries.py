@@ -69,23 +69,11 @@ class _EdgeBoundary(_Replaceable):
 
 @dataclass(frozen=True, slots=True)
 class PEC(_EdgeBoundary):
-    """Request perfect-electric-conductor behavior on domain edges.
+    """Perfect electric conductor on selected domain edges.
 
-    Parameters
-    ----------
-    edges : "all", str, or sequence of str, default="all"
-        Boundary edges to constrain, such as ``"left"`` or ``("top", "bottom")``.
-    thickness : float, default=0.0
-        Compatibility field. PEC boundaries are enforced at zero thickness.
-
-    Examples
-    --------
-    >>> boundary = PEC(edges=("top", "bottom"))
-
-    Notes
-    -----
-    PEC forces tangential electric fields to zero on the selected domain faces and
-    is reflective. Use ``PML`` or ``Absorber`` for open-domain truncation.
+    Tangential E is zero, so the boundary is reflective. ``thickness`` is kept
+    for compatibility and is always stored as zero. Use ``PML`` or ``Absorber``
+    to truncate an open domain.
     """
 
     edges: BoundaryEdges = "all"
@@ -98,41 +86,14 @@ class PEC(_EdgeBoundary):
 
 @dataclass(frozen=True, slots=True)
 class PML(_EdgeBoundary):
-    """Request a graded absorbing layer on selected domain edges.
+    """Graded absorbing layer on selected domain edges.
 
-    Parameters
-    ----------
-    edges : "all", str, or sequence of str, default="all"
-        Domain faces covered by the layer.
-    thickness : float, optional
-        Physical layer thickness in metres. When omitted, the compiler uses
-        exactly 12 grid cells on every selected face.
-    sigma_max : float, optional
-        Explicit maximum conductivity. When omitted, BeamZ derives it from
-        ``target_reflection`` and the layer thickness.
-    m : int, default=3
-        Polynomial grading order.
-    formulation : {"sponge", "cpml"}, default="sponge"
-        Absorber formulation. CPML adds convolutional recurrence state and is
-        generally preferred for broadband or oblique incidence.
-    kappa_max : float, default=2.0
-        Maximum CPML coordinate-stretching factor.
-    alpha_max : float, optional
-        Maximum CPML complex-frequency-shift coefficient in S/m. Defaults to
-        ``0.1 * EPS_0 * LIGHT_SPEED / thickness`` in both 2D and 3D, independent
-        of timestep. Specify a fixed physical thickness for mesh convergence.
-    target_reflection : float, default=1e-6
-        Analytical amplitude-reflection target used to derive conductivity,
-        not a guarantee of the discretized absorber's measured reflection.
-
-    Examples
-    --------
-    >>> boundary = PML(formulation="cpml")  # 12 cells per selected face
-
-    Notes
-    -----
-    Geometry should normally be kept clear of the absorber or extruded through it
-    along the boundary normal to avoid material discontinuities inside the layer.
+    Omitted ``thickness`` means 12 cells. Omitted ``sigma_max`` is derived from
+    ``target_reflection``; that value is an analytical amplitude target, not the
+    measured reflection of the discrete layer. ``formulation`` is ``"sponge"`` or
+    ``"cpml"``. Omitted ``alpha_max`` is ``0.1 * EPS_0 * LIGHT_SPEED / thickness``
+    in both 2D and 3D. Keep geometry out of the layer or extrude it along the
+    boundary normal.
     """
 
     DEFAULT_CELLS: ClassVar[int] = 12
@@ -169,30 +130,10 @@ class PML(_EdgeBoundary):
 
 @dataclass(frozen=True, slots=True)
 class Absorber(_EdgeBoundary):
-    """Request a graded-conductivity sponge on selected domain edges.
+    """Graded-conductivity sponge, the explicit form of ``PML(formulation="sponge")``.
 
-    Parameters
-    ----------
-    edges : "all", str, or sequence of str, default="all"
-        Domain faces covered by the sponge.
-    thickness : float, default=1 um
-        Physical sponge thickness in metres.
-    sigma_max : float, optional
-        Explicit maximum conductivity. When omitted, BeamZ derives it from the
-        reflection target.
-    m : int, default=3
-        Polynomial conductivity-grading order.
-    target_reflection : float, default=1e-6
-        Reflection target used to derive automatic conductivity.
-
-    Examples
-    --------
-    >>> boundary = Absorber(edges=("left", "right"), thickness=1e-6)
-
-    Notes
-    -----
-    ``Absorber`` is the explicit sponge-only counterpart of
-    ``PML(formulation="sponge")``. Use CPML when convolutional matching is needed.
+    Omitted ``sigma_max`` is derived from ``target_reflection``. Use CPML when
+    convolutional matching is needed.
     """
 
     formulation: ClassVar[str] = "sponge"
@@ -221,25 +162,10 @@ class Absorber(_EdgeBoundary):
 
 @dataclass(frozen=True, slots=True)
 class Periodic(_Replaceable):
-    """Identify axes whose opposite domain faces are periodically coupled.
+    """Zero-phase periodic coupling of both faces on each selected axis.
 
-    Parameters
-    ----------
-    axes : "all", str, or sequence of str, default="all"
-        Physical Cartesian axes to wrap. A periodic axis always owns both of its
-        domain faces, so mismatched one-sided periodic configurations cannot be
-        represented.
-
-    Examples
-    --------
-    >>> boundary = Periodic(axes=("x", "y"))
-
-    Notes
-    -----
-    This boundary implements zero-phase periodicity. Use ``Bloch`` for
-    nonzero phase shifts. Periodic boundaries currently execute through the
-    JAX backend. Automatic backend selection chooses JAX, while an explicit CUDA
-    backend request raises an unsupported-backend error.
+    One-sided periodicity is not representable. Nonzero phase belongs on
+    ``Bloch``. Execution is JAX-only; an explicit CUDA request is rejected.
     """
 
     axes: BoundaryAxes = "all"

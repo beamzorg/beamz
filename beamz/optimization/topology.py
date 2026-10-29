@@ -23,16 +23,9 @@ from .projections import validate_projection_options
 
 @dataclass(frozen=True, slots=True, eq=False)
 class TopologyState:
-    """Store explicit evolving values for a topology-optimization run.
+    """Latent density, optimizer state, and completed objective values.
 
-    Parameters
-    ----------
-    density : array-like
-        Latent design density in ``(y, x)`` array order.
-    optimizer_state : object, optional
-        Backend-specific immutable optimizer state.
-    objective_history : tuple of float, optional
-        Objective values from completed optimization steps.
+    ``density`` uses ``(y, x)`` order.
     """
 
     density: np.ndarray
@@ -46,13 +39,7 @@ class TopologyState:
         )
 
     def with_objective(self, value: float) -> "TopologyState":
-        """Return state with one objective value appended to its history.
-
-        Parameters
-        ----------
-        value : float
-            Scalar objective value for the completed iteration.
-        """
+        """Return state with one completed objective value appended."""
         return replace(self, objective_history=(*self.objective_history, float(value)))
 
     def canonical_spec(self):
@@ -70,48 +57,14 @@ class TopologyState:
 
 @dataclass(frozen=True, slots=True, eq=False)
 class TopologySpec:
-    """Configure immutable density-based topology optimization.
+    """Immutable density-based topology optimization.
 
-    Parameters
-    ----------
-    design : Design
-        Base design containing fixed geometry and background material.
-    region_mask : array-like of bool
-        Cells that optimization may modify, in ``(y, x)`` order.
-    optimizer : {"adam", "sgd"}, default="adam"
-        Gradient-ascent optimizer.
-    learning_rate : float, default=0.1
-        Optimizer step size in latent-density units.
-    filter_radius : float, default=0
-        Physical density-filter radius in metres.
-    projection_eta : float, default=0.5
-        Threshold of the smooth Heaviside projection.
-    projection_type : {"heaviside", "ssp", "identity"}, default="heaviside"
-        Density projection applied after filtering. Use ``identity`` with a zero
-        filter radius when supplying externally mapped physical densities.
-    ssp_smoothing_radius : float, default=0.55
-        Hammond SSP smoothing radius in density-grid cell units.
-    beta_schedule : tuple, default=(1.0, 20.0)
-        Initial and final projection sharpness.
-    eps_min : float, default=1.0
-        Relative permittivity represented by zero physical density.
-    eps_max : float, default=12.0
-        Relative permittivity represented by unit physical density.
-    resolution : float
-        Design-grid cell size in metres; required explicitly.
-    filter_type : str, default="conic"
-        Spatial density-filter implementation.
-    morphology_operation : str, default="openclose"
-        Optional smooth morphology applied after filtering.
-    morphology_smooth_tau : float, default=0.01
-        Smooth min/max temperature used by morphology.
-
-    Notes
-    -----
-    Optional ``fixed_solid`` and ``fixed_void`` boolean masks pin cells inside
-    ``region_mask`` to physical density 1 and 0, including during export.
-    The region and fixed-structure masks are copied and made read-only. Evolving
-    density and optimizer values live in :class:`TopologyState`.
+    ``region_mask`` is ``(y, x)``. ``resolution`` is required and is metres.
+    ``projection_type`` is ``"heaviside"``, ``"ssp"``, or ``"identity"``; use
+    identity with zero filter radius for externally mapped densities.
+    ``fixed_solid`` and ``fixed_void`` pin cells inside the mask to density 1
+    and 0, including during export. Masks are copied read-only. Evolving values
+    live in :class:`TopologyState`.
     """
 
     design: Design
@@ -175,14 +128,7 @@ class TopologySpec:
         )
 
     def initial_state(self, density: np.ndarray | None = None) -> TopologyState:
-        """Create independent optimization state for this specification.
-
-        Parameters
-        ----------
-        density : array-like, optional
-            Initial latent density with the design-grid shape. By default,
-            optimizable cells start at 0.5 and other cells at zero.
-        """
+        """Create state. Optimizable cells start at 0.5 when ``density`` is omitted."""
         if density is None:
             density = np.zeros(self.region_mask.shape, dtype=float)
             density[self.region_mask] = 0.5
@@ -194,30 +140,14 @@ class TopologySpec:
         return TopologyState(density)
 
     def beta(self, step: int, total_steps: int) -> float:
-        """Return the projection strength for a continuation step.
-
-        Parameters
-        ----------
-        step : int
-            Zero-based optimization step.
-        total_steps : int
-            Total number of continuation steps.
-        """
+        """Return the projection strength for a zero-based continuation step."""
         start, end = self.beta_schedule
         if total_steps <= 1:
             return end
         return start + step / (total_steps - 1) * (end - start)
 
     def physical_density(self, state: TopologyState, beta: float) -> np.ndarray:
-        """Transform latent density into a detached physical density.
-
-        Parameters
-        ----------
-        state : TopologyState
-            Latent design density and optimizer state.
-        beta : float
-            Projection strength.
-        """
+        """Transform latent density into a detached physical density."""
         import jax.numpy as jnp
 
         density = transform_density(
@@ -247,34 +177,14 @@ class TopologySpec:
     def density_for_step(
         self, state: TopologyState, step: int, total_steps: int
     ) -> tuple[float, np.ndarray]:
-        """Return continuation beta and physical density for an iteration.
-
-        Parameters
-        ----------
-        state : TopologyState
-            Current latent design state.
-        step : int
-            Zero-based optimization step.
-        total_steps : int
-            Total number of continuation steps.
-        """
+        """Return continuation beta and physical density for one iteration."""
         beta = self.beta(step, total_steps)
         return beta, self.physical_density(state, beta)
 
     def apply_gradient(
         self, state: TopologyState, grad_eps: np.ndarray, beta: float
     ) -> tuple[TopologyState, float]:
-        """Return state advanced by one gradient-ascent optimizer step.
-
-        Parameters
-        ----------
-        state : TopologyState
-            Current latent density and backend optimizer state.
-        grad_eps : array-like
-            Objective gradient with respect to field-grid permittivity.
-        beta : float
-            Projection strength used for the current physical density.
-        """
+        """Advance one gradient-ascent step from a permittivity gradient."""
         import jax.numpy as jnp
 
         grad_eps = self.gradient_to_design_grid(grad_eps)
@@ -309,13 +219,7 @@ class TopologySpec:
         )
 
     def gradient_to_design_grid(self, grad_eps: np.ndarray) -> np.ndarray:
-        """Collocate a field-grid permittivity gradient onto design cells.
-
-        Parameters
-        ----------
-        grad_eps : array-like
-            Permittivity gradient on the Yee/material field grid.
-        """
+        """Collocate a field-grid permittivity gradient onto design cells."""
         return fold_high_side_yee_padding_to_shape(grad_eps, self.region_mask.shape)
 
     def _optimizer(self):
@@ -360,14 +264,7 @@ def fold_high_side_yee_padding_to_shape(
     grad: np.ndarray,
     target_shape: tuple[int, ...],
 ) -> np.ndarray:
-    """Fold high-side Yee padding planes back onto a material-grid shape.
-
-    Some full-Yee field components include the high boundary sample explicitly,
-    so their field-derived gradients can be one element larger than the
-    cell-centered material grid. Material sampling clips those high-side samples
-    to the last material cell; this helper applies the corresponding adjoint by
-    accumulating the high-side plane into the last target index.
-    """
+    """Add a one-cell high-side Yee plane into the last material-grid index."""
 
     out = np.asarray(grad, dtype=float)
     target_shape = tuple(int(v) for v in target_shape)
@@ -404,10 +301,7 @@ def fold_high_side_yee_padding_to_shape(
 
 
 def create_optimization_mask(grid, region_structure):
-    """
-    Helper to create a boolean mask from a structure on a grid.
-    Uses rasterization to ensure exact alignment with how structures are mapped to the grid.
-    """
+    """Rasterize a structure into a boolean mask aligned with the material grid."""
     # Create temp design to rasterize mask exactly as grid does
     temp_design = Design(
         width=grid.width, height=grid.height, material=Material(permittivity=1.0)
@@ -431,10 +325,7 @@ def create_optimization_mask(grid, region_structure):
 
 
 def get_fixed_structure_mask(grid, eps_min, eps_max, design_mask):
-    """
-    Identify fixed structures (waveguides) from the base permittivity grid.
-    Returns boolean mask where fixed solid material exists outside design region.
-    """
+    """Return solid cells outside the design region."""
     # Threshold for "solid" material. E.g. > 90% of core-clad difference
     threshold = eps_min + 0.9 * (eps_max - eps_min)
 

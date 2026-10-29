@@ -39,30 +39,13 @@ class TopologyProblem:
     """Optimize a topology region against a scalar modal objective.
 
     Both backends support uniform 2D xy or 3D grids, scalar lossless dielectrics,
-    a fixed mode or Gaussian-beam source, and spectral monitors. The default uses
-    the exact JAX derivative with chunk checkpointing, including CPML and DFT recurrences. Geometry,
-    port modes, boundaries, timestep, and run length stay fixed across iterations.
-
-    Parameters
-    ----------
-    simulation : Simulation
-        Base simulation containing the fixed geometry, source, and monitors.
-    topology : TopologySpec
-        Existing density transform, design mask, and optimizer configuration.
-    objective : ModePower, SoftMinModePower, or WeightedObjective
-        Modal power averaged across selected frequencies, or a weighted combination
-        rewarding transmission and penalizing reflection/unwanted-port power.
-        SoftMinModePower targets the weakest selected frequencies instead.
-    checkpoint_interval : int, default=32
-        Timestep chunk length for reverse-mode rematerialization. ``None`` retains
-        ordinary reverse-mode history and is intended for small reference tests.
-    gradient_backend : {"autodiff", "adjoint"}, default="autodiff"
-        Exact checkpointed differentiation through FDTD, or a spectral Maxwell
-        adjoint after a pulsed FDTD forward run. The latter runs adjoint FDTD
-        simulations and requires decayed fields and full-run rectangular monitors.
-    adjoint_decay_tolerance : float, default=1e-4
-        Maximum terminal/peak field norm for the spectral backend. This check is
-        necessary, but run-duration convergence must still be verified.
+    one fixed mode or Gaussian-beam source, and spectral monitors. Geometry, port
+    modes, boundaries, timestep, and run length stay fixed. ``checkpoint_interval``
+    is the reverse-mode chunk length; ``None`` keeps full history for small tests.
+    ``gradient_backend="adjoint"`` runs a spectral Maxwell adjoint after the pulsed
+    forward solve and requires decayed fields plus full-run rectangular monitors.
+    ``adjoint_decay_tolerance`` bounds the terminal/peak field norm; it does not
+    replace a run-duration convergence check.
     """
 
     def __init__(

@@ -4,10 +4,12 @@ import numpy as np
 
 from beamz._helpers import positive_integer
 from beamz.devices._immutable import (
+    _Replaceable,
     finite_tuple,
     immutable_snapshot,
     nonnegative_finite_extents,
     readonly_1d_array,
+    shifted_coordinates,
 )
 from beamz.devices._placement import (
     line_region_points,
@@ -69,7 +71,7 @@ def _line_integral_scale_2d(normal_axis: str, dx: float, dy: float) -> float:
 
 
 @dataclass(frozen=True, kw_only=True, eq=False)
-class _Monitor:
+class _Monitor(_Replaceable):
     """Shared immutable geometry and frequency configuration for monitors."""
 
     center: tuple[float, float, float]
@@ -119,9 +121,6 @@ class _Monitor:
     def is_3d(self):
         return int(np.count_nonzero(np.asarray(self.size) > 0.0)) >= 2
 
-    def updated_copy(self, **changes):
-        return replace(self, **changes)
-
     def _comparison_key(self):
         return (
             type(self),
@@ -146,13 +145,7 @@ class _Monitor:
         return hash(self._comparison_key())
 
     def get_grid_points_2d(self, dx, dy):
-        """Return integer grid points for a 2D line monitor.
-
-        Parameters
-        ----------
-        dx, dy : float
-            Cell spacing along x and y in metres.
-        """
+        """Return integer ``(x, y)`` points for a 2D line monitor."""
         snapped = self.get_snapped_region(dx=dx, dy=dy)
         if snapped is not None:
             return line_region_points(snapped)
@@ -201,21 +194,7 @@ class _Monitor:
         return x, y
 
     def get_grid_slice_3d(self, dx, dy, dz, field_shape):
-        """Return array indices for a 3D plane monitor.
-
-        Parameters
-        ----------
-        dx, dy, dz : float
-            Cell spacing along each Cartesian axis in metres.
-        field_shape : tuple of int
-            Base field shape in ``(z, y, x)`` order.
-
-        Returns
-        -------
-        tuple
-            ``(z_index, y_index, x_index)`` in array order. The plane-normal
-            entry is an integer and both tangential entries are slices.
-        """
+        """Return ``(z, y, x)`` indices; the normal entry is an int, tangentials are slices."""
         snapped = self.get_snapped_region(dx=dx, dy=dy, dz=dz, field_shape=field_shape)
         if snapped is not None:
             return plane_region_slices(snapped)
@@ -260,14 +239,7 @@ class _Monitor:
     def get_snapped_region(self, *, dx, dy, dz=None, field_shape=None):
         """Return the canonical snapped region for monitor sampling.
 
-        Parameters
-        ----------
-        dx, dy : float
-            Cell spacing along x and y in metres.
-        dz : float, optional
-            Cell spacing along z in metres; required for 3D monitors.
-        field_shape : tuple of int, optional
-            Base field shape in ``(z, y, x)`` order; required for 3D monitors.
+        ``dz`` and a 3D ``field_shape`` in ``(z, y, x)`` order are required for planes.
         """
         if field_shape is not None and len(tuple(field_shape)) == 3:
             if dz is None or field_shape is None:
@@ -309,13 +281,12 @@ class _Monitor:
 
     def shifted(self, offset):
         """Return a translated monitor."""
-        delta = tuple(float(value) for value in offset)
-        if len(delta) != 3:
-            raise ValueError("Monitor offsets must contain three values.")
         return replace(
             self,
-            center=tuple(
-                value + shift for value, shift in zip(self.center, delta, strict=True)
+            center=shifted_coordinates(
+                self.center,
+                offset,
+                mismatch="Monitor offsets must contain three values.",
             ),
         )
 
