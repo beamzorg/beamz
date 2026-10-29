@@ -9,6 +9,7 @@ from typing import Any, Literal, cast
 import numpy as np
 
 from beamz.devices._immutable import (
+    _Replaceable,
     canonical_tuple,
     finite_tuple,
     immutable_snapshot,
@@ -76,7 +77,7 @@ def plane_axis_and_spans(plane):
 
 
 @dataclass(frozen=True)
-class ModeSource:
+class ModeSource(_Replaceable):
     """Inject a solved waveguide mode through a finite plane.
 
     The zero extent in ``size`` selects the injection axis. ``direction`` is
@@ -153,10 +154,6 @@ class ModeSource:
         fwidth = float(getattr(self.source_time, "fwidth", self.frequency / 10.0))
         return chebyshev_frequency_nodes(self.frequency, fwidth, count)
 
-    def updated_copy(self, **changes):
-        """Return a source with selected canonical fields replaced."""
-        return replace(self, **changes)
-
     def shifted(self, offset):
         """Return a translated source."""
         delta = tuple(float(value) for value in offset)
@@ -210,7 +207,7 @@ class ModeSource:
 
 
 @dataclass(frozen=True, slots=True)
-class GaussianSource:
+class GaussianSource(_Replaceable):
     """Inject a Gaussian spatial profile into an FDTD simulation.
 
     In 2D it excites the active out-of-plane component: ``Ez`` for TMz and
@@ -257,16 +254,6 @@ class GaussianSource:
             normalize_source_signal(self.signal, name="GaussianSource.signal"),
         )
 
-    def updated_copy(self, **changes):
-        """Return a source with selected configuration fields replaced.
-
-        Parameters
-        ----------
-        **changes
-            Source field names and replacement values.
-        """
-        return replace(self, **changes)
-
     def shifted(self, offset):
         """Return the source translated by a physical coordinate offset.
 
@@ -304,7 +291,7 @@ def _as_direction(value) -> Direction3D:
 
 
 @dataclass(frozen=True, slots=True)
-class GaussianBeamSource:
+class GaussianBeamSource(_Replaceable):
     """Launch an angled 3D Gaussian beam through a planar TF/SF boundary.
 
     Parameters
@@ -407,16 +394,6 @@ class GaussianBeamSource:
             ),
         )
 
-    def updated_copy(self, **changes):
-        """Return a beam with selected configuration fields replaced.
-
-        Parameters
-        ----------
-        **changes
-            Beam-source field names and replacement values.
-        """
-        return replace(self, **changes)
-
     def source_spectrum(self, freqs, *, normalize: bool = True) -> np.ndarray | None:
         """Return the complex temporal spectrum at frequencies in hertz.
 
@@ -448,7 +425,7 @@ class GaussianBeamSource:
 
 
 @dataclass(frozen=True, slots=True)
-class CustomSource:
+class CustomSource(_Replaceable):
     """Describe an immutable precomputed field injection.
 
     Parameters
@@ -488,16 +465,6 @@ class CustomSource:
         object.__setattr__(
             self, "target_shape", tuple(int(v) for v in self.target_shape)
         )
-
-    def updated_copy(self, **changes):
-        """Return an injection with selected immutable fields replaced.
-
-        Parameters
-        ----------
-        **changes
-            Injection field names and replacement values.
-        """
-        return replace(self, **changes)
 
     def shifted(self, offset):
         """Keep grid-indexed injections unchanged by coordinate normalization."""

@@ -15,6 +15,14 @@ from beamz.devices.modes import _scipy, _yee
 from beamz.devices.modes import discrete as discrete_module
 from beamz.devices.modes import plane as plane_module
 from beamz.devices.modes import solver as solver_module
+from beamz.devices.modes._scipy_derivatives import _make_dxb, _make_dxf
+from beamz.devices.modes._scipy_fields import (
+    _apply_dominant_e_phase_convention,
+    _lorentz_orthogonalize_and_normalize,
+    _ModeFields,
+    _normalize_to_unit_power,
+)
+from beamz.devices.modes._scipy_pml import _create_sfactor, _create_sfactor_b
 from beamz.devices.modes.discrete import DiscreteMode, ModePlaneSpec
 from beamz.devices.modes.fields import (
     _axis_coordinate,
@@ -278,7 +286,9 @@ def test_negative_y_profile_build_flips_electric_components():
         name: np.ones((3, 3), dtype=np.complex128)
         for name in discrete_module._COMPONENTS
     }
-    profiles, _indices, _extra = discrete_module._build_y_profiles(fields, spec)
+    profiles, _indices, _extra = discrete_module._build_transverse_profiles(
+        fields, spec
+    )
     assert all(
         np.all(values >= 0.0)
         for name, values in profiles.items()
@@ -454,8 +464,8 @@ def test_sparse_helpers_cover_degenerate_pml_and_eigen_paths():
             dmin_pmc=(False, False),
             scale=1.0,
         )
-    assert _scipy._make_dxf(sparse, np.ones(1), (1, 2), False).shape == (2, 2)
-    assert _scipy._make_dxb(sparse, np.ones(1), (1, 2), False).shape == (2, 2)
+    assert _make_dxf(sparse, np.ones(1), (1, 2), False).shape == (2, 2)
+    assert _make_dxb(sparse, np.ones(1), (1, 2), False).shape == (2, 2)
 
     empty = sparse.csc_matrix((2, 2), dtype=np.complex128)
     matrix, vector, guess = _scipy._real_arpack_problem_if_close(empty, None, 1.0)
@@ -477,12 +487,12 @@ def test_sparse_helpers_cover_degenerate_pml_and_eigen_paths():
     )
     assert values.shape == (1,) and vectors.shape == (2, 1)
     np.testing.assert_array_equal(
-        _scipy._create_sfactor("f", 1.0, np.ones(2), 2, 0, True, np.ones(2), None),
+        _create_sfactor("f", 1.0, np.ones(2), 2, 0, True, np.ones(2), None),
         1.0,
     )
     with pytest.raises(ValueError, match="not recognized"):
-        _scipy._create_sfactor("q", 1.0, np.ones(2), 2, 1, True, np.ones(2), None)
-    backward = _scipy._create_sfactor_b(1.0, np.ones(4), 4, 2, False, np.ones(2), None)
+        _create_sfactor("q", 1.0, np.ones(2), 2, 1, True, np.ones(2), None)
+    backward = _create_sfactor_b(1.0, np.ones(4), 4, 2, False, np.ones(2), None)
     assert backward[-1] != 1.0
 
 
@@ -513,17 +523,17 @@ def test_tensorial_solver_supports_backward_direction(monkeypatch):
 
 def test_lorentz_helpers_handle_empty_and_zero_modes():
     empty = np.empty(0, dtype=np.complex128)
-    empty_mode = _scipy._ModeFields(*(empty.copy() for _ in range(6)))
-    _scipy._apply_dominant_e_phase_convention(empty_mode)
+    empty_mode = _ModeFields(*(empty.copy() for _ in range(6)))
+    _apply_dominant_e_phase_convention(empty_mode)
 
     zeros = np.zeros(1, dtype=np.complex128)
     zero_modes = [
-        _scipy._ModeFields(*(zeros.copy() for _ in range(6))),
-        _scipy._ModeFields(*(zeros.copy() for _ in range(6))),
+        _ModeFields(*(zeros.copy() for _ in range(6))),
+        _ModeFields(*(zeros.copy() for _ in range(6))),
     ]
-    assert _scipy._normalize_to_unit_power(zero_modes[0], np.ones(1)) == 0.0
-    _scipy._apply_dominant_e_phase_convention(zero_modes[0])
-    info = _scipy._lorentz_orthogonalize_and_normalize(zero_modes, np.ones(1))
+    assert _normalize_to_unit_power(zero_modes[0], np.ones(1)) == 0.0
+    _apply_dominant_e_phase_convention(zero_modes[0])
+    info = _lorentz_orthogonalize_and_normalize(zero_modes, np.ones(1))
     assert info["lorentz_orthogonality_error"] == 0.0
 
 

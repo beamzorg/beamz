@@ -1,16 +1,8 @@
 """SciPy/ARPACK reference eigensolvers for diagonal and tensorial modes.
 
 The numerical implementation was imported from MicroMode ``scipy_reference.py``
-(see ``UPSTREAM.md``). Formulas now live in the private modules next to this
-file; this module keeps the original entry points and the private helpers unit
-tests import. ``_selected_eigenpairs`` is resolved here so tests can replace it.
-
-- ``_scipy_derivatives`` — Yee derivative stencils
-- ``_scipy_operators`` — diagonal and tensorial eigen-operators
-- ``_scipy_pml`` — complex-coordinate PML stretch factors
-- ``_scipy_eigen`` — ARPACK eigenpair selection
-- ``_scipy_fields`` — Lorentz normalization and phase convention
-- ``_scipy_constants`` — reference-solver constants from that import
+(see ``UPSTREAM.md``). Formulas live in the private modules next to this file.
+``_selected_eigenpairs`` is resolved here so tests can replace it.
 """
 
 from __future__ import annotations
@@ -19,77 +11,20 @@ from typing import Any, cast
 
 import numpy as np
 
-from ._scipy_constants import C0, EPSILON0, ETA0, MU0
-from ._scipy_derivatives import (
-    _create_derivative_matrices,
-    _make_dxb,
-    _make_dxf,
-    _make_dyb,
-    _make_dyf,
-)
+from ._scipy_constants import ETA0
+from ._scipy_derivatives import _create_derivative_matrices
 from ._scipy_eigen import (
     _import_scipy,
     _real_arpack_problem_if_close,
     _selected_eigenpairs,
 )
-from ._scipy_fields import (
-    _apply_dominant_e_phase_convention,
-    _lorentz_orthogonalize_and_normalize,
-    _lorentz_overlap,
-    _ModeFields,
-    _normalize_to_unit_power,
-    _transverse_power,
-)
+from ._scipy_fields import _lorentz_orthogonalize_and_normalize, _ModeFields
 from ._scipy_operators import (
     _assemble_diagonal_operators,
     _assemble_tensorial_operator,
-    _canonical_sparse,
-)
-from ._scipy_pml import (
-    _average_relative_speed,
-    _create_s_diagonal_values,
-    _create_sfactor,
-    _create_sfactor_b,
-    _create_sfactor_f,
-    _pml_average_all_sides,
-    _s_value,
 )
 
 SparseSolveResult = tuple[np.ndarray, list[np.ndarray], dict[str, object]]
-
-__all__ = [
-    "C0",
-    "EPSILON0",
-    "ETA0",
-    "MU0",
-    "SparseSolveResult",
-    "_ModeFields",
-    "_apply_dominant_e_phase_convention",
-    "_assemble_diagonal_operators",
-    "_assemble_tensorial_operator",
-    "_average_relative_speed",
-    "_canonical_sparse",
-    "_create_derivative_matrices",
-    "_create_s_diagonal_values",
-    "_create_sfactor",
-    "_create_sfactor_b",
-    "_create_sfactor_f",
-    "_import_scipy",
-    "_lorentz_orthogonalize_and_normalize",
-    "_lorentz_overlap",
-    "_make_dxb",
-    "_make_dxf",
-    "_make_dyb",
-    "_make_dyf",
-    "_normalize_to_unit_power",
-    "_pml_average_all_sides",
-    "_real_arpack_problem_if_close",
-    "_s_value",
-    "_selected_eigenpairs",
-    "_transverse_power",
-    "solve_diagonal_scipy_reference",
-    "solve_tensorial_scipy_reference",
-]
 
 
 def _require_solver_inputs(
@@ -225,94 +160,13 @@ def _stretched_derivatives(
     )
 
 
-def solve_diagonal_scipy_reference(
-    *,
-    eps_tensor: np.ndarray,
-    mu_tensor: np.ndarray,
-    dlf: tuple[np.ndarray, np.ndarray],
-    dlb: tuple[np.ndarray, np.ndarray],
-    num_modes: int,
-    neff_guess: float,
-    direction: str,
-    derivative_scale: float,
-    omega: float | None = None,
-    num_pml: tuple[int, int] = (0, 0),
-    pml_profile: dict[str, float | int] | None = None,
-    dmin_pml: tuple[bool, bool] = (True, True),
-    dmin_pmc: tuple[bool, bool] = (False, False),
-    krylov_dim: int = 32,
-    initial_vector: np.ndarray | None = None,
-) -> SparseSolveResult:
+def solve_diagonal_scipy_reference(**kwargs) -> SparseSolveResult:
     """Solve the diagonal sparse eigenproblem with SciPy/ARPACK.
 
     This is the reduced ``[Ex, Ey]`` transverse eigenproblem for diagonal
     material tensors.
     """
-
-    sparse, spla, scipy_linalg = _import_scipy()
-    nx = len(dlf[0])
-    ny = len(dlf[1])
-    n = nx * ny
-    _require_solver_inputs(eps_tensor, mu_tensor, n, num_modes)
-
-    derivatives = _stretched_derivatives(
-        sparse,
-        eps_tensor=eps_tensor,
-        mu_tensor=mu_tensor,
-        dlf=dlf,
-        dlb=dlb,
-        omega=omega,
-        num_pml=num_pml,
-        pml_profile=pml_profile,
-        dmin_pml=dmin_pml,
-        dmin_pmc=dmin_pmc,
-        derivative_scale=derivative_scale,
-    )
-    operators = _assemble_diagonal_operators(sparse, eps_tensor, mu_tensor, derivatives)
-    operator = cast(Any, operators["mat"])
-    eig_guess = complex(-(neff_guess * neff_guess), 0.0)
-    operator, arpack_initial_vector, arpack_guess = _real_arpack_problem_if_close(
-        operator, initial_vector, eig_guess
-    )
-    values, vectors = _selected_eigenpairs(
-        operator,
-        num_modes=num_modes,
-        sigma=arpack_guess,
-        krylov_dim=krylov_dim,
-        initial_vector=arpack_initial_vector,
-        spla=spla,
-        scipy_linalg=scipy_linalg,
-    )
-    residuals = _normalized_eigen_residuals(operator, values, vectors)
-    modes = _sort_by_descending_real_index(
-        [
-            (
-                complex(np.sqrt(-value + 0j)),
-                np.asarray(vector, dtype=np.complex128),
-                float(residual),
-            )
-            for value, vector, residual in zip(
-                values, vectors.T, residuals, strict=True
-            )
-        ]
-    )
-    n_complex, mode_fields, sorted_residuals = _reconstruct_diagonal_modes(
-        modes,
-        n=n,
-        operators=operators,
-        derivatives=derivatives,
-        eps_tensor=eps_tensor,
-        mu_tensor=mu_tensor,
-        sparse=sparse,
-        direction=direction,
-    )
-    return _package_reference_modes(
-        n_complex,
-        mode_fields,
-        sorted_residuals,
-        operator,
-        _transverse_cell_areas(dlf, nx, ny),
-    )
+    return _solve_scipy_reference(False, **kwargs)
 
 
 def _reconstruct_diagonal_modes(
@@ -364,7 +218,13 @@ def _reconstruct_diagonal_modes(
     return n_complex, mode_fields, sorted_residuals
 
 
-def solve_tensorial_scipy_reference(
+def solve_tensorial_scipy_reference(**kwargs) -> SparseSolveResult:
+    """Solve the first-order tensorial sparse eigenproblem with SciPy/ARPACK."""
+    return _solve_scipy_reference(True, **kwargs)
+
+
+def _solve_scipy_reference(
+    tensorial: bool,
     *,
     eps_tensor: np.ndarray,
     mu_tensor: np.ndarray,
@@ -382,14 +242,12 @@ def solve_tensorial_scipy_reference(
     krylov_dim: int = 32,
     initial_vector: np.ndarray | None = None,
 ) -> SparseSolveResult:
-    """Solve the first-order tensorial sparse eigenproblem with SciPy/ARPACK."""
-
+    """Run one ARPACK reference solve for either material formulation."""
     sparse, spla, scipy_linalg = _import_scipy()
     nx = len(dlf[0])
     ny = len(dlf[1])
     n = nx * ny
     _require_solver_inputs(eps_tensor, mu_tensor, n, num_modes)
-
     derivatives = _stretched_derivatives(
         sparse,
         eps_tensor=eps_tensor,
@@ -403,34 +261,57 @@ def solve_tensorial_scipy_reference(
         dmin_pmc=dmin_pmc,
         derivative_scale=derivative_scale,
     )
-    operator = _assemble_tensorial_operator(sparse, eps_tensor, mu_tensor, derivatives)
+    operators = None
+    if tensorial:
+        operator = _assemble_tensorial_operator(
+            sparse, eps_tensor, mu_tensor, derivatives
+        )
+        sigma = complex(neff_guess, 0.0)
+        arpack_initial = initial_vector
+    else:
+        operators = _assemble_diagonal_operators(
+            sparse, eps_tensor, mu_tensor, derivatives
+        )
+        operator = cast(Any, operators["mat"])
+        operator, arpack_initial, sigma = _real_arpack_problem_if_close(
+            operator, initial_vector, complex(-(neff_guess * neff_guess), 0.0)
+        )
     values, vectors = _selected_eigenpairs(
         operator,
         num_modes=num_modes,
-        sigma=complex(neff_guess, 0.0),
+        sigma=sigma,
         krylov_dim=krylov_dim,
-        initial_vector=initial_vector,
+        initial_vector=arpack_initial,
         spla=spla,
         scipy_linalg=scipy_linalg,
     )
     residuals = _normalized_eigen_residuals(operator, values, vectors)
     modes = _sort_by_descending_real_index(
         [
-            (complex(value), np.asarray(vector, dtype=np.complex128), float(residual))
+            (
+                complex(value if tensorial else np.sqrt(-value + 0j)),
+                np.asarray(vector, dtype=np.complex128),
+                float(residual),
+            )
             for value, vector, residual in zip(
                 values, vectors.T, residuals, strict=True
             )
         ]
     )
-    n_complex, mode_fields, sorted_residuals = _reconstruct_tensorial_modes(
-        modes,
-        n=n,
-        derivatives=derivatives,
-        eps_tensor=eps_tensor,
-        mu_tensor=mu_tensor,
-        sparse=sparse,
-        direction=direction,
+    reconstruct = (
+        _reconstruct_tensorial_modes if tensorial else _reconstruct_diagonal_modes
     )
+    reconstruct_kwargs = {
+        "n": n,
+        "derivatives": derivatives,
+        "eps_tensor": eps_tensor,
+        "mu_tensor": mu_tensor,
+        "sparse": sparse,
+        "direction": direction,
+    }
+    if not tensorial:
+        reconstruct_kwargs["operators"] = operators
+    n_complex, mode_fields, sorted_residuals = reconstruct(modes, **reconstruct_kwargs)
     return _package_reference_modes(
         n_complex,
         mode_fields,

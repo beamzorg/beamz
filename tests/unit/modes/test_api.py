@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import beamz.devices.modes.discrete as discrete_module
-from beamz.devices.modes._scipy import _pml_average_all_sides
+from beamz.devices.modes._scipy_pml import _pml_average_all_sides
 from beamz.devices.modes.constants import C_0
 from beamz.devices.modes.discrete import ModePlaneSpec, solve_beamz_mode
 from beamz.devices.modes.plane import solve_modes

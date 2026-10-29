@@ -394,22 +394,6 @@ class ComponentSimulationResults:
         )
         object.__setattr__(self, "provenance", MappingProxyType(dict(self.provenance)))
 
-    def plot_sparameters(self, *, ax: Any = None, db: bool = True):
-        """Plot the named S-matrix columns against vacuum wavelength."""
-        import matplotlib.pyplot as plt
-
-        if ax is None:
-            _, ax = plt.subplots()
-        wavelength_um = LIGHT_SPEED / self.sparameters.frequencies / µm
-        for (output, source), values in self.sparameters.s_matrix.items():
-            magnitude = np.abs(np.asarray(values))
-            data = 20.0 * np.log10(np.maximum(magnitude, 1e-15)) if db else magnitude
-            ax.plot(wavelength_um, data, label=f"S{output},{source}")
-        ax.set_xlabel("Wavelength (um)")
-        ax.set_ylabel("Magnitude (dB)" if db else "Magnitude")
-        ax.legend()
-        return ax.figure, ax
-
     def plot_field(self, excitation: str, *args: Any, **kwargs: Any):
         """Plot a field from one result-owned native BeamZ execution."""
         return self.native_results[str(excitation)].plot_field(*args, **kwargs)

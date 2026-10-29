@@ -5,11 +5,10 @@ condition_number
 plot_mode_field_components
 plot_result_field
 view_simulation_3d
-_.discretize
+_.view3d
 _.add_task
 _.cache_spec
 _.__path__
-_.update_grid
 _.auto
 _.to_monitor
 _.to_source
@@ -31,7 +30,6 @@ _.clear_compiled_cache
 _.hits
 _.misses
 _.memory_estimate
-_.show3d
 total_conductivity
 eps_ex
 eps_ey
@@ -46,11 +44,9 @@ _.winding_or_normals_fixed
 _.remaining_issues
 _.connected_components
 _.is_uniform
-_.is_axis_uniform
 _.uniform_spacing
 _.coord_to_edge_index
 _.cell_volume
-_.face_area
 _.is_automatic
 _.quality_report
 _.satisfies_max_scale
@@ -66,12 +62,8 @@ _lower_mode_source
 
 # Public native mode-solver fields and methods are consumed by downstream users
 # and optional serialization paths, not necessarily by BeamZ itself.
-_.component_offsets
 _.phase_reference_component
-_.from_subpixel_diagonal
 _.diagonal_eps
-_.to_hdf5
-_.from_hdf5
 _.n_group
 _.dispersion
 _.n_eff
@@ -88,7 +80,6 @@ _.port_metadata
 _.estimate_resources
 _.preview
 _.run_sparameters
-_.plot_sparameters
 _.check_reciprocity
 _.check_passivity
 

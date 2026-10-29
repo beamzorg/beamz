@@ -932,216 +932,98 @@ def _build_profiles(
     fields: dict[str, np.ndarray],
     spec: ModePlaneSpec,
 ) -> tuple[dict[str, np.ndarray], dict[str, ComponentIndex], dict[str, float]]:
-    axis = spec.axis
-    if axis == "x":
-        return _build_x_profiles(fields, spec)
-    if axis == "y":
-        return _build_y_profiles(fields, spec)
-    return _build_z_profiles(fields, spec)
+    return _build_transverse_profiles(fields, spec)
 
 
-def _build_x_profiles(
+def _stagger_transverse_component(
+    field: np.ndarray, spec: ModePlaneSpec, component: str
+) -> np.ndarray:
+    """Move one component onto the transverse Yee locations of ``spec.axis``."""
+    row_axis, col_axis = {"x": ("z", "y"), "y": ("z", "x"), "z": ("y", "x")}[spec.axis]
+    offsets = _YEE_OFFSETS_3D[component]
+    stagger_row = offsets[row_axis] == 0.5
+    stagger_col = offsets[col_axis] == 0.5
+    if stagger_row and stagger_col:
+        return _stagger_both(field, spec=spec)
+    if stagger_col:
+        return _stagger_half(field, 1, _axis_sampling(spec, col_axis))
+    if stagger_row:
+        return _stagger_half(field, 0, _axis_sampling(spec, row_axis))
+    return field
+
+
+def _propagation_index(component: str, spec: ModePlaneSpec) -> int:
+    """Plane index of one component along the mode normal."""
+    if spec.axis == "z":
+        count = spec.grid_shape[0]
+        if component in {"Hx", "Hy"}:
+            return int(np.clip(spec.offset_index, 0, max(count - 2, 0)))
+        if component == "Ez":
+            return int(np.clip(spec.plane_index, 0, max(count - 2, 0)))
+        if component == "Hz":
+            return int(np.clip(spec.offset_index, 0, count - 1))
+        return int(np.clip(spec.plane_index, 0, count - 1))
+    normal_offset = _YEE_OFFSETS_3D[component][spec.axis]
+    return spec.offset_index if normal_offset == 0.5 else spec.plane_index
+
+
+def _build_transverse_profiles(
     fields: dict[str, np.ndarray],
     spec: ModePlaneSpec,
 ) -> tuple[dict[str, np.ndarray], dict[str, ComponentIndex], dict[str, float]]:
-    ex_s = fields["Ex"]
-    ey_s = _stagger_half(fields["Ey"], axis=1, coordinates=_axis_sampling(spec, "y"))
-    ez_s = _stagger_half(fields["Ez"], axis=0, coordinates=_axis_sampling(spec, "z"))
-    hx_s = _stagger_both(fields["Hx"], spec=spec)
-    hy_s = _stagger_half(fields["Hy"], axis=0, coordinates=_axis_sampling(spec, "z"))
-    hz_s = _stagger_half(fields["Hz"], axis=1, coordinates=_axis_sampling(spec, "y"))
-    nz, ny, _nx = spec.grid_shape
-    y_start, y_end = _padded_bounds(
-        spec.center[1],
-        spec.width,
-        spec.resolution,
-        ny,
-        spec.aperture_pad_cells,
-        edges=_axis_edges(spec, "y"),
-    )
-    z_start, z_end = _padded_bounds(
-        spec.center[2],
+    """Crop, window, and index all six components for one propagation axis."""
+    row_axis, col_axis = {"x": ("z", "y"), "y": ("z", "x"), "z": ("y", "x")}[spec.axis]
+    axis_pos = {"z": 0, "y": 1, "x": 2}
+    staggered = {
+        component: _stagger_transverse_component(fields[component], spec, component)
+        for component in _COMPONENTS
+    }
+    row_start, row_stop = _padded_bounds(
+        spec.center[axis_pos[row_axis]],
         spec.height,
         spec.resolution,
-        nz,
+        spec.grid_shape[axis_pos[row_axis]],
         spec.aperture_pad_cells,
-        edges=_axis_edges(spec, "z"),
+        edges=_axis_edges(spec, row_axis),
     )
-    staggered = {"Ex": ex_s, "Ey": ey_s, "Ez": ez_s, "Hx": hx_s, "Hy": hy_s, "Hz": hz_s}
-    indices: dict[str, ComponentIndex] = {
-        "Ex": (
-            *_support_slices("Ex", "x", z_start, z_end, y_start, y_end, ex_s.shape),
-            spec.offset_index,
-        ),
-        "Ey": (
-            *_support_slices("Ey", "x", z_start, z_end, y_start, y_end, ey_s.shape),
-            spec.plane_index,
-        ),
-        "Ez": (
-            *_support_slices("Ez", "x", z_start, z_end, y_start, y_end, ez_s.shape),
-            spec.plane_index,
-        ),
-        "Hx": (
-            *_support_slices("Hx", "x", z_start, z_end, y_start, y_end, hx_s.shape),
-            spec.plane_index,
-        ),
-        "Hy": (
-            *_support_slices("Hy", "x", z_start, z_end, y_start, y_end, hy_s.shape),
-            spec.offset_index,
-        ),
-        "Hz": (
-            *_support_slices("Hz", "x", z_start, z_end, y_start, y_end, hz_s.shape),
-            spec.offset_index,
-        ),
-    }
-    profiles = _crop_window_all(
-        staggered, z_start, z_end, y_start, y_end, _direction_sign(spec.direction), spec
-    )
-    initial_power = _normalize_profiles(
-        profiles,
-        axis="x",
-        measure=_profile_integration_weights(spec, profiles, indices),
-        direction_sign=_direction_sign(spec.direction),
-    )
-    return profiles, indices, {"initial_power": initial_power}
-
-
-def _build_y_profiles(
-    fields: dict[str, np.ndarray],
-    spec: ModePlaneSpec,
-) -> tuple[dict[str, np.ndarray], dict[str, ComponentIndex], dict[str, float]]:
-    ex_s = _stagger_half(fields["Ex"], axis=1, coordinates=_axis_sampling(spec, "x"))
-    ey_s = fields["Ey"]
-    ez_s = _stagger_half(fields["Ez"], axis=0, coordinates=_axis_sampling(spec, "z"))
-    hx_s = _stagger_half(fields["Hx"], axis=0, coordinates=_axis_sampling(spec, "z"))
-    hy_s = _stagger_both(fields["Hy"], spec=spec)
-    hz_s = _stagger_half(fields["Hz"], axis=1, coordinates=_axis_sampling(spec, "x"))
-    nz, _ny, nx = spec.grid_shape
-    x_start, x_end = _padded_bounds(
-        spec.center[0],
+    col_start, col_stop = _padded_bounds(
+        spec.center[axis_pos[col_axis]],
         spec.width,
         spec.resolution,
-        nx,
+        spec.grid_shape[axis_pos[col_axis]],
         spec.aperture_pad_cells,
-        edges=_axis_edges(spec, "x"),
+        edges=_axis_edges(spec, col_axis),
     )
-    z_start, z_end = _padded_bounds(
-        spec.center[2],
-        spec.height,
-        spec.resolution,
-        nz,
-        spec.aperture_pad_cells,
-        edges=_axis_edges(spec, "z"),
-    )
-    staggered = {"Ex": ex_s, "Ey": ey_s, "Ez": ez_s, "Hx": hx_s, "Hy": hy_s, "Hz": hz_s}
-    indices: dict[str, ComponentIndex] = {
-        "Ex": (
-            *_support_slices("Ex", "y", z_start, z_end, x_start, x_end, ex_s.shape),
-            spec.plane_index,
-        ),
-        "Ey": (
-            *_support_slices("Ey", "y", z_start, z_end, x_start, x_end, ey_s.shape),
-            spec.offset_index,
-        ),
-        "Ez": (
-            *_support_slices("Ez", "y", z_start, z_end, x_start, x_end, ez_s.shape),
-            spec.plane_index,
-        ),
-        "Hx": (
-            *_support_slices("Hx", "y", z_start, z_end, x_start, x_end, hx_s.shape),
-            spec.offset_index,
-        ),
-        "Hy": (
-            *_support_slices("Hy", "y", z_start, z_end, x_start, x_end, hy_s.shape),
-            spec.plane_index,
-        ),
-        "Hz": (
-            *_support_slices("Hz", "y", z_start, z_end, x_start, x_end, hz_s.shape),
-            spec.offset_index,
-        ),
-    }
-    indices = {name: (idx[0], idx[2], idx[1]) for name, idx in indices.items()}
+    indices: dict[str, ComponentIndex] = {}
+    for component, values in staggered.items():
+        row_slice, col_slice = _support_slices(
+            component,
+            spec.axis,
+            row_start,
+            row_stop,
+            col_start,
+            col_stop,
+            values.shape,
+        )
+        placed = {
+            row_axis: row_slice,
+            col_axis: col_slice,
+            spec.axis: _propagation_index(component, spec),
+        }
+        indices[component] = (placed["z"], placed["y"], placed["x"])
+    direction_sign = _direction_sign(spec.direction)
     profiles = _crop_window_all(
-        staggered, z_start, z_end, x_start, x_end, _direction_sign(spec.direction), spec
+        staggered, row_start, row_stop, col_start, col_stop, direction_sign, spec
     )
-    if _direction_sign(spec.direction) < 0.0:
+    # Backward y-normal launches keep the historical electric-field sign.
+    if spec.axis == "y" and direction_sign < 0.0:
         for component in ("Ex", "Ey", "Ez"):
             profiles[component] = -profiles[component]
     initial_power = _normalize_profiles(
         profiles,
-        axis="y",
+        axis=spec.axis,
         measure=_profile_integration_weights(spec, profiles, indices),
-        direction_sign=_direction_sign(spec.direction),
-    )
-    return profiles, indices, {"initial_power": initial_power}
-
-
-def _build_z_profiles(
-    fields: dict[str, np.ndarray],
-    spec: ModePlaneSpec,
-) -> tuple[dict[str, np.ndarray], dict[str, ComponentIndex], dict[str, float]]:
-    ex_s = _stagger_half(fields["Ex"], axis=1, coordinates=_axis_sampling(spec, "x"))
-    ey_s = _stagger_half(fields["Ey"], axis=0, coordinates=_axis_sampling(spec, "y"))
-    ez_s = fields["Ez"]
-    hx_s = _stagger_half(fields["Hx"], axis=0, coordinates=_axis_sampling(spec, "y"))
-    hy_s = _stagger_half(fields["Hy"], axis=1, coordinates=_axis_sampling(spec, "x"))
-    hz_s = _stagger_both(fields["Hz"], spec=spec)
-    nz, ny, nx = spec.grid_shape
-    x_start, x_end = _padded_bounds(
-        spec.center[0],
-        spec.width,
-        spec.resolution,
-        nx,
-        spec.aperture_pad_cells,
-        edges=_axis_edges(spec, "x"),
-    )
-    y_start, y_end = _padded_bounds(
-        spec.center[1],
-        spec.height,
-        spec.resolution,
-        ny,
-        spec.aperture_pad_cells,
-        edges=_axis_edges(spec, "y"),
-    )
-    e_z_idx = int(np.clip(spec.plane_index, 0, nz - 1))
-    h_z_idx = int(np.clip(spec.offset_index, 0, max(nz - 2, 0)))
-    ez_z_idx = int(np.clip(spec.plane_index, 0, max(nz - 2, 0)))
-    hz_z_idx = int(np.clip(spec.offset_index, 0, nz - 1))
-    staggered = {"Ex": ex_s, "Ey": ey_s, "Ez": ez_s, "Hx": hx_s, "Hy": hy_s, "Hz": hz_s}
-    indices: dict[str, ComponentIndex] = {
-        "Ex": (
-            e_z_idx,
-            *_support_slices("Ex", "z", y_start, y_end, x_start, x_end, ex_s.shape),
-        ),
-        "Ey": (
-            e_z_idx,
-            *_support_slices("Ey", "z", y_start, y_end, x_start, x_end, ey_s.shape),
-        ),
-        "Ez": (
-            ez_z_idx,
-            *_support_slices("Ez", "z", y_start, y_end, x_start, x_end, ez_s.shape),
-        ),
-        "Hx": (
-            h_z_idx,
-            *_support_slices("Hx", "z", y_start, y_end, x_start, x_end, hx_s.shape),
-        ),
-        "Hy": (
-            h_z_idx,
-            *_support_slices("Hy", "z", y_start, y_end, x_start, x_end, hy_s.shape),
-        ),
-        "Hz": (
-            hz_z_idx,
-            *_support_slices("Hz", "z", y_start, y_end, x_start, x_end, hz_s.shape),
-        ),
-    }
-    profiles = _crop_window_all(
-        staggered, y_start, y_end, x_start, x_end, _direction_sign(spec.direction), spec
-    )
-    initial_power = _normalize_profiles(
-        profiles,
-        axis="z",
-        measure=_profile_integration_weights(spec, profiles, indices),
-        direction_sign=_direction_sign(spec.direction),
+        direction_sign=direction_sign,
     )
     return profiles, indices, {"initial_power": initial_power}
 
