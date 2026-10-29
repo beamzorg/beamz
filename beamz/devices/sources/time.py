@@ -229,30 +229,8 @@ def sigmoid(t, duration=1, min=0, max=1, t0=0):
 def ramped_cosine(t, amplitude, frequency, phase=None, ramp_duration=None, t_max=None):
     """Sample a cosine carrier with smooth sigmoid turn-on and turn-off.
 
-    Parameters
-    ----------
-    t : array-like
-        Physical sample times in seconds.
-    amplitude : float
-        Carrier amplitude.
-    frequency : float
-        Carrier frequency in hertz.
-    phase : float, optional
-        Carrier phase in radians; defaults to zero.
-    ramp_duration : float, optional
-        Turn-on and turn-off duration in seconds. Defaults to ``t_max / 10``.
-    t_max : float
-        Center time of the falling ramp in seconds.
-
-    Returns
-    -------
-    numpy.ndarray
-        Real waveform with the same shape as ``t``.
-
-    Raises
-    ------
-    ValueError
-        If ``t_max`` is absent or the ramp duration cannot be derived.
+    ``t`` is seconds, ``frequency`` is hertz, and ``phase`` is radians.
+    ``ramp_duration`` defaults to ``t_max / 10``. ``t_max`` is required.
     """
     if phase is None:
         phase = 0
@@ -274,22 +252,10 @@ def gaussian(t, amplitude, center, width):
 
 @dataclass(frozen=True)
 class SampledSignal:
-    """Immutable source-time samples on a uniform time grid.
+    """Immutable in-phase samples on a uniform time grid.
 
-    Parameters
-    ----------
-    values : array-like
-        Real in-phase samples.
-    dt : float
-        Time spacing between samples in seconds.
-    quadrature : array-like, optional
-        Quadrature samples. When omitted, they are derived with a Hilbert
-        transform.
-    start_time : float, default=0
-        Physical time of the first sample.
-    freq0 : float, optional
-        Carrier frequency in hertz. When omitted, the strongest positive FFT
-        bin is used.
+    Omitted ``quadrature`` is a Hilbert transform. Omitted ``freq0`` is the
+    strongest positive FFT bin, in hertz. ``dt`` and ``start_time`` are seconds.
     """
 
     values: np.ndarray
@@ -360,30 +326,12 @@ class SampledSignal:
 
 @dataclass(frozen=True)
 class GaussianPulse:
-    """Define an analytic Gaussian-modulated carrier pulse.
+    """Analytic Gaussian-modulated carrier.
 
-    Parameters
-    ----------
-    freq0 : float
-        Carrier frequency in hertz.
-    fwidth : float
-        Gaussian frequency width in hertz.
-    amplitude : float, default=1.0
-        Peak envelope amplitude.
-    offset : float, default=4.0
-        Pulse-center offset measured in inverse-bandwidth units.
-    remove_dc_component : bool, default=True
-        Remove the analytic DC component with a Gaussian-envelope correction.
-        Sampling a pulse in chunks or extending the run does not change it.
-
-    Notes
-    -----
-    :meth:`sample` returns in-phase and quadrature ``float32`` waveforms.
-
-    Examples
-    --------
-    >>> pulse = GaussianPulse(freq0=193.5e12, fwidth=20e12)
-    >>> signal, quadrature = pulse.sample([0.0, 1e-15, 2e-15])
+    ``freq0`` and ``fwidth`` are hertz. ``offset`` is the pulse center in
+    inverse-bandwidth units. ``remove_dc_component`` subtracts the analytic DC
+    term and does not depend on how the pulse is sampled. :meth:`sample` returns
+    in-phase and quadrature ``float32`` waveforms.
     """
 
     freq0: float
@@ -401,92 +349,37 @@ class GaussianPulse:
         *,
         normalize: bool = False,
     ) -> np.ndarray:
-        """Return the analytic positive-frequency source spectrum.
+        """Return the analytic spectrum at frequencies in hertz.
 
-        Parameters
-        ----------
-        freqs : array-like
-            Frequencies in hertz.
-        normalize : bool, default=False
-            Divide by the magnitude of the spectrum at the carrier frequency.
-
-        Returns
-        -------
-        numpy.ndarray
-            Complex analytic spectrum with the same shape as ``freqs``.
-
-        Examples
-        --------
-        >>> spectrum = pulse.spectrum([190e12, 193.5e12, 200e12], normalize=True)
+        ``normalize`` divides by the carrier-frequency magnitude.
         """
         freq_arr = np.asarray(freqs, dtype=float)
         fwidth = max(float(self.fwidth), 1e-30)
         width = self._time_width()
         peak = float(self.offset) / fwidth
         df = freq_arr - float(self.freq0)
-        spectrum = (
-            float(self.amplitude)
-            * width
-            * np.sqrt(2.0 * np.pi)
-            * np.exp(-0.5 * (df / fwidth) ** 2)
-            * np.exp(1j * 2.0 * np.pi * df * peak)
-        )
-        dc = np.exp(-0.5 * (float(self.freq0) / fwidth) ** 2)
+        phase = np.exp(1j * 2.0 * np.pi * df * peak)
+        pref = float(self.amplitude) * width * np.sqrt(2.0 * np.pi)
+        spectrum = pref * np.exp(-0.5 * (df / fwidth) ** 2) * phase
         if self.remove_dc_component:
-            spectrum -= (
-                float(self.amplitude)
-                * width
-                * np.sqrt(2.0 * np.pi)
-                * dc
-                * np.exp(-0.5 * (freq_arr / fwidth) ** 2)
-                * np.exp(1j * 2.0 * np.pi * df * peak)
-            )
+            dc = np.exp(-0.5 * (float(self.freq0) / fwidth) ** 2)
+            spectrum -= pref * dc * np.exp(-0.5 * (freq_arr / fwidth) ** 2) * phase
         if normalize:
-            center = float(self.amplitude) * width * np.sqrt(2.0 * np.pi)
+            center = pref
             if self.remove_dc_component:
                 center *= -np.expm1(-((float(self.freq0) / fwidth) ** 2))
             spectrum = spectrum / max(abs(center), 1e-300)
         return np.asarray(spectrum, dtype=np.complex128)
 
     def dft_normalization_spectrum(self, freqs: npt.ArrayLike) -> np.ndarray:
-        """Return the source spectrum in BeamZ's native monitor normalization.
-
-        Parameters
-        ----------
-        freqs : array-like
-            Frequencies in hertz.
-
-        Returns
-        -------
-        numpy.ndarray
-            Complex normalized spectrum in BeamZ's monitor-DFT convention.
-
-        Notes
-        -----
-        This method supplies source normalization for frequency-domain monitor
-        results. Most users should call ``SimulationResults.renormalize`` rather
-        than applying it manually.
-        """
+        """Return the monitor-DFT spectrum. Prefer ``SimulationResults.renormalize``."""
         return self.spectrum(freqs, normalize=True) / (2.0 * np.pi)
 
     def sample(self, time: npt.ArrayLike) -> tuple[np.ndarray, np.ndarray]:
-        """Sample in-phase and quadrature waveforms at times in seconds.
+        """Sample in-phase and quadrature ``float32`` waveforms at times in seconds.
 
-        Parameters
-        ----------
-        time : array-like
-            Physical sample times in seconds.
-
-        Returns
-        -------
-        signal, quadrature : tuple of numpy.ndarray
-            In-phase and quadrature ``float32`` samples matching ``time``.
-
-        Notes
-        -----
-        When ``remove_dc_component`` is enabled, subtract the analytically
-        integrated carrier from its envelope in both quadratures. The resulting
-        pulse has zero continuous-time integral and no window-dependent pedestal.
+        With ``remove_dc_component``, both quadratures lose the analytic carrier
+        integral, so the pulse has zero continuous-time integral.
         """
         t = np.asarray(time, dtype=float)
         width = self._time_width()
@@ -538,14 +431,7 @@ def gaussian_band_pulse(
     min_tail_uoc=90.0,
     max_tail_uoc=180.0,
 ):
-    """Create a Meep-style Gaussian pulse and matching simulation timeline.
-
-    This captures the common broadband FDTD setup pattern:
-    - choose the pulse width from the requested frequency span
-    - delay the pulse peak by a fixed multiple of sigma
-    - extend the time array with both a minimum path-based settling window and
-      a larger hard cap for adaptive stop conditions
-    """
+    """Create a broadband Gaussian pulse and a path-based simulation timeline."""
 
     freqs = np.asarray(frequencies, dtype=float)
     df = max(float(np.ptp(freqs)), 1e-12)

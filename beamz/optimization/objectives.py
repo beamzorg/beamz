@@ -25,13 +25,10 @@ from beamz.simulation.observe import normalization_from_result
 
 
 class ModalObjective:
-    """Composable scalar modal objective; all optimization objectives are maximized.
+    """Composable scalar modal objective. Every objective is maximized.
 
-    Combine objectives with ``+``, ``-``, and multiplication by finite real weights.
-    For example, ``transmission - 0.2 * reflection`` rewards transmission while
-    penalizing reflection. A weighted combination uses one forward simulation.
-    Its derivative uses one autodiff reverse pass or frequency-grouped adjoint
-    simulations, according to the selected gradient backend.
+    ``+``, ``-``, and finite real weights share one forward simulation. The
+    derivative is one autodiff reverse pass or frequency-grouped adjoint runs.
     """
 
     def __add__(self, other):
@@ -81,16 +78,11 @@ class ModalObjective:
 class ModePower(ModalObjective):
     """Mean modal power or transmission over selected monitor frequencies.
 
-    ``frequencies=None`` uses every target-monitor frequency with equal weight.
-    Otherwise supply a nonempty sequence in Hz; every entry must match a recorded
-    frequency (no interpolation). To assign different spectral weights, combine
-    multiple ``ModePower`` terms. One frequency retains the original API behavior.
-
-    ``direction`` matches ``results.mode(name).amps``. With ``reference_monitor``,
-    divide each power by that monitor's power at the *same frequency*, then average
-    the ratios. The reference defaults to the positive-direction fundamental mode.
-    Without a reference, divide by nominal source power. Both mode bases stay fixed;
-    the derivative includes the measured reference amplitude's dependence on fields.
+    ``frequencies=None`` uses every recorded frequency with equal weight. A
+    supplied sequence is hertz and must match recorded frequencies exactly.
+    ``reference_monitor`` divides by that monitor's same-frequency power before
+    the mean; otherwise divide by nominal source power. Mode bases stay fixed.
+    The derivative includes the measured reference amplitude.
     """
 
     monitor: str
@@ -355,14 +347,10 @@ class ModePower(ModalObjective):
 
 @dataclass(frozen=True)
 class SoftMinModePower(ModePower):
-    """Smooth lower bound on the weakest selected modal transmission.
+    """Smooth lower bound ``-temperature * logsumexp(-p / temperature)``.
 
-    Reduce the normalized spectrum ``p`` as
-    ``-temperature * logsumexp(-p / temperature)``. For N frequencies this
-    lies between ``min(p) - temperature * log(N)`` and ``min(p)``. There is
-    no division by N inside the logarithm. A smaller temperature focuses the
-    derivative more strongly on the weakest frequencies. ``spectra`` still
-    returns the unreduced physical powers.
+    For N frequencies this lies between ``min(p) - temperature * log(N)`` and
+    ``min(p)``. ``spectra`` still returns the unreduced physical powers.
     """
 
     temperature: float = 0.03
@@ -384,11 +372,9 @@ class SoftMinModePower(ModePower):
 
 @dataclass(frozen=True, init=False)
 class WeightedObjective(ModalObjective):
-    """A weighted sum of reduced modal powers, evaluated in one FDTD solve.
+    """Weighted sum of reduced modal powers from one FDTD solve.
 
-    Negative weights penalize unwanted powers. Weights are not automatically
-    normalized, and no power values are clipped. Usually construct this through
-    objective arithmetic, e.g. ``0.5 * (short_to_top + long_to_bottom) - leakage``.
+    Negative weights penalize. Weights are not normalized and powers are not clipped.
     """
 
     _terms: tuple[ModePower, ...]

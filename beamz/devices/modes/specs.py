@@ -13,40 +13,13 @@ from beamz.devices._immutable import immutable_snapshot, readonly_array
 
 @dataclass(frozen=True)
 class ModeSpec:
-    """Configure mode selection for previews, sources, and monitors.
+    """Mode selection for previews, sources, and monitors.
 
-    Parameters
-    ----------
-    num_modes : int, default=1
-        Minimum number of eigenmode candidates; clamped to at least one.
-        Monitors return this many modal amplitudes. Polarization selection may
-        search additional candidates before returning the requested modes.
-    mode_index : int, default=0
-        Zero-based selected mode after polarization-aware ordering.
-    polarization : {"te", "tm"}, optional
-        Preferred polarization used to order candidate modes.
-    target_neff : float, optional
-        Effective index near which the eigensolver should search.
-    num_freqs : int, optional
-        Number of frequency samples used for a broadband mode representation.
-
-    force_symmetry : bool, default=False
-        Project 2D transverse solver planes about validated physical material/grid
-        mirrors. One-dimensional line profiles remain unprojected.
-        Applied before Yee interpolation and independent Maxwell refinement.
-
-    Examples
-    --------
-    >>> spec = ModeSpec(num_modes=4, mode_index=1, polarization="te")
-
-    Notes
-    -----
-    ``num_modes`` sets the minimum eigensolver candidate count, whereas
-    ``mode_index`` selects the mode launched or projected after polarization-aware
-    ordering. The 3D solver oversamples candidates when polarization is specified
-    so a one-mode request can select either polarization family.
-    ``num_freqs`` controls broadband mode reconstruction and is independent of the
-    frequencies configured on a monitor.
+    ``num_modes`` is the minimum candidate count and the number of monitor
+    amplitudes. ``mode_index`` selects one mode after polarization-aware ordering.
+    ``num_freqs`` is the broadband reconstruction count, independent of monitor
+    frequencies. ``force_symmetry`` projects 2D transverse planes about validated
+    mirrors before Yee interpolation; line profiles stay unprojected.
     """
 
     num_modes: int = 1
@@ -72,47 +45,12 @@ class ModeSpec:
 
 @dataclass(frozen=True)
 class ModeData:
-    """Store immutable modal fields returned by a mode solve.
+    """Immutable modal fields from a mode solve.
 
-    Parameters
-    ----------
-    frequencies : array-like
-        Solved frequencies in hertz, shape ``(num_frequencies,)``.
-    neffs : array-like
-        Complex effective indices, shape ``(num_frequencies, num_modes)``.
-    e_fields : array-like
-        Complex electric modal fields with frequency and mode leading axes.
-    h_fields : array-like
-        Complex magnetic modal fields matching ``e_fields``.
-    eps_profiles : array-like
-        Relative-permittivity cross sections used by the eigensolver.
-    resolution : float
-        Cross-section cell size in metres.
-    solver_direction : str, optional
-        Signed propagation direction used by the eigensolver.
-    axis : str, optional
-        Plane-normal axis, one of ``"x"``, ``"y"``, or ``"z"``.
-    center : tuple, optional
-        Mode-plane center in ``(x, y, z)`` order, in metres.
-    plane : object, optional
-        Original public plane specification.
-    crop_slices : tuple of slice, optional
-        Slices locating the solved aperture inside the full material plane.
-    eps_profile_fulls : array-like, optional
-        Full uncropped relative-permittivity planes for later analysis.
-    grid_edges : tuple of array-like, optional
-        Physical cell-edge coordinates for each transverse field axis, in metres.
-        The arrays follow the storage order of the trailing modal-field axes.
-    transverse_axes : tuple of str, optional
-        Physical axis names corresponding to ``grid_edges``.
-
-    diagnostics : tuple of mappings, optional
-        Per-frequency processing diagnostics, including requested/applied symmetry.
-        Entries and nested mappings are immutable snapshots.
-
-    Notes
-    -----
-    Array inputs are copied and made read-only.
+    Leading axes of ``neffs``, ``e_fields``, and ``h_fields`` are frequency then
+    mode. ``grid_edges`` are physical cell edges in the trailing field-axis
+    order, named by ``transverse_axes``. Arrays are copied and made read-only.
+    ``diagnostics`` snapshots requested and applied symmetry per frequency.
     """
 
     frequencies: np.ndarray
@@ -143,19 +81,16 @@ class ModeData:
     )
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "frequencies", readonly_array(self.frequencies, dtype=float)
-        )
-        object.__setattr__(
-            self, "neffs", readonly_array(self.neffs, dtype=np.complex128)
-        )
-        object.__setattr__(
-            self, "e_fields", readonly_array(self.e_fields, dtype=np.complex128)
-        )
-        object.__setattr__(
-            self, "h_fields", readonly_array(self.h_fields, dtype=np.complex128)
-        )
-        object.__setattr__(self, "eps_profiles", readonly_array(self.eps_profiles))
+        for name, dtype in (
+            ("frequencies", float),
+            ("neffs", np.complex128),
+            ("e_fields", np.complex128),
+            ("h_fields", np.complex128),
+            ("eps_profiles", None),
+        ):
+            object.__setattr__(
+                self, name, readonly_array(getattr(self, name), dtype=dtype)
+            )
         if self.eps_profile_fulls is not None:
             object.__setattr__(
                 self, "eps_profile_fulls", readonly_array(self.eps_profile_fulls)

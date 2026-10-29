@@ -15,6 +15,7 @@ from beamz.devices._immutable import (
     immutable_snapshot,
     nonnegative_finite_extents,
     normalize_source_signal,
+    shifted_coordinates,
 )
 from beamz.devices.modes.specs import ModeData, ModeSpec
 
@@ -64,6 +65,28 @@ def _center_size(
     return center, size
 
 
+def _temporal_spectrum(
+    source_time, freqs, *, normalize: bool, retry_without_normalize=False
+):
+    """Return a source-time spectrum, or None when the waveform has none."""
+    if source_time is None:
+        return None
+    frequency = np.asarray(freqs, dtype=float)
+    if normalize and hasattr(source_time, "dft_normalization_spectrum"):
+        return np.asarray(
+            source_time.dft_normalization_spectrum(frequency), dtype=np.complex128
+        )
+    if not hasattr(source_time, "spectrum"):
+        return None
+    try:
+        spectrum = source_time.spectrum(frequency, normalize=normalize)
+    except TypeError:
+        if not retry_without_normalize:
+            raise
+        spectrum = source_time.spectrum(frequency)
+    return np.asarray(spectrum, dtype=np.complex128)
+
+
 def plane_axis_and_spans(plane):
     """Return the normal axis, center, and tangential extents of a plane."""
     center, size = _center_size(plane)
@@ -80,16 +103,10 @@ def plane_axis_and_spans(plane):
 class ModeSource(_Replaceable):
     """Inject a solved waveguide mode through a finite plane.
 
-    The zero extent in ``size`` selects the injection axis. ``direction`` is
-    ``"+"`` or ``"-"`` along that axis.
-    Temporal behavior belongs exclusively to ``source_time``; sampled drives
-    use :class:`~beamz.SampledSignal`.
-
-    ``power`` sets watts in the source plane's discrete Poynting quadrature.
-    In 3D, source calibration and ``ModeMonitorData.power`` both include normal
-    Yee interpolation. Equivalent source and monitor sampling planes therefore
-    use the same power convention; finite aperture and discretization errors
-    can still affect a downstream measurement.
+    The zero extent in ``size`` selects the axis. ``direction`` is ``"+"`` or
+    ``"-"``. ``power`` is watts in the source plane's discrete Poynting
+    quadrature. In 3D that quadrature matches ``ModeMonitorData.power``, including
+    normal Yee interpolation; aperture and discretization error can remain.
     """
 
     center: tuple[float, float, float]
@@ -156,13 +173,12 @@ class ModeSource(_Replaceable):
 
     def shifted(self, offset):
         """Return a translated source."""
-        delta = tuple(float(value) for value in offset)
-        if len(delta) != 3:
-            raise ValueError("ModeSource offsets must contain three values.")
         return replace(
             self,
-            center=tuple(
-                value + shift for value, shift in zip(self.center, delta, strict=True)
+            center=shifted_coordinates(
+                self.center,
+                offset,
+                mismatch="ModeSource offsets must contain three values.",
             ),
         )
 
@@ -187,18 +203,15 @@ class ModeSource(_Replaceable):
 
     def source_spectrum(self, freqs, *, normalize: bool = True) -> np.ndarray | None:
         """Return the complex temporal spectrum at frequencies in hertz."""
-        frequency = np.asarray(freqs, dtype=float)
-        if normalize and hasattr(self.source_time, "dft_normalization_spectrum"):
-            spectrum = self.source_time.dft_normalization_spectrum(frequency)
-            return np.asarray(spectrum, dtype=np.complex128) * np.sqrt(
-                np.maximum(frequency, 0.0) / self.frequency
-            )
-        if not hasattr(self.source_time, "spectrum"):
-            return None
-        return np.asarray(
-            self.source_time.spectrum(frequency, normalize=normalize),
-            dtype=np.complex128,
-        )
+        spectrum = _temporal_spectrum(self.source_time, freqs, normalize=normalize)
+        if (
+            spectrum is not None
+            and normalize
+            and hasattr(self.source_time, "dft_normalization_spectrum")
+        ):
+            frequency = np.asarray(freqs, dtype=float)
+            spectrum = spectrum * np.sqrt(np.maximum(frequency, 0.0) / self.frequency)
+        return spectrum
 
     def launch_power_normalization_spectrum(self, freqs, *, fields=None, dt=None):
         """Return frequency-dependent launched-power normalization."""
@@ -208,31 +221,11 @@ class ModeSource(_Replaceable):
 
 @dataclass(frozen=True, slots=True)
 class GaussianSource(_Replaceable):
-    """Inject a Gaussian spatial profile into an FDTD simulation.
+    """Inject a Gaussian spatial profile.
 
-    In 2D it excites the active out-of-plane component: ``Ez`` for TMz and
-    ``Hz`` for TEz. In 3D it retains the existing compatible electric-component
-    behavior. Position and width remain differentiable through JAX.
-
-    Parameters
-    ----------
-    position : tuple of float
-        Source center in ``(x, y)`` or ``(x, y, z)`` order, in metres.
-    width : float
-        Positive Gaussian standard-width scale in metres.
-    signal : array-like
-        Immutable temporal samples evaluated at the simulation time step.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> import beamz as bz
-    >>> time = np.linspace(0.0, 1e-13, 100)
-    >>> source = bz.GaussianSource(
-    ...     position=(1 * bz.um, 1.5 * bz.um),
-    ...     width=0.2 * bz.um,
-    ...     signal=np.sin(2 * np.pi * 2e14 * time),
-    ... )
+    In 2D this drives ``Ez`` (TMz) or ``Hz`` (TEz). In 3D it drives the compatible
+    electric component. ``position`` is metres and ``width`` is the positive
+    Gaussian scale. ``signal`` is an immutable sample array.
     """
 
     position: tuple[float, ...]
@@ -255,21 +248,14 @@ class GaussianSource(_Replaceable):
         )
 
     def shifted(self, offset):
-        """Return the source translated by a physical coordinate offset.
-
-        Parameters
-        ----------
-        offset : tuple of float
-            Cartesian translation in metres.
-        """
-        offset = tuple(float(v) for v in offset)
-        if len(offset) != len(self.position):
-            raise ValueError(
-                "GaussianSource offset dimensionality must match its position."
-            )
+        """Return the source translated by a physical coordinate offset."""
         return replace(
             self,
-            position=tuple(a + b for a, b in zip(self.position, offset, strict=True)),
+            position=shifted_coordinates(
+                self.position,
+                offset,
+                mismatch="GaussianSource offset dimensionality must match its position.",
+            ),
         )
 
 
@@ -292,48 +278,12 @@ def _as_direction(value) -> Direction3D:
 
 @dataclass(frozen=True, slots=True)
 class GaussianBeamSource(_Replaceable):
-    """Launch an angled 3D Gaussian beam through a planar TF/SF boundary.
+    """Angled 3D Gaussian beam launched through a planar TF/SF boundary.
 
-    Parameters
-    ----------
-    center : tuple of float
-        Source-plane center ``(x, y, z)`` in metres.
-    size : tuple of float
-        Plane extents ``(x, y, z)`` in metres; one extent must be zero.
-    source_time : object
-        Analytic temporal source providing samples and optionally a spectrum.
-    direction : signed axis, default="-z"
-        Direction normal to the source plane.
-    angle_theta : float, default=0
-        Polar incidence angle in radians relative to the plane normal.
-    angle_phi : float, default=0
-        Azimuthal incidence angle in radians.
-    pol_angle : float, default=0
-        Linear-polarization angle in radians.
-    waist_radius : float, optional
-        Beam waist radius in metres; derived from the aperture when omitted.
-    waist_distance : float, default=0
-        Signed distance from the source plane to the waist, in metres.
-    power : float, default=1.0
-        Requested non-negative launched power in watts.
-    background_index : float, default=1.0
-        Refractive index used for Gaussian propagation parameters.
-    wavelength : float, optional
-        Vacuum wavelength in metres; otherwise derived from ``source_time``.
-    max_shift : int, default=1
-        Maximum discrete Yee-plane shift used by residual construction.
-
-    Examples
-    --------
-    >>> import beamz as bz
-    >>> pulse = bz.GaussianPulse(freq0=193.5e12, fwidth=20e12)
-    >>> source = bz.GaussianBeamSource(
-    ...     center=(2 * bz.um, 2 * bz.um, 1 * bz.um),
-    ...     size=(2 * bz.um, 2 * bz.um, 0.0),
-    ...     source_time=pulse,
-    ...     direction="-z",
-    ...     waist_radius=0.6 * bz.um,
-    ... )
+    ``size`` has one zero extent, the plane normal. Angles are radians.
+    ``waist_radius`` is derived from the aperture when omitted. ``power`` is
+    watts. ``wavelength`` is the vacuum wavelength, otherwise taken from
+    ``source_time``. ``max_shift`` is the largest Yee-plane residual shift.
     """
 
     center: tuple[float, float, float]
@@ -355,15 +305,13 @@ class GaussianBeamSource(_Replaceable):
         object.__setattr__(self, "size", canonical_tuple(self.size, dtype=float))
         object.__setattr__(self, "source_time", immutable_snapshot(self.source_time))
         object.__setattr__(self, "direction", _as_direction(self.direction))
-        object.__setattr__(self, "angle_theta", float(self.angle_theta))
-        object.__setattr__(self, "angle_phi", float(self.angle_phi))
-        object.__setattr__(self, "pol_angle", float(self.pol_angle))
+        for name in ("angle_theta", "angle_phi", "pol_angle", "waist_distance"):
+            object.__setattr__(self, name, float(getattr(self, name)))
         object.__setattr__(
             self,
             "waist_radius",
             None if self.waist_radius is None else float(self.waist_radius),
         )
-        object.__setattr__(self, "waist_distance", float(self.waist_distance))
         power_value = float(self.power)
         if not np.isfinite(power_value) or power_value < 0.0:
             raise ValueError(
@@ -380,73 +328,30 @@ class GaussianBeamSource(_Replaceable):
         object.__setattr__(self, "max_shift", int(max(1, self.max_shift)))
 
     def shifted(self, offset):
-        """Return the beam plane translated by an ``(x, y, z)`` offset.
-
-        Parameters
-        ----------
-        offset : tuple of float
-            Cartesian translation in metres.
-        """
+        """Return the beam plane translated by an ``(x, y, z)`` offset."""
         return replace(
             self,
-            center=tuple(
-                a + b for a, b in zip(self.center, tuple(offset), strict=True)
+            center=shifted_coordinates(
+                self.center,
+                offset,
+                mismatch="GaussianBeamSource offsets must contain three values.",
             ),
         )
 
     def source_spectrum(self, freqs, *, normalize: bool = True) -> np.ndarray | None:
-        """Return the complex temporal spectrum at frequencies in hertz.
-
-        Parameters
-        ----------
-        freqs : array-like
-            Frequencies in hertz at which to evaluate the temporal waveform.
-        normalize : bool, default=True
-            Apply the waveform's DFT normalization when available.
-        """
-        source_time = self.source_time
-        if source_time is None:
-            return None
-        freq_arr = np.asarray(freqs, dtype=float)
-        if normalize and hasattr(source_time, "dft_normalization_spectrum"):
-            return np.asarray(
-                source_time.dft_normalization_spectrum(freq_arr),
-                dtype=np.complex128,
-            )
-        if hasattr(source_time, "spectrum"):
-            try:
-                return np.asarray(
-                    source_time.spectrum(freq_arr, normalize=normalize),
-                    dtype=np.complex128,
-                )
-            except TypeError:
-                return np.asarray(source_time.spectrum(freq_arr), dtype=np.complex128)
-        return None
+        """Return the complex temporal spectrum at frequencies in hertz."""
+        return _temporal_spectrum(
+            self.source_time, freqs, normalize=normalize, retry_without_normalize=True
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class CustomSource(_Replaceable):
-    """Describe an immutable precomputed field injection.
+    """Immutable precomputed field injection.
 
-    Parameters
-    ----------
-    component : str
-        Target field component, such as ``"Ez"`` or ``"Hy"``.
-    timing : {"e", "h"}
-        Update half-step on which the source is applied.
-    index : tuple
-        NumPy-style index selecting target cells in the component array.
-    coeff : array-like
-        Spatial injection coefficient broadcastable to the indexed region.
-    waveform : array-like
-        Per-step temporal samples.
-    target_shape : tuple of int
-        Expected full target component shape used for validation.
-
-    Notes
-    -----
-    All array-like inputs are recursively snapshotted to prevent runtime
-    mutation from changing a compiled source.
+    ``timing`` is ``"e"`` or ``"h"``. ``index`` selects cells, ``coeff`` is the
+    spatial weight, and ``waveform`` holds per-step samples. Inputs are
+    snapshotted so later mutation cannot change a compiled source.
     """
 
     component: str
@@ -476,14 +381,12 @@ class CustomSource(_Replaceable):
 class PlaneWaveSource(GaussianBeamSource):
     """Uniform plane wave with an optional transverse wavevector in rad/m.
 
-    Uses the same staggered Huygens injection and power normalization as
-    GaussianBeamSource, with an exactly uniform transverse envelope. For a
-    periodic cell, set size to cover the whole cell. For oblique incidence,
-    ``transverse_wavevector`` must match the Bloch boundary and ``source_time``
-    must supply narrowband in-phase/quadrature samples (fwidth <= 0.1 * freq0).
-    The polarization angle mixes s and p relative to the incidence plane.
-    The transverse wavevector is fixed across the pulse spectrum; fixed-angle
-    spectra require separate frequency runs. ``power`` is total power through the aperture.
+    Injection and power match GaussianBeamSource, with a uniform envelope.
+    Oblique incidence requires a Bloch-matched ``transverse_wavevector`` and a
+    narrowband quadrature ``source_time`` (``fwidth <= 0.1 * freq0``). The
+    wavevector is fixed across the pulse; fixed-angle spectra need separate
+    runs. ``power`` is the total power through the aperture. ``angle_theta`` and
+    ``waist_distance`` must stay zero.
     """
 
     transverse_wavevector: tuple[float, float, float] = (0.0, 0.0, 0.0)

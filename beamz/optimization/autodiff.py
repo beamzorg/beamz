@@ -19,10 +19,7 @@ _TRANSFORM_STATIC_ARGS = (
 
 @partial(jax.jit, static_argnames=["radius"])
 def generate_conic_kernel(radius: int):
-    """
-    Generate a 2D conic kernel (linear decay).
-    w(r) = max(0, 1 - r/R)
-    """
+    """Return a normalized 2D conic kernel, ``max(0, 1 - r/R)``."""
     radius = int(max(1, radius))
     y, x = jnp.ogrid[-radius : radius + 1, -radius : radius + 1]
     weights = jnp.maximum(0.0, 1.0 - jnp.sqrt(x**2 + y**2) / radius)
@@ -31,15 +28,7 @@ def generate_conic_kernel(radius: int):
 
 @partial(jax.jit, static_argnames=["radius"])
 def masked_conic_filter(values, mask, radius: int, fixed_structure_mask=None):
-    """
-    Apply conic filter with hard mask boundaries (literature-standard).
-    Smoothness comes ONLY from the filter kernel radius.
-
-    This follows standard topology optimization practice (Bendsøe, Sigmund, Hammond):
-    - Hard boolean mask defines optimization region
-    - Filter kernel radius controls minimum feature size
-    - No soft boundary blending or protection zones
-    """
+    """Conic-filter inside a hard design mask. The radius is the feature scale."""
     radius = int(max(0, radius))
     if radius <= 0:
         return jnp.where(mask, values, 0.0), jnp.ones_like(mask)
@@ -57,27 +46,19 @@ def masked_conic_filter(values, mask, radius: int, fixed_structure_mask=None):
 
 @partial(jax.jit, static_argnames=["axis"])
 def smooth_max(x, axis=None, tau=0.1):
-    """
-    Smooth maximum approximation: tau * log(sum(exp(x/tau)))
-    Also known as LogSumExp.
-    """
+    """Smooth maximum, ``tau * logsumexp(x / tau)``."""
     return tau * jax.scipy.special.logsumexp(x / tau, axis=axis)
 
 
 @partial(jax.jit, static_argnames=["axis"])
 def smooth_min(x, axis=None, tau=0.1):
-    """
-    Smooth minimum approximation: -smooth_max(-x)
-    """
+    """Smooth minimum, ``-smooth_max(-x)``."""
     return -smooth_max(-x, axis=axis, tau=tau)
 
 
 @partial(jax.jit, static_argnames=["radius"])
 def grayscale_erosion(values, radius, tau=0.05):
-    """
-    Grayscale erosion using smooth minimum filter with a disk structuring element.
-    Uses 2D shifts to implement isotropic erosion.
-    """
+    """Isotropic grayscale erosion with a smooth disk minimum."""
     radius = int(max(0, radius))
     if radius <= 0:
         return values
@@ -116,17 +97,10 @@ def grayscale_closing(values, radius, tau=0.05):
 def masked_morphological_filter(
     values, mask, radius, operation="openclose", tau=0.05, fixed_structure_mask=None
 ):
-    """
-    Apply masked morphological filtering with hard boundaries (literature-standard).
+    """Morphological filter inside a hard mask.
 
-    Args:
-        values: Density field
-        mask: Design region mask (hard boolean boundary)
-        radius: Filter radius in cells
-        operation: 'erosion', 'dilation', 'opening', 'closing', 'openclose' (opening then closing)
-        tau: Smoothness temperature for differentiable min/max
-        fixed_structure_mask: Optional boolean mask of fixed solid structures (e.g. waveguides)
-                              used to provide context for filtering without forcing values.
+    ``operation`` is erosion, dilation, opening, closing, or openclose.
+    Fixed-solid cells supply filter context and are not written into the result.
     """
     # Treat fixed structures as solid context, then mask the filtered result.
     filtered = (
@@ -177,16 +151,10 @@ def transform_density(
     fixed_solid=None,
     fixed_void=None,
 ):
-    """
-    Full density transform: Filter -> Project (literature-standard).
-    Returns the physical density [0, 1] with hard boundary masking.
+    """Filter then project density onto ``[0, 1]`` inside the hard mask.
 
-    Args:
-        filter_type: 'morphological' or 'conic' (recommended)
-        morphology_operation: 'opening', 'closing', 'openclose'
-        fixed_structure_mask: Optional mask for fixed structures
-        projection_type: 'heaviside' (default) or 'ssp'
-        ssp_smoothing_radius: SSP smoothing radius in grid-cell units
+    ``filter_type`` is ``"conic"`` or ``"morphological"``. ``projection_type`` is
+    ``"heaviside"``, ``"ssp"``, or ``"identity"``.
     """
     density = apply_fixed_density(density, fixed_solid, fixed_void)
     # Apply filter (returns hard-masked result)
@@ -235,10 +203,7 @@ def compute_parameter_gradient_vjp(
     fixed_solid=None,
     fixed_void=None,
 ):
-    """
-    Compute gradient w.r.t. design density using VJP.
-    Supports both morphological and conic filters with hard boundary masking (literature-standard).
-    """
+    """Return the latent-density VJP of :func:`transform_density`."""
 
     # Define a wrapper for the transform to differentiate
     def transform_wrapper(d):
