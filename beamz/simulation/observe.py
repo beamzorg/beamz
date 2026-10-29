@@ -440,39 +440,28 @@ def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any
     # concrete empty arrays of the same ranks as an enabled state.
     specs = program.monitors
     dft_dtype = monitor_dft_accumulator_dtype()
-    if not specs:
-        values = tuple(
-            jnp.zeros(shape, dtype=dtype)
-            for shape, dtype in (
-                ((0, 0), jnp.float32),
-                ((0, 0), jnp.float32),
-                ((0,), jnp.int32),
-                ((0, 0), jnp.float32),
-                ((0, 0), jnp.float32),
-                ((0, 0), jnp.float32),
-                ((0, 0), jnp.float32),
-                ((0,), dft_dtype),
-                ((0,), dft_dtype),
-                ((0,), dft_dtype),
-            )
-        ) + ((), (), (), ())
-        return dict(zip(MONITOR_FIELDS, values, strict=True))
     # 2. Keep scalar histories rectangular, but size vector DFT arenas by the exact sum
     # of monitor payloads. Offsets live in each immutable CompiledMonitorSpec.
     n = len(specs)
-    max_records = max(
-        1,
-        monitor_state_size(
-            specs,
-            program.config.num_steps if num_steps is None else int(num_steps),
-        ),
+    max_records = (
+        max(
+            1,
+            monitor_state_size(
+                specs,
+                program.config.num_steps if num_steps is None else int(num_steps),
+            ),
+        )
+        if specs
+        else 0
     )
     max_freq = monitor_frequency_size(specs)
     dft_value_count = monitor_dft_value_size(specs)
     dft_weight_count = monitor_dft_weight_size(specs)
     recorder_specs = tuple(spec for spec in specs if spec.recorder_index >= 0)
-    recorder_steps = max(
-        1, int(program.config.num_steps if num_steps is None else num_steps)
+    recorder_steps = (
+        max(1, int(program.config.num_steps if num_steps is None else num_steps))
+        if specs
+        else 0
     )
     # 3. Initialize scalar phase recurrence at 1+0i and every accumulated quantity at zero.
     values = (
