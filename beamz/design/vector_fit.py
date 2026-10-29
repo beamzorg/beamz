@@ -1,10 +1,8 @@
-"""Independent scalar vector fitting, with the exp(-i omega t) convention.
+"""Scalar vector fitting in the exp(-i omega t) convention.
 
-Implements pole relocation from Gustavsen & Semlyen (1999), DOI
-10.1109/61.772353, and relaxed normalization from Gustavsen (2006), DOI
-10.1109/TPWRD.2005.860281. Real coefficients enforce conjugate symmetry.
-Passivity is enforced by constrained residue fitting and audited numerically;
-it is not a global mathematical certificate. No external fitter is used.
+Pole relocation follows Gustavsen & Semlyen (1999) and Gustavsen (2006).
+Real coefficients enforce conjugate symmetry. Passivity is a constrained
+residue fit audited numerically, not a global certificate.
 """
 
 from itertools import product
@@ -242,17 +240,12 @@ def fit_nk_vector(
     num_iters=200,
     tolerance_rms=0.02,
 ):
-    """Fit passive pole/residue media by scalar vector fitting using NumPy/SciPy.
+    """Fit passive pole/residue media to tabulated n,k (wavelengths in metres).
 
-    Wavelengths are metres. Weights apply to Re(epsilon), Im(epsilon), normalized
-    to mean one; weighted RMS is sqrt(mean((wr*dRe)**2+(wi*dIm)**2)). Tries
-    1..max_poles stored poles (each complex entry represents a conjugate pair),
-    both standard/relaxed relocation, and real/complex initial poles with
-    linear/log spacing. Real poles are stored with half their residue to match
-    the PoleResidue convention.
+    Weights apply to Re and Im epsilon and are normalized to mean one. Tries
+    stored-pole counts, standard and relaxed relocation, and real or complex
+    initial poles. Real poles keep half their residue, matching PoleResidue.
     Returns the best passive model and diagnostics even if tolerance is missed.
-    Passivity is sampled over seven decades on either side of the fit band,
-    with extra samples around resonances. No global passivity proof is claimed.
     """
     wl, n, k = _validate_nk(wavelengths, n, k, unique=True)
     weights = np.asarray(weights, dtype=float)

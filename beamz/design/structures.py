@@ -45,36 +45,19 @@ def _vertices(values, z=0.0, *, ccw=True):
 
 
 def _rotate(path, angle, axis, center):
-    cx, cy, cz = center
+    if axis not in {"x", "y", "z"}:
+        raise ValueError(f"Invalid rotation axis {axis!r}; expected 'x', 'y', or 'z'.")
+    unit = np.zeros(3)
+    unit["xyz".index(axis)] = 1.0
     cos_a, sin_a = np.cos(angle), np.sin(angle)
-    if axis == "z":
-        return tuple(
-            (
-                cx + (x - cx) * cos_a - (y - cy) * sin_a,
-                cy + (x - cx) * sin_a + (y - cy) * cos_a,
-                z,
-            )
-            for x, y, z in path
-        )
-    if axis == "x":
-        return tuple(
-            (
-                x,
-                cy + (y - cy) * cos_a - (z - cz) * sin_a,
-                cz + (y - cy) * sin_a + (z - cz) * cos_a,
-            )
-            for x, y, z in path
-        )
-    if axis == "y":
-        return tuple(
-            (
-                cx + (x - cx) * cos_a + (z - cz) * sin_a,
-                y,
-                cz - (x - cx) * sin_a + (z - cz) * cos_a,
-            )
-            for x, y, z in path
-        )
-    raise ValueError(f"Invalid rotation axis {axis!r}; expected 'x', 'y', or 'z'.")
+    origin = np.asarray(center, dtype=float)
+    rotated = []
+    for vertex in path:
+        offset = np.asarray(vertex, dtype=float) - origin
+        spun = offset * cos_a + np.cross(unit, offset) * sin_a
+        spun += unit * np.dot(unit, offset) * (1.0 - cos_a)
+        rotated.append(tuple(origin + spun))
+    return tuple(rotated)
 
 
 def _path_center(path):

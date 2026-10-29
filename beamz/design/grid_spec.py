@@ -82,35 +82,11 @@ class MeshOverride:
 class GridSpec:
     """Configure automatic or explicit FDTD spatial discretization.
 
-    Parameters
-    ----------
-    min_steps_per_wvl : float, default=10.0
-        Minimum cells per wavelength inside the highest-index material.
-    wavelength : float, optional
-        Vacuum wavelength in metres used to derive automatic resolution.
-    resolution : float, optional
-        Explicit uniform cell size in metres. When present, it takes precedence
-        over ``wavelength`` and ``min_steps_per_wvl``.
-    courant : float, default=0.99
-        Fraction of the dimensional Courant stability limit used for time steps.
-    max_scale : float, default=1.3
-        Hard maximum ratio between neighboring cell widths on a graded axis.
-    min_steps_per_sim_size : float, default=10.0
-        Minimum number of cells across each active simulation dimension.
-    min_feature_cells : float, default=1.0
-        Minimum target cells across detected structure thicknesses and gaps.
-        Values above one opt into additional geometry-driven refinement beyond
-        the material-wavelength target.
-    dl_min, dl_max : float, optional
-        Global lower and upper bounds for local automatic cell-width targets.
-    overrides : tuple[MeshOverride, ...]
-        Rectangular regions that refine or replace automatic spacing targets.
-    snapping_points : tuple[tuple[float | None, ...], ...]
-        User coordinates that must be grid edges along the selected axes.
-    max_cells_per_axis : int, optional
-        Safety limit for realized cells along any active axis. ``None`` disables it.
-    max_total_cells : int, optional
-        Safety limit for the active Cartesian cell product. ``None`` disables it.
+    An explicit ``resolution`` overrides wavelength-derived spacing.
+    ``min_feature_cells`` above one refines detected thicknesses and gaps
+    beyond the material-wavelength target. ``None`` disables ``dl_min``,
+    ``dl_max``, or a cell budget. An enforced mesh override replaces material
+    spacing; a normal override only refines it.
     """
 
     min_steps_per_wvl: float = 10.0

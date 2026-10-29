@@ -1,11 +1,4 @@
-"""Transparent GDSFactory-to-BeamZ simulation preparation.
-
-This module is deliberately part of :mod:`beamz.design`: it converts a
-GDSFactory component into ordinary BeamZ geometry and devices without adding a
-solver-integration dependency.  The returned setup exposes the native
-:class:`~beamz.design.core.Design`, :class:`~beamz.devices.ports.Port`, and
-:class:`~beamz.simulation.api.Simulation` values so applications can inspect or
-modify every numerical choice before execution.
+"""Prepare a GDSFactory component as ordinary BeamZ geometry and devices.
 
 Install the optional layout dependency with ``pip install 'beamz[gds]'``.
 """
@@ -43,9 +36,8 @@ def _positive(value: float, *, name: str) -> float:
 class Settings:
     """Numerical policy for a GDSFactory component simulation.
 
-    All lengths are in metres and wavelengths are vacuum wavelengths in metres.
-    The policy intentionally exposes domain padding, PML, grid, and run duration;
-    :func:`prepare` does not silently select these values from a PDK.
+    Lengths and wavelengths are in metres. Padding, PML, grid, and run duration
+    stay explicit; :func:`prepare` does not take them from a PDK.
     """
 
     layer: Layer = (1, 0)
@@ -133,10 +125,8 @@ class Settings:
 class PortMetadata:
     """Trace one native BeamZ port back to a GDSFactory port datum.
 
-    ``outward_direction`` is the direction from the component to the external
-    circuit; ``port.direction`` is the opposite, inward direction used to launch
-    a BeamZ mode.  Sources and monitors share ``datum_center`` in the first
-    release, while the appended waveguide segment keeps that plane clear of PML.
+    ``outward_direction`` leaves the component. ``port.direction`` is the
+    opposite launch direction. Sources and monitors share ``datum_center``.
     """
 
     name: str
@@ -167,11 +157,10 @@ def _port_metadata(ports: Sequence[Port]) -> tuple[PortMetadata, ...]:
 
 @dataclass(frozen=True, slots=True)
 class PreparedComponent:
-    """An inspectable GDSFactory component translated to native BeamZ values.
+    """GDSFactory component translated to native BeamZ values.
 
-    The object owns no runtime state.  :meth:`simulation_for` returns a new
-    immutable :class:`~beamz.Simulation` for a selected source port and leaves
-    this setup unchanged.
+    The object owns no runtime state. :meth:`simulation_for` returns a new
+    simulation and leaves this setup unchanged.
     """
 
     imported: ImportedComponent
@@ -223,12 +212,7 @@ class PreparedComponent:
         )
 
     def simulation_for(self, source_port: str) -> Simulation:
-        """Return a native BeamZ simulation excited through ``source_port``.
-
-        The source and every modal monitor are ordinary BeamZ device objects.
-        Call ``updated_copy`` on the returned simulation to alter any numerical
-        control before execution.
-        """
+        """Return a native BeamZ simulation excited through ``source_port``."""
         port = self.port(source_port)
         source = port.to_source(
             self.settings.center_frequency,
@@ -240,10 +224,7 @@ class PreparedComponent:
     def estimate_resources(self, source_port: str | None = None) -> dict[str, Any]:
         """Return a pre-run cell and memory estimate.
 
-        The lightweight estimate is available before native raster/compile support
-        is loaded.  ``compiled_estimate`` is included when the optional native
-        raster extension is available and offers BeamZ's more detailed allocation
-        report.
+        ``compiled_estimate`` is filled when the native raster extension is loaded.
         """
         port = self.ports[0].name if source_port is None else source_port
         simulation = self.simulation_for(port)
@@ -282,10 +263,8 @@ class PreparedComponent:
     ) -> ComponentSimulationResults:
         """Run one local BeamZ simulation per requested input port.
 
-        This is a convenience over :meth:`simulation_for`, not a distinct solver
-        API: every run uses ordinary BeamZ sources, monitors, and detached
-        ``SimulationResults``.  ``excitations='all'`` returns the full named
-        S-matrix; a sequence, or one port name, computes selected columns.
+        ``excitations='all'`` returns the full named S-matrix; a sequence, or
+        one port name, computes selected columns.
         """
         if excitations == "all":
             source_names = tuple(port.name for port in self.ports)
@@ -369,11 +348,7 @@ def _provenance(
 
 @dataclass(frozen=True, slots=True)
 class ComponentSimulationResults:
-    """Detached GDSFactory-component results with native BeamZ provenance.
-
-    The result owns named S-parameters plus the native BeamZ results for each
-    excitation.  It never retains mutable simulation state.
-    """
+    """Detached component results with named S-parameters and native provenance."""
 
     setup: PreparedComponent
     sparameters: SParameterResult
@@ -439,13 +414,11 @@ def prepare(
     material_map: Mapping[str, Material | float] | None = None,
     component_settings: Mapping[str, Any] | None = None,
 ) -> PreparedComponent:
-    """Prepare a GDSFactory component for explicit, local BeamZ simulation.
+    """Convert a GDSFactory component into native BeamZ geometry and ports.
 
-    The function converts component geometry, adds port extensions to the domain
-    boundary, and returns native BeamZ geometry and ports.  It does not compile or
-    execute a simulation.  Pass an explicit ``layer_stack`` and ``material_map``
-    for PDK-aware vertical geometry; otherwise the settings' simple core/cladding
-    model is used.
+    Port extensions reach the domain boundary. No simulation is compiled.
+    Pass ``layer_stack`` and ``material_map`` for a PDK stack; otherwise the
+    settings' core and cladding thicknesses apply.
     """
     resolved = Settings() if settings is None else settings
     if not isinstance(resolved, Settings):

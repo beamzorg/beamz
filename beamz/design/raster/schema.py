@@ -259,13 +259,7 @@ class Scene:
         options: Any = None,
         cache_directory: Any = None,
     ):
-        """Rasterize this reusable scene on an explicit Cartesian grid.
-
-        Returns
-        -------
-        RasterResult
-            Immutable cell and Yee-support material tensors.
-        """
+        """Rasterize this scene on an explicit Cartesian grid."""
         from .engine import rasterize
 
         return rasterize(
