@@ -802,142 +802,95 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         "cuda_streamed",
         "cuda_mstep",
     }
-    if precompute:
-        (
-            (h_decay_x, h_source_x),
-            (h_decay_y, h_source_y),
-            (h_decay_z, h_source_z),
-        ) = (
-            precompute_h(fields.sigma_m_hx, dt),
-            precompute_h(fields.sigma_m_hy, dt),
-            precompute_h(fields.sigma_m_hz, dt),
-        )
-        if use_3d_material_coefficients:
-            h_decay_x, h_source_x, h_decay_y, h_source_y, h_decay_z, h_source_z = (
-                _elide_uniform_grid(value)
-                for value in (
-                    h_decay_x,
-                    h_source_x,
-                    h_decay_y,
-                    h_source_y,
-                    h_decay_z,
-                    h_source_z,
-                )
-            )
-    else:
-        h_decay_x = h_source_x = h_decay_y = h_source_y = empty3
-        h_decay_z = h_source_z = empty3
-    if use_3d_material_coefficients:
-        h_sigma_m_x = _elide_zero_conductivity_grid(fields.sigma_m_hx)
-        h_sigma_m_y = _elide_zero_conductivity_grid(fields.sigma_m_hy)
-        h_sigma_m_z = _elide_zero_conductivity_grid(fields.sigma_m_hz)
-    else:
-        h_sigma_m_x = h_sigma_m_y = h_sigma_m_z = empty3
+    axes = "xyz"
 
-    if precompute:
-        (
-            (e_decay_x, e_source_x),
-            (e_decay_y, e_source_y),
-            (e_decay_z, e_source_z),
-        ) = (
-            precompute_e(
-                shape=fields.Ex.shape,
-                conductivity=fields.sig_x,
-                permittivity=fields.eps_x,
+    def coefficient_pair(axis, magnetic):
+        if not precompute:
+            return empty3, empty3
+        if magnetic:
+            decay, source = precompute_h(getattr(fields, f"sigma_m_h{axis}"), dt)
+        else:
+            decay, source = precompute_e(
+                shape=getattr(fields, f"E{axis}").shape,
+                conductivity=getattr(fields, f"sig_{axis}"),
+                permittivity=getattr(fields, f"eps_{axis}"),
                 dt=dt,
-                region=fields.region_x,
-            ),
-            precompute_e(
-                shape=fields.Ey.shape,
-                conductivity=fields.sig_y,
-                permittivity=fields.eps_y,
-                dt=dt,
-                region=fields.region_y,
-            ),
-            precompute_e(
-                shape=fields.Ez.shape,
-                conductivity=fields.sig_z,
-                permittivity=fields.eps_z,
-                dt=dt,
-                region=fields.region_z,
-            ),
-        )
+                region=getattr(fields, f"region_{axis}"),
+            )
         if use_3d_material_coefficients:
-            e_decay_x, e_source_x, e_decay_y, e_source_y, e_decay_z, e_source_z = (
-                _elide_uniform_grid(value)
-                for value in (
-                    e_decay_x,
-                    e_source_x,
-                    e_decay_y,
-                    e_source_y,
-                    e_decay_z,
-                    e_source_z,
-                )
+            decay = _elide_uniform_grid(decay)
+            source = _elide_uniform_grid(source)
+        return decay, source
+
+    h_pairs = {axis: coefficient_pair(axis, True) for axis in axes}
+    e_pairs = {axis: coefficient_pair(axis, False) for axis in axes}
+    if precompute and use_3d_material_coefficients:
+        packed_e = (
+            None
+            if sharding_layout.enabled or request.materials.uses_full_permittivity
+            else _pack_cuda_lossless_e_coefficients(
+                tuple(e_pairs[axis][0] for axis in axes),
+                tuple(e_pairs[axis][1] for axis in axes),
+                blocks=(
+                    request.run.backend == "cuda_streamed"
+                    and request.run.cuda_storage_axes == (0, 1, 2)
+                ),
             )
-            packed_e = (
-                None
-                if sharding_layout.enabled or request.materials.uses_full_permittivity
-                else _pack_cuda_lossless_e_coefficients(
-                    (e_decay_x, e_decay_y, e_decay_z),
-                    (e_source_x, e_source_y, e_source_z),
-                    blocks=(
-                        request.run.backend == "cuda_streamed"
-                        and request.run.cuda_storage_axes == (0, 1, 2)
-                    ),
+        )
+        if packed_e is not None:
+            decays, sources = packed_e
+            e_pairs = {
+                axis: pair
+                for axis, pair in zip(
+                    axes, zip(decays, sources, strict=True), strict=True
                 )
-            )
-            if packed_e is not None:
-                (
-                    (e_decay_x, e_decay_y, e_decay_z),
-                    (e_source_x, e_source_y, e_source_z),
-                ) = packed_e
-    else:
-        e_decay_x = e_source_x = e_decay_y = e_source_y = empty3
-        e_decay_z = e_source_z = empty3
-    if use_3d_material_coefficients:
-        e_conductivity_x = _elide_zero_conductivity_grid(fields.sig_x)
-        e_conductivity_y = _elide_zero_conductivity_grid(fields.sig_y)
-        e_conductivity_z = _elide_zero_conductivity_grid(fields.sig_z)
-        e_permittivity_x = fields.eps_x
-        e_permittivity_y = fields.eps_y
-        e_permittivity_z = fields.eps_z
-    else:
-        e_conductivity_x = e_conductivity_y = e_conductivity_z = empty3
-        e_permittivity_x = e_permittivity_y = e_permittivity_z = empty3
+            }
+    h_sigma = {
+        axis: (
+            _elide_zero_conductivity_grid(getattr(fields, f"sigma_m_h{axis}"))
+            if use_3d_material_coefficients
+            else empty3
+        )
+        for axis in axes
+    }
+    e_conductivity = {
+        axis: (
+            _elide_zero_conductivity_grid(getattr(fields, f"sig_{axis}"))
+            if use_3d_material_coefficients
+            else empty3
+        )
+        for axis in axes
+    }
+    e_permittivity = {
+        axis: getattr(fields, f"eps_{axis}") if use_3d_material_coefficients else empty3
+        for axis in axes
+    }
     empty_inverse = jnp.zeros((0,), dtype=jnp.float32)
     if request.materials.uses_full_permittivity:
         if any(
-            np.any(np.asarray(value) != 0.0)
-            for value in (fields.sig_x, fields.sig_y, fields.sig_z)
+            np.any(np.asarray(getattr(fields, f"sig_{axis}")) != 0.0) for axis in axes
         ):
             raise ValueError(
                 "Full-tensor permittivity requires lossless electric updates; "
                 "use CPML rather than conductive or sponge-PML materials."
             )
         support_tensors = request.materials.yee_tensors
-        e_inverse_diagonal_x = (
-            _inverse_permittivity_components(support_tensors["eps_x"])[..., 0]
-            if "eps_x" in support_tensors
-            else empty_inverse
-        )
-        e_inverse_diagonal_y = (
-            _inverse_permittivity_components(support_tensors["eps_y"])[..., 1]
-            if "eps_y" in support_tensors
-            else empty_inverse
-        )
-        e_inverse_diagonal_z = (
-            _inverse_permittivity_components(support_tensors["eps_z"])[..., 2]
-            if "eps_z" in support_tensors
-            else empty_inverse
-        )
-        e_inverse_offdiagonal = _inverse_permittivity_components(
+        inverse_diagonal = {
+            axis: (
+                _inverse_permittivity_components(support_tensors[f"eps_{axis}"])[
+                    ..., index
+                ]
+                if f"eps_{axis}" in support_tensors
+                else empty_inverse
+            )
+            for index, axis in enumerate(axes)
+        }
+        inverse_offdiagonal = _inverse_permittivity_components(
             support_tensors["eps_node"]
         )[..., 3:]
     else:
-        e_inverse_diagonal_x = e_inverse_diagonal_y = e_inverse_diagonal_z = (
-            empty_inverse
-        )
-        e_inverse_offdiagonal = empty_inverse
+        inverse_diagonal = dict.fromkeys(axes, empty_inverse)
+        inverse_offdiagonal = empty_inverse
     # 5. Precompute the same packed recurrence record for every 2D or 3D derivative.
     cpml = _compile_cpml_plan(
         fields,
@@ -947,44 +900,26 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         polarization_2d=request.domain.polarization_2d,
     )
 
-    # Native CUDA consumes the precomputed decay/source coefficients, not the
-    # original constitutive grids used by JAX. Do not transfer a second material
-    # representation with every runtime invocation. The grid still owns setup
-    # materials, and coupled CUDA updates retain their explicit inverse tensors.
+    # Native CUDA consumes precomputed decay/source coefficients. Drop the JAX
+    # constitutive grids from the runtime record; coupled updates keep inverse tensors.
     if request.run.backend in {"cuda_streamed", "cuda_mstep"}:
-        h_sigma_m_x = h_sigma_m_y = h_sigma_m_z = empty3
-        e_conductivity_x = e_conductivity_y = e_conductivity_z = empty3
-        e_permittivity_x = e_permittivity_y = e_permittivity_z = empty3
+        h_sigma = dict.fromkeys(axes, empty3)
+        e_conductivity = dict.fromkeys(axes, empty3)
+        e_permittivity = dict.fromkeys(axes, empty3)
 
-    # Assemble coefficients explicitly so renaming a planning local cannot silently
-    # alter the compiled program through reflection.
-    update_coefficients = UpdateCoefficients(
-        h_decay_x=h_decay_x,
-        h_source_x=h_source_x,
-        h_sigma_m_x=h_sigma_m_x,
-        h_decay_y=h_decay_y,
-        h_source_y=h_source_y,
-        h_sigma_m_y=h_sigma_m_y,
-        h_decay_z=h_decay_z,
-        h_source_z=h_source_z,
-        h_sigma_m_z=h_sigma_m_z,
-        e_decay_x=e_decay_x,
-        e_source_x=e_source_x,
-        e_conductivity_x=e_conductivity_x,
-        e_permittivity_x=e_permittivity_x,
-        e_inverse_diagonal_x=e_inverse_diagonal_x,
-        e_decay_y=e_decay_y,
-        e_source_y=e_source_y,
-        e_conductivity_y=e_conductivity_y,
-        e_permittivity_y=e_permittivity_y,
-        e_inverse_diagonal_y=e_inverse_diagonal_y,
-        e_decay_z=e_decay_z,
-        e_source_z=e_source_z,
-        e_conductivity_z=e_conductivity_z,
-        e_permittivity_z=e_permittivity_z,
-        e_inverse_diagonal_z=e_inverse_diagonal_z,
-        e_inverse_offdiagonal=e_inverse_offdiagonal,
-    )
+    coefficients = {"e_inverse_offdiagonal": inverse_offdiagonal}
+    for axis in axes:
+        decay, source = h_pairs[axis]
+        coefficients[f"h_decay_{axis}"] = decay
+        coefficients[f"h_source_{axis}"] = source
+        coefficients[f"h_sigma_m_{axis}"] = h_sigma[axis]
+        decay, source = e_pairs[axis]
+        coefficients[f"e_decay_{axis}"] = decay
+        coefficients[f"e_source_{axis}"] = source
+        coefficients[f"e_conductivity_{axis}"] = e_conductivity[axis]
+        coefficients[f"e_permittivity_{axis}"] = e_permittivity[axis]
+        coefficients[f"e_inverse_diagonal_{axis}"] = inverse_diagonal[axis]
+    update_coefficients = UpdateCoefficients(**coefficients)
     boundary = _compile_boundary(
         fields,
         cpml,
@@ -998,12 +933,14 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     if (
         config.backend in {"jax", "cuda_streamed"}
         and not sharding_layout.enabled
-        and e_inverse_offdiagonal.size
+        and update_coefficients.e_inverse_offdiagonal.size
     ):
         from .tensor_regions import compact_tensor_region
 
         update_coefficients = update_coefficients._replace(
-            e_inverse_offdiagonal=compact_tensor_region(e_inverse_offdiagonal)
+            e_inverse_offdiagonal=compact_tensor_region(
+                update_coefficients.e_inverse_offdiagonal
+            )
         )
         if config.backend == "cuda_streamed":
             from .cuda.material_blocks import pack_material_blocks
