@@ -86,7 +86,16 @@ def _exercise(axis, cpml, count, backend="jax"):
                 jax.tree.leaves(getattr(expected_state, name)),
                 strict=True,
             ):
-                np.testing.assert_allclose(value, target, rtol=5e-5, atol=2e-6)
+                # CPML memories have derivative units and reach 1e6 here.
+                # Allow a few FP32 ulps of the slab scale near cancellation.
+                atol = 2e-6
+                if name.startswith("cpml_psi"):
+                    atol = max(
+                        atol, 4 * np.finfo(np.float32).eps * np.max(np.abs(target))
+                    )
+                np.testing.assert_allclose(
+                    value, target, rtol=5e-5, atol=atol, err_msg=name
+                )
         continued = solver(parameters, state=output)
         target = reference(epsilon, state=expected_state)
         np.testing.assert_allclose(
@@ -135,14 +144,23 @@ def _exercise(axis, cpml, count, backend="jax"):
                 )
                 return tuple(getattr(result, n) for n in names)
 
-            tangent = jax.tree.map(lambda v: jnp.full_like(v, 0.003), values)
+            rng = np.random.default_rng(377)
+
+            def random_like(value, rng=rng):
+                return (
+                    jnp.asarray(rng.normal(size=value.shape), dtype=value.dtype) * 0.003
+                )
+
+            tangent = jax.tree.map(random_like, values)
             output, pushed = jax.jvp(transition, (values,), (tangent,))
-            cotangent = jax.tree.map(lambda v: jnp.full_like(v, 0.007), output)
+            cotangent = jax.tree.map(random_like, output)
             pulled = jax.vjp(transition, values)[1](cotangent)[0]
 
             def dot(a, b):
                 return sum(
-                    jnp.vdot(x, y)
+                    np.vdot(
+                        np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+                    )
                     for x, y in zip(jax.tree.leaves(a), jax.tree.leaves(b), strict=True)
                 )
 
@@ -179,7 +197,6 @@ def test_cpu_device_sharded_gradients(axis, cpml, count):
         [sys.executable, "-c", code],
         env=environment,
         check=True,
-        capture_output=True,
         text=True,
     )
 
@@ -207,8 +224,11 @@ kwargs = dict(objective=ModePower('output'), gradient_backend='autodiff', checkp
 reference = TopologyProblem(base.simulation, base.topology, **kwargs)
 distributed = TopologyProblem(base.simulation, base.topology, sharding=dict(axis='x', num_devices=2, backend='cpu'), **kwargs)
 density = base.topology.initial_state().density
+options = dict(base.topology._transform_options)
 expected, gradient = reference.value_and_grad(density)
 actual, derivative = distributed.value_and_grad(density)
+for name, value in options.items():
+    np.testing.assert_array_equal(base.topology._transform_options[name], value)
 np.testing.assert_allclose(actual, expected, rtol=1e-4, atol=1e-8)
 np.testing.assert_allclose(derivative, gradient, rtol=5e-4, atol=1e-8)
 full = distributed.run(steps=2)
@@ -228,6 +248,5 @@ np.testing.assert_allclose(resumed.final_params, full.final_params, rtol=0, atol
         [sys.executable, "-c", code],
         env=environment,
         check=True,
-        capture_output=True,
         text=True,
     )

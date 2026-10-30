@@ -56,6 +56,13 @@ def parameter_shape(program):
     shape = list(program.grid.permittivity.shape)
     axis = program.sharding.layout.axis
     shape[axis] = program.sharding.layout.padded_shapes["Ex"][axis]
+    if any(
+        padded[axis] != shape[axis]
+        for padded in program.sharding.layout.padded_shapes.values()
+    ):
+        raise ValueError(
+            "Sharded material interpolation requires aligned Yee partitions"
+        )
     return tuple(shape)
 
 

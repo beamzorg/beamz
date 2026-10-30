@@ -215,7 +215,8 @@ Spatial gradients use the existing partition plan:
 
 ```python
 solver = simulation.differentiable(
-    sharding=dict(axis="x", num_devices=2, backend="gpu"), checkpoint_interval=32,
+    sharding=dict(axis="x", num_devices=2, backend="gpu"),
+    checkpoint_interval=32,
 )
 eps = solver.prepare_permittivity(host_cell_permittivity)
 value, gradient = jax.value_and_grad(objective)(eps)
