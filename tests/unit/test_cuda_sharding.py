@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
@@ -18,6 +19,38 @@ from beamz.simulation.cuda import runtime
 from beamz.simulation.cuda import sharding as cuda_sharding
 from beamz.simulation.model import ShardingConfig
 from beamz.simulation.sharding import build_sharding_plan
+
+
+@pytest.mark.parametrize("phase", (0, 1))
+def test_distributed_native_vjp_preserves_state_and_material_cotangents(phase):
+    """Check the CPU-callable VJP adapter, without claiming native GPU parity."""
+    from beamz.simulation import jax_sharding
+
+    context = object()
+
+    def stencil(state, ctx, coefficients, *, phase):
+        assert ctx is context
+        return state * coefficients + phase
+
+    with (
+        patch.object(cuda_sharding, "_phase", side_effect=stencil) as native,
+        patch.object(jax_sharding, "_phase", side_effect=stencil) as reference,
+    ):
+
+        def objective(state, coefficients):
+            result = cuda_sharding._differentiable_phase(
+                state, context, coefficients, phase=phase
+            )
+            return 2.7 * result**2
+
+        value, (state_grad, material_grad) = jax.jit(
+            jax.value_and_grad(objective, argnums=(0, 1))
+        )(jnp.float32(2), jnp.float32(3))
+        np.testing.assert_allclose(value, 2.7 * (6 + phase) ** 2, rtol=1e-6)
+        np.testing.assert_allclose(state_grad, 5.4 * (6 + phase) * 3, rtol=1e-6)
+        np.testing.assert_allclose(material_grad, 5.4 * (6 + phase) * 2, rtol=1e-6)
+        assert native.called
+        assert reference.called
 
 
 def make_simulation():

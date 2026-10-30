@@ -88,6 +88,21 @@ jobs:
           --cov-report=term-missing --cov-report=xml
           --cov-report=json:coverage.json
           --validation-report=validation-results.json
+      # CPU-device contracts also run in the sharding matrix, but their coverage
+      # must be included here before enforcing the changed-line floor.
+      - name: Include distributed gradient contracts in coverage
+        env:
+          JAX_PLATFORMS: cpu
+        run: >-
+          uv run --no-active --python 3.11 python -m pytest
+          'tests/hardware/test_sharded_differentiation.py::test_cpu_device_sharded_gradients[2-False-x]'
+          'tests/hardware/test_sharded_differentiation.py::test_cpu_device_sharded_gradients[2-True-x]'
+          tests/hardware/test_sharded_differentiation.py::test_public_topology_sharding
+          -v --tb=short
+          --cov=beamz --cov-branch --cov-append
+          --cov-report=term-missing --cov-report=xml
+          --cov-report=json:coverage.json
+          --validation-report=sharding-validation-results.json
       - name: Enforce risk-weighted coverage floors
         run: >-
           uv run --no-active --python 3.11 python
@@ -102,6 +117,7 @@ jobs:
           --compare-branch "origin/${BASE_REF}"
           --fail-under 85
       - name: Upload coverage and validation evidence
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: scientific-evidence
@@ -109,6 +125,7 @@ jobs:
             coverage.json
             coverage.xml
             validation-results.json
+            sharding-validation-results.json
 
   sharding:
     name: Fake multi-device CPU sharding
