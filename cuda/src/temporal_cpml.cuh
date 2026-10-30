@@ -5,7 +5,7 @@ struct PairCpmlPhase {
   void *psi[6], *final_psi[6];
   int psi_row[6], psi_plane[6];
   const float *profiles[18];
-  int thickness, metallic_edges;
+  int thickness, metallic_edges, magnetic_edges;
 };
 
 PairCpmlPhase MakePairCpmlPhase(const BeamzLaunch &launch) {
@@ -13,6 +13,7 @@ PairCpmlPhase MakePairCpmlPhase(const BeamzLaunch &launch) {
   p.field = MakeFusedYeePhase(launch);
   p.thickness = launch.uniform_cpml_thickness;
   p.metallic_edges = launch.metallic_edges;
+  p.magnetic_edges = launch.magnetic_edges;
   for (int t = 0; t < 6; ++t) {
     p.psi[t] = launch.inputs[31 + t].data;
     p.final_psi[t] = launch.outputs[3 + t].data;
@@ -130,15 +131,20 @@ __device__ __forceinline__ void CpmlPairStages(
             const int coord = axis == 0 ? z : axis == 1 ? y : x;
             const int extent = f.inputs[3 + component].dims[axis];
             if constexpr (phase == 1) {
-              if (coord == 0)
-                return p.metallic_edges & (1 << (2 * axis))
-                           ? beamz::cuda::yee::ScaleYeeDifference(other(component, 0, 0, 0), f.inv_resolution) : 0.f;
-              if (coord == extent)
-                return p.metallic_edges & (1 << (2 * axis + 1))
-                           ? beamz::cuda::yee::ScaleYeeDifference(
-                                 -other(component, axis == 0 ? -1 : 0,
-                                        axis == 1 ? -1 : 0, axis == 2 ? -1 : 0),
-                                 f.inv_resolution) : 0.f;
+              if (coord == 0) {
+                const float factor = beamz::cuda::boundary::DerivativeFactor(
+                    p.metallic_edges, p.magnetic_edges, axis, false);
+                return factor ? beamz::cuda::yee::ScaleYeeDifference(
+                    factor * other(component, 0, 0, 0), f.inv_resolution) : 0.f;
+              }
+              if (coord == extent) {
+                const float factor = beamz::cuda::boundary::DerivativeFactor(
+                    p.metallic_edges, p.magnetic_edges, axis, true);
+                return factor ? beamz::cuda::yee::ScaleYeeDifference(
+                    -factor * other(component, axis == 0 ? -1 : 0,
+                                    axis == 1 ? -1 : 0, axis == 2 ? -1 : 0),
+                    f.inv_resolution) : 0.f;
+              }
             }
             const float center = other(component, 0, 0, 0);
             const float adjacent = other(component, axis == 0 ? sign : 0,

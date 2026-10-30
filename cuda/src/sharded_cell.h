@@ -5,6 +5,7 @@
 #include <limits>
 
 #include "launch.h"
+#include "boundary.h"
 
 #ifdef __CUDACC__
 #define BEAMZ_CELL __host__ __device__ inline
@@ -91,12 +92,12 @@ BEAMZ_CELL float Difference(const BeamzLaunch& l, int component, int axis,
   }
   if (coordinate < 0 || coordinate > size) return 0.0f;
   if (coordinate == 0)
-    return (l.metallic_edges & (1 << (2 * axis)))
-        ? Source(l, component, global) * scale : 0.0f;
+    return boundary::DerivativeFactor(l.metallic_edges, l.magnetic_edges, axis, false)
+        * Source(l, component, global) * scale;
   --other[axis];
   if (coordinate == size)
-    return (l.metallic_edges & (1 << (2 * axis + 1)))
-        ? -Source(l, component, other) * scale : 0.0f;
+    return boundary::DerivativeFactor(l.metallic_edges, l.magnetic_edges, axis, true)
+        * -Source(l, component, other) * scale;
   return (Source(l, component, global) - Source(l, component, other)) * scale;
 }
 
@@ -179,7 +180,8 @@ inline bool ValidBuffer(const BeamzBuffer& a) {
 
 inline bool Validate(const BeamzLaunch& l) {
   if (l.phase < 0 || l.phase > 1 || (l.nterms != 0 && l.nterms != 6) ||
-      l.metric_kind < 0 || l.metric_kind > 2) return false;
+      l.metric_kind < 0 || l.metric_kind > 2 ||
+      !boundary::ValidFaces(l.metallic_edges, l.magnetic_edges)) return false;
   const auto& g = l.shard_geometry;
   if (!ValidBuffer(g) || g.rank != 2 || g.dims[0] != 7 || g.dims[1] != 3 ||
       g.element_type != kBeamzS32) return false;

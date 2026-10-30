@@ -20,9 +20,9 @@ simulation.
 - `monitors/compiler.py`: grid placement and packed acquisition plans. Runtime
   accumulation belongs to `simulation.observe`, not to device specifications.
 - `ports.py`: named modal port metadata used by S-parameter analysis.
-- `boundaries.py`: immutable periodic/Bloch, PEC, sponge `Absorber`, and PML specifications.
+- `boundaries.py`: immutable periodic/Bloch, PEC, PMC, sponge `Absorber`, and PML specifications.
 - `_placement.py`: shared grid-snapping rules for sources and monitors.
-- `_boundary_compile.py`: grid-aware periodic/PEC/PML/absorber lowering kept separate from
+- `_boundary_compile.py`: grid-aware periodic/PEC/PMC/PML/absorber lowering kept separate from
   the public boundary values for the same reason as source and monitor compilation.
 - `_immutable.py`: array freezing and canonicalization shared by every device spec.
 - `visualization.py`: data-only visual descriptions consumed by analysis plotting.

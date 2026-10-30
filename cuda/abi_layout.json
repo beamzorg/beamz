@@ -1,6 +1,6 @@
 {
-  "abi_version": 30,
-  "component_version": "0.30.0",
+  "abi_version": 31,
+  "component_version": "0.31.0",
   "targets": {
     "streamed": "beamz_cuda_streamed",
     "sharded": "beamz_cuda_sharded",
@@ -98,6 +98,8 @@
     "temporal_field_workspace_input": 74,
     "temporal_psi_workspace_input": 80,
     "monitor_elapsed_steps_input": 15,
-    "mstep_plan_buffer_count": 5
+    "mstep_plan_buffer_count": 5,
+    "boundary_pmc_shift": 24,
+    "boundary_cpml_thickness_mask": 65535
   }
 }
