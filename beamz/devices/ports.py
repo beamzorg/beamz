@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence
 import numpy as np
 
 from beamz.devices._immutable import (
-    _Replaceable,
+    Replaceable,
     finite_tuple,
     immutable_snapshot,
     nonnegative_finite_extents,
@@ -24,12 +24,41 @@ PortDirection = Literal["+", "-"]
 
 
 @dataclass(frozen=True)
-class Port(_Replaceable):
+class Port(Replaceable):
     """Modal S-parameter port on a finite plane.
 
-    The zero extent in ``size`` selects the axis. ``direction`` points into the
-    device. Use :meth:`to_source` and :meth:`to_monitor` to build matching devices.
-    ``monitor_name`` defaults to ``name``.
+    A port owns geometry and mode-solver settings, then creates matching
+    :class:`ModeSource` and :class:`ModeMonitor` objects as needed. The zero
+    extent in ``size`` selects the port axis and ``direction`` points into the
+    simulated device.
+
+    Parameters
+    ----------
+    center, size : tuple of float
+        Plane center and extents in public ``(x, y, z)`` order, in metres.
+        Exactly one size component must be zero.
+    name : str
+        Stable port identifier used by analysis.
+    direction : {"+", "-"}
+        Inward propagation direction along the plane-normal axis.
+    mode_spec : ModeSpec, optional
+        Modal selection and eigensolver settings.
+    monitor_name : str, optional
+        Name of the matching mode monitor. Defaults to ``name``.
+
+    Examples
+    --------
+    >>> port = Port(
+    ...     center=(0.0, 1e-6, 0.0),
+    ...     size=(0.0, 2e-6, 1e-6),
+    ...     name="input",
+    ...     direction="+",
+    ... )
+
+    Notes
+    -----
+    ``Port`` is an analysis specification, not a runtime object. Use
+    :meth:`to_source` and :meth:`to_monitor` to create matching simulation devices.
     """
 
     center: tuple[float, float, float]
@@ -113,16 +142,50 @@ class Port(_Replaceable):
 
     @property
     def polarization(self) -> str | None:
-        """Return the configured polarization; the default port selects TE."""
+        """Return the modal polarization used by analysis.
+
+        Returns
+        -------
+        {"te", "tm"} or None
+            Configured polarization. Explicit ``ModeSpec(polarization=None)``
+            preserves mixed-polarization ordering; the default port selects TE.
+        """
         return self.mode_spec.polarization
 
     @property
     def projection_direction(self) -> str:
-        """Return the positive-axis modal basis, such as ``"+x"``."""
+        """Return the positive-axis basis used for modal projection.
+
+        Returns
+        -------
+        str
+            Positive signed axis such as ``"+x"``.
+
+        Notes
+        -----
+        Incoming and outgoing waves are interpreted relative to this fixed modal
+        basis and the port's :attr:`direction`.
+        """
         return f"+{self.axis}"
 
     def shifted(self, offset: Iterable[float]) -> Port:
-        """Return a translated port. ``offset`` must contain three metres."""
+        """Return a translated copy of this port.
+
+        Parameters
+        ----------
+        offset : iterable of float
+            Three-coordinate ``(dx, dy, dz)`` translation in metres.
+
+        Returns
+        -------
+        Port
+            Port with translated center and unchanged size and modal settings.
+
+        Raises
+        ------
+        ValueError
+            If ``offset`` does not contain exactly three values.
+        """
         return replace(
             self,
             center=shifted_coordinates(
@@ -131,7 +194,22 @@ class Port(_Replaceable):
         )
 
     def to_monitor(self, freqs: Sequence[float] | np.ndarray) -> ModeMonitor:
-        """Create a mode monitor with this geometry, name, and mode specification."""
+        """Create a mode monitor matching this port.
+
+        Parameters
+        ----------
+        freqs : sequence of float
+            Frequencies to acquire, in hertz.
+
+        Returns
+        -------
+        ModeMonitor
+            Monitor with matching geometry, name, and mode specification.
+
+        Examples
+        --------
+        >>> monitor = port.to_monitor([193.5e12])
+        """
         from beamz.devices.monitors import ModeMonitor
 
         return ModeMonitor(
@@ -152,11 +230,32 @@ class Port(_Replaceable):
         source_time: Any | None = None,
         power: float = 1.0,
     ) -> ModeSource:
-        """Create a matching mode source.
+        """Create a mode source matching this port.
 
-        ``freq0`` and ``fwidth`` are hertz and build a ``GaussianPulse`` when
-        ``source_time`` is omitted. ``mode_index`` defaults to :attr:`mode_spec`.
-        ``num_freqs`` is the broadband reconstruction count. ``power`` is watts.
+        Parameters
+        ----------
+        freq0 : float
+            Carrier frequency in hertz.
+        fwidth : float
+            Gaussian frequency width in hertz when ``source_time`` is omitted.
+        mode_index : int, optional
+            Zero-based mode to launch. Defaults to the mode selected by
+            :attr:`mode_spec`.
+        num_freqs : int, default=1
+            Frequency samples used for broadband modal reconstruction.
+        source_time : source-time specification, optional
+            Custom temporal waveform. A ``GaussianPulse`` is created by default.
+        power : float, default=1.0
+            Requested launched power in watts.
+
+        Returns
+        -------
+        ModeSource
+            Source with matching geometry, inward direction, and modal settings.
+
+        Examples
+        --------
+        >>> source = port.to_source(freq0=193.5e12, fwidth=20e12)
         """
         from beamz.devices.sources import GaussianPulse, ModeSource
 

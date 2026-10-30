@@ -221,11 +221,31 @@ class ModeSource(_Replaceable):
 
 @dataclass(frozen=True, slots=True)
 class GaussianSource(_Replaceable):
-    """Inject a Gaussian spatial profile.
+    """Inject a Gaussian spatial profile into an FDTD simulation.
 
-    In 2D this drives ``Ez`` (TMz) or ``Hz`` (TEz). In 3D it drives the compatible
-    electric component. ``position`` is metres and ``width`` is the positive
-    Gaussian scale. ``signal`` is an immutable sample array.
+    In 2D it excites the active out-of-plane component: ``Ez`` for TMz and
+    ``Hz`` for TEz. In 3D it retains the existing compatible electric-component
+    behavior. Position and width remain differentiable through JAX.
+
+    Parameters
+    ----------
+    position : tuple of float
+        Source center in ``(x, y)`` or ``(x, y, z)`` order, in metres.
+    width : float
+        Positive Gaussian standard-width scale in metres.
+    signal : array-like
+        Immutable temporal samples evaluated at the simulation time step.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import beamz as bz
+    >>> time = np.linspace(0.0, 1e-13, 100)
+    >>> source = bz.GaussianSource(
+    ...     position=(1 * bz.um, 1.5 * bz.um),
+    ...     width=0.2 * bz.um,
+    ...     signal=np.sin(2 * np.pi * 2e14 * time),
+    ... )
     """
 
     position: tuple[float, ...]

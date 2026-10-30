@@ -77,10 +77,41 @@ def _raster_sources(kind: str) -> set[str]:
 class MaterialGrid:
     """Immutable cell summaries and optional direct Yee coefficients.
 
-    Arrays are copied and made read-only. ``resolution`` is a legacy
-    representative cell size; numerical consumers use ``grid``. ``yee_tensors``
-    holds symmetric permittivity at electric supports and, for cross coupling,
-    at grid nodes. ``polarization`` applies only to two-dimensional grids.
+    Parameters
+    ----------
+    permittivity : array-like
+        Relative-permittivity samples in ``(y, x)`` or ``(z, y, x)`` order.
+    conductivity : array-like
+        Electrical-conductivity samples in siemens per metre.
+    permeability : array-like
+        Relative-permeability samples matching ``permittivity``.
+    resolution : float
+        Legacy representative cell size in metres. Numerical consumers use
+        ``grid``; for rectilinear grids this is the smallest active-axis spacing.
+    shape : tuple of int
+        Material array shape. It must follow array storage order, not public
+        coordinate order.
+    yee_materials : mapping, optional
+        Componentwise material arrays already sampled at Yee supports.
+    tensors : mapping, optional
+        Packed symmetric cell tensors retained for compatible mode solving.
+    yee_tensors : mapping, optional
+        Full symmetric permittivity tensors sampled at electric Yee supports and,
+        for cross coupling, at the shared grid nodes.
+    smoothing : str, default="volume"
+        Raster smoothing policy that produced the coefficients.
+    origin : tuple of float, default=(0, 0, 0)
+        Physical coordinate of the first x, y, and z grid edges.
+    polarization : {"tm", "te"}, optional
+        Active component family for a two-dimensional solver grid. Three-dimensional
+        grids leave this unset.
+    grid : RectilinearGrid, optional
+        Realized physical cell edges. When omitted, a uniform grid is constructed
+        from ``shape``, ``resolution``, and ``origin``.
+
+    Notes
+    -----
+    Input arrays are copied and made read-only during construction.
     """
 
     permittivity: npt.ArrayLike
@@ -524,10 +555,27 @@ def build_material_grid(
     progress: bool = False,
     **kwargs,
 ) -> MaterialGrid:
-    """Discretize a design into an immutable solver material grid.
+    """Discretize a design into the immutable solver material grid.
 
-    ``resolution`` is a cell size or a ``RectilinearGrid``. ``grid_type`` is
-    ``auto``, ``2d``, or ``3d``.
+    Parameters
+    ----------
+    design : Design
+        Immutable geometry and material specification to rasterize.
+    resolution : float or RectilinearGrid
+        Uniform spatial cell size or explicit physical cell edges.
+    grid_type : str, default="auto"
+        Dimensionality policy: ``"auto"``, ``"2d"``, or ``"3d"``.
+    force_recompute : bool, default=False
+        Rebuild the grid even when a matching cached discretization exists.
+    progress : bool, default=False
+        Emit rasterization progress when the design supports it.
+    **kwargs
+        Additional rasterizer-specific options.
+
+    Returns
+    -------
+    MaterialGrid
+        Read-only cell summaries and compatible direct Yee coefficients.
     """
     return design.rasterize(
         resolution,

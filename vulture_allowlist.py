@@ -125,5 +125,18 @@ normalized_to
 tree_flatten
 tree_unflatten
 
+# Reference-solver helpers and coefficient fields are reached from tests and
+# from compiler name tables, which Vulture does not follow.
+_make_dxf
+_make_dxb
+_create_sfactor_b
+e_conductivity_x
+e_permittivity_x
+e_conductivity_y
+e_permittivity_y
+e_conductivity_z
+e_permittivity_z
+e_inverse_diagonal_z
+
 # Region rasterization is opt-in from examples and external benchmark scripts.
 rasterize_regions

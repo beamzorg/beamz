@@ -111,11 +111,15 @@ def shifted_coordinates(
     )
 
 
-class _Replaceable:
+class Replaceable:
     """Shared ``updated_copy`` for frozen configuration dataclasses."""
 
     __slots__ = ()
 
-    def updated_copy(self, **changes):
+    def updated_copy(self, **changes: Any) -> Any:
         """Return a validated copy with selected fields replaced."""
-        return replace(self, **changes)
+        return replace(cast(Any, self), **changes)
+
+
+# Historical private name. Non-strict modules may still import it.
+_Replaceable = Replaceable

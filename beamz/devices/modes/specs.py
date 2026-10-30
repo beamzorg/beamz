@@ -45,12 +45,47 @@ class ModeSpec:
 
 @dataclass(frozen=True)
 class ModeData:
-    """Immutable modal fields from a mode solve.
+    """Immutable modal fields returned by a mode solve.
 
-    Leading axes of ``neffs``, ``e_fields``, and ``h_fields`` are frequency then
-    mode. ``grid_edges`` are physical cell edges in the trailing field-axis
-    order, named by ``transverse_axes``. Arrays are copied and made read-only.
-    ``diagnostics`` snapshots requested and applied symmetry per frequency.
+    Parameters
+    ----------
+    frequencies : array-like
+        Solved frequencies in hertz, shape ``(num_frequencies,)``.
+    neffs : array-like
+        Complex effective indices, shape ``(num_frequencies, num_modes)``.
+    e_fields : array-like
+        Complex electric modal fields with frequency and mode leading axes.
+    h_fields : array-like
+        Complex magnetic modal fields matching ``e_fields``.
+    eps_profiles : array-like
+        Relative-permittivity cross sections used by the eigensolver.
+    resolution : float
+        Cross-section cell size in metres.
+    solver_direction : str, optional
+        Signed propagation direction used by the eigensolver.
+    axis : str, optional
+        Plane-normal axis, one of ``"x"``, ``"y"``, or ``"z"``.
+    center : tuple, optional
+        Mode-plane center in ``(x, y, z)`` order, in metres.
+    plane : object, optional
+        Original public plane specification.
+    crop_slices : tuple of slice, optional
+        Slices locating the solved aperture inside the full material plane.
+    eps_profile_fulls : array-like, optional
+        Full uncropped relative-permittivity planes for later analysis.
+    grid_edges : tuple of array-like, optional
+        Physical cell-edge coordinates for each transverse field axis, in metres.
+        The arrays follow the storage order of the trailing modal-field axes.
+    transverse_axes : tuple of str, optional
+        Physical axis names corresponding to ``grid_edges``.
+    diagnostics : tuple of mappings, optional
+        Per-frequency processing diagnostics, including requested and applied
+        symmetry. Entries and nested mappings are immutable snapshots.
+
+    Notes
+    -----
+    Array inputs are copied and made read-only. Leading axes of ``neffs``,
+    ``e_fields``, and ``h_fields`` are frequency, then mode.
     """
 
     frequencies: np.ndarray
