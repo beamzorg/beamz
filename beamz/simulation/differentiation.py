@@ -350,7 +350,10 @@ class DifferentiableSimulation:
                 jnp.asarray(component, dtype=jnp.float32) for component in value
             )
             expected = tuple(
-                self.program.sharding.layout.padded_shapes[f"E{a}"] for a in "xyz"
+                self.program.sharding.layout.padded_shapes[f"E{a}"]
+                if self.program.sharding.layout.enabled
+                else getattr(grid, f"{prefix}_{a}").shape
+                for a in "xyz"
             )
             if tuple(component.shape for component in values) != expected:
                 raise ValueError(f"Yee material component shapes must be {expected}")
