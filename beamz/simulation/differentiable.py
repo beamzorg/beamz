@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -53,11 +54,17 @@ def topology_yee_permittivity(program, permittivity, mask):
 
             fraction = sample_material(program, selected, component)
             sampled = sample_material(program, selected * permittivity, component)
-            fixed = sharding._pad_high_to_shape(
-                getattr(program.grid, f"eps_{axis}"),
-                program.sharding.layout.padded_shapes[component],
-                pad_value=1,
-            )
+            # Fixed host recipes must be placed eagerly even when the topology
+            # map is traced; region placement performs bounded device transfers.
+            with jax.ensure_compile_time_eval():
+                fixed = sharding.place_tree(
+                    program,
+                    sharding._pad_high_to_shape(
+                        getattr(program.grid, f"eps_{axis}"),
+                        program.sharding.layout.padded_shapes[component],
+                        pad_value=1,
+                    ),
+                )
             values.append(sampled + (1.0 - fraction) * fixed)
             continue
         fraction = _cell_centers_to_yee(

@@ -216,6 +216,9 @@ def test_public_topology_sharding():
 import numpy as np
 import tempfile
 from pathlib import Path
+from dataclasses import replace
+from unittest.mock import patch
+from beamz._region_array import RegionArray
 from beamz.optimization import ModePower, TopologyProblem
 from tests.topology_3d_case import make_3d_design
 
@@ -226,7 +229,13 @@ distributed = TopologyProblem(base.simulation, base.topology, sharding=dict(axis
 density = base.topology.initial_state().density
 options = dict(base.topology._transform_options)
 expected, gradient = reference.value_and_grad(density)
-actual, derivative = distributed.value_and_grad(density)
+# Fixed Yee materials can be lazy host recipes. Placement during tracing must
+# read bounded regions, without materializing the recipe as one host array.
+fixed = {f'eps_{a}': np.asarray(getattr(distributed.program.grid, f'eps_{a}')) for a in 'xyz'}
+recipes = {name: RegionArray(value.shape, value.dtype, lambda region, value=value: value[region]) for name, value in fixed.items()}
+distributed.program = replace(distributed.program, grid=replace(distributed.program.grid, **recipes))
+with patch.object(RegionArray, '__array__', side_effect=AssertionError('full recipe materialization')):
+    actual, derivative = distributed.value_and_grad(density)
 for name, value in options.items():
     np.testing.assert_array_equal(base.topology._transform_options[name], value)
 np.testing.assert_allclose(actual, expected, rtol=1e-4, atol=1e-8)
