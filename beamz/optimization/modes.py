@@ -1,5 +1,7 @@
 """Fixed modal projections for objectives built from differentiable DFT fields."""
 
+from dataclasses import replace
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -8,11 +10,50 @@ from beamz.analysis.data import analysis_data
 from beamz.analysis.modal_projection.geometry import (
     _monitor_analysis_plane_3d,
 )
-from beamz.analysis.mode_projection import _build_port_projection
-from beamz.devices.modes.fields import _modal_overlap
-from beamz.devices.modes.specs import ModeSpec
+from beamz.analysis.mode_projection import (
+    _build_port_projection,
+    _modal_coefficient_rows_3d,
+)
 from beamz.devices.monitors.monitors import ModeMonitor
 from beamz.devices.ports import Port
+
+
+def _monitor_port(monitor, mode_index, polarization=None):
+    """Adapt a monitor without dropping solver, symmetry, or refinement options."""
+    return Port(
+        center=monitor.center,
+        size=monitor.size,
+        name=f"{monitor.name}_mode_{mode_index}",
+        monitor_name=monitor.name,
+        direction="+",
+        mode_spec=replace(
+            monitor.mode_spec,
+            mode_index=mode_index,
+            polarization=monitor.mode_spec.polarization or polarization,
+        ),
+    )
+
+
+def _coupled_projection(data, port, monitor, frequency, cache):
+    """Bind all modes together, preserving the monitor's complete ModeSpec."""
+    key = ("coupled_rows", monitor.name, float(frequency))
+    if key not in cache:
+        mode_cache = cache.setdefault(("mode_projections", monitor.name), {})
+        projections = [
+            _build_port_projection(
+                data,
+                port.updated_copy(
+                    name=f"{monitor.name}_mode_{index}",
+                    mode_spec=replace(port.mode_spec, mode_index=index),
+                ),
+                monitor,
+                float(frequency),
+                mode_cache,
+            )
+            for index in range(monitor.mode_spec.num_modes)
+        ]
+        cache[key] = projections, _modal_coefficient_rows_3d(projections)
+    return cache[key]
 
 
 def build_mode_projector(results, monitor):
@@ -41,73 +82,30 @@ def build_mode_projector(results, monitor):
     matrices = []
     cache = {}
     for frequency in data.frequencies:
-        projections = [
-            _build_port_projection(
-                data,
-                Port(
-                    center=geometry.center,
-                    size=geometry.size,
-                    name=f"{monitor}_m{index}",
-                    monitor_name=monitor,
-                    direction="+",
-                    mode_spec=ModeSpec(
-                        mode_index=index,
-                        num_modes=count,
-                        polarization=geometry.mode_spec.polarization or "te",
-                        target_neff=geometry.mode_spec.target_neff,
-                    ),
-                ),
-                geometry,
-                float(frequency),
-                cache,
-            )
-            for index in range(count)
-        ]
+        projections, coefficient_rows = _coupled_projection(
+            data,
+            _monitor_port(geometry, 0, "te"),
+            geometry,
+            frequency,
+            cache,
+        )
         projection = projections[0]
         axis = projection["axis"]
-        measure = projection["integration_weights"]
-        basis = [
-            item[key]
-            for item in projections
-            for key in ("mode_components", "mode_components_bwd")
-        ]
-        overlap = np.array(
-            [[_modal_overlap(a, b, axis, measure) for b in basis] for a in basis]
-        ).T
-        rhs_weights = np.zeros((2 * count, 6, points), dtype=np.complex128)
-        paired = {
-            "x": (("Ey", "Hz", 1), ("Ez", "Hy", -1)),
-            "y": (("Ez", "Hx", 1), ("Ex", "Hz", -1)),
-            "z": (("Ex", "Hy", 1), ("Ey", "Hx", -1)),
-        }[axis]
+        src0, src1 = _monitor_analysis_plane_3d(data, geometry, axis)
+        if len(src0) * len(src1) != points:
+            raise ValueError("Mode projector and DFT sampling geometry disagree")
         dst0, dst1 = projection["analysis_coords0"], projection["analysis_coords1"]
-        plane_shape = (len(dst0), len(dst1))
-        for name in projection["components"]:
-            src0, src1 = _monitor_analysis_plane_3d(data, geometry, axis)
-            if len(src0) * len(src1) != points:
-                raise ValueError("Mode projector and DFT sampling geometry disagree")
-            # Adjoint of the separable interpolation used by ordinary analysis.
-            interp0 = np.array(
-                [np.interp(dst0, src0, row) for row in np.eye(len(src0))]
-            )
-            interp1 = np.array(
-                [np.interp(dst1, src1, row) for row in np.eye(len(src1))]
-            )
-            for index, mode in enumerate(basis):
-                for electric, magnetic, sign in paired:
-                    partner = magnetic if name == electric else electric
-                    if name not in (electric, magnetic):
-                        continue
-                    weights = (
-                        0.25 * sign * measure * np.conjugate(mode[partner]).reshape(-1)
-                    ).reshape(plane_shape)
-                    rhs_weights[index, components.index(name)] = (
-                        interp0 @ weights @ interp1.T
-                    ).reshape(-1)
-        if np.linalg.cond(overlap) < 1e8:
-            weights = np.linalg.solve(overlap, rhs_weights.reshape(2 * count, -1))
-        else:
-            weights = np.linalg.pinv(overlap) @ rhs_weights.reshape(2 * count, -1)
+        # Pull the shared coefficient rows back through analysis interpolation.
+        interp0 = np.array([np.interp(dst0, src0, row) for row in np.eye(len(src0))])
+        interp1 = np.array([np.interp(dst1, src1, row) for row in np.eye(len(src1))])
+        rows = coefficient_rows.reshape(
+            2 * count, len(projection["components"]), len(dst0), len(dst1)
+        )
+        weights = np.zeros((2 * count, 6, points), dtype=np.complex128)
+        for index, name in enumerate(projection["components"]):
+            weights[:, components.index(name)] = (
+                interp0 @ rows[:, index] @ interp1.T
+            ).reshape(2 * count, points)
         weights = weights.reshape(count, 2, 6, points)
         # The discrete x/y basis stores its +axis branch second.
         if axis in {"x", "y"}:

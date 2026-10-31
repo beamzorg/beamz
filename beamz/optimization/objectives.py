@@ -16,12 +16,12 @@ from beamz.analysis.modal_projection.geometry import (
 )
 from beamz.analysis.mode_projection import (
     _build_port_projection,
-    _modal_coefficient_rows_3d,
 )
 from beamz.analysis.sparameters import _wave_selectors
 from beamz.devices.monitors import ModeMonitor
-from beamz.devices.ports import Port
 from beamz.simulation.observe import normalization_from_result
+
+from .modes import _coupled_projection, _monitor_port
 
 
 class ModalObjective:
@@ -233,21 +233,10 @@ class ModePower(ModalObjective):
             selected.append(int(matches[0]))
         if not selected:
             raise ValueError("ModePower requires at least one recorded frequency.")
-        port = Port(
-            center=monitor.center,
-            size=monitor.size,
-            name=f"{self.monitor}_mode_{self.mode_index}",
-            mode_spec=replace(
-                monitor.mode_spec,
-                mode_index=self.mode_index,
-                polarization=(
-                    monitor.mode_spec.polarization
-                    if program.config.is_3d
-                    else monitor.mode_spec.polarization
-                    or program.config.polarization_2d
-                ),
-            ),
-            direction="+",
+        port = _monitor_port(
+            monitor,
+            self.mode_index,
+            None if program.config.is_3d else program.config.polarization_2d,
         )
         spec = next(
             item
@@ -275,26 +264,9 @@ class ModePower(ModalObjective):
         mode_cache = cache.setdefault(("mode_projections", self.monitor), {})
         for frequency in np.asarray(data.frequencies)[selected]:
             if program.config.is_3d:
-                group_key = ("coupled_rows", self.monitor, float(frequency))
-                if group_key not in cache:
-                    projections = [
-                        _build_port_projection(
-                            data,
-                            port.updated_copy(
-                                name=f"{self.monitor}_mode_{m}",
-                                mode_spec=replace(port.mode_spec, mode_index=m),
-                            ),
-                            monitor,
-                            float(frequency),
-                            mode_cache,
-                        )
-                        for m in range(monitor.mode_spec.num_modes)
-                    ]
-                    cache[group_key] = (
-                        projections,
-                        _modal_coefficient_rows_3d(projections),
-                    )
-                projections, coefficient_rows = cache[group_key]
+                projections, coefficient_rows = _coupled_projection(
+                    data, port, monitor, frequency, cache
+                )
                 projection = projections[self.mode_index]
                 components = projection["components"]
                 positive, negative = _wave_selectors(port, is_3d=True)
