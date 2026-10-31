@@ -304,21 +304,11 @@ class ModePower(ModalObjective):
         phases = jnp.asarray(phase_rows)[:, :, None]
         norm = jnp.asarray(norm)[:, None, None]
         selected = jnp.asarray(selected)
-        start = spec.dft_value_offset
-        count = 6 * spec.freq_count * spec.dft_point_count
 
         def amplitude_spectrum(state):
-            fields = (
-                state.dft_vec_re[start : start + count]
-                + 1j * state.dft_vec_im[start : start + count]
-            ).reshape(6, spec.freq_count, spec.dft_point_count)
-            window_sum = jnp.maximum(
-                state.dft_weight_sum[spec.dft_weight_offset + selected], 1e-18
-            )
+            fields = spec.normalized_dft(state)
             fields = fields[indices][:, selected, :].transpose(1, 0, 2)
-            vector = (fields * phases * (2 / window_sum[:, None, None]) / norm).reshape(
-                len(frequencies), -1
-            )
+            vector = (fields * phases / norm).reshape(len(frequencies), -1)
             return jnp.sum(rows * vector, axis=1)
 
         cache[key] = amplitude_spectrum

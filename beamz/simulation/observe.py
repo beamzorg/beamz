@@ -13,10 +13,10 @@ from beamz.const import LIGHT_SPEED
 from beamz.devices._immutable import readonly_array
 from beamz.devices.monitors.compiler import (
     CompiledMonitorSpec,
+    SamplingPlan,
 )
 from beamz.devices.monitors.monitors import _line_integral_scale_2d, _line_normal_2d
 from beamz.devices.sources.specs import GaussianBeamSource, GaussianSource, ModeSource
-from beamz.lattice import sampling_coordinates, yee_flux
 from beamz.simulation.model import SimulationState
 
 
@@ -323,8 +323,6 @@ def is_vector_dft_monitor(mon):
     """Whether a monitor contains only nonempty vector DFT acquisitions."""
     return (
         mon.recorder_index < 0
-        and not mon.accumulate_power
-        and not mon.accumulate_frequency
         and mon.dft_enabled
         and mon.freq_count > 0
         and mon.dft_point_count > 0
@@ -369,77 +367,11 @@ def monitor_dft_sample_scale(
     return jnp.where(jnp.asarray(normalization_code) == 1, physical, native)
 
 
-def _sample_components(fields, indices, weights, *, active_mask=None):
-    """Apply one canonical weighted-gather plan to Ex, Ey, Ez, Hx, Hy, and Hz."""
-    # Retain the spatial axes so SPMD can gather sparse samples locally. Flattening
-    # a sharded field can instead all-gather the complete volume on every device.
-    return jnp.stack(
-        tuple(
-            jnp.zeros(flat_idx.shape[:-1], dtype=field.dtype)
-            if active_mask is not None and active_mask[component] == 0
-            else jnp.sum(
-                field[sampling_coordinates(flat_idx, field.shape)] * component_weights,
-                axis=-1,
-            )
-            for component, (field, flat_idx, component_weights) in enumerate(
-                zip(fields, indices, weights, strict=True)
-            )
-        ),
-        axis=0,
-    )
-
-
 def monitor_dft_accumulator_dtype():
     """Return the real dtype used for compiled monitor DFT accumulators."""
 
     # Match global precision so long accumulations gain x64 accuracy when enabled.
     return jnp.float64 if bool(jax.config.read("jax_enable_x64")) else jnp.float32
-
-
-def monitor_state_size(specs: tuple[CompiledMonitorSpec, ...], num_steps: int) -> int:
-    """Return the time-record capacity required by compiled monitors."""
-    # FieldRecorder frames have dedicated shape-aware buffers and must not inflate the
-    # rectangular scalar-power history shared by ordinary monitors.
-    power_specs = tuple(spec for spec in specs if spec.accumulate_power)
-    if not power_specs:
-        return 0
-    return int(
-        max(
-            int(np.ceil(num_steps / max(1, int(spec.record_interval))))
-            for spec in power_specs
-        )
-    )
-
-
-def monitor_frequency_size(specs: tuple[CompiledMonitorSpec, ...]) -> int:
-    """Return the largest frequency count required by any monitor."""
-    # Frequency rows are rectangular to keep the scan-state shape static.
-    if not specs:
-        return 0
-    return int(max(int(spec.freq_count) for spec in specs))
-
-
-@dataclass(frozen=True)
-class DftBufferLayout:
-    """Interpret the compiler's component-major DFT arena without owning arrays."""
-
-    shape: tuple[int, int, int]
-    values: slice
-    weights: slice
-
-    def unpack(self, real, imag):
-        return (real[self.values] + 1j * imag[self.values]).reshape(self.shape)
-
-
-def dft_buffer_layout(spec, *, local_offsets=False):
-    frequencies, points = int(spec.freq_count), int(spec.dft_point_count)
-    value_start = 0 if local_offsets else int(spec.dft_value_offset)
-    weight_start = 0 if local_offsets else int(spec.dft_weight_offset)
-    return DftBufferLayout(
-        (6, frequencies, points),
-        slice(value_start, value_start + 6 * frequencies * points),
-        slice(weight_start, weight_start + frequencies),
-    )
 
 
 def monitor_dft_value_size(specs: tuple[CompiledMonitorSpec, ...]) -> int:
@@ -469,25 +401,11 @@ MONITOR_FIELDS = (
 
 
 def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any]:
-    # 1. Resolve monitor specs and accumulator precision; a no-monitor program receives
-    # concrete empty arrays of the same ranks as an enabled state.
     specs = program.monitors
     dft_dtype = monitor_dft_accumulator_dtype()
-    # 2. Keep scalar histories rectangular, but size vector DFT arenas by the exact sum
-    # of monitor payloads. Offsets live in each immutable CompiledMonitorSpec.
     n = len(specs)
-    max_records = (
-        max(
-            1,
-            monitor_state_size(
-                specs,
-                program.config.num_steps if num_steps is None else int(num_steps),
-            ),
-        )
-        if specs
-        else 0
-    )
-    max_freq = monitor_frequency_size(specs)
+    # Retain empty scalar-history members for public state/checkpoint compatibility.
+    # The compiler emits field DFTs and recorders; flux is derived from those fields.
     dft_value_count = monitor_dft_value_size(specs)
     dft_weight_count = monitor_dft_weight_size(specs)
     recorder_specs = tuple(spec for spec in specs if spec.recorder_index >= 0)
@@ -496,11 +414,11 @@ def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any
     )
     # 3. Initialize every accumulated quantity at zero.
     values = (
-        jnp.zeros((n, max_records), dtype=jnp.float32),
-        jnp.zeros((n, max_records), dtype=jnp.float32),
+        jnp.zeros((n, 0), dtype=jnp.float32),
+        jnp.zeros((n, 0), dtype=jnp.float32),
         jnp.zeros((n,), dtype=jnp.int32),
-        jnp.zeros((n, max_freq), dtype=jnp.float32),
-        jnp.zeros((n, max_freq), dtype=jnp.float32),
+        jnp.zeros((n, 0), dtype=jnp.float32),
+        jnp.zeros((n, 0), dtype=jnp.float32),
         jnp.zeros((dft_value_count,), dtype=dft_dtype),
         jnp.zeros((dft_value_count,), dtype=dft_dtype),
         jnp.zeros((dft_weight_count,), dtype=dft_dtype),
@@ -532,24 +450,6 @@ def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any
         tuple(jnp.zeros((), dtype=jnp.int32) for _ in recorder_specs),
     )
     return dict(zip(MONITOR_FIELDS, values, strict=True))
-
-
-def _reduce_power(samples: jnp.ndarray, spec: CompiledMonitorSpec):
-    """Reduce canonical colocated fields to signed normal flux or flux magnitude."""
-    return jnp.asarray(
-        yee_flux(
-            samples,
-            spec.normal_axis,
-            normal_sign=spec.normal_sign,
-            measure=(
-                spec.integration_weights
-                if spec.integration_weights.size
-                else spec.power_scale
-            ),
-            phasor=jnp.iscomplexobj(samples),
-        ),
-        dtype=jnp.float32,
-    )
 
 
 def _dft_phase_angle(frequencies, time, dtype):
@@ -604,10 +504,8 @@ def _accumulate_dft(
     # Compilation has already encoded dimensional colocation in these weighted gathers.
     vectors = sampled_vectors
     if vectors is None:
-        vectors = _sample_components(
+        vectors = mon.dft_sampling.sample(
             field_arrays,
-            mon.dft_flat_idx,
-            mon.dft_weights,
             active_mask=np.asarray(mon.dft_component_mask),
         )
     component_mask = mon.dft_component_mask.astype(dtype)[:, None, None]
@@ -630,10 +528,10 @@ def _accumulate_dft(
         )
     )
     nf, npnt = mon.freq_count, mon.dft_point_count
-    layout = dft_buffer_layout(mon, local_offsets=local_offsets)
-    d_re = d_re.at[layout.values].add(delta_re[:, :nf, :npnt].reshape(-1))
-    d_im = d_im.at[layout.values].add(delta_im[:, :nf, :npnt].reshape(-1))
-    d_w = d_w.at[layout.weights].add(jnp.full((nf,), window, dtype=dtype))
+    values, weights = mon.dft_slices(local=local_offsets)
+    d_re = d_re.at[values].add(delta_re[:, :nf, :npnt].reshape(-1))
+    d_im = d_im.at[values].add(delta_im[:, :nf, :npnt].reshape(-1))
+    d_w = d_w.at[weights].add(jnp.full((nf,), window, dtype=dtype))
     return d_re, d_im, d_w
 
 
@@ -663,13 +561,9 @@ def _record_fields(program, state, abs_step, t_phys, fields):
             strict=True,
         ):
             value = (
-                jnp.sum(
-                    fields[component][
-                        sampling_coordinates(flat_idx, fields[component].shape)
-                    ]
-                    * weights,
-                    axis=-1,
-                ).reshape(shape)
+                SamplingPlan((flat_idx,), (weights,))
+                .sample((fields[component],))[0]
+                .reshape(shape)
                 if flat_idx.size
                 else fields[component][tuple(slice(0, size) for size in shape)]
             )
@@ -720,13 +614,6 @@ def update_monitors(
     if not program.monitors:
         return state
 
-    # 2. Unpack the immutable state into local arrays. Updates below remain functional and
-    # are repackaged only once at the end of the timestep.
-    powers = state.powers
-    timestamps = state.timestamps
-    counts = state.counts
-    freq_flux_re = state.freq_flux_re
-    freq_flux_im = state.freq_flux_im
     dft_vec_re = state.dft_vec_re
     dft_vec_im = state.dft_vec_im
     dft_weight_sum = state.dft_weight_sum
@@ -740,7 +627,6 @@ def update_monitors(
             list(dft_vec_im),
             list(dft_weight_sum),
         )
-    max_records = powers.shape[1]
     field_arrays = (ex, ey, ez, hx, hy, hz)
 
     # 3. Every scalar and spectral monitor follows the same sampling and accumulator path;
@@ -748,68 +634,6 @@ def update_monitors(
     for monitor_position, mon in enumerate(program.monitors):
         if mon.recorder_index >= 0:
             continue
-        should_record = monitor_records_on_step(abs_step, mon.record_interval)
-        can_record = counts[mon.monitor_index] < max_records
-        do_record = should_record & can_record & mon.accumulate_power
-        do_freq = (
-            step_hits_interval(abs_step, mon.freq_record_interval)
-            if mon.accumulate_frequency and mon.freq_count > 0
-            else jnp.array(False)
-        )
-        need_sample = do_record | do_freq
-
-        power_sample = jax.lax.cond(
-            need_sample,
-            lambda _, mon=mon: _reduce_power(
-                _sample_components(
-                    field_arrays, mon.sample_flat_idx, mon.sample_weights
-                ),
-                mon,
-            ),
-            lambda _unused: jnp.array(0.0, dtype=jnp.float32),
-            operand=None,
-        )
-        power_val = jnp.where(
-            do_record, power_sample, jnp.array(0.0, dtype=jnp.float32)
-        )
-
-        # 4b. Record scalar power and timestamp conditionally while keeping the destination
-        # index in bounds for both branches of the compiled selection.
-        slot = jnp.minimum(counts[mon.monitor_index], max_records - 1)
-        old_power = powers[mon.monitor_index, slot]
-        old_ts = timestamps[mon.monitor_index, slot]
-
-        powers = powers.at[mon.monitor_index, slot].set(
-            jnp.where(do_record, jnp.asarray(power_val), jnp.asarray(old_power))
-        )
-        timestamps = timestamps.at[mon.monitor_index, slot].set(
-            jnp.where(do_record, t_phys, old_ts)
-        )
-        counts = counts.at[mon.monitor_index].set(
-            counts[mon.monitor_index] + jnp.where(do_record, 1, 0)
-        )
-        # 4c. Integrate scalar spectral flux at its absolute sample phase, using
-        # real/imaginary accumulators for backend compatibility.
-        if mon.accumulate_frequency and mon.freq_count > 0:
-            mi = mon.monitor_index
-            row_f_re = freq_flux_re[mi, : mon.freq_count]
-            row_f_im = freq_flux_im[mi, : mon.freq_count]
-            theta_now = (
-                jnp.asarray(2.0 * np.pi, dtype=jnp.float32)
-                * jnp.asarray(mon.freq_hz, dtype=jnp.float32)
-                * t_phys
-            )
-            cur_ph_re = jnp.cos(theta_now)
-            cur_ph_im = jnp.sin(theta_now)
-            delta_re = power_sample * dt_scalar * cur_ph_re
-            delta_im = power_sample * dt_scalar * cur_ph_im
-            zero_freq = jnp.asarray(0.0, dtype=row_f_re.dtype)
-            row_f_re = row_f_re + jnp.where(do_freq, delta_re, zero_freq)
-            row_f_im = row_f_im + jnp.where(do_freq, delta_im, zero_freq)
-            freq_flux_re = freq_flux_re.at[mi, : mon.freq_count].set(row_f_re)
-            freq_flux_im = freq_flux_im.at[mi, : mon.freq_count].set(row_f_im)
-        # 4d. Gate full vector DFT sampling by its time window and cadence because field
-        # interpolation is substantially more expensive than updating scalar flux.
         if mon.dft_enabled and mon.freq_count > 0 and mon.dft_point_count > 0:
             do_dft = monitor_dft_should_accumulate(
                 mon.dft_enabled and mon.freq_count > 0 and mon.dft_point_count > 0,
@@ -879,11 +703,6 @@ def update_monitors(
         {"Ex": ex, "Ey": ey, "Ez": ez, "Hx": hx, "Hy": hy, "Hz": hz},
     )
     return state._replace(
-        powers=powers,
-        timestamps=timestamps,
-        counts=counts,
-        freq_flux_re=freq_flux_re,
-        freq_flux_im=freq_flux_im,
         dft_vec_re=tuple(dft_vec_re) if segmented_dft else dft_vec_re,
         dft_vec_im=tuple(dft_vec_im) if segmented_dft else dft_vec_im,
         dft_weight_sum=tuple(dft_weight_sum) if segmented_dft else dft_weight_sum,

@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from beamz.devices.monitors.compiler import CompiledMonitorSpec
+from beamz.devices.monitors.compiler import CompiledMonitorSpec, SamplingPlan
 from beamz.simulation.observe import _accumulate_dft
 
 
@@ -20,7 +20,6 @@ def test_dft_active_components_preserve_ragged_arena(active):
         name="masked",
         monitor_index=0,
         record_interval=1,
-        accumulate_power=False,
         power_scale=1,
         freq_count=nf,
         freq_hz=jnp.asarray(frequencies),
@@ -29,8 +28,7 @@ def test_dft_active_components_preserve_ragged_arena(active):
         dft_value_offset=offset,
         dft_weight_offset=2,
         dft_component_mask=jnp.asarray(mask),
-        dft_flat_idx=indices,
-        dft_weights=weights,
+        dft_sampling=SamplingPlan(indices, weights),
     )
     fields = tuple(
         jnp.arange(4, dtype=jnp.float32).reshape(2, 2) + c

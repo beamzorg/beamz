@@ -7,9 +7,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from beamz.devices.monitors.compiler import _sampling_indices
+from beamz.devices.monitors.compiler import SamplingPlan, _sampling_indices
 from beamz.lattice import _component_plane_plan_3d, sampling_coordinates
-from beamz.simulation.observe import _sample_components
 
 
 def test_15b_plane_plan_and_jitted_sampling_without_large_field_allocation():
@@ -56,7 +55,7 @@ def test_15b_plane_plan_and_jitted_sampling_without_large_field_allocation():
             assert actual.dtype == jnp.int32
         field = AnalyticField()
         sampled = jax.jit(
-            lambda: _sample_components((field,), (metadata,), (jnp.asarray(weights),))
+            lambda: SamplingPlan((metadata,), (jnp.asarray(weights),)).sample((field,))
         )()
         np.testing.assert_allclose(sampled, [[50625.36]], rtol=0, atol=0.004)
 

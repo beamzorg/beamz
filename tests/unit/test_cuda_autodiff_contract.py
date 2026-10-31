@@ -95,8 +95,6 @@ def native_model(monkeypatch):
     )
     monitor = SimpleNamespace(
         recorder_index=-1,
-        accumulate_power=False,
-        accumulate_frequency=False,
         dft_enabled=True,
         freq_count=1,
         dft_point_count=1,
@@ -276,8 +274,6 @@ def test_native_step_eligibility(native_model):
         jax.config.update("jax_enable_x64", previous_x64)
     for field, value in (
         ("recorder_index", 0),
-        ("accumulate_power", True),
-        ("accumulate_frequency", True),
         ("dft_enabled", False),
         ("freq_count", 0),
         ("dft_point_count", 0),

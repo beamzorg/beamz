@@ -39,7 +39,6 @@ from beamz.simulation.execute import (
     scan_steps,
 )
 from beamz.simulation.model import CompiledProgram, SimulationState, UpdateCoefficients
-from beamz.simulation.observe import dft_buffer_layout
 
 
 def _checkpoint_interval(value, num_steps):
@@ -115,9 +114,9 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
             return state
         values, weights = [], []
         for mon in program.monitors:
-            layout = dft_buffer_layout(mon)
-            values.append(layout.values if mon.dft_enabled else slice(0, 0))
-            weights.append(layout.weights if mon.dft_enabled else slice(0, 0))
+            value, weight = mon.dft_slices()
+            values.append(value)
+            weights.append(weight)
         return state._replace(
             dft_vec_re=tuple(state.dft_vec_re[key] for key in values),
             dft_vec_im=tuple(state.dft_vec_im[key] for key in values),
@@ -369,12 +368,7 @@ class DifferentiableSimulation:
         an explicit part of the caller's objective.
         """
         spec = self._monitor(monitor)
-        layout = dft_buffer_layout(spec)
-        values = layout.unpack(state.dft_vec_re, state.dft_vec_im)
-        weights = state.dft_weight_sum[layout.weights]
-        values = values * (2.0 / jnp.maximum(weights, 1e-18))[None, :, None]
-        h_phase = jnp.exp(-1j * jnp.pi * spec.freq_hz * self.program.config.dt)
-        return values.at[3:].multiply(h_phase[None, :, None])
+        return spec.normalized_dft(state, align_h=True, dt=self.program.config.dt)
 
     def monitor_flux(self, state, monitor=0):
         """Return differentiable signed power per frequency through a planar monitor."""

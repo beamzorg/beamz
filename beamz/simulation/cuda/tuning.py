@@ -428,8 +428,6 @@ def _eligible(program):
         return False
     return all(
         m.recorder_index < 0
-        and not m.accumulate_power
-        and not m.accumulate_frequency
         and m.dft_enabled
         and m.freq_count > 0
         and m.dft_point_count > 0
