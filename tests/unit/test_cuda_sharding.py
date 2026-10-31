@@ -16,8 +16,16 @@ import pytest
 import beamz as bz
 from beamz.simulation.cuda import runtime
 from beamz.simulation.cuda import sharding as cuda_sharding
+from beamz.simulation.distributed import _shard_map
 from beamz.simulation.model import ShardingConfig
 from beamz.simulation.sharding import build_sharding_plan
+
+
+def test_legacy_shard_map_lookup(monkeypatch):
+    monkeypatch.delattr(jax, "shard_map", raising=False)
+    legacy = SimpleNamespace(shard_map=object())
+    monkeypatch.setitem(sys.modules, "jax.experimental.shard_map", legacy)
+    assert _shard_map() is legacy.shard_map
 
 
 def make_simulation():
