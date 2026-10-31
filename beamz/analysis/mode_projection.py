@@ -50,49 +50,8 @@ def _monitor_profile_slice(sim, monitor, axis, pad_cells):
             "store_full_materials=True."
         )
     perm, _mu, origin, full_shape = materials
-    if perm.ndim == 3:
-        z_idx, y_idx, x_idx = monitor.get_grid_slice_3d(
-            sim.resolution,
-            sim.resolution,
-            sim.resolution,
-            full_shape,
-        )
-
-        def _clamp(idx, limit):
-            if isinstance(idx, slice):
-                start = 0 if idx.start is None else int(idx.start)
-                stop = limit if idx.stop is None else int(idx.stop)
-                start = max(0, min(start, max(limit - 1, 0)))
-                stop = max(start + 1, min(stop, limit))
-                return slice(start, stop)
-            ii = int(idx)
-            return max(0, min(ii, limit - 1))
-
-        z_idx = _clamp(z_idx, full_shape[0])
-        y_idx = _clamp(y_idx, full_shape[1])
-        x_idx = _clamp(x_idx, full_shape[2])
-        global_indices = (z_idx, y_idx, x_idx)
-        local_indices = []
-        for idx, offset in zip(global_indices, origin, strict=True):
-            if isinstance(idx, slice):
-                local_indices.append(
-                    slice(
-                        None if idx.start is None else int(idx.start) - offset,
-                        None if idx.stop is None else int(idx.stop) - offset,
-                    )
-                )
-            else:
-                local_indices.append(int(idx) - offset)
-        z_idx, y_idx, x_idx = local_indices
-        eps_slice = np.asarray(perm[z_idx, y_idx, x_idx], dtype=np.complex128)
-        if eps_slice.ndim != 2:
-            eps_slice = np.atleast_2d(eps_slice)
-        npts = int(eps_slice.size)
-        local_idx = np.arange(npts, dtype=int)
-        d_area = float(sim.resolution) * float(sim.resolution)
-        return eps_slice, local_idx, d_area
     if perm.ndim != 2:
-        raise NotImplementedError("Modal extraction supports 2D or 3D only.")
+        raise ValueError("Line modal profiles require 2D materials.")
     grid = sim.coordinates.grid
     if grid is not None and grid.metric_kind_for(("x", "y")) != "isotropic_uniform":
         snapped = snap_axis_aligned_line_region_grid(monitor.start, monitor.end, grid)
@@ -493,12 +452,9 @@ def _build_port_projection_2d(
             operation="2D modal extraction",
         )
     mode_spec = getattr(monitor, "mode_spec", spec.mode_spec)
-    profile_slice = _monitor_profile_slice(sim, monitor, parts["axis"], mode_pad_cells)
-    if len(profile_slice) == 3:
-        eps_profile, local_idx, dl = profile_slice
-        grid_edges = None
-    else:
-        eps_profile, local_idx, dl, grid_edges = profile_slice
+    eps_profile, local_idx, dl, grid_edges = _monitor_profile_slice(
+        sim, monitor, parts["axis"], mode_pad_cells
+    )
     eps_profile = np.asarray(eps_profile, dtype=np.complex128)
     target_neff = 0.98 * np.sqrt(max(float(np.max(np.real(eps_profile))), 1e-12))
     mode_count = int(spec.mode_index) + 1
