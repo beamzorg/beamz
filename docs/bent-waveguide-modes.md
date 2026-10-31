@@ -3,8 +3,11 @@
 `beamz.devices.modes.solve_grid` can evaluate a uniformly bent cross-section:
 
 ```python
-straight = solve_grid(**grid_inputs)
-bent = solve_grid(**grid_inputs, bend_radius=10.0, bend_axis="x")
+from beamz.devices.modes import Materials
+
+materials = Materials.from_components(**grid_inputs)
+straight = solve_grid(material_grid=materials, wavelength=1.55)
+bent = solve_grid(material_grid=materials, wavelength=1.55, bend_radius=10.0, bend_axis="x")
 print(straight.n_eff.values, bent.n_eff.values)
 ```
 

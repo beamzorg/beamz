@@ -214,7 +214,6 @@ def _solve_2d_mode(
         filter_pol=cast(Literal["te", "tm"], polarization),
         target_neff=target_neff,
         force_symmetry=mode_spec.force_symmetry,
-        return_fields=True,
         grid_edges=None if grid_edges is None else (np.asarray(grid_edges),),
     )
     mode_idx = min(int(mode_spec.mode_index), len(neff_val) - 1)

@@ -15,6 +15,7 @@ from beamz.devices.modes.plane import solve_modes
 from beamz.devices.modes.solver import solve_grid
 from beamz.devices.modes.specs import ModeData, ModeSpec
 from beamz.lattice import component_shape_3d
+from tests.mode_family_fixture import mode_grid_inputs
 
 
 def _edges(start, stop, count):
@@ -155,11 +156,19 @@ def test_discrete_mode_solver_rotates_material_components(
         solve_beamz_mode(spec)
 
     for a, v in zip("xyz", order, strict=True):
-        np.testing.assert_array_equal(seen[f"eps_{a}{a}"], v)
-        np.testing.assert_array_equal(seen[f"mu_{a}{a}"], v / 2)
+        np.testing.assert_array_equal(
+            seen["material_grid"].eps_tensor["xyz".index(a), "xyz".index(a)], v
+        )
+        np.testing.assert_array_equal(
+            seen["material_grid"].mu_tensor["xyz".index(a), "xyz".index(a)], v / 2
+        )
     for a, v in zip(("xy", "xz", "yz"), cross, strict=True):
-        np.testing.assert_array_equal(seen[f"eps_{a}"], v)
-        np.testing.assert_array_equal(seen[f"eps_{a[::-1]}"], v)
+        np.testing.assert_array_equal(
+            seen["material_grid"].eps_tensor["xyz".index(a[0]), "xyz".index(a[1])], v
+        )
+        np.testing.assert_array_equal(
+            seen["material_grid"].eps_tensor["xyz".index(a[1]), "xyz".index(a[0])], v
+        )
 
 
 @pytest.mark.parametrize(
@@ -174,21 +183,23 @@ def test_preview_index_is_invariant_under_rotating_anisotropic_guide(
     epsilon = (eps, 1.2 * eps, 1.5 * eps)
     mu = tuple(np.full_like(eps, v) if magnetic else None for v in (1.1, 1.3, 1.6))
     expected = solve_grid(
-        eps_xx=epsilon[0],
-        eps_yy=epsilon[1],
-        eps_zz=epsilon[2],
-        mu_xx=mu[0],
-        mu_yy=mu[1],
-        mu_zz=mu[2],
-        x_edges=x_edges,
-        y_edges=y_edges,
-        freqs=[C_0 / 1.55],
-        num_modes=7,
-        direction=sign,
+        **mode_grid_inputs(
+            eps_xx=epsilon[0],
+            eps_yy=epsilon[1],
+            eps_zz=epsilon[2],
+            mu_xx=mu[0],
+            mu_yy=mu[1],
+            mu_zz=mu[2],
+            x_edges=x_edges,
+            y_edges=y_edges,
+            freqs=[C_0 / 1.55],
+            num_modes=7,
+            direction=sign,
+        )
     ).n_complex.values[0, 0]
     global_eps = [epsilon[i].T for i in order]
     global_mu = [None if mu[i] is None else mu[i].T for i in order]
-    neff, _ = solve_modes(
+    neff, *_ = solve_modes(
         global_eps[0],
         omega=2 * np.pi * C_0 / 1.55,
         dL=0.1e-6,
@@ -206,13 +217,15 @@ def test_preview_index_is_invariant_under_rotating_anisotropic_guide(
 def test_grid_solve_returns_sorted_modes_fields_and_diagnostics():
     eps, x_edges, y_edges = _strip()
     result = solve_grid(
-        eps_xx=eps,
-        x_edges=x_edges,
-        y_edges=y_edges,
-        freqs=[C_0 / 1.55],
-        num_modes=2,
-        target_neff=2.5,
-        krylov_dim=16,
+        **mode_grid_inputs(
+            eps_xx=eps,
+            x_edges=x_edges,
+            y_edges=y_edges,
+            freqs=[C_0 / 1.55],
+            num_modes=2,
+            target_neff=2.5,
+            krylov_dim=16,
+        )
     )
 
     assert result.n_complex.shape == (1, 2)
@@ -228,17 +241,19 @@ def test_grid_solve_supports_pml_boundaries_and_tensor_materials():
     eps, x_edges, y_edges = _strip(5, 4)
     coupling = np.full_like(eps, 0.01)
     result = solve_grid(
-        eps_xx=eps,
-        eps_xy=coupling,
-        eps_yx=coupling,
-        x_edges=x_edges,
-        y_edges=y_edges,
-        freqs=[C_0 / 1.55],
-        num_modes=1,
-        target_neff=2.4,
-        pml=(1, 1),
-        boundary=("pmc", "pec"),
-        krylov_dim=20,
+        **mode_grid_inputs(
+            eps_xx=eps,
+            eps_xy=coupling,
+            eps_yx=coupling,
+            x_edges=x_edges,
+            y_edges=y_edges,
+            freqs=[C_0 / 1.55],
+            num_modes=1,
+            target_neff=2.4,
+            pml=(1, 1),
+            boundary=("pmc", "pec"),
+            krylov_dim=20,
+        )
     )
 
     assert result.solver_info["runs"][0]["backend_kind"] == "tensorial_scipy_reference"
@@ -273,14 +288,16 @@ def test_pml_material_averages_include_each_high_side_cell():
 def test_grid_solve_maps_components_to_global_axes(axis, dims):
     eps, first_edges, second_edges = _strip(5, 4)
     result = solve_grid(
-        eps_xx=eps,
-        x_edges=first_edges,
-        y_edges=second_edges,
-        freqs=[C_0 / 1.55],
-        num_modes=1,
-        target_neff=2.5,
-        normal_axis=axis,
-        krylov_dim=16,
+        **mode_grid_inputs(
+            eps_xx=eps,
+            x_edges=first_edges,
+            y_edges=second_edges,
+            freqs=[C_0 / 1.55],
+            num_modes=1,
+            target_neff=2.5,
+            normal_axis=axis,
+            krylov_dim=16,
+        )
     )
 
     assert result.field_components["Ex"].dims[:3] == dims
@@ -330,4 +347,6 @@ def test_discrete_request_snapshots_materials_and_validates_direction():
 def test_grid_solve_rejects_invalid_options(kwargs):
     eps, x_edges, y_edges = _strip(3, 3)
     with pytest.raises((TypeError, ValueError)):
-        solve_grid(eps_xx=eps, x_edges=x_edges, y_edges=y_edges, **kwargs)
+        solve_grid(
+            **mode_grid_inputs(eps_xx=eps, x_edges=x_edges, y_edges=y_edges, **kwargs)
+        )

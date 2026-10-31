@@ -31,6 +31,7 @@ from .fields import (
     _numeric_wave_number,
     _phase_delay,
 )
+from .models import Materials
 from .result import Result
 from .solver import solve_grid
 
@@ -459,25 +460,27 @@ def _resolve_mode_basis(
     u, v, n = (*solver_axes, spec.axis)
     fallback_eps = diagonal_eps.get("xx", eps_solver)
     candidate_kwargs = dict(
-        eps_xx=diagonal_eps.get(u * 2, fallback_eps),
-        eps_yy=diagonal_eps.get(v * 2, fallback_eps),
-        eps_zz=diagonal_eps.get(n * 2, fallback_eps),
-        eps_xy=cross_eps.get("".join(sorted(u + v))),
-        eps_yx=cross_eps.get("".join(sorted(u + v))),
-        eps_xz=cross_eps.get("".join(sorted(u + n))),
-        eps_zx=cross_eps.get("".join(sorted(u + n))),
-        eps_yz=cross_eps.get("".join(sorted(v + n))),
-        eps_zy=cross_eps.get("".join(sorted(v + n))),
-        mu_xx=diagonal_mu.get(u * 2),
-        mu_yy=diagonal_mu.get(v * 2),
-        mu_zz=diagonal_mu.get(n * 2),
-        x_edges=x_edges,
-        y_edges=y_edges,
+        material_grid=Materials.from_components(
+            eps_xx=diagonal_eps.get(u * 2, fallback_eps),
+            eps_yy=diagonal_eps.get(v * 2, fallback_eps),
+            eps_zz=diagonal_eps.get(n * 2, fallback_eps),
+            eps_xy=cross_eps.get("".join(sorted(u + v))),
+            eps_yx=cross_eps.get("".join(sorted(u + v))),
+            eps_xz=cross_eps.get("".join(sorted(u + n))),
+            eps_zx=cross_eps.get("".join(sorted(u + n))),
+            eps_yz=cross_eps.get("".join(sorted(v + n))),
+            eps_zy=cross_eps.get("".join(sorted(v + n))),
+            mu_xx=diagonal_mu.get(u * 2),
+            mu_yy=diagonal_mu.get(v * 2),
+            mu_zz=diagonal_mu.get(n * 2),
+            x_edges=x_edges,
+            y_edges=y_edges,
+            normal_axis=_AXIS_INDEX[spec.axis],
+        ),
         freqs=[spec.frequency],
         direction="+" if str(spec.solver_direction).startswith("+") else "-",
         num_modes=mode_count,
         target_neff=spec.target_neff,
-        normal_axis=_AXIS_INDEX[spec.axis],
     )
 
     def solve_candidates(count):
@@ -545,10 +548,11 @@ def _prepare_discrete_mode(
     }
 
     symmetry_edges = tuple(_axis_edges(spec, a) for a in spec.transverse_axes)
+    coordinates = getattr(result, "coordinates", {})
     symmetry_supports = {
-        name: tuple(np.asarray(data.coords[a]) * 1e-6 for a in spec.transverse_axes)
-        for name, data in getattr(result, "field_components", {}).items()
-        if all(a in data.coords for a in spec.transverse_axes)
+        name: tuple(np.asarray(coordinates[a]) * 1e-6 for a in spec.transverse_axes)
+        for name in _COMPONENTS
+        if all(a in coordinates for a in spec.transverse_axes)
     }
     rejected_axes = []
     if spec.force_symmetry:
@@ -944,37 +948,15 @@ def _boundary_refractive_index(permittivity: np.ndarray) -> float:
     return float(np.sqrt(max(float(np.max(np.real(boundary))), 0.0)))
 
 
-def _candidate_modes(result, spec: ModePlaneSpec) -> list[_ModeCandidate]:
-    candidates = []
-    count = int(result.n_complex.shape[1])
-    for mode_index in range(count):
-        fields = {
-            component: _field_plane(
-                result.field_components[component],
-                spec.axis,
-                spec.transverse_axes,
-                mode_index,
-            )
-            for component in _COMPONENTS
+def _candidate_modes(result: Result, spec: ModePlaneSpec) -> list[_ModeCandidate]:
+    fields = result.planes(spec.transverse_axes)
+    return [
+        {
+            "neff": complex(neff),
+            "fields": {name: values[i] for name, values in fields.items()},
         }
-        candidates.append(
-            {"neff": complex(result.n_complex.values[0, mode_index]), "fields": fields}
-        )
-    return candidates
-
-
-def _field_plane(
-    data_array,
-    axis: AxisName,
-    transverse_axes: tuple[AxisName, AxisName],
-    mode_index: int,
-) -> np.ndarray:
-    selected = data_array.isel(f=0, mode_index=mode_index)
-    normal_dim = axis
-    if normal_dim in selected.dims:
-        selected = selected.isel({normal_dim: 0})
-    selected = selected.transpose(*transverse_axes)
-    return np.asarray(selected.values, dtype=np.complex128)
+        for i, neff in enumerate(result.neffs[0])
+    ]
 
 
 def _sort_modes(

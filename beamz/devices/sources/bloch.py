@@ -9,9 +9,8 @@ from beamz.lattice import component_axis_offsets_3d, component_material_at
 def lower_bloch_plane_wave(source, ctx):
     # Import plan records lazily to keep the singledispatch compiler acyclic.
     from .compiler import (
-        CompiledInjectionPlan,
+        InjectionPlanEntry,
         TemporalWaveform,
-        _injection_entry,
         _validate_plane_wave_background,
     )
     from .time import sample_source_waveforms
@@ -129,7 +128,7 @@ def lower_bloch_plane_wave(source, ctx):
                 else amplitude * ctx.dt / (impedance * EPS_0 * material * spacing)
             )
             entries.append(
-                _injection_entry(
+                InjectionPlanEntry(
                     component=component,
                     timing=kind.lower(),
                     index=index,
@@ -139,4 +138,4 @@ def lower_bloch_plane_wave(source, ctx):
                     launched_power=float(source.power),
                 )
             )
-    return CompiledInjectionPlan(tuple(entries))
+    return tuple(entries)

@@ -12,14 +12,17 @@ permittivity grid:
 import numpy as np
 
 from beamz import LIGHT_SPEED
-from beamz.devices.modes import solve_grid
+from beamz.devices.modes import Materials, solve_grid
 
 eps = np.ones((40, 30))
 eps[15:25, 12:18] = 3.48**2
-result = solve_grid(
+materials = Materials.from_components(
     eps_xx=eps,
     x_edges=np.linspace(-2.0, 2.0, eps.shape[0] + 1),
     y_edges=np.linspace(-1.5, 1.5, eps.shape[1] + 1),
+)
+result = solve_grid(
+    material_grid=materials,
     freqs=[LIGHT_SPEED / 1.55e-6],
     num_modes=2,
     target_neff=3.0,

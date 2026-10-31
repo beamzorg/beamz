@@ -49,8 +49,19 @@ class _ModeFields:
             left += scale * right
 
 
-def solve_diagonal_scipy_reference(
+def solve_diagonal_scipy_reference(**options) -> SparseSolveResult:
+    """Solve the reduced [Ex, Ey] diagonal sparse eigenproblem with SciPy/ARPACK."""
+    return _solve_scipy(diagonal=True, **options)
+
+
+def solve_tensorial_scipy_reference(**options) -> SparseSolveResult:
+    """Solve the first-order [Ex, Ey, Hx, Hy] tensorial eigenproblem with SciPy/ARPACK."""
+    return _solve_scipy(diagonal=False, **options)
+
+
+def _solve_scipy(
     *,
+    diagonal: bool,
     eps_tensor: np.ndarray,
     mu_tensor: np.ndarray,
     dlf: tuple[np.ndarray, np.ndarray],
@@ -67,20 +78,10 @@ def solve_diagonal_scipy_reference(
     krylov_dim: int = 32,
     initial_vector: np.ndarray | None = None,
 ) -> SparseSolveResult:
-    """Solve the diagonal sparse eigenproblem with SciPy/ARPACK.
-
-    This is the reduced ``[Ex, Ey]`` transverse eigenproblem for diagonal
-    material tensors.
-    """
-
+    """Assemble, solve and normalize either sparse constitutive formulation."""
     sparse, spla, scipy_linalg = _import_scipy()
-
-    # The diagonal formulation has two transverse electric unknowns per cell.
-    nx = len(dlf[0])
-    ny = len(dlf[1])
+    nx, ny = len(dlf[0]), len(dlf[1])
     n = nx * ny
-
-    # Validate flattened tensor layout before assembling sparse operators.
     if (
         eps_tensor.shape != mu_tensor.shape
         or eps_tensor.shape[:2] != (3, 3)
@@ -91,9 +92,7 @@ def solve_diagonal_scipy_reference(
         )
     if num_modes <= 0:
         raise ValueError("num_modes must be positive")
-
-    # Build finite-difference derivative matrices, including optional PML
-    # complex-coordinate stretching.
+    # Both formulations use the same staggered derivatives and PML stretching.
     derivatives = _create_derivative_matrices(
         sparse,
         eps_tensor=eps_tensor,
@@ -108,289 +107,95 @@ def solve_diagonal_scipy_reference(
         dmin_pmc=dmin_pmc,
         scale=float(derivative_scale),
     )
-
-    # Assemble the reduced Ex/Ey eigen-operator for diagonal material tensors.
-    operators = _assemble_diagonal_operators(sparse, eps_tensor, mu_tensor, derivatives)
+    operators = (
+        _assemble_diagonal_operators(sparse, eps_tensor, mu_tensor, derivatives)
+        if diagonal
+        else {
+            "mat": _assemble_tensorial_operator(
+                sparse, eps_tensor, mu_tensor, derivatives
+            )
+        }
+    )
     operator = cast(Any, operators["mat"])
-    eig_guess = complex(-(neff_guess * neff_guess), 0.0)
-
-    # ARPACK can solve a real problem faster when the operator and shift are
-    # numerically real; otherwise it keeps the complex path.
-    operator, arpack_initial_vector, arpack_guess = _real_arpack_problem_if_close(
-        operator, initial_vector, eig_guess
-    )
+    guess = complex(-(neff_guess**2) if diagonal else neff_guess)
+    # Only the reduced diagonal problem uses the real ARPACK optimization.
+    if diagonal:
+        operator, initial_vector, guess = _real_arpack_problem_if_close(
+            operator, initial_vector, guess
+        )
     values, vectors = _selected_eigenpairs(
         operator,
         num_modes=num_modes,
-        sigma=arpack_guess,
-        krylov_dim=krylov_dim,
-        initial_vector=arpack_initial_vector,
-        spla=spla,
-        scipy_linalg=scipy_linalg,
-    )
-
-    # Normalize residuals by eigenvector norm so diagnostics are comparable
-    # across modes.
-    residuals = np.asarray(
-        [
-            np.linalg.norm(
-                operator @ vectors[:, index] - values[index] * vectors[:, index]
-            )
-            for index in range(len(values))
-        ],
-        dtype=float,
-    )
-    vector_norms = np.maximum(np.linalg.norm(vectors, axis=0), np.finfo(float).eps)
-    residuals = residuals / vector_norms
-
-    # Convert eigenvalues of -n_eff^2 back to n_eff and sort by real index.
-    modes: list[tuple[complex, np.ndarray, float]] = []
-    for value, vector, residual in zip(values, vectors.T, residuals, strict=True):
-        modes.append(
-            (
-                complex(np.sqrt(-value + 0j)),
-                np.asarray(vector, dtype=np.complex128),
-                float(residual),
-            )
-        )
-    modes.sort(key=lambda item: item[0].real, reverse=True)
-
-    # Precompute z-component inverse material matrices used during field
-    # reconstruction.
-    inv_eps_zz = sparse.diags(1.0 / eps_tensor[2, 2, :], format="csc")
-    inv_mu_zz = sparse.diags(1.0 / mu_tensor[2, 2, :], format="csc")
-    dxf, dxb, dyf, dyb = derivatives
-    cell_areas = np.repeat(np.asarray(dlf[0], dtype=float), ny) * np.tile(
-        np.asarray(dlf[1], dtype=float), nx
-    )
-
-    # Reconstruct all six field components from the transverse eigenvectors.
-    n_complex: list[complex] = []
-    mode_fields: list[_ModeFields] = []
-    sorted_residuals: list[float] = []
-    for mode_n, vector, residual in modes:
-        # The eigenvector stores Ex then Ey in flattened cell order.
-        ex = vector[:n].copy()
-        ey = vector[n:].copy()
-        denom = complex(-mode_n.imag, mode_n.real)
-
-        # Magnetic transverse components come from the Q operator divided by the
-        # effective-index factor.
-        h_field = operators["qmat"] @ vector
-        hx = np.asarray(h_field[:n] / denom, dtype=np.complex128)
-        hy = np.asarray(h_field[n:] / denom, dtype=np.complex128)
-
-        # Longitudinal H follows from the curl of transverse E.
-        hz_source = dxf @ ey - dyf @ ex
-        hz = np.asarray(inv_mu_zz @ hz_source, dtype=np.complex128)
-
-        # Longitudinal E follows from the curl of the material electric block.
-        h_partial = np.asarray(
-            (operators["q_ep"] @ vector) / denom, dtype=np.complex128
-        )
-        ez_source = dxb @ h_partial[n:] - dyb @ h_partial[:n]
-        ez = np.asarray(inv_eps_zz @ ez_source, dtype=np.complex128)
-
-        # Convert magnetic fields to the same physical normalization convention
-        # used by Result overlap calculations.
-        h_scale = -1j / ETA0
-        hx *= h_scale
-        hy *= h_scale
-        hz *= h_scale
-
-        # Backward propagation flips transverse H and longitudinal E.
-        if direction == "-":
-            hx *= -1.0
-            hy *= -1.0
-            ez *= -1.0
-
-        # Accumulate raw modes first; normalization is applied to the full set
-        # so modes can be Lorentz-orthogonalized together.
-        n_complex.append(mode_n)
-        sorted_residuals.append(residual)
-        mode_fields.append(_ModeFields(ex=ex, ey=ey, ez=ez, hx=hx, hy=hy, hz=hz))
-
-    # Apply final normalization and package field components by component name.
-    orthogonalization = _lorentz_orthogonalize_and_normalize(mode_fields, cell_areas)
-    fields = [
-        np.asarray(
-            [getattr(mode, component) for mode in mode_fields], dtype=np.complex128
-        )
-        for component in ("ex", "ey", "ez", "hx", "hy", "hz")
-    ]
-    return (
-        np.asarray(n_complex, dtype=np.complex128),
-        fields,
-        {
-            "backend": "scipy_arpack_reference",
-            "operator_size": int(operator.shape[0]),
-            "operator_nnz": int(operator.nnz),
-            "residuals": np.asarray(sorted_residuals, dtype=float),
-            "power_norms": orthogonalization["power_norms"],
-            "lorentz_norms": orthogonalization["lorentz_norms"],
-            "lorentz_orthogonality_error": orthogonalization[
-                "lorentz_orthogonality_error"
-            ],
-        },
-    )
-
-
-def solve_tensorial_scipy_reference(
-    *,
-    eps_tensor: np.ndarray,
-    mu_tensor: np.ndarray,
-    dlf: tuple[np.ndarray, np.ndarray],
-    dlb: tuple[np.ndarray, np.ndarray],
-    num_modes: int,
-    neff_guess: float,
-    direction: str,
-    derivative_scale: float,
-    omega: float | None = None,
-    num_pml: tuple[int, int] = (0, 0),
-    pml_profile: dict[str, float | int] | None = None,
-    dmin_pml: tuple[bool, bool] = (True, True),
-    dmin_pmc: tuple[bool, bool] = (False, False),
-    krylov_dim: int = 32,
-    initial_vector: np.ndarray | None = None,
-) -> SparseSolveResult:
-    """Solve the first-order tensorial sparse eigenproblem with SciPy/ARPACK."""
-
-    sparse, spla, scipy_linalg = _import_scipy()
-
-    # The tensorial formulation keeps Ex, Ey, Hx, and Hy as unknowns per cell.
-    nx = len(dlf[0])
-    ny = len(dlf[1])
-    n = nx * ny
-
-    # Full tensors are already flattened by the raster layer.
-    if (
-        eps_tensor.shape != mu_tensor.shape
-        or eps_tensor.shape[:2] != (3, 3)
-        or eps_tensor.shape[-1] != n
-    ):
-        raise ValueError(
-            "eps_tensor and mu_tensor must both have shape (3, 3, len(dlf[0]) * len(dlf[1]))"
-        )
-    if num_modes <= 0:
-        raise ValueError("num_modes must be positive")
-
-    # Reuse the same Yee derivative matrices as the diagonal solver.
-    derivatives = _create_derivative_matrices(
-        sparse,
-        eps_tensor=eps_tensor,
-        mu_tensor=mu_tensor,
-        shape=(nx, ny),
-        dlf=dlf,
-        dlb=dlb,
-        omega=omega,
-        num_pml=num_pml,
-        pml_profile=pml_profile,
-        dmin_pml=dmin_pml,
-        dmin_pmc=dmin_pmc,
-        scale=float(derivative_scale),
-    )
-
-    # Assemble the first-order operator that directly returns n_eff eigenvalues.
-    operator = _assemble_tensorial_operator(sparse, eps_tensor, mu_tensor, derivatives)
-    values, vectors = _selected_eigenpairs(
-        operator,
-        num_modes=num_modes,
-        sigma=complex(neff_guess, 0.0),
+        sigma=guess,
         krylov_dim=krylov_dim,
         initial_vector=initial_vector,
         spla=spla,
         scipy_linalg=scipy_linalg,
     )
-
-    # Record normalized ARPACK residuals for solver diagnostics.
     residuals = np.asarray(
         [
-            np.linalg.norm(
-                operator @ vectors[:, index] - values[index] * vectors[:, index]
-            )
-            for index in range(len(values))
-        ],
-        dtype=float,
+            np.linalg.norm(operator @ vectors[:, i] - value * vectors[:, i])
+            for i, value in enumerate(values)
+        ]
+    ) / np.maximum(np.linalg.norm(vectors, axis=0), np.finfo(float).eps)
+    # The diagonal eigenvalues are -neff^2; the tensorial eigenvalues are neff.
+    indices: np.ndarray = np.asarray(
+        np.sqrt(-values + 0j) if diagonal else values, dtype=np.complex128
     )
-    residuals = residuals / np.maximum(
-        np.linalg.norm(vectors, axis=0), np.finfo(float).eps
-    )
-
-    # Sort modes in descending real effective index, matching diagonal behavior.
-    modes = [
-        (complex(value), np.asarray(vector, dtype=np.complex128), float(residual))
-        for value, vector, residual in zip(values, vectors.T, residuals, strict=True)
-    ]
-    modes.sort(key=lambda item: item[0].real, reverse=True)
-
-    # z-component inverses reconstruct Ez and Hz after the transverse solve.
+    order = np.argsort(-np.real(indices), kind="stable")
+    indices, residuals = indices[order], residuals[order]
+    vectors = np.asarray(vectors[:, order], dtype=np.complex128)
     inv_eps_zz = sparse.diags(1.0 / eps_tensor[2, 2, :], format="csc")
     inv_mu_zz = sparse.diags(1.0 / mu_tensor[2, 2, :], format="csc")
     dxf, dxb, dyf, dyb = derivatives
     cell_areas = np.repeat(np.asarray(dlf[0], dtype=float), ny) * np.tile(
         np.asarray(dlf[1], dtype=float), nx
     )
-
-    n_complex: list[complex] = []
-    mode_fields: list[_ModeFields] = []
-    sorted_residuals: list[float] = []
-    for mode_n, vector, residual in modes:
-        # The first-order eigenvector stores transverse E followed by transverse H.
-        ex = vector[:n].copy()
-        ey = vector[n : 2 * n].copy()
-        hx = vector[2 * n : 3 * n].copy()
-        hy = vector[3 * n : 4 * n].copy()
-
-        # Longitudinal fields include off-diagonal material coupling through the
-        # z-row of the tensor.
-        hz_source = (
-            dxf @ ey - dyf @ ex - mu_tensor[2, 0, :] * hx - mu_tensor[2, 1, :] * hy
-        )
+    mode_fields = []
+    for neff, vector in zip(indices, vectors.T, strict=True):
+        ex, ey = vector[:n].copy(), vector[n : 2 * n].copy()
+        if diagonal:
+            # Q reconstructs transverse H. Q_ep supplies the constitutive
+            # electric block needed for the longitudinal electric field.
+            denom = complex(-neff.imag, neff.real)
+            h = operators["qmat"] @ vector / denom
+            hx, hy = h[:n], h[n:]
+            hz_source = dxf @ ey - dyf @ ex
+            partial = operators["q_ep"] @ vector / denom
+            ez_source = dxb @ partial[n:] - dyb @ partial[:n]
+        else:
+            hx, hy = vector[2 * n : 3 * n].copy(), vector[3 * n : 4 * n].copy()
+            # The z-row of each full tensor couples into longitudinal fields.
+            hz_source = (
+                dxf @ ey - dyf @ ex - mu_tensor[2, 0] * hx - mu_tensor[2, 1] * hy
+            )
+            ez_source = (
+                dxb @ hy - dyb @ hx - eps_tensor[2, 0] * ex - eps_tensor[2, 1] * ey
+            )
         hz = np.asarray(inv_mu_zz @ hz_source, dtype=np.complex128)
-
-        ez_source = (
-            dxb @ hy - dyb @ hx - eps_tensor[2, 0, :] * ex - eps_tensor[2, 1, :] * ey
-        )
         ez = np.asarray(inv_eps_zz @ ez_source, dtype=np.complex128)
-
-        # Match the magnetic-field convention used by the diagonal solver.
-        h_scale = -1j / ETA0
-        hx *= h_scale
-        hy *= h_scale
-        hz *= h_scale
-
-        # Backward propagation uses the same sign convention in both solvers.
+        # Match Result's physical magnetic convention. Backward propagation
+        # flips transverse H and longitudinal E in either formulation.
+        hx, hy, hz = (
+            np.asarray(h * (-1j / ETA0), dtype=np.complex128) for h in (hx, hy, hz)
+        )
         if direction == "-":
-            hx *= -1.0
-            hy *= -1.0
-            ez *= -1.0
-
-        # Store modes for the shared Lorentz orthogonalization pass.
-        n_complex.append(mode_n)
-        sorted_residuals.append(residual)
-        mode_fields.append(_ModeFields(ex=ex, ey=ey, ez=ez, hx=hx, hy=hy, hz=hz))
-
-    # Normalize the full set, then return component-major field arrays.
+            hx, hy, ez = -hx, -hy, -ez
+        mode_fields.append(_ModeFields(ex, ey, ez, hx, hy, hz))
     orthogonalization = _lorentz_orthogonalize_and_normalize(mode_fields, cell_areas)
     fields = [
-        np.asarray(
-            [getattr(mode, component) for mode in mode_fields], dtype=np.complex128
-        )
-        for component in ("ex", "ey", "ez", "hx", "hy", "hz")
+        np.asarray([getattr(mode, c) for mode in mode_fields], dtype=np.complex128)
+        for c in ("ex", "ey", "ez", "hx", "hy", "hz")
     ]
     return (
-        np.asarray(n_complex, dtype=np.complex128),
+        np.asarray(indices, dtype=np.complex128),
         fields,
         {
             "backend": "scipy_arpack_reference",
             "operator_size": int(operator.shape[0]),
             "operator_nnz": int(operator.nnz),
-            "residuals": np.asarray(sorted_residuals, dtype=float),
-            "power_norms": orthogonalization["power_norms"],
-            "lorentz_norms": orthogonalization["lorentz_norms"],
-            "lorentz_orthogonality_error": orthogonalization[
-                "lorentz_orthogonality_error"
-            ],
+            "residuals": np.asarray(residuals, dtype=float),
+            **orthogonalization,
         },
     )
 
@@ -712,60 +517,23 @@ def _create_s_diagonal_values(
 
     # Forward and backward derivative stencils sample stretch factors at
     # different Yee locations.
-    sx_f = _create_sfactor(
-        "f",
-        omega,
-        np.asarray(dlf[0], dtype=float),
-        nx,
-        num_pml[0],
-        dmin_pml[0],
-        avg_speed[:2],
-        profile,
-    )
-    sx_b = _create_sfactor(
-        "b",
-        omega,
-        np.asarray(dlb[0], dtype=float),
-        nx,
-        num_pml[0],
-        dmin_pml[0],
-        avg_speed[:2],
-        profile,
-    )
-    sy_f = _create_sfactor(
-        "f",
-        omega,
-        np.asarray(dlf[1], dtype=float),
-        ny,
-        num_pml[1],
-        dmin_pml[1],
-        avg_speed[2:],
-        profile,
-    )
-    sy_b = _create_sfactor(
-        "b",
-        omega,
-        np.asarray(dlb[1], dtype=float),
-        ny,
-        num_pml[1],
-        dmin_pml[1],
-        avg_speed[2:],
-        profile,
-    )
-
-    # Expand one-dimensional stretch factors into flattened cell vectors.
-    sx_f_vec = np.empty(nx * ny, dtype=np.complex128)
-    sx_b_vec = np.empty(nx * ny, dtype=np.complex128)
-    sy_f_vec = np.empty(nx * ny, dtype=np.complex128)
-    sy_b_vec = np.empty(nx * ny, dtype=np.complex128)
-    for ix in range(nx):
-        for iy in range(ny):
-            index = ix * ny + iy
-            sx_f_vec[index] = 1.0 / sx_f[ix]
-            sx_b_vec[index] = 1.0 / sx_b[ix]
-            sy_f_vec[index] = 1.0 / sy_f[iy]
-            sy_b_vec[index] = 1.0 / sy_b[iy]
-    return sx_f_vec, sx_b_vec, sy_f_vec, sy_b_vec
+    vectors = []
+    for axis, count in enumerate(shape):
+        for direction, widths in (("f", dlf), ("b", dlb)):
+            stretch = _create_sfactor(
+                direction,
+                omega,
+                np.asarray(widths[axis], dtype=float),
+                count,
+                num_pml[axis],
+                dmin_pml[axis],
+                avg_speed[2 * axis : 2 * axis + 2],
+                profile,
+            )
+            # Flattening is x-major: x values repeat along y, y values tile.
+            expand = np.repeat if axis == 0 else np.tile
+            vectors.append(expand(1.0 / stretch, shape[1 - axis]))
+    return tuple(vectors)
 
 
 def _average_relative_speed(
@@ -786,103 +554,39 @@ def _pml_average_all_sides(
     shape: tuple[int, int], num_pml: tuple[int, int], tensor: np.ndarray
 ) -> np.ndarray:
     """Average diagonal material components on each boundary side."""
-    nx, ny = shape
-
-    # Region order is xmin, xmax, ymin, ymax.
-    regions: list[list[complex]] = [[], [], [], []]
-    for comp in range(3):
-        for ix in range(nx):
-            for iy in range(ny):
-                value = complex(tensor[comp, comp, ix * ny + iy])
-
-                # Collect only cells that lie inside the requested PML thickness.
-                if ix < num_pml[0]:
-                    regions[0].append(value)
-                if ix >= max(nx - num_pml[0], 0):
-                    regions[1].append(value)
-                if iy < num_pml[1]:
-                    regions[2].append(value)
-                if iy >= max(ny - num_pml[1], 0):
-                    regions[3].append(value)
-    out = np.ones(4, dtype=np.complex128)
-
-    # If a side has no PML cells, leave its average at one so it does not affect
-    # unused stretch factors.
-    for index, values in enumerate(regions):
-        if values:
-            out[index] = sum(values) / len(values)
-    return out
+    diagonal = np.asarray([tensor[i, i] for i in range(3)]).reshape(3, *shape)
+    averages = []
+    for axis, (count, cells) in enumerate(zip(shape, num_pml, strict=True), start=1):
+        for side in (slice(0, cells), slice(max(count - cells, 0), count)):
+            selectors = [slice(None)] * 3
+            selectors[axis] = side
+            values = diagonal[tuple(selectors)]
+            averages.append(np.mean(values) if values.size else 1.0)
+    return np.asarray(averages, dtype=np.complex128)
 
 
-def _create_sfactor(
-    direction: str,
-    omega: float,
-    dls: np.ndarray,
-    n: int,
-    n_pml: int,
-    dmin_pml: bool,
-    avg_speed: np.ndarray,
-    profile: dict[str, float | int] | None,
-) -> np.ndarray:
-    """Dispatch PML stretch-factor construction for a derivative direction."""
-    # No PML means identity stretching along this axis.
+def _create_sfactor(direction, omega, dls, n, n_pml, dmin_pml, avg_speed, profile):
+    """Build PML stretches with explicit forward/backward Yee offsets.
+
+    The backward high boundary excludes its interface node. Low-side PML wins
+    when layers overlap, matching the derivative stencil's boundary convention.
+    """
+    sfactor = np.ones(n, dtype=np.complex128)
     if n_pml == 0:
-        return np.ones(n, dtype=np.complex128)
-
-    # Forward and backward stencils use half-cell-shifted PML depths.
-    if direction == "f":
-        return _create_sfactor_f(omega, dls, n, n_pml, dmin_pml, avg_speed, profile)
-    if direction == "b":
-        return _create_sfactor_b(omega, dls, n, n_pml, dmin_pml, avg_speed, profile)
-    raise ValueError(f"direction value {direction} not recognized")
-
-
-def _create_sfactor_f(
-    omega: float,
-    dls: np.ndarray,
-    n: int,
-    n_pml: int,
-    dmin_pml: bool,
-    avg_speed: np.ndarray,
-    profile: dict[str, float | int] | None,
-) -> np.ndarray:
-    """Build forward-grid PML stretch factors."""
-    # Start with identity stretch and overwrite only PML cells.
-    sfactor = np.ones(n, dtype=np.complex128)
-    for i in range(n):
-        # Low-edge PML can be disabled by symmetry walls.
-        if i < n_pml and dmin_pml:
-            sfactor[i] = _s_value(
-                dls[0], (n_pml - i - 0.5) / n_pml, omega, avg_speed[0], profile
-            )
-        elif i >= n - n_pml:
-            sfactor[i] = _s_value(
-                dls[-1], (i - (n - n_pml) + 0.5) / n_pml, omega, avg_speed[1], profile
-            )
-    return sfactor
-
-
-def _create_sfactor_b(
-    omega: float,
-    dls: np.ndarray,
-    n: int,
-    n_pml: int,
-    dmin_pml: bool,
-    avg_speed: np.ndarray,
-    profile: dict[str, float | int] | None,
-) -> np.ndarray:
-    """Build backward-grid PML stretch factors."""
-    # Backward stencils sample exactly on the low edge, not half a cell inward.
-    sfactor = np.ones(n, dtype=np.complex128)
+        return sfactor
+    if direction not in {"f", "b"}:
+        raise ValueError(f"direction value {direction} not recognized")
+    offset = 0.5 if direction == "f" else 0.0
     for i in range(n):
         if i < n_pml and dmin_pml:
-            sfactor[i] = _s_value(
-                dls[0], (n_pml - i) / n_pml, omega, avg_speed[0], profile
-            )
-        elif i > n - n_pml:
-            sfactor[i] = _s_value(
-                dls[-1], (i - (n - n_pml)) / n_pml, omega, avg_speed[1], profile
-            )
+            side, depth = 0, n_pml - i - offset
+        elif i + offset > n - n_pml:
+            side, depth = 1, i - (n - n_pml) + offset
+        else:
+            continue
+        sfactor[i] = _s_value(
+            dls[0 if side == 0 else -1], depth / n_pml, omega, avg_speed[side], profile
+        )
     return sfactor
 
 

@@ -131,6 +131,7 @@ EXPECTED_EXPORTS = {
         "ModeMonitor",
     ),
     "beamz.devices.modes": (
+        "Materials",
         "ModeData",
         "ModeSpec",
         "Result",

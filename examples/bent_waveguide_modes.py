@@ -6,7 +6,7 @@ All direct mode-solver lengths below are in micrometres.
 
 import numpy as np
 
-from beamz.devices.modes import solve_grid
+from beamz.devices.modes import Materials, solve_grid
 
 
 def main():
@@ -16,7 +16,12 @@ def main():
     y = (y_edges[:-1] + y_edges[1:]) / 2
     core = (np.abs(x[:, None]) < 0.5) & (np.abs(y[None, :]) < 0.3)
     eps = np.where(core, 3.48**2, 1.44**2)
-    inputs = dict(eps_xx=eps, x_edges=x_edges, y_edges=y_edges, wavelength=1.55)
+    inputs = dict(
+        material_grid=Materials.from_components(
+            eps_xx=eps, x_edges=x_edges, y_edges=y_edges
+        ),
+        wavelength=1.55,
+    )
     straight = solve_grid(**inputs, target_neff=3.2)
     reference = float(straight.n_eff.values[0, 0])
     print(f"Straight: n_eff = {reference:.8f}")

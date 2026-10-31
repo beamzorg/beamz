@@ -30,11 +30,12 @@ from beamz.devices.sources.mode_launch import (
     _to_real_profile,
 )
 from beamz.devices.sources.planar_tfsf import _shift_component_indices_along_axis
+from tests.mode_family_fixture import mode_grid_inputs
 
 
 def _mode_plane_spec(**changes) -> ModePlaneSpec:
     values = {
-        "scalar_permittivity": np.ones((3, 3)),
+        "scalar_permittivity": np.ones((5, 5)),
         "frequency": 2.0e14,
         "resolution": 1.0e-7,
         "dt": None,
@@ -123,8 +124,12 @@ def test_discrete_mode_solver_receives_exact_rectilinear_transverse_edges(monkey
         )
     )
 
-    np.testing.assert_allclose(captured["x_edges"], grid.y_edges / 1e-6)
-    np.testing.assert_allclose(captured["y_edges"], grid.z_edges / 1e-6)
+    np.testing.assert_allclose(
+        captured["material_grid"].grid.x_edges, grid.y_edges / 1e-6
+    )
+    np.testing.assert_allclose(
+        captured["material_grid"].grid.y_edges, grid.z_edges / 1e-6
+    )
 
 
 @pytest.mark.parametrize(
@@ -484,7 +489,9 @@ def test_sparse_helpers_cover_degenerate_pml_and_eigen_paths():
     )
     with pytest.raises(ValueError, match="not recognized"):
         _scipy._create_sfactor("q", 1.0, np.ones(2), 2, 1, True, np.ones(2), None)
-    backward = _scipy._create_sfactor_b(1.0, np.ones(4), 4, 2, False, np.ones(2), None)
+    backward = _scipy._create_sfactor(
+        "b", 1.0, np.ones(4), 4, 2, False, np.ones(2), None
+    )
     assert backward[-1] != 1.0
 
 
@@ -623,7 +630,7 @@ def test_yee_beta_correction_handles_flat_eigenvalue_slope(monkeypatch):
 
 def test_solver_helpers_validate_inputs_and_preserve_model_instances():
     with pytest.raises(TypeError, match="Materials"):
-        solver_module._solve_materials(material_grid=object(), freqs=[1.0])  # type: ignore[arg-type]
+        solver_module.solve_grid(material_grid=object(), freqs=[1.0])  # type: ignore[arg-type]
     pml = PmlSpec((1, 1))
     boundary = BoundarySpec(("pmc", "pec"))
     assert solver_module._resolve_pml_spec(pml) is pml
@@ -638,26 +645,21 @@ def test_solver_helpers_validate_inputs_and_preserve_model_instances():
     with pytest.raises(ValueError, match="normal_axis"):
         solver_module._local_fields_to_global({}, normal_axis=3)
     with pytest.raises(ValueError, match="normal_axis"):
-        solver_module._field_data_arrays(
-            {},
-            np.asarray([0.0, 1.0]),
-            np.asarray([0.0, 1.0]),
-            [1.0],
-            normal_axis=3,
-            normal_coordinate=0.0,
-        )
+        Grid((0.0, 1.0), (0.0, 1.0), normal_axis=3)  # type: ignore[arg-type]
     assert solver_module._default_initial_vector(3).shape == (3,)
 
 
 def test_solver_infers_target_index_from_material():
     eps = np.full((2, 2), 2.25)
     result = solver_module.solve_grid(
-        eps_xx=eps,
-        x_edges=(0.0, 1.0, 2.0),
-        y_edges=(0.0, 1.0, 2.0),
-        freqs=[2.0e14],
-        num_modes=1,
-        krylov_dim=4,
+        **mode_grid_inputs(
+            eps_xx=eps,
+            x_edges=(0.0, 1.0, 2.0),
+            y_edges=(0.0, 1.0, 2.0),
+            freqs=[2.0e14],
+            num_modes=1,
+            krylov_dim=4,
+        )
     )
     assert result.n_complex.shape == (1, 1)
 

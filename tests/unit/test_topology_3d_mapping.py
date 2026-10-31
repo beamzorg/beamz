@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from beamz.analysis.mode_projection import (
-    _modal_coefficient_rows_3d,
     _project_modal_coefficients_3d_group,
+    build_modal_projection_plan,
 )
 from beamz.devices.sources.planar_tfsf import component_slices_from_cell_bounds
 from beamz.lattice import component_shape_3d
@@ -65,7 +65,7 @@ def test_modal_rows_match_ordinary_coupled_projection(axis, components):
         for _ in range(2)
     ]
     field = fields()
-    rows = _modal_coefficient_rows_3d(projections)
+    rows = build_modal_projection_plan(projections).coefficient_rows
     expected = _project_modal_coefficients_3d_group(field, projections)[0]
     actual = rows @ np.concatenate([field[c] for c in components])
     np.testing.assert_allclose(

@@ -40,14 +40,13 @@ def test_symmetric_slab_neff_matches_transcendental_solution(
     permittivity = np.full(transverse_cells, n_clad**2, dtype=float)
     permittivity[core_start : core_start + core_cells] = n_core**2
 
-    neffs, _ = solve_modes(
+    neffs, *_ = solve_modes(
         permittivity,
         omega=2.0 * np.pi * LIGHT_SPEED / wavelength,
         dL=resolution,
         m=1,
         direction="+x",
         filter_pol=beamz_polarization,
-        return_fields=False,
         target_neff=0.95 * n_core,
     )
     measured_neff = float(np.real(neffs[0]))

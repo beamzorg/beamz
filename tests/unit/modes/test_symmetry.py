@@ -13,6 +13,7 @@ from beamz.devices.modes import discrete
 from beamz.devices.modes._symmetry import project_mode_symmetry
 from beamz.devices.modes.plane import solve_modes
 from beamz.lattice import component_shape_3d
+from tests.mode_family_fixture import mode_family
 
 COMPONENTS = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
 
@@ -27,7 +28,7 @@ def synthetic_result(edges, skew=0.3):
     fields = {n: np.zeros_like(envelope, dtype=complex) for n in COMPONENTS}
     fields["Ey"] = envelope.astype(complex)
     fields["Hz"] = envelope.astype(complex) / 377
-    return SimpleNamespace(
+    return mode_family(
         n_complex=xr.DataArray([[2.0 + 0j]], dims=("f", "mode_index")),
         field_components={
             name: xr.DataArray(
@@ -49,7 +50,6 @@ def preview(monkeypatch, eps, edges, **options):
         eps,
         omega=2 * np.pi * 2e14,
         dL=1e-7,
-        return_fields=True,
         grid_edges=edges,
         diagnostics=diagnostics,
         **options,

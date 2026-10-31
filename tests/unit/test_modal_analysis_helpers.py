@@ -110,7 +110,6 @@ def test_coupled_plan_matches_lorentz_overlaps_and_reconstruction(
     axis, components, ill_conditioned
 ):
     from beamz.analysis.mode_projection import (
-        _modal_coefficient_rows_3d,
         _project_modal_coefficients_3d_group,
         build_modal_projection_plan,
     )
@@ -154,7 +153,10 @@ def test_coupled_plan_matches_lorentz_overlaps_and_reconstruction(
     np.testing.assert_allclose(actual, expected, rtol=2e-6, atol=2e-6)
     vector = np.concatenate([field[name] for name in components])
     np.testing.assert_allclose(
-        _modal_coefficient_rows_3d(projections) @ vector, actual, rtol=2e-6, atol=2e-6
+        build_modal_projection_plan(projections).coefficient_rows @ vector,
+        actual,
+        rtol=2e-6,
+        atol=2e-6,
     )
     grouped, residual, condition, legacy_diag = _project_modal_coefficients_3d_group(
         field, projections

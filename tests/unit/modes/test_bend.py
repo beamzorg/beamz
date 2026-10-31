@@ -6,6 +6,7 @@ import pytest
 from beamz.devices.modes import solve_grid
 from beamz.devices.modes._bend import bend_materials
 from beamz.devices.modes.models import Materials
+from tests.mode_family_fixture import mode_grid_inputs
 from tests.unit.modes.test_api import _strip
 
 
@@ -21,8 +22,8 @@ def test_none_preserves_straight_indices_fields_and_diagnostics(tensor):
         args["eps_yy"] = args["eps_xx"] * 1.01
     if tensor == "full":
         args["eps_xy"] = args["eps_yx"] = np.full_like(args["eps_xx"], 0.01)
-    straight = solve_grid(**args)
-    explicit = solve_grid(**args, bend_radius=None)
+    straight = solve_grid(**mode_grid_inputs(**args))
+    explicit = solve_grid(**mode_grid_inputs(**args, bend_radius=None))
     np.testing.assert_array_equal(straight.n_complex, explicit.n_complex)
     for name in straight.field_components:
         assert straight.field_components[name].identical(
@@ -41,12 +42,12 @@ def test_none_preserves_straight_indices_fields_and_diagnostics(tensor):
 )
 def test_invalid_radius_or_axis_intersection(radius):
     with pytest.raises(ValueError, match="bend"):
-        solve_grid(**_inputs(), bend_radius=radius)
+        solve_grid(**mode_grid_inputs(**_inputs(), bend_radius=radius))
 
 
 def test_invalid_bend_axis():
     with pytest.raises(ValueError, match="bend_axis"):
-        solve_grid(**_inputs(), bend_radius=10, bend_axis="z")
+        solve_grid(**mode_grid_inputs(**_inputs(), bend_radius=10, bend_axis="z"))
 
 
 @pytest.mark.parametrize("axis", ["x", "y"])
@@ -84,7 +85,7 @@ def test_material_pullback_includes_mu_and_preserves_inputs(axis, radius):
 def test_bent_fields_are_physical_and_keep_global_labels(normal_axis, direction):
     args = _inputs()
     args.update(normal_axis=normal_axis, direction=direction, wavelength=[1.5, 1.55])
-    actual = solve_grid(**args, bend_radius=10, bend_axis="y")
+    actual = solve_grid(**mode_grid_inputs(**args, bend_radius=10, bend_axis="y"))
     local = _inputs()
     local.pop("wavelength")
     local.pop("target_neff")
@@ -93,7 +94,7 @@ def test_bent_fields_are_physical_and_keep_global_labels(normal_axis, direction)
     for i, axis in enumerate("xyz"):
         equivalent[f"eps_{axis}{axis}"] = transformed.eps_tensor[i, i]
         equivalent[f"mu_{axis}{axis}"] = transformed.mu_tensor[i, i]
-    expected = solve_grid(**equivalent)
+    expected = solve_grid(**mode_grid_inputs(**equivalent))
     np.testing.assert_allclose(actual.n_complex, expected.n_complex, atol=1e-12)
     for name in actual.field_components:
         values = expected.field_components[name].values
@@ -107,32 +108,36 @@ def test_bent_fields_are_physical_and_keep_global_labels(normal_axis, direction)
 def test_bend_supports_tensor_dispatch_pml_and_component_filter():
     args = _inputs()
     args["eps_xy"] = args["eps_yx"] = np.full_like(args["eps_xx"], 0.01)
-    result = solve_grid(**args, bend_radius=20, pml=(1, 1), components=["Ey"])
+    result = solve_grid(
+        **mode_grid_inputs(**args, bend_radius=20, pml=(1, 1), components=["Ey"])
+    )
     assert set(result.field_components) == {"Ey"}
     assert result.solver_info["runs"][0]["backend_kind"] == "tensorial_scipy_reference"
 
 
 def test_explicit_isotropic_diagonal_inputs_match_scalar_bend():
     args = _inputs()
-    scalar = solve_grid(**args, bend_radius=-20)
+    scalar = solve_grid(**mode_grid_inputs(**args, bend_radius=-20))
     diagonal = solve_grid(
-        **args,
-        eps_yy=args["eps_xx"],
-        eps_zz=args["eps_xx"],
-        mu_xx=np.ones_like(args["eps_xx"]),
-        mu_yy=np.ones_like(args["eps_xx"]),
-        mu_zz=np.ones_like(args["eps_xx"]),
-        bend_radius=-20,
+        **mode_grid_inputs(
+            **args,
+            eps_yy=args["eps_xx"],
+            eps_zz=args["eps_xx"],
+            mu_xx=np.ones_like(args["eps_xx"]),
+            mu_yy=np.ones_like(args["eps_xx"]),
+            mu_zz=np.ones_like(args["eps_xx"]),
+            bend_radius=-20,
+        )
     )
     np.testing.assert_array_equal(scalar.n_complex, diagonal.n_complex)
 
 
 def test_reference_coordinate_changes_index_but_not_angular_propagation():
     args = _inputs()
-    original = solve_grid(**args, bend_radius=10)
+    original = solve_grid(**mode_grid_inputs(**args, bend_radius=10))
     args["x_edges"] = np.asarray(args["x_edges"]) - 2
     args["target_neff"] *= 10 / 12
-    shifted = solve_grid(**args, bend_radius=12)
+    shifted = solve_grid(**mode_grid_inputs(**args, bend_radius=12))
     np.testing.assert_allclose(
         original.n_complex * 10, shifted.n_complex * 12, rtol=1e-12
     )

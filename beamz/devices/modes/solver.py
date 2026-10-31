@@ -6,7 +6,6 @@ from collections.abc import Sequence
 from typing import Literal, cast
 
 import numpy as np
-import xarray as xr
 
 from ._bend import bend_materials
 from ._scipy import solve_diagonal_scipy_reference, solve_tensorial_scipy_reference
@@ -17,100 +16,7 @@ from .result import Result
 _COMPONENTS = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
 
 
-# Public entry points keep geometry handling out of the solver core: callers
-# supply already-rasterized material arrays and grid coordinates.
 def solve_grid(
-    *,
-    eps_xx: np.ndarray,
-    eps_yy: np.ndarray | None = None,
-    eps_zz: np.ndarray | None = None,
-    eps_xy: np.ndarray | None = None,
-    eps_xz: np.ndarray | None = None,
-    eps_yx: np.ndarray | None = None,
-    eps_yz: np.ndarray | None = None,
-    eps_zx: np.ndarray | None = None,
-    eps_zy: np.ndarray | None = None,
-    mu_xx: np.ndarray | None = None,
-    mu_yy: np.ndarray | None = None,
-    mu_zz: np.ndarray | None = None,
-    mu_xy: np.ndarray | None = None,
-    mu_xz: np.ndarray | None = None,
-    mu_yx: np.ndarray | None = None,
-    mu_yz: np.ndarray | None = None,
-    mu_zx: np.ndarray | None = None,
-    mu_zy: np.ndarray | None = None,
-    x_edges: Sequence[float],
-    y_edges: Sequence[float],
-    freqs: Sequence[float] | None = None,
-    wavelength: float | Sequence[float] | None = None,
-    num_modes: int = 1,
-    target_neff: float | None = None,
-    pml: PmlSpec | tuple[int, int] | None = None,
-    boundary: BoundarySpec | tuple[str, str] | None = None,
-    direction: Literal["+", "-"] = "+",
-    components: Sequence[str] | None = None,
-    normal_axis: Literal[0, 1, 2] = 2,
-    normal_coordinate: float = 0.0,
-    krylov_dim: int | None = None,
-    bend_radius: float | None = None,
-    bend_axis: Literal["x", "y"] = "x",
-) -> Result:
-    """Solve modes from rasterized material components and grid edges.
-
-    This is the core API Beamz should target: geometry and materials are already
-    sampled on a two-dimensional mode-plane grid. Coordinates are in microns and
-    frequencies are in Hz. ``bend_radius=None`` preserves straight solves.
-    A finite signed radius (microns) bends in the local ``bend_axis``/propagation
-    plane, with reference arc length at that transverse coordinate's zero.
-    Positive radius places the curvature center at coordinate -R; negative
-    radius reverses the bend. The entire grid must satisfy 1 + coordinate/R > 0.
-    Material tensors are expressed in the local frame and must follow the bend.
-    Returned fields are physical components at the reference cross-section.
-    """
-    material_grid = Materials.from_components(
-        eps_xx=eps_xx,
-        eps_yy=eps_yy,
-        eps_zz=eps_zz,
-        eps_xy=eps_xy,
-        eps_xz=eps_xz,
-        eps_yx=eps_yx,
-        eps_yz=eps_yz,
-        eps_zx=eps_zx,
-        eps_zy=eps_zy,
-        mu_xx=mu_xx,
-        mu_yy=mu_yy,
-        mu_zz=mu_zz,
-        mu_xy=mu_xy,
-        mu_xz=mu_xz,
-        mu_yx=mu_yx,
-        mu_yz=mu_yz,
-        mu_zx=mu_zx,
-        mu_zy=mu_zy,
-        x_edges=x_edges,
-        y_edges=y_edges,
-        normal_axis=normal_axis,
-        normal_coordinate=normal_coordinate,
-    )
-
-    # Once the component arrays have been normalized into Materials, the full
-    # solve path is identical to solve_modes.
-    return _solve_materials(
-        material_grid=material_grid,
-        freqs=freqs,
-        wavelength=wavelength,
-        num_modes=num_modes,
-        target_neff=target_neff,
-        pml=pml,
-        boundary=boundary,
-        direction=direction,
-        components=components,
-        krylov_dim=krylov_dim,
-        bend_radius=bend_radius,
-        bend_axis=bend_axis,
-    )
-
-
-def _solve_materials(
     *,
     material_grid: Materials,
     freqs: Sequence[float] | None = None,
@@ -127,13 +33,19 @@ def _solve_materials(
 ) -> Result:
     """Solve modes for an already-rasterized material tensor grid.
 
-    This is the preferred BeamZ integration point. BeamZ owns geometry and
-    material rasterization; this package owns the sparse SciPy mode solve and
-    field reconstruction on the supplied grid.
+    BeamZ owns geometry and material rasterization. Construct a Materials value
+    once, then solve and prepare its fields without another tensor/axis adapter.
+    Edges, wavelength and bend_radius are in microns; frequencies are in Hz.
+    Finite signed bend radii apply Maxwell's tensor pullback in the selected
+    local radial coordinate. Reference arc length is measured at that coordinate's
+    zero: positive radius puts the curvature center at coordinate -R, and negative
+    radius reverses the bend. The complete domain must satisfy 1 + coordinate/R > 0.
+    Material tensors use the local frame and must follow the bend. Returned fields
+    are physical components at the reference cross-section.
     """
-    # Main solver orchestration layer. It validates user-facing grid objects,
-    # solves one frequency at a time, then wraps flattened solver outputs into
-    # coordinate-aware xarray arrays.
+    # Validate the owned material grid, solve each frequency, and preserve the
+    # canonical array layout through preview and launch preparation. Labeled
+    # coordinate views belong only to Result's explicit public boundary.
     if not isinstance(material_grid, Materials):
         raise TypeError("material_grid must be a Materials")
 
@@ -164,8 +76,8 @@ def _solve_materials(
             material_grid, bend_radius, bend_axis
         )
 
-    # Accumulate raw NumPy rows first. Building xarray objects once at the end
-    # keeps component filtering and frequency stacking simple.
+    # Keep frequency rows as raw arrays for component filtering and stacking.
+    # No labeled field objects are allocated by the numerical solve.
     n_rows = []
     solver_runs = []
     fields_by_component: dict[str, list[np.ndarray]] = {
@@ -173,7 +85,7 @@ def _solve_materials(
     }
     for freq in solve_freqs:
         # The sparse solver is frequency-local; multi-frequency solves are a
-        # deterministic loop plus a final stack into xarray dimensions.
+        # deterministic loop plus a final frequency/mode/plane array stack.
         n_complex, fields, solver_info = _solve_one_frequency(
             x_edges=x_edges_arr,
             y_edges=y_edges_arr,
@@ -189,8 +101,8 @@ def _solve_materials(
         if bend_metric is not None:
             # Coordinate fields obey E'_z=h E_z and H'_z=h H_z. Transverse
             # fields (and hence cross-section power normalization) are unchanged.
-            fields["Ez"] = fields["Ez"] / bend_metric[..., None]
-            fields["Hz"] = fields["Hz"] / bend_metric[..., None]
+            fields["Ez"] = fields["Ez"] / bend_metric
+            fields["Hz"] = fields["Hz"] / bend_metric
         # The solver uses local coordinates where local z is the propagation
         # normal. Convert field labels back to the global x/y/z axes requested
         # by the material grid before exposing them.
@@ -203,20 +115,11 @@ def _solve_materials(
             if component in fields_by_component:
                 fields_by_component[component].append(values)
 
-    # Convert accumulated lists into the public Result layout only once.
-    n_values = np.asarray(n_rows, dtype=np.complex128)
-    field_components = _field_data_arrays(
-        fields_by_component,
-        x_edges_arr,
-        y_edges_arr,
-        solve_freqs,
-        normal_axis=material_grid.grid.normal_axis,
-        normal_coordinate=material_grid.grid.normal_coordinate,
-    )
-    coords = {"f": np.asarray(solve_freqs), "mode_index": np.arange(n_values.shape[1])}
     return Result(
-        n_complex=xr.DataArray(n_values, dims=("f", "mode_index"), coords=coords),
-        field_components=field_components,
+        neffs=np.asarray(n_rows, dtype=np.complex128),
+        fields={name: np.stack(rows) for name, rows in fields_by_component.items()},
+        grid=material_grid.grid,
+        frequencies=np.asarray(solve_freqs),
         solver_info={
             "backend": solver_runs[0].get("backend") if solver_runs else None,
             "runs": solver_runs,
@@ -300,7 +203,10 @@ def _solve_one_frequency(
     # tensors and attach dispatch metadata for diagnostics.
     return (
         n_complex,
-        _fields_to_grid(fields, (nx, ny)),
+        {
+            name: values.reshape(-1, nx, ny)
+            for name, values in zip(_COMPONENTS, fields, strict=True)
+        },
         _solver_info_with_context(
             solver_info,
             backend_kind=backend_kind,
@@ -405,21 +311,6 @@ def _dual_steps(primal_steps: np.ndarray) -> np.ndarray:
     return np.hstack((primal_steps[0], (primal_steps[:-1] + primal_steps[1:]) / 2))
 
 
-def _fields_to_grid(
-    fields: list[np.ndarray], shape: tuple[int, int]
-) -> dict[str, np.ndarray]:
-    """Reshape flattened solver fields into x/y/mode arrays."""
-    # scipy_reference returns [mode, flattened_cell]; public results use
-    # [x, y, mode] per component.
-    nx, ny = shape
-    mode_count = fields[0].shape[0]
-    out = {}
-    for component, values_by_mode in zip(_COMPONENTS, fields, strict=True):
-        values = np.asarray(values_by_mode).reshape(mode_count, nx, ny)
-        out[component] = np.moveaxis(values, 0, -1)
-    return out
-
-
 def _local_fields_to_global(
     fields: dict[str, np.ndarray], *, normal_axis: int
 ) -> dict[str, np.ndarray]:
@@ -446,67 +337,6 @@ def _local_fields_to_global(
                 # flipping the local-y tangential component restores physical +y flux.
                 sign = -1.0 if normal_axis == 1 and local_axis == 1 else 1.0
                 out[global_name] = sign * fields[local_name]
-    return out
-
-
-def _field_data_arrays(
-    fields_by_component: dict[str, list[np.ndarray]],
-    x_edges: np.ndarray,
-    y_edges: np.ndarray,
-    freqs: Sequence[float],
-    *,
-    normal_axis: int,
-    normal_coordinate: float,
-) -> dict[str, xr.DataArray]:
-    """Wrap solved field arrays in coordinate-aware xarray objects."""
-    axis_names = ("x", "y", "z")
-    if normal_axis not in {0, 1, 2}:
-        raise ValueError("normal_axis must be 0, 1, or 2")
-
-    # Determine which two global coordinates correspond to the solver's local
-    # x/y plane.
-    tangential = tuple(axis for axis in range(3) if axis != normal_axis)
-    coord0 = (x_edges[:-1] + x_edges[1:]) / 2
-    coord1 = (y_edges[:-1] + y_edges[1:]) / 2
-
-    # Store width coordinates beside center coordinates so integrations can use
-    # physical cell areas without reconstructing the original edges.
-    coords = {
-        axis_names[tangential[0]]: coord0,
-        f"{axis_names[tangential[0]]}_width": (
-            axis_names[tangential[0]],
-            np.diff(x_edges),
-        ),
-        axis_names[tangential[1]]: coord1,
-        f"{axis_names[tangential[1]]}_width": (
-            axis_names[tangential[1]],
-            np.diff(y_edges),
-        ),
-        axis_names[normal_axis]: np.asarray([normal_coordinate]),
-        f"{axis_names[normal_axis]}_width": (axis_names[normal_axis], np.ones(1)),
-        "f": np.asarray(freqs),
-        "mode_index": None,
-    }
-    dims = (
-        axis_names[tangential[0]],
-        axis_names[tangential[1]],
-        axis_names[normal_axis],
-        "f",
-        "mode_index",
-    )
-    out = {}
-    for component, rows in fields_by_component.items():
-        # Stack frequencies on axis 2, then insert the singleton normal axis so
-        # every component has x/y/z/f/mode_index dimensions.
-        values = np.stack(rows, axis=2)[:, :, None, :, :]
-        component_coords = dict(coords)
-        component_coords["mode_index"] = np.arange(values.shape[-1])
-        out[component] = xr.DataArray(
-            values,
-            dims=dims,
-            coords=component_coords,
-            attrs={"normal_dim": axis_names[normal_axis]},
-        )
     return out
 
 

@@ -48,36 +48,6 @@ def _interpolate_plane_matrix_2d(
     return out
 
 
-def _colocate_monitor_component_matrix_3d(
-    sim,
-    monitor,
-    component: str,
-    values: np.ndarray,
-    *,
-    axis: str,
-    target0: np.ndarray,
-    target1: np.ndarray,
-) -> np.ndarray:
-    src0, src1 = _monitor_analysis_plane_3d(
-        sim,
-        monitor,
-        axis,
-    )
-    data = np.asarray(values, dtype=np.complex128)
-    if data.ndim == 1:
-        data = data.reshape(1, -1)
-    if data.ndim != 2:
-        raise ValueError(
-            f"Expected DFT matrix with shape (nfreq, npoints) for component '{component}', got {data.shape}."
-        )
-    n_src = int(src0.size * src1.size)
-    if data.shape[1] != n_src:
-        raise ValueError(
-            f"Component '{component}' has {data.shape[1]} samples but expected {n_src} from monitor geometry."
-        )
-    return _colocate_component_planes(data, src0, src1, target0, target1)
-
-
 def _colocate_component_planes(data, src0, src1, target0, target1):
     return np.asarray(
         [

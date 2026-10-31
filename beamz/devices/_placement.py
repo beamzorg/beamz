@@ -163,20 +163,10 @@ def _axis_interval(axis, lower, upper, *, min_cells=1):
     )
 
 
-def snap_cell_center(coord: float, step: float, count: int) -> tuple[int, float]:
-    return (0, 0.0) if count <= 0 else _uniform_axis(step, count).center(coord)
-
-
 def snap_edge_interval(lower, upper, step, count, *, min_cells=1):
     if count <= 0:
         return SnappedInterval(0, 0, float(step))
     return _axis_interval(_uniform_axis(step, count), lower, upper, min_cells=min_cells)
-
-
-def snap_rectilinear_cell_center(coord, edges):
-    if len(edges) < 2:
-        return 0, 0.0
-    return GridAxis(np.asarray(edges, dtype=float)).center(coord)
 
 
 def snap_rectilinear_edge_interval(lower, upper, edges, *, min_cells=1):

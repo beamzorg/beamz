@@ -38,11 +38,8 @@ from beamz import (
 from beamz._cache_tokens import cache_token
 from beamz.design.discretization import MaterialGrid
 from beamz.devices.sources.compiler import (
-    CompiledInjectionPlan,
     InjectionPlanEntry,
     SourceLoweringContext,
-    SourceSupport,
-    SpatialFieldProfile,
     TemporalWaveform,
     compile_source_specs,
     lower_source,
@@ -826,14 +823,14 @@ def test_source_lowerers_share_one_injection_plan_representation():
 
     for source in (_source(wavelength), custom):
         plan = lower_source(source, ctx)
-        assert isinstance(plan, CompiledInjectionPlan)
-        assert plan.entries
-        assert all(isinstance(entry, InjectionPlanEntry) for entry in plan.entries)
+        assert isinstance(plan, tuple)
+        assert plan
+        assert all(isinstance(entry, InjectionPlanEntry) for entry in plan)
         assert all(
-            isinstance(entry.profile, SpatialFieldProfile)
-            and isinstance(entry.waveform, TemporalWaveform)
-            and isinstance(entry.support, SourceSupport)
-            for entry in plan.entries
+            isinstance(entry.waveform, TemporalWaveform)
+            and isinstance(entry.values, np.ndarray)
+            and len(entry.index) == len(entry.target_shape)
+            for entry in plan
         )
 
 

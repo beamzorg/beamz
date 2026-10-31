@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal, cast, overload
+from typing import Any, Literal, cast
 
 import numpy as np
 
@@ -24,6 +24,7 @@ from .discrete import (
     ModePlaneSpec,
     solve_beamz_mode,
 )
+from .models import Materials
 from .solver import solve_grid
 
 _AXIS_POS_3D = {"z": 0, "y": 1, "x": 2}
@@ -39,7 +40,6 @@ SignedAxis = Literal["+x", "-x", "+y", "-y", "+z", "-z"]
 _SIGNED_AXES = frozenset({"+x", "-x", "+y", "-y", "+z", "-z"})
 
 
-@overload
 def solve_modes(
     eps: np.ndarray,
     omega: float,
@@ -48,7 +48,6 @@ def solve_modes(
     m: int = 1,
     direction: SignedAxis = "+x",
     filter_pol: Literal["te", "tm"] | None = None,
-    return_fields: Literal[True] = True,
     target_neff: float | None = None,
     *,
     eps_yy: np.ndarray | None = None,
@@ -60,54 +59,7 @@ def solve_modes(
     force_symmetry: bool = False,
     mirror_center: tuple[float, ...] | None = None,
     diagnostics: dict | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]: ...
-
-
-@overload
-def solve_modes(
-    eps: np.ndarray,
-    omega: float,
-    dL: float,
-    npml: int = 0,
-    m: int = 1,
-    direction: SignedAxis = "+x",
-    filter_pol: Literal["te", "tm"] | None = None,
-    return_fields: Literal[False] = False,
-    target_neff: float | None = None,
-    *,
-    eps_yy: np.ndarray | None = None,
-    eps_zz: np.ndarray | None = None,
-    mu_xx: np.ndarray | None = None,
-    mu_yy: np.ndarray | None = None,
-    mu_zz: np.ndarray | None = None,
-    grid_edges: tuple[np.ndarray, ...] | None = None,
-    force_symmetry: bool = False,
-    mirror_center: tuple[float, ...] | None = None,
-    diagnostics: dict | None = None,
-) -> tuple[np.ndarray, np.ndarray]: ...
-
-
-def solve_modes(
-    eps: np.ndarray,
-    omega: float,
-    dL: float,
-    npml: int = 0,
-    m: int = 1,
-    direction: SignedAxis = "+x",
-    filter_pol: Literal["te", "tm"] | None = None,
-    return_fields: bool = False,
-    target_neff: float | None = None,
-    *,
-    eps_yy: np.ndarray | None = None,
-    eps_zz: np.ndarray | None = None,
-    mu_xx: np.ndarray | None = None,
-    mu_yy: np.ndarray | None = None,
-    mu_zz: np.ndarray | None = None,
-    grid_edges: tuple[np.ndarray, ...] | None = None,
-    force_symmetry: bool = False,
-    mirror_center: tuple[float, ...] | None = None,
-    diagnostics: dict | None = None,
-) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     """Solve a one- or two-dimensional BeamZ material profile.
 
     ``force_symmetry`` opts 2D transverse planes into validated physical mirrors
@@ -178,28 +130,28 @@ def solve_modes(
     )
     permeability = tuple(solver_plane(v) for v in (mu_xx, mu_yy, mu_zz))
     result = solve_grid(
-        eps_xx=cast(np.ndarray, epsilon[order[0]]),
-        eps_yy=epsilon[order[1]],
-        eps_zz=epsilon[order[2]],
-        mu_xx=permeability[order[0]],
-        mu_yy=permeability[order[1]],
-        mu_zz=permeability[order[2]],
-        x_edges=edges[0],
-        y_edges=edges[1],
+        material_grid=Materials.from_components(
+            eps_xx=cast(np.ndarray, epsilon[order[0]]),
+            eps_yy=epsilon[order[1]],
+            eps_zz=epsilon[order[2]],
+            mu_xx=permeability[order[0]],
+            mu_yy=permeability[order[1]],
+            mu_zz=permeability[order[2]],
+            x_edges=edges[0],
+            y_edges=edges[1],
+            normal_axis=cast(Literal[0, 1, 2], axis_index),
+        ),
         freqs=[float(omega) / (2.0 * np.pi)],
         direction="+" if signed_axis[0] == "+" else "-",
         num_modes=2 * int(m) + 5,
         target_neff=target_neff,
         pml=(int(npml), int(npml)),
-        normal_axis=cast(Literal[0, 1, 2], axis_index),
     )
-    fields = {
-        name: _mode_planes(data, axis) for name, data in result.field_components.items()
-    }
+    fields = result.planes()
     if is_plane:
         fields = {name: values.swapaxes(-2, -1) for name, values in fields.items()}
-    order = _mode_order(result.n_complex.values[0], fields, axis, filter_pol)[: int(m)]
-    neffs = np.asarray(result.n_complex.values[0, order], dtype=np.complex128)
+    order = _mode_order(result.neffs[0], fields, axis, filter_pol)[: int(m)]
+    neffs = np.asarray(result.neffs[0, order], dtype=np.complex128)
     electric = np.stack([fields[name][order] for name in ("Ex", "Ey", "Ez")], axis=1)
     magnetic = np.stack([fields[name][order] for name in ("Hx", "Hy", "Hz")], axis=1)
     profile_edges = tuple(np.asarray(edge) * 1e-6 for edge in edges)
@@ -211,9 +163,9 @@ def solve_modes(
         0.5 * (edge[0] + edge[-1]) for edge in profile_edges
     )
     supports = {
-        name: tuple(np.asarray(data.coords[a]) * 1e-6 for a in profile_axes)
-        for name, data in result.field_components.items()
-        if all(a in data.coords for a in profile_axes)
+        name: tuple(np.asarray(result.coordinates[a]) * 1e-6 for a in profile_axes)
+        for name in fields
+        if all(a in result.coordinates for a in profile_axes)
     }
     symmetry_diagnostics = {}
     for mode_index in range(electric.shape[0]):
@@ -269,26 +221,7 @@ def solve_modes(
         electric = electric[..., 0]
         magnetic = magnetic[..., 0]
 
-    if return_fields:
-        return neffs, electric, magnetic, axis_index
-
-    dominant = np.argmax(
-        np.linalg.norm(electric.reshape(len(order), 3, -1), axis=2), axis=1
-    )
-    vectors = [
-        np.ravel(electric[index, component]) for index, component in enumerate(dominant)
-    ]
-    return neffs, np.column_stack(vectors)
-
-
-def _mode_planes(data_array, normal_axis: str) -> np.ndarray:
-    selected = data_array.isel(f=0)
-    values = np.take(
-        np.asarray(selected.values),
-        0,
-        axis=selected.dims.index(normal_axis),
-    )
-    return np.moveaxis(values, -1, 0)
+    return neffs, electric, magnetic, axis_index
 
 
 def _mode_order(neffs, fields, axis, polarization):
