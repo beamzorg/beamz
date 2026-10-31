@@ -319,6 +319,18 @@ def step_hits_interval(step, interval):
     return (step % interval) == 0
 
 
+def is_vector_dft_monitor(mon):
+    """Whether a monitor contains only nonempty vector DFT acquisitions."""
+    return (
+        mon.recorder_index < 0
+        and not mon.accumulate_power
+        and not mon.accumulate_frequency
+        and mon.dft_enabled
+        and mon.freq_count > 0
+        and mon.dft_point_count > 0
+    )
+
+
 def monitor_records_on_step(step, interval):
     """Return whether a monitor emits after this zero-based simulation step."""
     return step_hits_interval(jnp.asarray(step, dtype=jnp.int32) + 1, interval)

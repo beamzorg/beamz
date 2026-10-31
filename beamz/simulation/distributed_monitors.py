@@ -9,6 +9,7 @@ import numpy as np
 from jax.sharding import PartitionSpec as P
 
 from beamz.lattice import sampling_coordinates
+from beamz.simulation.observe import is_vector_dft_monitor
 
 _AXIS = "fdtd"
 
@@ -18,15 +19,7 @@ def supported(program):
         program.config.is_3d
         and program.sharding.layout.enabled
         and bool(program.monitors)
-        and all(
-            mon.dft_enabled
-            and mon.freq_count > 0
-            and mon.dft_point_count > 0
-            and not mon.accumulate_power
-            and not mon.accumulate_frequency
-            and mon.recorder_index < 0
-            for mon in program.monitors
-        )
+        and all(is_vector_dft_monitor(mon) for mon in program.monitors)
     )
 
 

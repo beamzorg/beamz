@@ -22,7 +22,7 @@ from beamz.simulation.cuda.runtime import (
     run_source_group_steps,
 )
 from beamz.simulation.execute import compiled_source_batches, forward_step
-from beamz.simulation.observe import update_monitors
+from beamz.simulation.observe import is_vector_dft_monitor, update_monitors
 
 
 @jax.tree_util.register_static
@@ -67,15 +67,7 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
     batches = compiled_source_batches(program.sources)
     if any(rest for _group, rest in batches.values()):
         return None
-    if any(
-        mon.recorder_index >= 0
-        or mon.accumulate_power
-        or mon.accumulate_frequency
-        or not mon.dft_enabled
-        or mon.freq_count <= 0
-        or mon.dft_point_count <= 0
-        for mon in program.monitors
-    ):
+    if any(not is_vector_dft_monitor(mon) for mon in program.monitors):
         return None
     keys = tuple(batches)
     templates = tuple(batches[key][0] for key in keys)
