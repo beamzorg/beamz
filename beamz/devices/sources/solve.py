@@ -21,33 +21,6 @@ def _require_cell_mode_materials(material_grid, *, operation: str) -> None:
         )
 
 
-def _profile_crop_slices(
-    eps_profile, *, profile_axes, center, size, resolution, grid=None
-):
-    slices = []
-    for dim, grid_axis in enumerate(profile_axes):
-        coord_index = 2 - int(grid_axis)
-        span = float(size[coord_index])
-        if span <= 0.0 or not np.isfinite(span):
-            slices.append(slice(None))
-            continue
-        midpoint = float(center[coord_index])
-        lower, upper = midpoint - 0.5 * span, midpoint + 0.5 * span
-        if grid is None:
-            start, stop = (
-                int(np.floor(lower / resolution)),
-                int(np.ceil(upper / resolution)),
-            )
-        else:
-            edges = np.asarray(grid.axis_edges("xyz"[coord_index]), dtype=float)
-            start = int(np.searchsorted(edges, lower, side="right") - 1)
-            stop = int(np.searchsorted(edges, upper, side="left"))
-        start = int(np.clip(start, 0, eps_profile.shape[dim] - 1))
-        stop = int(np.clip(stop, start + 1, eps_profile.shape[dim]))
-        slices.append(slice(start, stop))
-    return tuple(slices)
-
-
 def _simulation_grid_view(simulation):
     grid = simulation._material_grid()
     _require_cell_mode_materials(grid, operation="ModeSource.solve_modes()")
@@ -101,47 +74,19 @@ def mode_plane_context(*, simulation, plane) -> ModePlaneContext:
     offset = getattr(simulation, "coordinate_offset", (0.0, 0.0, 0.0))
     center = tuple(c + o for c, o in zip(center, offset, strict=True))
     axis_index = {"z": 0, "y": 1, "x": 2}[axis]
-    geometry = getattr(grid, "grid", None)
+    geometry = grid.grid
     if geometry is None:
-        grid_index = int(
-            np.clip(
-                round(center[{"z": 2, "y": 1, "x": 0}[axis]] / simulation.resolution),
-                0,
-                eps.shape[axis_index] - 1,
-            )
-        )
-    else:
-        grid_index = int(
-            np.argmin(
-                np.abs(
-                    np.asarray(geometry.centers(axis))
-                    - center[{"z": 2, "y": 1, "x": 0}[axis]]
-                )
-            )
-        )
+        raise ValueError("Mode-plane materials require realized grid geometry.")
+    grid_index, _ = geometry.axis(axis).center(center["xyz".index(axis)])
     eps_profile_full = np.take(eps, grid_index, axis=axis_index)
     profile_axes = tuple(index for index in range(eps.ndim) if index != axis_index)
     storage_axis = {0: "z", 1: "y", 2: "x"}
     transverse_axes = tuple(storage_axis[int(index)] for index in profile_axes)
-    crop_kwargs = dict(
-        eps_profile=eps_profile_full,
-        profile_axes=profile_axes,
-        center=center,
-        size=tuple(float(value) for value in plane.size),
+    crop_slices = geometry.crop(center, plane.size, axes=transverse_axes)
+    profile_edges = tuple(
+        geometry.axis_edges(axis)[selector.start : selector.stop + 1]
+        for axis, selector in zip(transverse_axes, crop_slices, strict=True)
     )
-    crop_slices = _profile_crop_slices(
-        **crop_kwargs, grid=geometry, resolution=float(simulation.resolution)
-    )
-    if geometry is None:
-        profile_edges = None
-    else:
-        profile_edges = []
-        for profile_axis, selector in zip(profile_axes, crop_slices, strict=True):
-            edges = np.asarray(geometry.axis_edges(storage_axis[int(profile_axis)]))
-            start = 0 if selector.start is None else int(selector.start)
-            stop = edges.size - 1 if selector.stop is None else int(selector.stop)
-            profile_edges.append(edges[start : stop + 1])
-        profile_edges = tuple(profile_edges)
     if len(center) != 3:
         raise ValueError(f"Mode-plane centers require three coordinates: {center!r}")
     tensors = dict(getattr(grid, "tensors", {}))
