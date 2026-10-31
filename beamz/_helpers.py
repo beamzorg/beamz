@@ -303,12 +303,8 @@ def _print_inline_progress(
     unit: str = "steps",
     file: TextIO | None = None,
 ) -> None:
-    import sys
-
-    output = file if file is not None else sys.stdout
     message = _format_progress_message(completed, total, label=label, unit=unit)
-    output.write(f"\r{_STATUS_MARKER}{message}")
-    output.flush()
+    _print_inline_status(message, file=file)
 
 
 def _finish_inline_progress(*, file: TextIO | None = None) -> None:
