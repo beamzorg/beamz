@@ -41,8 +41,15 @@ def electric_tensor_coefficients(tensors):
 
 def fit_array_to_shape(arr, target_shape, *, pad_value=0.0):
     """Crop or high-pad a JAX array to one static component shape."""
-    arr = jnp.asarray(arr)
+    return _fit_array_to_shape(arr, target_shape, pad_value=pad_value, xp=jnp)
+
+
+def _fit_array_to_shape(arr, target_shape, *, pad_value, xp):
+    """Share static crop/pad geometry while preserving the caller's array backend."""
+    arr = xp.asarray(arr)
     target_shape = tuple(int(value) for value in target_shape)
+    if arr.shape == target_shape:
+        return arr
     if arr.ndim != len(target_shape):
         raise ValueError(
             f"Cannot fit rank-{arr.ndim} array to rank-{len(target_shape)} shape"
@@ -58,7 +65,7 @@ def fit_array_to_shape(arr, target_shape, *, pad_value=0.0):
         for size, target in zip(out.shape, target_shape, strict=True)
     )
     return (
-        jnp.pad(out, padding, constant_values=jnp.asarray(pad_value, dtype=arr.dtype))
+        xp.pad(out, padding, constant_values=pad_value)
         if any(high for _, high in padding)
         else out
     )
