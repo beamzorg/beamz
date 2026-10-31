@@ -9,7 +9,11 @@ import numpy as np
 from beamz.devices._immutable import Replaceable
 
 from ._validation import check_density, fixed_density_masks
-from .autodiff import _conic_filter, _conic_kernel, apply_fixed_density
+from .autodiff import (
+    _conic_filter,
+    _conic_kernel,
+    apply_fixed_density,
+)
 from .projections import smoothed_heaviside
 
 
@@ -288,3 +292,67 @@ class TopologyDesignRegion(Specification):
             else self.material_density(params, beta=beta)
         )
         return sum(penalty(density, self.pixel_size) for penalty in self.penalties)
+
+
+@dataclass(frozen=True)
+class DensityParameterization:
+    """Latent-to-material map shared by arbitrary masks and rectangular regions.
+
+    Fixed constraints apply in parameter space around each transform. Linear
+    cell-center interpolation follows transformation, then planar extrusion or
+    volumetric placement. The outside raster remains fixed during binding.
+    """
+
+    shape: tuple
+    pixel_size: float
+    eps_bounds: tuple
+    transform: Any
+    fixed_solid: Any = None
+    fixed_void: Any = None
+    mask: Any = None
+    slices: tuple | None = None
+
+    def density(self, params, *, beta=None):
+        return self.transform(params, beta=beta)
+
+    def place(self, physical):
+        if self.slices is None:
+            return physical
+        import jax
+
+        target = tuple(s.stop - s.start for s in self.slices)[-physical.ndim :]
+        if physical.shape != target:
+            physical = jax.image.resize(
+                physical, target, method="linear", antialias=False
+            )
+        return (
+            jnp.zeros(self.mask.shape, dtype=physical.dtype)
+            .at[self.slices]
+            .set(physical)
+        )
+
+    def physical(self, params, beta):
+        if self.slices is None:
+            params = jnp.where(self.mask, params, 0.0)
+        return self.place(self.density(params, beta=beta))
+
+    def permittivity(self, params, beta, base):
+        low, high = self.eps_bounds
+        physical = self.physical(params, beta)
+        return jnp.where(self.mask, low + (high - low) * physical, base)
+
+    def export(self, design, params, *, beta=None, context=None, **geometry):
+        from .polygonize import _export_density
+
+        density = np.asarray(self.density(params, beta=beta))
+        if context is not None:
+            density = np.where(self.mask, self.physical(params, beta), context)
+        return _export_density(
+            design,
+            density,
+            eps_bounds=self.eps_bounds,
+            dx=self.pixel_size,
+            fixed_solid=self.fixed_solid,
+            fixed_void=self.fixed_void,
+            **geometry,
+        )

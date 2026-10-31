@@ -28,9 +28,7 @@ from beamz.simulation.execute import (
 from beamz.simulation.results import SimulationResults
 
 from ._validation import check_density, step_count
-from .autodiff import transform_density
 from .objectives import ModePower, WeightedObjective
-from .polygonize import _export_density
 from .result import TopologyResult, load_result
 from .topology import TopologySpec, TopologyState, _readonly_array
 
@@ -76,6 +74,7 @@ class TopologyProblem:
         adjoint_decay_tolerance=1e-4,
         adjoint_source_grouping="frequency",
         output_monitor_names=None,
+        _density_map=None,
     ):
         if gradient_backend not in ("autodiff", "adjoint"):
             raise ValueError("gradient_backend must be 'autodiff' or 'adjoint'.")
@@ -95,6 +94,9 @@ class TopologyProblem:
         self.adjoint_decay_tolerance = float(adjoint_decay_tolerance)
         self.simulation = simulation
         self.topology = topology
+        self._density_map = (
+            topology._density_map if _density_map is None else _density_map
+        )
         self.objective = objective
         if objective is not None and not isinstance(
             objective, (ModePower, WeightedObjective)
@@ -202,12 +204,14 @@ class TopologyProblem:
                 self._binding_results, self.program, names
             )
         values = jnp.asarray(density, dtype=jnp.float32)
-        if values.shape != self.topology.region_mask.shape:
+        if values.shape != self._density_map.shape:
             raise ValueError("Density must match the topology mask shape.")
         if not isinstance(values, Tracer):
             values = self._density(values)
         if self._spectral_adjoint is None:
-            state = self._simulate(values, jnp.asarray(beta, dtype=jnp.float32))
+            state = self._simulate(
+                values, None if beta is None else jnp.asarray(beta, dtype=jnp.float32)
+            )
         else:
             # The low-level problem plans frequencies from its objective. A
             # data-returning caller must not silently access unplanned outputs.
@@ -219,7 +223,7 @@ class TopologyProblem:
                         "Requested monitor frequencies are not included in this adjoint problem's objective."
                     )
             re, im, weights = self._spectral_adjoint._monitor_run(
-                values, jnp.asarray(beta, dtype=jnp.float32)
+                values, None if beta is None else jnp.asarray(beta, dtype=jnp.float32)
             )
             state = self._initial._replace(
                 dft_vec_re=re, dft_vec_im=im, dft_weight_sum=weights
@@ -392,24 +396,14 @@ class TopologyProblem:
                 raise ValueError("The design region must not overlap the absorber.")
 
     def _physical_density(self, density, beta):
-        return transform_density(
-            jnp.where(self._mask, density, 0.0),
-            beta=beta,
-            **self.topology._transform_options,
-        )
+        return self._density_map.physical(density, beta)
 
     def _permittivity(self, density, beta):
-        physical = self._physical_density(density, beta)
-        spec = self.topology
-        return jnp.where(
-            self._mask,
-            spec.eps_min + (spec.eps_max - spec.eps_min) * physical,
-            self._base_eps,
-        )
+        return self._density_map.permittivity(density, beta, self._base_eps)
 
     def _density(self, density):
         density = np.asarray(density, dtype=np.float32)
-        check_density(density, self.topology.region_mask.shape)
+        check_density(density, self._density_map.shape)
         return jnp.asarray(density)
 
     def value(self, density, *, beta=1.0):
@@ -574,7 +568,9 @@ class TopologyProblem:
 
     def material_simulation(self, density, *, beta=1.0):
         """Create an ordinary simulation with the identical density material map."""
-        eps = self._permittivity(self._density(density), self._beta(beta))
+        eps = self._permittivity(
+            self._density(density), None if beta is None else self._beta(beta)
+        )
         materials = topology_material_grid(self.program, eps, self._mask)
         return self.simulation.updated_copy(material_grid=materials)
 
@@ -599,20 +595,15 @@ class TopologyProblem:
                 "3D polygon export is not supported by TopologyProblem; use the extruded design-region export workflow."
             )
         spec = self.topology
-        return _export_density(
+        self._check_result(result)
+        return self._density_map.export(
             spec.design,
-            np.where(
-                spec.region_mask,
-                self.physical_density(result),
-                spec.fixed_structure_mask,
-            ),
-            eps_bounds=(spec.eps_min, spec.eps_max),
+            result.final_params,
+            beta=result.beta,
+            context=spec.fixed_structure_mask,
             origin=self.program.grid.material_grid.origin,
-            dx=float(self.simulation.resolution),
             background=spec.region_mask.astype(float),
             region_mask=spec.region_mask,
-            fixed_solid=spec.fixed_solid,
-            fixed_void=spec.fixed_void,
             threshold=threshold,
             mode=mode,
             sample_spacing=sample_spacing,

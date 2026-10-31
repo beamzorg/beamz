@@ -63,25 +63,46 @@ def topology_yee_permittivity(program, permittivity, mask):
 
 def topology_coefficients(program, permittivity, mask):
     """Bind scalar design permittivity to an existing JAX execution plan."""
-    updates = {}
-    for axis, component, eps in zip(
-        "xyz",
-        ("Ex", "Ey", "Ez"),
+    return bind_electric_coefficients(
+        program,
         topology_yee_permittivity(program, permittivity, mask),
-        strict=True,
-    ):
-        if program.config.is_3d:
-            updates[f"e_permittivity_{axis}"] = eps
+        permittivity_only=program.config.is_3d,
+    )
+
+
+def bind_electric_coefficients(
+    program, eps, sig=None, *, fixed_lossless=None, permittivity_only=False
+):
+    """Bind dynamic Yee electric inputs for general and masked material maps.
+
+    The 3D scalar topology specialization changes only permittivity; general
+    material inputs also update conductivity and decay/source coefficients.
+    Fixed lossless decays explicitly omit the electric-field cotangent path.
+    """
+    grid = program.grid
+    if sig is None:
+        sig = tuple(getattr(grid, f"sig_{axis}") for axis in "xyz")
+    updates = {}
+    for index, (axis, epsilon, sigma) in enumerate(zip("xyz", eps, sig, strict=True)):
+        updates[f"e_permittivity_{axis}"] = epsilon
+        if permittivity_only:
             continue
         decay, source = precompute_e_update_coefficients(
-            shape=program.grid.component_shapes[component],
-            conductivity=getattr(program.grid, f"sig_{axis}"),
-            permittivity=eps,
+            shape=grid.component_shapes[f"E{axis}"],
+            conductivity=sigma,
+            permittivity=epsilon,
             dt=program.config.dt,
-            region=getattr(program.grid, f"region_{axis}"),
+            region=getattr(grid, f"region_{axis}"),
         )
-        updates[f"e_decay_{axis}"] = decay
-        updates[f"e_source_{axis}"] = source
+        if fixed_lossless is not None and fixed_lossless[index]:
+            decay = jnp.float32(1.0)
+        updates.update(
+            {
+                f"e_decay_{axis}": decay,
+                f"e_source_{axis}": source,
+                f"e_conductivity_{axis}": sigma,
+            }
+        )
     return program.coefficients._replace(**updates)
 
 
