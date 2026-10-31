@@ -9,6 +9,7 @@ import numpy as np
 from jax.sharding import PartitionSpec as P
 
 from beamz.lattice import sampling_coordinates
+from beamz.simulation.distributed import _shard_map
 from beamz.simulation.observe import is_vector_dft_monitor
 
 _AXIS = "fdtd"
@@ -21,15 +22,6 @@ def supported(program):
         and bool(program.monitors)
         and all(is_vector_dft_monitor(mon) for mon in program.monitors)
     )
-
-
-def _shard_map():
-    try:
-        return jax.shard_map
-    except AttributeError:
-        from jax.experimental.shard_map import shard_map
-
-        return shard_map
 
 
 def scan_local_dft(state, program, *, assemble=False):

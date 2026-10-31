@@ -9,7 +9,7 @@ import jax
 import jax.numpy as jnp
 from jax.sharding import PartitionSpec as P
 
-from beamz.simulation.distributed import exchange_halos
+from beamz.simulation.distributed import _shard_map, exchange_halos
 
 _AXIS = "fdtd"
 _CURL = (((2, 1), (1, 0)), ((0, 0), (2, 2)), ((1, 2), (0, 1)))
@@ -48,10 +48,7 @@ def _phase(state, ctx, coeffs, *, phase):
     )
     logical = plan.layout.logical_shapes
     edges = ctx.boundary.cpml.metallic_edges
-    try:
-        shard_map = jax.shard_map
-    except AttributeError:
-        from jax.experimental.shard_map import shard_map
+    shard_map = _shard_map()
 
     @partial(
         shard_map,
