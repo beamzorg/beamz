@@ -850,8 +850,6 @@ def test_compiled_static_monitor_physical_dft_uses_centered_tm_xy_sampling():
                 freq_record_interval=1,
                 freq_count=1,
                 freq_hz=jnp.asarray([0.0], dtype=jnp.float32),
-                freq_rot_re=jnp.asarray([1.0], dtype=jnp.float32),
-                freq_rot_im=jnp.asarray([0.0], dtype=jnp.float32),
                 dft_enabled=True,
                 dft_record_interval=1,
                 dft_t_start=0.0,
@@ -875,8 +873,6 @@ def test_compiled_static_monitor_physical_dft_uses_centered_tm_xy_sampling():
         counts=jnp.zeros((1,), dtype=jnp.int32),
         freq_flux_re=jnp.zeros((1, 1), dtype=jnp.float32),
         freq_flux_im=jnp.zeros((1, 1), dtype=jnp.float32),
-        freq_phase_re=jnp.ones((1, 1), dtype=jnp.float32),
-        freq_phase_im=jnp.zeros((1, 1), dtype=jnp.float32),
         dft_vec_re=jnp.zeros((6,), dtype=jnp.float32),
         dft_vec_im=jnp.zeros((6,), dtype=jnp.float32),
         dft_weight_sum=jnp.zeros((1,), dtype=jnp.float32),
@@ -1280,7 +1276,8 @@ def test_compiled_dft_monitors_use_exact_ragged_state_arenas():
     )
 
 
-def test_compiled_static_monitor_dft_uses_current_sample_phase():
+@pytest.mark.parametrize(("time", "expected"), [(0.0, 2.0), (0.25, 2j)])
+def test_compiled_static_monitor_dft_uses_current_sample_phase(time, expected):
     point = jnp.asarray([[0]], dtype=jnp.int32)
     zero = jnp.asarray([[0.0]], dtype=jnp.float32)
     one = jnp.asarray([[1.0]], dtype=jnp.float32)
@@ -1305,8 +1302,6 @@ def test_compiled_static_monitor_dft_uses_current_sample_phase():
                 freq_record_interval=1,
                 freq_count=1,
                 freq_hz=jnp.asarray([1.0], dtype=jnp.float32),
-                freq_rot_re=jnp.asarray([0.0], dtype=jnp.float32),
-                freq_rot_im=jnp.asarray([-1.0], dtype=jnp.float32),
                 dft_enabled=True,
                 dft_record_interval=1,
                 dft_t_start=0.0,
@@ -1328,8 +1323,6 @@ def test_compiled_static_monitor_dft_uses_current_sample_phase():
         counts=jnp.zeros((1,), dtype=jnp.int32),
         freq_flux_re=jnp.zeros((1, 1), dtype=jnp.float32),
         freq_flux_im=jnp.zeros((1, 1), dtype=jnp.float32),
-        freq_phase_re=jnp.ones((1, 1), dtype=jnp.float32),
-        freq_phase_im=jnp.zeros((1, 1), dtype=jnp.float32),
         dft_vec_re=jnp.zeros((6,), dtype=jnp.float32),
         dft_vec_im=jnp.zeros((6,), dtype=jnp.float32),
         dft_weight_sum=jnp.zeros((1,), dtype=jnp.float32),
@@ -1339,7 +1332,7 @@ def test_compiled_static_monitor_dft_uses_current_sample_phase():
         program,
         monitor_state,
         abs_step=jnp.asarray(0, dtype=jnp.int32),
-        t_phys=jnp.asarray(0.0, dtype=jnp.float32),
+        t_phys=jnp.asarray(time, dtype=jnp.float32),
         dt_scalar=jnp.asarray(1.0, dtype=jnp.float32),
         ex=jnp.zeros((1, 1), dtype=jnp.float32),
         ey=jnp.zeros((1, 1), dtype=jnp.float32),
@@ -1349,7 +1342,9 @@ def test_compiled_static_monitor_dft_uses_current_sample_phase():
         hz=jnp.zeros((1, 1), dtype=jnp.float32),
     )
 
-    np.testing.assert_allclose(updated.dft_vec_re[2], 2.0, rtol=1e-7, atol=1e-7)
-    np.testing.assert_allclose(updated.dft_vec_im[2], 0.0, rtol=1e-7, atol=1e-7)
-    np.testing.assert_allclose(updated.freq_phase_re[0, 0], 0.0, rtol=1e-7, atol=1e-7)
-    np.testing.assert_allclose(updated.freq_phase_im[0, 0], -1.0, rtol=1e-7, atol=1e-7)
+    np.testing.assert_allclose(
+        updated.dft_vec_re[2] + 1j * updated.dft_vec_im[2],
+        expected,
+        rtol=1e-7,
+        atol=1e-7,
+    )

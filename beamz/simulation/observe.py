@@ -423,8 +423,6 @@ MONITOR_FIELDS = (
     "counts",
     "freq_flux_re",
     "freq_flux_im",
-    "freq_phase_re",
-    "freq_phase_im",
     "dft_vec_re",
     "dft_vec_im",
     "dft_weight_sum",
@@ -447,8 +445,6 @@ def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any
                 ((0, 0), jnp.float32),
                 ((0, 0), jnp.float32),
                 ((0,), jnp.int32),
-                ((0, 0), jnp.float32),
-                ((0, 0), jnp.float32),
                 ((0, 0), jnp.float32),
                 ((0, 0), jnp.float32),
                 ((0,), dft_dtype),
@@ -474,14 +470,12 @@ def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any
     recorder_steps = max(
         1, int(program.config.num_steps if num_steps is None else num_steps)
     )
-    # 3. Initialize scalar phase recurrence at 1+0i and every accumulated quantity at zero.
+    # 3. Initialize every accumulated quantity at zero.
     values = (
         jnp.zeros((n, max_records), dtype=jnp.float32),
         jnp.zeros((n, max_records), dtype=jnp.float32),
         jnp.zeros((n,), dtype=jnp.int32),
         jnp.zeros((n, max_freq), dtype=jnp.float32),
-        jnp.zeros((n, max_freq), dtype=jnp.float32),
-        jnp.ones((n, max_freq), dtype=jnp.float32),
         jnp.zeros((n, max_freq), dtype=jnp.float32),
         jnp.zeros((dft_value_count,), dtype=dft_dtype),
         jnp.zeros((dft_value_count,), dtype=dft_dtype),
@@ -717,8 +711,6 @@ def update_monitors(
     counts = state.counts
     freq_flux_re = state.freq_flux_re
     freq_flux_im = state.freq_flux_im
-    freq_phase_re = state.freq_phase_re
-    freq_phase_im = state.freq_phase_im
     dft_vec_re = state.dft_vec_re
     dft_vec_im = state.dft_vec_im
     dft_weight_sum = state.dft_weight_sum
@@ -780,14 +772,12 @@ def update_monitors(
         counts = counts.at[mon.monitor_index].set(
             counts[mon.monitor_index] + jnp.where(do_record, 1, 0)
         )
-        # 4c. Integrate scalar spectral flux with an explicit real/imaginary recurrence,
-        # avoiding complex carry types that vary in backend support.
+        # 4c. Integrate scalar spectral flux at its absolute sample phase, using
+        # real/imaginary accumulators for backend compatibility.
         if mon.accumulate_frequency and mon.freq_count > 0:
             mi = mon.monitor_index
             row_f_re = freq_flux_re[mi, : mon.freq_count]
             row_f_im = freq_flux_im[mi, : mon.freq_count]
-            row_ph_re = freq_phase_re[mi, : mon.freq_count]
-            row_ph_im = freq_phase_im[mi, : mon.freq_count]
             theta_now = (
                 jnp.asarray(2.0 * np.pi, dtype=jnp.float32)
                 * jnp.asarray(mon.freq_hz, dtype=jnp.float32)
@@ -800,14 +790,8 @@ def update_monitors(
             zero_freq = jnp.asarray(0.0, dtype=row_f_re.dtype)
             row_f_re = row_f_re + jnp.where(do_freq, delta_re, zero_freq)
             row_f_im = row_f_im + jnp.where(do_freq, delta_im, zero_freq)
-            next_ph_re = row_ph_re * mon.freq_rot_re - row_ph_im * mon.freq_rot_im
-            next_ph_im = row_ph_re * mon.freq_rot_im + row_ph_im * mon.freq_rot_re
-            row_ph_re = jnp.where(do_freq, next_ph_re, row_ph_re)
-            row_ph_im = jnp.where(do_freq, next_ph_im, row_ph_im)
             freq_flux_re = freq_flux_re.at[mi, : mon.freq_count].set(row_f_re)
             freq_flux_im = freq_flux_im.at[mi, : mon.freq_count].set(row_f_im)
-            freq_phase_re = freq_phase_re.at[mi, : mon.freq_count].set(row_ph_re)
-            freq_phase_im = freq_phase_im.at[mi, : mon.freq_count].set(row_ph_im)
         # 4d. Gate full vector DFT sampling by its time window and cadence because field
         # interpolation is substantially more expensive than updating scalar flux.
         if mon.dft_enabled and mon.freq_count > 0 and mon.dft_point_count > 0:
@@ -884,8 +868,6 @@ def update_monitors(
         counts=counts,
         freq_flux_re=freq_flux_re,
         freq_flux_im=freq_flux_im,
-        freq_phase_re=freq_phase_re,
-        freq_phase_im=freq_phase_im,
         dft_vec_re=tuple(dft_vec_re) if segmented_dft else dft_vec_re,
         dft_vec_im=tuple(dft_vec_im) if segmented_dft else dft_vec_im,
         dft_weight_sum=tuple(dft_weight_sum) if segmented_dft else dft_weight_sum,

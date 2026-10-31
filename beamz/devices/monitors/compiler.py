@@ -83,8 +83,6 @@ class CompiledMonitorSpec:
     freq_record_interval: int = 1
     freq_count: int = 0
     freq_hz: jnp.ndarray = field(default_factory=_empty_array)
-    freq_rot_re: jnp.ndarray = field(default_factory=_empty_array)
-    freq_rot_im: jnp.ndarray = field(default_factory=_empty_array)
     dft_enabled: bool = False
     dft_record_interval: int = 1
     dft_t_start: float = 0.0
@@ -433,9 +431,6 @@ def compile_monitor_specs(
 
         freq_points = dft_freqs
         freq_interval = monitor.interval
-        theta = 2.0 * np.pi * freq_points * float(dt) * float(freq_interval)
-        freq_rot_re = np.cos(theta).astype(np.float32, copy=False)
-        freq_rot_im = np.sin(theta).astype(np.float32, copy=False)
         dft_t_end_val = np.inf
         dft_components = getattr(monitor, "dft_components", None)
         if dft_components is None:
@@ -468,8 +463,6 @@ def compile_monitor_specs(
             freq_record_interval=freq_interval,
             freq_count=int(freq_points.size),
             freq_hz=jnp.asarray(freq_points, dtype=jnp.float32),
-            freq_rot_re=jnp.asarray(freq_rot_re),
-            freq_rot_im=jnp.asarray(freq_rot_im),
             dft_enabled=True,
             dft_record_interval=freq_interval,
             dft_t_start=0.0,

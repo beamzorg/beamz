@@ -271,3 +271,6 @@ The source and monitor clocks therefore share the same absolute time grid.
 An explicitly supplied continuation state whose time differs from that grid
 retains its supplied time as the invocation origin. Grid-aligned continuation
 states use the absolute step to avoid rounding the origin again at every chunk.
+
+`SimulationState` no longer stores the unused `freq_phase_re` and `freq_phase_im`
+recurrences. Spectral acquisitions derive phase directly from absolute time.

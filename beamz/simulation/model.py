@@ -166,8 +166,6 @@ class SimulationState(NamedTuple):
         Time-domain monitor accumulators and valid-sample counts.
     freq_flux_re, freq_flux_im : array-like
         Real and imaginary frequency-domain flux accumulators.
-    freq_phase_re, freq_phase_im : array-like
-        Recurrence phases used by frequency-domain monitor accumulation.
     dft_vec_re, dft_vec_im, dft_weight_sum : array-like
         Packed field-DFT accumulators and normalization weights.
     recorded_fields : tuple of array-like
@@ -213,8 +211,6 @@ class SimulationState(NamedTuple):
     counts: Any
     freq_flux_re: Any
     freq_flux_im: Any
-    freq_phase_re: Any
-    freq_phase_im: Any
     dft_vec_re: Any
     dft_vec_im: Any
     dft_weight_sum: Any
@@ -266,8 +262,6 @@ class SimulationState(NamedTuple):
             counts=jnp.zeros((0,), dtype=jnp.int32),
             freq_flux_re=empty2,
             freq_flux_im=empty2,
-            freq_phase_re=empty2,
-            freq_phase_im=empty2,
             dft_vec_re=jnp.zeros((0,), dtype=jnp.float32),
             dft_vec_im=jnp.zeros((0,), dtype=jnp.float32),
             dft_weight_sum=jnp.zeros((0,), dtype=jnp.float32),
