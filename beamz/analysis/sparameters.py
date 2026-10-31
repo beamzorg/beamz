@@ -208,96 +208,7 @@ def _extract_port_waves_dft(
     projection_cache = {}
     waves = {}
 
-    def _matching_3d_group_specs(spec, monitor_name):
-        if not context.is_3d:
-            return (spec,)
-        candidates = [
-            candidate
-            for candidate in port_map.values()
-            if candidate.monitor_name == monitor_name
-        ]
-        group = [
-            candidate
-            for candidate in candidates
-            if candidate.axis == spec.axis
-            and candidate.polarization == spec.polarization
-        ]
-        if not group:
-            return (spec,)
-        return tuple(sorted(group, key=lambda item: (int(item.mode_index), item.name)))
-
-    def _build_3d_group_projection(spec, monitor, f_mode):
-        data = inputs[monitor.name]
-        return _mp._build_port_projection(
-            data,
-            spec,
-            monitor,
-            f_mode,
-            projection_cache,
-        )
-
-    def _project_3d_group_at_monitor(
-        spec,
-        monitor,
-        idx,
-        frequency,
-        f_mode,
-    ):
-        group_specs = _matching_3d_group_specs(spec, monitor.name)
-        projections = [
-            _build_3d_group_projection(group_spec, monitor, f_mode)
-            for group_spec in group_specs
-        ]
-        try:
-            group_index = next(
-                index
-                for index, group_spec in enumerate(group_specs)
-                if group_spec.name == spec.name
-            )
-        except StopIteration:
-            group_index = 0
-        proj = projections[group_index]
-        proj_components = tuple(
-            proj.get("components", (proj["e_component"], proj["h_component"]))
-        )
-        raw_field_components = {
-            comp: _apply_modal_projection_spatial_phase(
-                comp,
-                dft_cache[(monitor.name, comp)][idx],
-                frequency,
-                proj,
-            )
-            for comp in proj_components
-        }
-        field_components = _colocate_field_components_to_projection_3d(
-            inputs[monitor.name],
-            monitor,
-            raw_field_components,
-            proj,
-        )
-        coeffs, residual, group_cond, projection_diag = (
-            _mp._project_modal_coefficients_3d_group(
-                field_components,
-                projections,
-            )
-        )
-        cond_values = [
-            float(projection.get("condition_number", np.nan))
-            for projection in projections
-        ]
-        finite_conds = [
-            value for value in [float(group_cond), *cond_values] if np.isfinite(value)
-        ]
-        cond = max(finite_conds) if finite_conds else np.nan
-        return (
-            coeffs[group_index],
-            residual,
-            cond,
-            float(proj.get("mode_neff", np.nan)),
-            projection_diag,
-        )
-
-    def _project_monitor(spec, monitor, parts):
+    def _project_monitor(group_specs, monitor, parts):
         components = (
             parts.get(
                 "projection_components_3d",
@@ -313,7 +224,7 @@ def _extract_port_waves_dft(
                     inputs[monitor.name], monitor, component, frequencies=freqs
                 )
 
-        values = {
+        template = {
             "plus": np.zeros(freqs.size, dtype=np.complex128),
             "minus": np.zeros(freqs.size, dtype=np.complex128),
             "condition_number": np.zeros(freqs.size, dtype=float),
@@ -330,59 +241,70 @@ def _extract_port_waves_dft(
                 freqs.size, np.nan + 0.0j, dtype=np.complex128
             ),
         }
+        group_values = [
+            {key: value.copy() for key, value in template.items()} for _ in group_specs
+        ]
         for idx, frequency in enumerate(freqs):
             f_mode = float(frequency if strategy == "per_frequency" else single_freq)
-            proj = _mp._build_port_projection(
-                inputs[monitor.name],
-                spec,
-                monitor,
-                f_mode,
-                projection_cache,
-            )
-
-            if context.is_3d:
-                coeff, residual, cond, neff, diag = _project_3d_group_at_monitor(
-                    spec,
-                    monitor,
-                    idx,
-                    frequency,
-                    f_mode,
+            projections = [
+                _mp._build_port_projection(
+                    inputs[monitor.name], spec, monitor, f_mode, projection_cache
                 )
-                values["plus"][idx], values["minus"][idx] = coeff[:2]
-                values["projection_residual"][idx] = residual
-                values["condition_number"][idx] = cond
-                values["mode_neff"][idx] = neff
-                for key in (
-                    "projection_residual_e",
-                    "projection_residual_h",
-                    "projection_residual_balanced",
-                    "projected_signed_power",
-                ):
-                    values[key][idx] = float(
-                        diag.get(key.removeprefix("projection_"), np.nan)
-                    )
-                values["projection_e_scale"][idx] = np.complex128(
-                    diag.get("e_scale", np.nan + 0.0j)
-                )
-                values["projection_h_scale"][idx] = np.complex128(
-                    diag.get("h_scale", np.nan + 0.0j)
-                )
-                continue
-
+                for spec in group_specs
+            ]
+            proj = projections[0]
             proj_components = tuple(
                 proj.get("components", (proj["e_component"], proj["h_component"]))
             )
-            field_vec = np.concatenate(
-                [
-                    _apply_modal_projection_spatial_phase(
-                        component,
-                        dft_cache[(monitor.name, component)][idx],
-                        frequency,
-                        proj,
+            field_components = {
+                component: _apply_modal_projection_spatial_phase(
+                    component,
+                    dft_cache[(monitor.name, component)][idx],
+                    frequency,
+                    proj,
+                )
+                for component in proj_components
+            }
+            if context.is_3d:
+                field_components = _colocate_field_components_to_projection_3d(
+                    inputs[monitor.name], monitor, field_components, proj
+                )
+                coeffs, residual, cond, diag = _mp._project_modal_coefficients_3d_group(
+                    field_components, projections
+                )
+                finite_conds = [
+                    value
+                    for value in (
+                        cond,
+                        *(p.get("condition_number", np.nan) for p in projections),
                     )
-                    for component in proj_components
+                    if np.isfinite(value)
                 ]
-            )
+                cond = max(finite_conds, default=np.nan)
+                for values, projection, coeff in zip(
+                    group_values, projections, coeffs, strict=True
+                ):
+                    values["plus"][idx], values["minus"][idx] = coeff[:2]
+                    values["projection_residual"][idx] = residual
+                    values["condition_number"][idx] = cond
+                    values["mode_neff"][idx] = float(
+                        projection.get("mode_neff", np.nan)
+                    )
+                    for key in (
+                        "projection_residual_e",
+                        "projection_residual_h",
+                        "projection_residual_balanced",
+                        "projected_signed_power",
+                        "projection_e_scale",
+                        "projection_h_scale",
+                    ):
+                        values[key][idx] = diag.get(
+                            key.removeprefix("projection_"), np.nan
+                        )
+                continue
+
+            values = group_values[0]
+            field_vec = np.concatenate(list(field_components.values()))
             projection_weights = np.asarray(
                 proj.get("projection_weights", np.ones(field_vec.size)),
                 dtype=float,
@@ -396,26 +318,36 @@ def _extract_port_waves_dft(
                 proj.get("condition_number", np.nan)
             )
             values["mode_neff"][idx] = float(proj.get("mode_neff", np.nan))
-        return values
+        return group_values
 
+    groups = {}
     for spec in port_map.values():
+        key = (
+            (spec.monitor_name, spec.axis, spec.polarization)
+            if context.is_3d
+            else spec.name
+        )
+        groups.setdefault(key, []).append(spec)
+    for group_specs in groups.values():
+        group_specs.sort(key=lambda spec: (int(spec.mode_index), spec.name))
+        spec = group_specs[0]
         parts = _mp._mode_components_for_port(spec)
         main_monitor = monitor_by_name[spec.monitor_name]
-        main = _project_monitor(
-            spec,
+        projected = _project_monitor(
+            group_specs,
             main_monitor,
             parts,
         )
-        port_waves = {
-            "a_plus": main.pop("plus"),
-            "a_minus": main.pop("minus"),
-            **main,
-        }
-        if return_power:
-            port_waves["P_plus"] = np.abs(port_waves["a_plus"]) ** 2
-            port_waves["P_minus"] = np.abs(port_waves["a_minus"]) ** 2
-
-        waves[spec.name] = port_waves
+        for spec, main in zip(group_specs, projected, strict=True):
+            port_waves = {
+                "a_plus": main.pop("plus"),
+                "a_minus": main.pop("minus"),
+                **main,
+            }
+            if return_power:
+                port_waves["P_plus"] = np.abs(port_waves["a_plus"]) ** 2
+                port_waves["P_minus"] = np.abs(port_waves["a_minus"]) ** 2
+            waves[spec.name] = port_waves
     return waves
 
 

@@ -403,7 +403,11 @@ def test_build_port_projection_3d_modemonitor_uses_discrete_contract(monkeypatch
     assert np.real(projection["mode_components_bwd"]["Hz"][0]) > 0.0
 
 
-def test_project_modal_coefficients_3d_group_recovers_multiple_modes():
+@pytest.mark.parametrize("strategy", ["per_frequency", "single"])
+@pytest.mark.parametrize("return_power", [False, True])
+def test_project_modal_coefficients_3d_group_recovers_multiple_modes(
+    monkeypatch, strategy, return_power
+):
     components = ("Ey", "Ez", "Hy", "Hz")
 
     def _mode(ey, hz):
@@ -467,6 +471,60 @@ def test_project_modal_coefficients_3d_group_recovers_multiple_modes():
     for actual, expected in zip(coeff, coeff_true, strict=True):
         np.testing.assert_allclose(actual[0], expected[0], rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(actual[1], expected[1], rtol=1e-10, atol=1e-10)
+
+    frequencies = np.array([1.0, 2.0])
+    monitor = ModeMonitor(
+        center=(1.0, 1.0, 1.0),
+        size=(0, 2, 2),
+        freqs=frequencies,
+        name="m",
+        mode_spec=ModeSpec(num_modes=2),
+    )
+    inputs = {
+        "m": _analysis_contract(
+            monitor=monitor, frequencies=frequencies, shape=(3, 3, 3)
+        )
+    }
+    ports = [
+        _port(name=f"p{i}", monitor_name="m", polarization="te", mode_index=i)
+        for i in (1, 0)
+    ]
+    for projection in projections:
+        projection.update(e_component="Ey", h_component="Hz")
+    monkeypatch.setattr(
+        mp,
+        "_build_port_projection",
+        lambda data, spec, *args: projections[spec.mode_index],
+    )
+    monkeypatch.setattr(
+        sp,
+        "_sample_monitor_component_dft",
+        lambda data, monitor, component, frequencies: (
+            frequencies,
+            np.tile(field[component], (2, 1)),
+        ),
+    )
+    solve = mp._project_modal_coefficients_3d_group
+    calls = []
+
+    def counted_solve(*args):
+        calls.append(1)
+        return solve(*args)
+
+    monkeypatch.setattr(mp, "_project_modal_coefficients_3d_group", counted_solve)
+    waves = sp._extract_port_waves_dft(
+        inputs, ports, frequencies, mode_strategy=strategy, return_power=return_power
+    )
+    assert len(calls) == len(frequencies)
+    for index, expected in enumerate(coeff_true):
+        wave = waves[f"p{index}"]
+        np.testing.assert_allclose(wave["a_plus"], expected[0])
+        np.testing.assert_allclose(wave["a_minus"], expected[1])
+        np.testing.assert_allclose(
+            wave["projected_signed_power"], diagnostics["projected_signed_power"]
+        )
+        assert ("P_plus" in wave) == return_power
+        assert np.all(wave["projection_residual"] < 1e-12)
 
 
 @pytest.mark.parametrize("force_symmetry", [False, True])
