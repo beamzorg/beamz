@@ -188,6 +188,8 @@ def _build_discrete_port_projection_3d(
             dz=float(sim.resolution),
             field_shape=full_shape,
         )
+    if snapped_region is None:
+        raise RuntimeError("3D modal projection requires a snapped monitor plane.")
     plane_index = int(snapped_region.plane_index)
     if direction_sign > 0.0:
         offset_index = max(0, plane_index - 1)
