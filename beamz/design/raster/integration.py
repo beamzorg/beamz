@@ -13,17 +13,11 @@ import numpy as np
 from beamz._helpers import env_bool
 from beamz.design.discretization import MaterialGrid
 from beamz.design.grid import RectilinearGrid
+from beamz.design.grid_spec import _realize_uniform_grid
 from beamz.lattice import normalize_polarization_2d
 
 from .engine import RasterOptions, rasterize
 from .importers._beamz import from_beamz
-from .schema import Grid
-
-
-def _cell_count(extent: float, spacing: float) -> int:
-    ratio = float(extent) / float(spacing)
-    tolerance = 16.0 * np.finfo(float).eps * max(1.0, abs(ratio))
-    return max(1, math.ceil(ratio - tolerance))
 
 
 def _grid_kind(design: Any, grid_type: str) -> str:
@@ -106,14 +100,8 @@ def _rasterize_design(
             raise ValueError(
                 "Scalar design rasterization requires the same x, y, and z spacing."
             )
-        nx = _cell_count(design.width, resolution)
-        ny = _cell_count(design.height, resolution)
-        nz = _cell_count(design.depth, resolution_z) if kind == "3d" else 1
-        z_max = nz * resolution_z if kind == "3d" else 1.0
-        native_grid = Grid.uniform(
-            (0.0, 0.0, 0.0),
-            (nx * resolution, ny * resolution, z_max),
-            (nx, ny, nz),
+        native_grid = _realize_uniform_grid(
+            design, resolution, dimensions=3 if kind == "3d" else 2
         )
         representative_resolution = resolution
 

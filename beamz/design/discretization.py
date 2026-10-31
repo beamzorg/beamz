@@ -3,16 +3,26 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import numpy.typing as npt
 
 from beamz._cache_tokens import cache_token
-from beamz.design._material_layout import SUPPORTS, active_supports, supports_by_cell
+from beamz.design._material_layout import (
+    CELL_TENSORS,
+    SUPPORTS,
+    active_supports,
+    material_fields,
+    support_shapes,
+    supports_by_cell,
+)
 from beamz.design.grid import RectilinearGrid
 from beamz.devices._immutable import readonly_array
 from beamz.lattice import component_shapes, normalize_polarization_2d
+
+if TYPE_CHECKING:
+    from beamz.design.raster.result import RasterResult
 
 
 def _tensor_diagonal(values) -> np.ndarray:
@@ -117,13 +127,34 @@ class MaterialGrid:
                 continue
             if actual != shape:
                 raise ValueError(f"{name} has shape {actual}, expected {shape}.")
-        for name in ("yee_materials", "tensors", "yee_tensors"):
-            values = {
-                str(key): readonly_array(value)
-                for key, value in dict(getattr(self, name)).items()
-            }
-            object.__setattr__(self, name, MappingProxyType(values))
-        shapes = component_shapes(self.shape, self.polarization or "tm")
+        shapes = support_shapes(shape, polarization or "tm")
+        field_groups = (
+            (
+                "yee_materials",
+                {name: shapes[name] for name, *_ in SUPPORTS},
+                False,
+                "Yee material fields",
+            ),
+            ("tensors", dict.fromkeys(CELL_TENSORS, shape), True, "cell tensors"),
+            (
+                "yee_tensors",
+                {
+                    name: value
+                    for name, value in shapes.items()
+                    if name.startswith("eps_")
+                },
+                True,
+                "Yee permittivity tensors",
+            ),
+        )
+        for name, expected, compact, label in field_groups:
+            object.__setattr__(
+                self,
+                name,
+                material_fields(
+                    dict(getattr(self, name)), expected, compact=compact, label=label
+                ),
+            )
         self._validate_dispersion()
         smoothing = str(self.smoothing).strip().lower()
         if self.dispersion_interfaces and smoothing != "farjadpour_diagonal":
@@ -178,19 +209,6 @@ class MaterialGrid:
             # differencing may differ from it by a few floating-point ulps.
             realized_resolution = resolution
         object.__setattr__(self, "resolution", realized_resolution)
-        allowed_yee = {target: component for target, _, component, _, _ in SUPPORTS}
-        unknown_yee = set(self.yee_materials) - set(allowed_yee)
-        if unknown_yee:
-            raise ValueError(
-                f"Unknown Yee material fields: {', '.join(sorted(unknown_yee))}."
-            )
-        if self.yee_materials:
-            for name, values in self.yee_materials.items():
-                expected = shapes[allowed_yee[name]]
-                if np.asarray(values).shape != expected:
-                    raise ValueError(
-                        f"{name} has shape {np.asarray(values).shape}, expected {expected}."
-                    )
         if grid.metric_kind_for(active_axes) != "isotropic_uniform":
             required = set()
             for cell_name, supports in supports_by_cell(
@@ -211,43 +229,6 @@ class MaterialGrid:
                     f"{', '.join(sorted(missing))}. Construct the grid with "
                     "MaterialGrid.from_raster_result() or provide yee_materials."
                 )
-        unknown_tensors = set(self.tensors) - {"epsilon", "mu", "conductivity"}
-        if unknown_tensors:
-            raise ValueError(
-                f"Unknown cell tensors: {', '.join(sorted(unknown_tensors))}."
-            )
-        for name, values in self.tensors.items():
-            shape = np.asarray(values).shape
-            if (
-                len(shape) != len(self.shape) + 1
-                or shape[0] not in (1, 3, 6)
-                or shape[1:] != self.shape
-            ):
-                raise ValueError(f"{name} tensor has invalid compact shape {shape}.")
-        unknown_yee_tensors = set(self.yee_tensors) - {
-            "eps_x",
-            "eps_y",
-            "eps_z",
-            "eps_node",
-        }
-        if unknown_yee_tensors:
-            raise ValueError(
-                "Unknown Yee permittivity tensors: "
-                f"{', '.join(sorted(unknown_yee_tensors))}."
-            )
-        if self.yee_tensors:
-            for name, values in self.yee_tensors.items():
-                expected = (
-                    tuple(value + 1 for value in self.shape)
-                    if name == "eps_node"
-                    else shapes[{"eps_x": "Ex", "eps_y": "Ey", "eps_z": "Ez"}[name]]
-                )
-                actual = np.asarray(values).shape
-                if actual[0:1] not in ((1,), (3,), (6,)) or actual[1:] != expected:
-                    raise ValueError(
-                        f"{name} tensor has shape {actual}, expected compact "
-                        f"(1|3|6, {', '.join(map(str, expected))})."
-                    )
 
     def _validate_dispersion(self):
         from beamz.design.dispersion import PoleResidue
@@ -292,23 +273,20 @@ class MaterialGrid:
     @classmethod
     def from_raster_result(
         cls,
-        result: Any,
+        result: RasterResult,
         *,
         dimensions: Literal[2, 3] | None = None,
         polarization: Literal["tm", "te"] = "tm",
         resolution: float | None = None,
     ) -> MaterialGrid:
-        """Convert a uniform raster result into the current 2D or 3D solver grid.
+        """Convert validated native tensors into the current 2D or 3D solver grid.
 
         Reduced TMz/TEz output identifies a 2D result automatically. Full output
         remains 3D, including a legitimate one-cell-thick 3D raster; pass
         ``dimensions=2`` explicitly when repurposing full output for 2D.
         """
 
-        support_tensors = dict(getattr(result, "yee_tensors", {}))
-        edges = getattr(result, "grid_edges", None)
-        if edges is None or len(edges) != 3:
-            raise ValueError("RasterResult must retain x, y, and z grid edges.")
+        support_tensors = result.yee_tensors
         if dimensions is None:
             available = set(support_tensors)
             full_output, tm_output, te_output = (
@@ -339,11 +317,11 @@ class MaterialGrid:
             raise ValueError(
                 f"RasterResult omits solver components: {', '.join(sorted(missing))}."
             )
-        grid = RectilinearGrid(*(np.asarray(axis, dtype=float) for axis in edges))
+        grid = result.grid
         representative_resolution = (
             grid.minimum_spacing if resolution is None else float(resolution)
         )
-        smoothing = str(getattr(result, "smoothing", "volume"))
+        smoothing = result.smoothing
         materials = {
             target: _support_diagonal(support_tensors[source], axis)
             for target, source, axis in component_specs
@@ -353,13 +331,7 @@ class MaterialGrid:
             for target, source, _axis in component_specs
             if target.startswith("eps_")
         }
-        tensors = dict(getattr(result, "tensors", {}))
-        missing_tensors = {"epsilon", "mu", "conductivity"} - set(tensors)
-        if missing_tensors:
-            raise ValueError(
-                "RasterResult omits cell tensors: "
-                f"{', '.join(sorted(missing_tensors))}."
-            )
+        tensors = result.tensors
         epsilon_tensor = np.asarray(tensors["epsilon"])
         mu_tensor = np.asarray(tensors["mu"])
         conductivity_tensor = np.asarray(tensors["conductivity"])
@@ -405,24 +377,23 @@ class MaterialGrid:
                 "BeamZ's current FDTD update supports only unit permeability. "
                 "The tensor raster remains available for standalone use."
             )
-        epsilon_diagonal = _tensor_diagonal(epsilon_tensor)
-        conductivity_diagonal = _tensor_diagonal(conductivity_tensor)
-        epsilon = np.mean(epsilon_diagonal, axis=0)
-        conductivity = np.mean(conductivity_diagonal, axis=0)
-        permeability = np.mean(mu_diagonal, axis=0)
-        if dimensions == 2:
-            if epsilon.shape[0] != 1:
-                raise ValueError("A 2D MaterialGrid requires exactly one z cell.")
-            if polarization == "tm":
-                epsilon = epsilon_diagonal[2, 0]
-                conductivity = conductivity_diagonal[2, 0]
-                permeability = 0.5 * (mu_diagonal[0, 0] + mu_diagonal[1, 0])
-            else:
-                epsilon = 0.5 * (epsilon_diagonal[0, 0] + epsilon_diagonal[1, 0])
-                conductivity = 0.5 * (
-                    conductivity_diagonal[0, 0] + conductivity_diagonal[1, 0]
+        summaries = {}
+        for name, tensor in (
+            ("epsilon", epsilon_tensor),
+            ("conductivity", conductivity_tensor),
+            ("mu", mu_tensor),
+        ):
+            diagonal = _tensor_diagonal(tensor)
+            if dimensions == 2:
+                if diagonal.shape[1] != 1:
+                    raise ValueError("A 2D MaterialGrid requires exactly one z cell.")
+                axial = (polarization == "tm") != (name == "mu")
+                summaries[name] = (
+                    diagonal[2, 0] if axial else 0.5 * (diagonal[0, 0] + diagonal[1, 0])
                 )
-                permeability = mu_diagonal[2, 0]
+            else:
+                summaries[name] = np.mean(diagonal, axis=0)
+        if dimensions == 2:
             materials = {
                 name: np.asarray(value)[0] for name, value in materials.items()
             }
@@ -431,19 +402,15 @@ class MaterialGrid:
                 name: np.asarray(value)[:, 0] for name, value in yee_tensors.items()
             }
         return cls(
-            epsilon,
-            conductivity,
-            permeability,
+            summaries["epsilon"],
+            summaries["conductivity"],
+            summaries["mu"],
             representative_resolution,
-            tuple(int(value) for value in epsilon.shape),
+            summaries["epsilon"].shape,
             materials,
             tensors,
             smoothing,
-            (
-                float(np.asarray(edges[0])[0]),
-                float(np.asarray(edges[1])[0]),
-                float(np.asarray(edges[2])[0]),
-            ),
+            grid.origin,
             polarization if dimensions == 2 else None,
             yee_tensors=yee_tensors,
             grid=grid,

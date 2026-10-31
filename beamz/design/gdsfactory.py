@@ -166,7 +166,7 @@ def _port_metadata(ports: Sequence[Port]) -> tuple[PortMetadata, ...]:
 
 
 @dataclass(frozen=True, slots=True)
-class PreparedComponent:
+class PreparedComponent(ImportedComponent):
     """An inspectable GDSFactory component translated to native BeamZ values.
 
     The object owns no runtime state.  :meth:`simulation_for` returns a new
@@ -174,7 +174,6 @@ class PreparedComponent:
     this setup unchanged.
     """
 
-    imported: ImportedComponent
     settings: Settings
     component: Any = field(repr=False, compare=False)
     layer_stack: Any | None = field(default=None, repr=False, compare=False)
@@ -183,28 +182,9 @@ class PreparedComponent:
     )
 
     @property
-    def design(self):
-        """Return the native BeamZ geometry used by every derived simulation."""
-        return self.imported.design
-
-    @property
-    def ports(self) -> tuple[Port, ...]:
-        """Return native modal ports at the named GDSFactory port datums."""
-        return self.imported.ports
-
-    @property
     def port_metadata(self) -> tuple[PortMetadata, ...]:
         """Return the documented source/monitor and port-direction convention."""
         return _port_metadata(self.ports)
-
-    @property
-    def component_name(self) -> str:
-        """Return the resolved GDSFactory component name."""
-        return self.imported.component_name
-
-    def port(self, name: str) -> Port:
-        """Return a native port by its stable GDSFactory name."""
-        return self.imported.port(name)
 
     def simulation_template(self) -> Simulation:
         """Build a source-free native BeamZ simulation with all modal monitors."""
@@ -487,14 +467,11 @@ def prepare(
     ports = tuple(
         port.updated_copy(mode_spec=resolved.mode_spec) for port in imported.ports
     )
-    imported = ImportedComponent(
+    return PreparedComponent(
         design=imported.design,
         ports=ports,
         component_name=imported.component_name,
         world_origin=imported.world_origin,
-    )
-    return PreparedComponent(
-        imported=imported,
         settings=resolved,
         component=component,
         layer_stack=layer_stack,

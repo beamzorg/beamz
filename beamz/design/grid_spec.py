@@ -13,7 +13,7 @@ from beamz.design._geometry import planar_geometry
 from beamz.design._geometry import structure_bounds as _structure_bounds
 from beamz.design.grid import RectilinearGrid
 from beamz.design.mesher import _GradedMesher
-from beamz.design.structures import Polygon
+from beamz.design.structures import Solid
 
 AxisValues = tuple[float, float, float]
 OptionalAxisValues = tuple[float | None, float | None, float | None]
@@ -417,7 +417,11 @@ def _design_extents(design: Any) -> tuple[float, float, float]:
 
 
 def _realize_uniform_grid(
-    design: Any, resolution: float, *, spec: GridSpec | None = None
+    design: Any,
+    resolution: float,
+    *,
+    spec: GridSpec | None = None,
+    dimensions: int | None = None,
 ) -> RectilinearGrid:
     """Cover a design with the exact isotropic spacing used by scalar rasterization."""
     spacing = float(resolution)
@@ -431,8 +435,10 @@ def _realize_uniform_grid(
 
     extents = _design_extents(design)
     nx, ny = count(extents[0]), count(extents[1])
-    dimensions = 3 if float(design.depth) > 0.0 else 2
-    nz = count(extents[2]) if dimensions == 3 else 1
+    dimensions = (
+        (3 if float(design.depth) > 0.0 else 2) if dimensions is None else dimensions
+    )
+    nz = count(float(design.depth)) if dimensions == 3 else 1
     if spec is not None:
         _validate_grid_shape_budget(
             (nx, ny, nz),
@@ -441,16 +447,10 @@ def _realize_uniform_grid(
             context="uniform spacing preflight",
             minimum_spacing=spacing,
         )
-    if float(design.depth) > 0.0:
-        return RectilinearGrid.uniform(
-            (0.0, 0.0, 0.0),
-            (nx * spacing, ny * spacing, nz * spacing),
-            (nx, ny, nz),
-        )
     return RectilinearGrid.uniform(
         (0.0, 0.0, 0.0),
-        (nx * spacing, ny * spacing, 1.0),
-        (nx, ny, 1),
+        (nx * spacing, ny * spacing, nz * spacing if dimensions == 3 else 1.0),
+        (nx, ny, nz),
     )
 
 
@@ -466,13 +466,14 @@ def _design_coordinate_offset(design: Any) -> AxisValues:
     )
 
 
-def _polygon_opposing_features(structure: Polygon) -> list[_OpposingFeature]:
+def _polygon_opposing_features(structure: Solid) -> list[_OpposingFeature]:
     """Return reliable local distances between opposing material faces.
 
     Boundary vertex spacing is deliberately excluded: refining a curved polygon's
     tessellation must not change its physical mesh target.
     """
     from shapely.geometry import LineString
+
     geometry = planar_geometry(structure)
     if geometry is None or not geometry.is_valid:
         return []
@@ -732,7 +733,7 @@ def _merge_mesh_feature_regions(
 
 
 def _polygon_mesh_feature_regions(
-    structure: Polygon,
+    structure: Solid,
     *,
     material_spacing: float,
     spec: GridSpec,
@@ -865,7 +866,7 @@ def _geometry_regions(
         material_region = _Region(lower, upper, cast(OptionalAxisValues, spacing))
         regions.append(material_region)
         material_regions.append(material_region)
-        if isinstance(structure, Polygon) and spec.min_feature_cells > 1.0:
+        if structure.shape_kind == "polygon" and spec.min_feature_cells > 1.0:
             for feature_region in _polygon_mesh_feature_regions(
                 structure,
                 material_spacing=material_spacing,

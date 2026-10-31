@@ -34,11 +34,10 @@ def extrusion_bounds(structure, depth):
 
 
 def structure_bounds(structure, *, two_dimensional=False):
-    from beamz.design.structures import Box, Sphere
 
-    if isinstance(structure, Box):
+    if structure.shape_kind == "box":
         return structure.lower, structure.upper
-    if isinstance(structure, Sphere):
+    if structure.shape_kind == "sphere":
         center = np.asarray(structure.center)
         return tuple(center - structure.radius), tuple(center + structure.radius)
     shell, *_ = polygon_rings(structure)

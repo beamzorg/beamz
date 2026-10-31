@@ -60,13 +60,7 @@ def test_callable_z_bias_lowers_to_supported_tapered_segments():
     )
 
     assert len(scene.objects) > 1
-    assert all(
-        isinstance(
-            obj.geometry,
-            (raster.ExtrudedPolygon, raster.TaperedExtrudedPolygon),
-        )
-        for obj in scene.objects
-    )
+    assert all(obj.geometry.shape_kind == "polygon" for obj in scene.objects)
     raster.compile_scene(scene)
 
     segments = sorted(scene.objects, key=lambda object_: object_.geometry.z_min)
@@ -76,7 +70,7 @@ def test_callable_z_bias_lowers_to_supported_tapered_segments():
         z1 = geometry.z_max / (0.22e-6)
         low_bias = -min(x for x, _ in geometry.polygon.exterior)
         high_bias = low_bias
-        if isinstance(geometry, raster.TaperedExtrudedPolygon):
+        if geometry.sidewall_angle:
             high_bias -= (geometry.z_max - geometry.z_min) * np.tan(
                 np.radians(geometry.sidewall_angle_degrees)
             )

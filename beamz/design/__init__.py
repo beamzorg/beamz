@@ -32,6 +32,7 @@ from beamz.design.structures import (
     Polygon,
     Rectangle,
     Ring,
+    Solid,
     Taper,
 )
 from beamz.design.vector_fit import fit_nk_vector
@@ -48,6 +49,7 @@ __all__ = [
     "Rectangle",
     "Circle",
     "Ring",
+    "Solid",
     "CircularBend",
     "Polygon",
     "Taper",

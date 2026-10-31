@@ -132,7 +132,7 @@ class CompiledScene:
         )
         result = RasterResult(
             native,
-            grid_edges=grid.edges,
+            grid=grid,
             smoothing=options.smoothing,
         )
         if cache_path is not None:

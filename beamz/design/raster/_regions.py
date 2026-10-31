@@ -14,10 +14,11 @@ import numpy as np
 
 from beamz.design.dispersion import PoleResidue
 from beamz.design.materials import Material
+from beamz.design.structures import Solid
 
 from .engine import RasterOptions, compile_scene
 from .result import RasterResult
-from .schema import Box, ExtrudedPolygon, Grid, Mesh, Object, Scene, _integer
+from .schema import Grid, Mesh, Object, Scene, _integer
 
 
 def _validate_region_inputs(scene: Scene, grid: Grid, options: RasterOptions) -> None:
@@ -86,9 +87,9 @@ def rasterize_regions(
 
 
 def geometry_bounds(geometry) -> tuple[np.ndarray, np.ndarray]:
-    if isinstance(geometry, Box):
+    if getattr(geometry, "shape_kind", None) == "box":
         return np.asarray(geometry.minimum), np.asarray(geometry.maximum)
-    if isinstance(geometry, ExtrudedPolygon):
+    if getattr(geometry, "shape_kind", None) == "polygon":
         xy = np.asarray(geometry.polygon.exterior)
         return np.r_[xy.min(axis=0), geometry.z_min], np.r_[
             xy.max(axis=0), geometry.z_max
@@ -203,7 +204,7 @@ def _tile_y_bounds(scene, x_min: float, x_max: float) -> tuple[float, float] | N
     from shapely.geometry import Polygon as ShapelyPolygon
     from shapely.geometry import box as shapely_box
 
-    from beamz.design.raster import Box, ExtrudedPolygon, Mesh
+    from beamz.design.raster import Mesh
 
     intervals = []
     for obj in scene.objects:
@@ -211,7 +212,7 @@ def _tile_y_bounds(scene, x_min: float, x_max: float) -> tuple[float, float] | N
         lower, upper = geometry_bounds(geometry)
         if upper[0] < x_min or lower[0] > x_max:
             continue
-        if isinstance(geometry, ExtrudedPolygon):
+        if getattr(geometry, "shape_kind", None) == "polygon":
             polygon = ShapelyPolygon(geometry.polygon.exterior)
             clipped = polygon.intersection(
                 shapely_box(x_min, lower[1], x_max, upper[1])
@@ -219,7 +220,7 @@ def _tile_y_bounds(scene, x_min: float, x_max: float) -> tuple[float, float] | N
             if clipped.is_empty:
                 continue
             intervals.append((clipped.bounds[1], clipped.bounds[3]))
-        elif isinstance(geometry, Box):
+        elif getattr(geometry, "shape_kind", None) == "box":
             intervals.append((lower[1], upper[1]))
         elif isinstance(geometry, Mesh):
             vertices = np.asarray(geometry.vertices)
@@ -335,14 +336,17 @@ def rasterize_split_substrate(
     guard_cells: int = 2,
 ):
     """Raster a remote, full-width substrate interface apart from the device."""
-    from beamz.design.raster import Box, Scene, compile_scene
+    from beamz.design.raster import Scene, compile_scene
 
     if substrate_object is None or not any(
         obj is substrate_object for obj in scene.objects
     ):
         raise ValueError("substrate_object must be an object in the scene.")
     substrate = substrate_object
-    if not isinstance(substrate.geometry, Box):
+    if (
+        not isinstance(substrate.geometry, Solid)
+        or substrate.geometry.shape_kind != "box"
+    ):
         raise ValueError("Split substrate must be a Box.")
     if not np.allclose(
         substrate.geometry.minimum[:2],

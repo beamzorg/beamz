@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -41,7 +43,7 @@ def test_dft_field_plot_keeps_compiled_uniform_monitor_region():
     results = simulation.run(backend="jax", performance=False)
     region = results.monitor("fields").sample_region
     assert region.axis_interval("x").stop - region.axis_interval("x").start == 44
-    fig, ax = results.plot_field("fields", field_name="E", val="abs^2", colorbar=False)
+    fig, ax = results.plot_field("fields", field="E", val="abs^2", colorbar=False)
     try:
         image = next(
             artist
@@ -455,10 +457,10 @@ def test_monitor_dft_field_plot_restores_tidy_plane_view():
     )
 
     fig, ax = results.plot_field(
-        field_monitor_name="field",
-        field_name="E",
+        monitor_name="field",
+        field="E",
         val="abs^2",
-        f=freq0,
+        frequency=freq0,
         vmin=0,
         vmax=3000,
         cmap="magma",
@@ -472,8 +474,10 @@ def test_monitor_dft_field_plot_restores_tidy_plane_view():
         assert np.nanmax(image) == 100.0
         assert ax.get_xlabel() == "x (um)"
         assert ax.get_ylabel() == "y (um)"
-        assert ax.get_xlim() == (-2.0, 2.0)
-        assert ax.get_ylim() == (-2.0, 2.0)
+        # The requested 4um aperture snaps outward to nine 0.45um cells.
+        # Physical display bounds therefore include the final 0.05um cell span.
+        np.testing.assert_allclose(ax.get_xlim(), (-2.0, 2.05), rtol=0, atol=1e-12)
+        np.testing.assert_allclose(ax.get_ylim(), (-2.0, 2.05), rtol=0, atol=1e-12)
     finally:
         plt.close(fig)
 
@@ -524,10 +528,11 @@ def test_monitor_dft_field_plot_uses_exact_nonuniform_plane_coordinates(
         dft_weight_sum=np.ones(1),
         resolution=simulation.resolution,
         sample_region=spec.sample_region,
+    )
+    result = replace(
+        result,
         material_region=material_region_for_monitor(
-            simulation,
-            simulation.monitors[0],
-            runtime_fields=program.grid,
+            result, runtime_fields=program.grid
         ),
     )
     results = bz.SimulationResults.from_run(
@@ -537,8 +542,8 @@ def test_monitor_dft_field_plot_uses_exact_nonuniform_plane_coordinates(
     )
 
     fig, ax = results.plot_field(
-        field_monitor_name="field",
-        field_name="Ez",
+        monitor_name="field",
+        field="Ez",
         show=False,
     )
     try:
@@ -547,8 +552,8 @@ def test_monitor_dft_field_plot_uses_exact_nonuniform_plane_coordinates(
         plt.close(fig)
 
     fig, ax = results.plot_field(
-        field_monitor_name="field",
-        field_name="Ez",
+        monitor_name="field",
+        field="Ez",
         show_grid=True,
         show=False,
     )

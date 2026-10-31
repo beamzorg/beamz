@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
 from beamz.design.materials import MaterialProtocol
 
 DEFAULT_COLOR = "#6699cc"
+ShapeKind = Literal[
+    "polygon",
+    "rectangle",
+    "circle",
+    "ring",
+    "bend",
+    "taper",
+    "box",
+    "sphere",
+    "cylinder",
+]
 
 
 def _position(value, z=None):
@@ -16,125 +27,231 @@ def _position(value, z=None):
         values = (*values, 0.0)
     if len(values) != 3:
         raise ValueError("Position must be (x,y) or (x,y,z)")
-    if z is not None:
-        values = (values[0], values[1], z)
     result = tuple(float(v) for v in values)
+    if z is not None:
+        result = (*result[:2], float(z))
     if not all(np.isfinite(result)):
         raise ValueError(f"Position must be finite, got {value!r}")
     return result
 
 
 def _vertices(values, z=0.0, *, ccw=True):
-    result = []
-    for vertex in values or ():
-        if len(vertex) == 2:
-            result.append((float(vertex[0]), float(vertex[1]), float(z)))
-        elif len(vertex) == 3:
-            result.append(tuple(float(v) for v in vertex))
-        else:
-            raise ValueError(f"Vertex must have 2 or 3 coordinates, got {len(vertex)}")
+    result = tuple(
+        _position(vertex, z if len(vertex) == 2 else None) for vertex in values or ()
+    )
     if ccw and len(result) >= 3:
-        area = sum(
-            result[i][0] * result[(i + 1) % len(result)][1]
-            - result[(i + 1) % len(result)][0] * result[i][1]
-            for i in range(len(result))
+        xy = np.asarray(result)[:, :2]
+        area = np.sum(
+            xy[:, 0] * np.roll(xy[:, 1], -1) - np.roll(xy[:, 0], -1) * xy[:, 1]
         )
         if area < 0:
-            result.reverse()
-    return tuple(result)
-
-
-def _rotate(path, angle, axis, center):
-    cx, cy, cz = center
-    cos_a, sin_a = np.cos(angle), np.sin(angle)
-    if axis == "z":
-        return tuple(
-            (
-                cx + (x - cx) * cos_a - (y - cy) * sin_a,
-                cy + (x - cx) * sin_a + (y - cy) * cos_a,
-                z,
-            )
-            for x, y, z in path
-        )
-    if axis == "x":
-        return tuple(
-            (
-                x,
-                cy + (y - cy) * cos_a - (z - cz) * sin_a,
-                cz + (y - cy) * sin_a + (z - cz) * cos_a,
-            )
-            for x, y, z in path
-        )
-    if axis == "y":
-        return tuple(
-            (
-                cx + (x - cx) * cos_a + (z - cz) * sin_a,
-                y,
-                cz - (x - cx) * sin_a + (z - cz) * cos_a,
-            )
-            for x, y, z in path
-        )
-    raise ValueError(f"Invalid rotation axis {axis!r}; expected 'x', 'y', or 'z'.")
-
-
-def _path_center(path):
-    return tuple(sum(vertex[i] for vertex in path) / len(path) for i in range(3))
+            result = result[::-1]
+    return result
 
 
 def _positive(name, value, *, allow_zero=False):
     value = float(value)
-    valid = np.isfinite(value) and (value >= 0.0 if allow_zero else value > 0.0)
-    if not valid:
+    if not np.isfinite(value) or (value < 0 if allow_zero else value <= 0):
         qualifier = "non-negative" if allow_zero else "positive"
         raise ValueError(f"{name} must be finite and {qualifier}, got {value}")
     return value
 
 
-def _normalize_common(structure):
-    """Normalize fields shared by public immutable structure specs."""
-    field_names = structure.__dataclass_fields__
-    if (
-        "material" in field_names
-        and structure.material is not None
-        and not isinstance(structure.material, MaterialProtocol)
-    ):
-        raise TypeError(
-            f"{type(structure).__name__}.material must satisfy MaterialProtocol."
+def _arc(position, radius, angles):
+    return tuple(
+        (
+            position[0] + radius * np.cos(t),
+            position[1] + radius * np.sin(t),
+            position[2],
         )
-    if "color" in field_names:
-        object.__setattr__(
-            structure,
-            "color",
-            DEFAULT_COLOR if structure.color is None else str(structure.color),
-        )
-    if "facecolor" in field_names and structure.facecolor is not None:
-        object.__setattr__(structure, "facecolor", str(structure.facecolor))
-    for name in ("optimize", "sidewall_angle", "width_to_z"):
-        if name in field_names:
-            value = (
-                bool(getattr(structure, name))
-                if name == "optimize"
-                else float(getattr(structure, name) or 0.0)
+        for t in angles
+    )
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class Solid:
+    """One immutable geometry value shared by design and native raster scenes.
+
+    Named constructors retain shape parameters for functional transforms and
+    semantic mesh features. Exact primitives remain exact; polygon footprints
+    retain holes, extrusion and sidewall reference independently of tessellation.
+    Public coordinates use metres and XYZ order.
+    """
+
+    shape_kind: ShapeKind
+    material: Any = None
+    color: str = field(default=DEFAULT_COLOR, metadata={"beamz_cache": False})
+    optimize: bool = False
+    position: Any = (0.0, 0.0, 0.0)
+    vertices: Any = ()
+    interiors: Any = ()
+    depth: float = 0.0
+    z: Any = 0.0
+    sidewall_angle: float = 0.0
+    width_to_z: float = 0.0
+    width: float = 0.0
+    height: float = 0.0
+    radius: float = 0.0
+    points: int = 32
+    inner_radius: float = 0.0
+    outer_radius: float = 0.0
+    angle: float = 90.0
+    rotation: float = 0.0
+    input_width: float = 0.0
+    output_width: float = 0.0
+    length: float = 0.0
+    center: Any = (0.0, 0.0, 0.0)
+    size: Any = (0.0, 0.0, 0.0)
+    bounds: tuple[tuple[float, float, float], tuple[float, float, float]] | None = None
+    is_pml: bool = False
+    facecolor: str | None = None
+
+    def __post_init__(self):
+        assign = object.__setattr__
+        if self.material is not None and not isinstance(
+            self.material, MaterialProtocol
+        ):
+            raise TypeError("Solid.material must satisfy MaterialProtocol.")
+        color = self.facecolor if self.shape_kind == "bend" else self.color
+        assign(self, "color", DEFAULT_COLOR if color is None else str(color))
+        for name in ("sidewall_angle", "width_to_z"):
+            assign(self, name, float(getattr(self, name) or 0.0))
+        assign(self, "optimize", bool(self.optimize))
+        assign(self, "is_pml", bool(self.is_pml))
+        kind = self.shape_kind
+        if kind == "box":
+            if self.bounds is not None:
+                lower, upper = tuple(_position(point) for point in self.bounds)
+                assign(self, "bounds", (lower, upper))
+                center = tuple(
+                    (lo + hi) / 2 for lo, hi in zip(lower, upper, strict=True)
+                )
+                size = tuple(hi - lo for lo, hi in zip(lower, upper, strict=True))
+            else:
+                center = _position(self.center)
+                size = tuple(float(v) for v in self.size)
+            if len(size) == 2:
+                size = (*size, 0.0)
+            if len(size) != 3 or any(np.isnan(v) or v < 0 for v in size):
+                raise ValueError(f"Box sizes must be non-negative, got {size!r}.")
+            assign(self, "center", center)
+            assign(self, "size", size)
+            assign(self, "position", self.lower)
+            for name, value in zip(("width", "height", "depth"), size, strict=True):
+                assign(self, name, value)
+            assign(self, "z", self.lower[2])
+            return
+        if kind == "sphere":
+            assign(self, "position", _position(self.position))
+            assign(self, "center", self.position)
+            assign(self, "radius", _positive("radius", self.radius))
+            assign(self, "depth", 2 * self.radius)
+            assign(self, "z", self.position[2] - self.radius)
+            return
+        requested_z = self.z
+        z = float(self.z or 0.0)
+        assign(self, "z", z)
+        assign(self, "depth", _positive("depth", self.depth or 0.0, allow_zero=True))
+        if kind == "polygon":
+            assign(self, "vertices", _vertices(self.vertices, z))
+            assign(
+                self,
+                "interiors",
+                tuple(_vertices(path, z, ccw=False) for path in self.interiors or ()),
             )
-            object.__setattr__(structure, name, value)
+            return
+        position = _position(self.position, requested_z)
+        assign(self, "z", position[2])
+        assign(self, "position", position)
+        assign(self, "center", position)
+        dimensions = {
+            "rectangle": ("width", "height"),
+            "circle": ("radius",),
+            "cylinder": ("radius",),
+            "ring": ("inner_radius", "outer_radius"),
+            "bend": ("inner_radius", "outer_radius"),
+            "taper": ("input_width", "output_width", "length"),
+        }
+        if kind not in dimensions:
+            raise ValueError(f"Unknown shape kind {kind!r}.")
+        for name in dimensions[kind]:
+            assign(self, name, _positive(name, getattr(self, name)))
+        x, y, z = position
+        if kind == "rectangle":
+            vertices = (
+                (x, y, z),
+                (x + self.width, y, z),
+                (x + self.width, y + self.height, z),
+                (x, y + self.height, z),
+            )
+        elif kind == "taper":
+            vertices = (
+                (x, y - self.input_width / 2, z),
+                (x + self.length, y - self.output_width / 2, z),
+                (x + self.length, y + self.output_width / 2, z),
+                (x, y + self.input_width / 2, z),
+            )
+        elif kind == "cylinder":
+            return
+        else:
+            points = int(self.points)
+            minimum = 2 if kind == "bend" else 3
+            if points < minimum:
+                raise ValueError(f"points must be at least {minimum}, got {points}")
+            assign(self, "points", points)
+            angles = np.linspace(
+                0,
+                np.radians(self.angle) if kind == "bend" else 2 * np.pi,
+                points,
+                endpoint=kind == "bend",
+            )
+            if kind == "bend":
+                angles += np.radians(self.rotation)
+            if kind == "circle":
+                vertices = _arc(position, self.radius, angles)
+            else:
+                if self.outer_radius <= self.inner_radius:
+                    raise ValueError(
+                        f"outer_radius ({self.outer_radius}) must be greater than inner_radius ({self.inner_radius})"
+                    )
+                vertices = _arc(position, self.outer_radius, angles)
+                inner = _arc(position, self.inner_radius, angles[::-1])
+                if kind == "ring":
+                    assign(self, "interiors", (inner,))
+                else:
+                    vertices += inner
+        assign(self, "vertices", vertices)
 
+    @property
+    def lower(self):
+        if self.bounds is not None:
+            return self.bounds[0]
+        return tuple(c - s / 2 for c, s in zip(self.center, self.size, strict=True))
 
-class Structure:
-    """Shared functional operations for immutable geometry specifications."""
+    @property
+    def upper(self):
+        if self.bounds is not None:
+            return self.bounds[1]
+        return tuple(c + s / 2 for c, s in zip(self.center, self.size, strict=True))
 
-    __slots__ = ()
+    minimum = property(lambda self: self.lower)
+    maximum = property(lambda self: self.upper)
+    is_3d = property(lambda self: bool(self.depth))
+    exterior = property(lambda self: tuple((x, y) for x, y, _ in self.vertices))
+    holes = property(
+        lambda self: tuple(tuple((x, y) for x, y, _ in path) for path in self.interiors)
+    )
+    polygon = property(lambda self: self)
+    z_min = property(lambda self: self.z)
+    z_max = property(lambda self: self.z + self.depth)
+    sidewall_angle_degrees = property(lambda self: self.sidewall_angle)
 
     def updated_copy(self, **changes):
-        try:
-            return replace(self, **changes)  # type: ignore[arg-type]
-        except TypeError as exc:
-            fields = getattr(self, "__dataclass_fields__", {})
-            unknown = sorted(set(changes) - fields.keys())
-            if unknown:
-                raise TypeError(
-                    f"Unexpected update fields: {', '.join(unknown)}"
-                ) from None
-            raise exc
+        if {"center", "size"} & changes.keys():
+            changes["bounds"] = None
+        if self.shape_kind == "bend" and "color" in changes:
+            changes["facecolor"] = changes.pop("color")
+        return replace(self, **changes)
 
     def with_material(self, material):
         return self.updated_copy(material=material)
@@ -142,69 +259,78 @@ class Structure:
     def copy(self):
         return self
 
-    def _mesh_feature_sizes(self):
-        """Return optional axis-specific physical sizes for automatic meshing."""
-        return None
+    def shift(self, x, y, z=0):
+        offset = (float(x), float(y), float(z))
+        if self.shape_kind == "box":
+            return self.updated_copy(
+                center=tuple(c + d for c, d in zip(self.center, offset, strict=True))
+            )
+        if self.shape_kind != "polygon":
+            position = tuple(c + d for c, d in zip(self.position, offset, strict=True))
+            return self.updated_copy(position=position, z=position[2])
 
+        def shifted(path):
+            return tuple(
+                tuple(c + d for c, d in zip(point, offset, strict=True))
+                for point in path
+            )
 
-class PlanarStructure(Structure):
-    """Geometry operations shared by polygon-backed structures."""
+        return self.updated_copy(
+            vertices=shifted(self.vertices),
+            interiors=tuple(shifted(path) for path in self.interiors),
+            z=self.z + offset[2],
+        )
 
-    __slots__ = ()
-    vertices: tuple[tuple[float, float, float], ...]
-    interiors: tuple[tuple[tuple[float, float, float], ...], ...]
-    depth: float
-    z: float
-    sidewall_angle: float
-    width_to_z: float
-    material: Any
-    color: str
-    optimize: bool
-    position: tuple[float, float, float]
+    def shifted(self, offset):
+        return self.shift(*offset)
 
-    def _as_polygon(self, *, vertices=None, interiors=None, z=None, depth=None):
-        return Polygon(
-            vertices=self.vertices if vertices is None else vertices,
-            interiors=self.interiors if interiors is None else interiors,
+    def _as_polygon(self, **changes):
+        values = dict(
+            vertices=self.vertices,
+            interiors=self.interiors,
             material=self.material,
             color=self.color,
             optimize=self.optimize,
-            depth=self.depth if depth is None else depth,
-            z=self.z if z is None else z,
+            depth=self.depth,
+            z=self.z,
             sidewall_angle=self.sidewall_angle,
             width_to_z=self.width_to_z,
         )
-
-    def shift(self, x, y, z=0):
-        dx, dy, dz = float(x), float(y), float(z)
-        if hasattr(self, "position") and not isinstance(self, Polygon):
-            px, py, pz = self.position
-            return self.updated_copy(position=(px + dx, py + dy, pz + dz), z=pz + dz)
-        return self.updated_copy(
-            vertices=tuple((vx + dx, vy + dy, vz + dz) for vx, vy, vz in self.vertices),
-            interiors=tuple(
-                tuple((vx + dx, vy + dy, vz + dz) for vx, vy, vz in path)
-                for path in self.interiors
-            ),
-            z=self.z + dz,
-        )
+        values.update(changes)
+        return Polygon(**values)
 
     def scale(self, s_x, s_y=None, s_z=None):
+        kind = self.shape_kind
+        if kind == "sphere":
+            if any(
+                v is not None and not np.isclose(float(s_x), float(v))
+                for v in (s_y, s_z)
+            ):
+                raise ValueError("Sphere scaling must be uniform.")
+            return self.updated_copy(radius=self.radius * float(s_x))
+        if kind in {"circle", "ring", "bend"} and (
+            s_y is None or np.isclose(float(s_x), float(s_y))
+        ):
+            names = (
+                ("radius",) if kind == "circle" else ("inner_radius", "outer_radius")
+            )
+            return self.updated_copy(
+                **{name: getattr(self, name) * float(s_x) for name in names}
+            )
         s_x = float(s_x)
         s_y = s_x if s_y is None else float(s_y)
         s_z = (1.0 if s_y != s_x else s_x) if s_z is None else float(s_z)
+        if kind == "rectangle":
+            return self.updated_copy(
+                width=self.width * s_x, height=self.height * s_y, depth=self.depth * s_z
+            )
         if not self.vertices:
             return self
-        center = _path_center(self.vertices)
+        center = np.mean(self.vertices, axis=0)
 
         def scaled(path):
             return tuple(
-                (
-                    center[0] + (x - center[0]) * s_x,
-                    center[1] + (y - center[1]) * s_y,
-                    center[2] + (z - center[2]) * s_z,
-                )
-                for x, y, z in path
+                map(tuple, center + (np.asarray(path) - center) * (s_x, s_y, s_z))
             )
 
         return self._as_polygon(
@@ -214,388 +340,61 @@ class PlanarStructure(Structure):
         )
 
     def rotate(self, angle, axis="z", point=None):
+        if (
+            self.shape_kind == "bend"
+            and axis == "z"
+            and (point is None or _position(point) == self.position)
+        ):
+            return self.updated_copy(rotation=(self.rotation + float(angle)) % 360)
         if not self.vertices:
             return self
-        center = _path_center(self.vertices) if point is None else _position(point)
-        angle_rad = np.radians(float(angle))
+        if axis not in "xyz" or len(axis) != 1:
+            raise ValueError(
+                f"Invalid rotation axis {axis!r}; expected 'x', 'y', or 'z'."
+            )
+        center = (
+            np.mean(self.vertices, axis=0)
+            if point is None
+            else np.asarray(_position(point))
+        )
+        first, second = {"x": (1, 2), "y": (2, 0), "z": (0, 1)}[axis]
+        cosine, sine = (
+            np.cos(np.radians(float(angle))),
+            np.sin(np.radians(float(angle))),
+        )
+
+        def rotated(path):
+            result = np.asarray(path, dtype=float).copy()
+            a, b = result[:, first] - center[first], result[:, second] - center[second]
+            result[:, first] = center[first] + a * cosine - b * sine
+            result[:, second] = center[second] + a * sine + b * cosine
+            return tuple(map(tuple, result))
+
         return self._as_polygon(
-            vertices=_rotate(self.vertices, angle_rad, axis, center),
-            interiors=tuple(
-                _rotate(path, angle_rad, axis, center) for path in self.interiors
-            ),
-        )
-
-
-@dataclass(frozen=True, eq=False, slots=True)
-class Polygon(PlanarStructure):
-    vertices: Any = ()
-    material: Any = None
-    color: str = field(default=DEFAULT_COLOR, metadata={"beamz_cache": False})
-    optimize: bool = False
-    interiors: Any = ()
-    depth: float = 0.0
-    z: float = 0.0
-    sidewall_angle: float = 0.0
-    width_to_z: float = 0.0
-
-    def __post_init__(self):
-        z = float(0.0 if self.z is None else self.z)
-        object.__setattr__(self, "z", z)
-        object.__setattr__(
-            self,
-            "depth",
-            _positive(
-                "depth", 0.0 if self.depth is None else self.depth, allow_zero=True
-            ),
-        )
-        object.__setattr__(self, "vertices", _vertices(self.vertices, z))
-        object.__setattr__(
-            self,
-            "interiors",
-            tuple(_vertices(path, z, ccw=False) for path in (self.interiors or ())),
-        )
-        _normalize_common(self)
-
-
-@dataclass(frozen=True, eq=False, slots=True)
-class Rectangle(PlanarStructure):
-    position: Any = (0.0, 0.0, 0.0)
-    width: float = 1.0
-    height: float = 1.0
-    depth: float = 1.0
-    material: Any = None
-    color: str = field(default=DEFAULT_COLOR, metadata={"beamz_cache": False})
-    is_pml: bool = False
-    optimize: bool = False
-    z: float | None = None
-    sidewall_angle: float = 0.0
-    width_to_z: float = 0.0
-    vertices: tuple = field(init=False)
-    interiors: tuple = field(init=False, default=())
-
-    def __post_init__(self):
-        position = _position(self.position, self.z)
-        width = _positive("width", self.width)
-        height = _positive("height", self.height)
-        depth = _positive("depth", self.depth, allow_zero=True)
-        x, y, z = position
-        object.__setattr__(self, "position", position)
-        object.__setattr__(self, "width", width)
-        object.__setattr__(self, "height", height)
-        object.__setattr__(self, "depth", depth)
-        object.__setattr__(self, "z", z)
-        object.__setattr__(self, "is_pml", bool(self.is_pml))
-        object.__setattr__(
-            self,
-            "vertices",
-            (
-                (x, y, z),
-                (x + width, y, z),
-                (x + width, y + height, z),
-                (x, y + height, z),
-            ),
-        )
-        _normalize_common(self)
-
-    def scale(self, s_x, s_y=None, s_z=None):
-        s_y = s_x if s_y is None else s_y
-        s_z = (1.0 if s_y != s_x else s_x) if s_z is None else s_z
-        return self.updated_copy(
-            width=self.width * float(s_x),
-            height=self.height * float(s_y),
-            depth=self.depth * float(s_z),
+            vertices=rotated(self.vertices),
+            interiors=tuple(rotated(path) for path in self.interiors),
         )
 
     def _mesh_feature_sizes(self):
-        return self.width, self.height, self.depth or None
-
-
-def _circle_vertices(position, radius, points):
-    if int(points) < 3:
-        raise ValueError(f"points must be at least 3, got {points}")
-    theta = np.linspace(0.0, 2.0 * np.pi, int(points), endpoint=False)
-    return tuple(
-        (
-            position[0] + radius * np.cos(t),
-            position[1] + radius * np.sin(t),
-            position[2],
-        )
-        for t in theta
-    )
-
-
-@dataclass(frozen=True, eq=False, slots=True)
-class Circle(PlanarStructure):
-    position: Any = (0.0, 0.0)
-    radius: float = 1.0
-    points: int = 32
-    material: Any = None
-    color: str = field(default=DEFAULT_COLOR, metadata={"beamz_cache": False})
-    optimize: bool = False
-    depth: float = 0.0
-    z: float = 0.0
-    sidewall_angle: float = 0.0
-    width_to_z: float = 0.0
-    vertices: tuple = field(init=False)
-    interiors: tuple = field(init=False, default=())
-
-    def __post_init__(self):
-        position = _position(self.position, self.z)
-        radius = _positive("radius", self.radius)
-        depth = _positive("depth", self.depth, allow_zero=True)
-        points = int(self.points)
-        object.__setattr__(self, "position", position)
-        object.__setattr__(self, "radius", radius)
-        object.__setattr__(self, "points", points)
-        object.__setattr__(self, "depth", depth)
-        object.__setattr__(self, "z", position[2])
-        object.__setattr__(self, "vertices", _circle_vertices(position, radius, points))
-        _normalize_common(self)
-
-    def scale(self, s_x, s_y=None, s_z=None):
-        if s_y is not None and not np.isclose(float(s_x), float(s_y)):
-            return PlanarStructure.scale(self, s_x, s_y, s_z)
-        return self.updated_copy(radius=self.radius * float(s_x))
-
-    def _mesh_feature_sizes(self):
-        diameter = 2.0 * self.radius
-        return diameter, diameter, self.depth or None
-
-
-class _AnnularStructure(PlanarStructure):
-    """Shared operations for shapes described by inner and outer radii."""
-
-    __slots__ = ()
-    inner_radius: float
-    outer_radius: float
-
-    def scale(self, s_x, s_y=None, s_z=None):
-        if s_y is not None and not np.isclose(float(s_x), float(s_y)):
-            return PlanarStructure.scale(self, s_x, s_y, s_z)
-        return self.updated_copy(
-            inner_radius=self.inner_radius * float(s_x),
-            outer_radius=self.outer_radius * float(s_x),
-        )
-
-    def _mesh_feature_sizes(self):
-        wall = self.outer_radius - self.inner_radius
-        return wall, wall, self.depth or None
-
-
-@dataclass(frozen=True, eq=False, slots=True)
-class Ring(_AnnularStructure):
-    position: Any = (0.0, 0.0)
-    inner_radius: float = 1.0
-    outer_radius: float = 2.0
-    material: Any = None
-    color: str = field(default=DEFAULT_COLOR, metadata={"beamz_cache": False})
-    optimize: bool = False
-    points: int = 256
-    depth: float = 0.0
-    z: float | None = None
-    sidewall_angle: float = 0.0
-    width_to_z: float = 0.0
-    vertices: tuple = field(init=False)
-    interiors: tuple = field(init=False)
-
-    def __post_init__(self):
-        position = _position(self.position, self.z)
-        inner = _positive("inner_radius", self.inner_radius)
-        outer = _positive("outer_radius", self.outer_radius)
-        if outer <= inner:
-            raise ValueError(
-                f"outer_radius ({outer}) must be greater than inner_radius ({inner})"
+        """Return optional axis-specific physical sizes for automatic meshing."""
+        if self.shape_kind in {"box", "rectangle"}:
+            return self.width or None, self.height or None, self.depth or None
+        if self.shape_kind in {"circle", "sphere", "cylinder"}:
+            return 2 * self.radius, 2 * self.radius, self.depth or None
+        if self.shape_kind in {"ring", "bend"}:
+            wall = self.outer_radius - self.inner_radius
+            return wall, wall, self.depth or None
+        if self.shape_kind == "taper":
+            return (
+                self.length,
+                min(self.input_width, self.output_width),
+                self.depth or None,
             )
-        depth = _positive("depth", self.depth, allow_zero=True)
-        points = int(self.points)
-        outer_vertices = _circle_vertices(position, outer, points)
-        inner_vertices = tuple(reversed(_circle_vertices(position, inner, points)))
-        for name, value in (
-            ("position", position),
-            ("inner_radius", inner),
-            ("outer_radius", outer),
-            ("points", points),
-            ("depth", depth),
-            ("z", position[2]),
-            ("vertices", outer_vertices),
-            ("interiors", (inner_vertices,)),
-        ):
-            object.__setattr__(self, name, value)
-        _normalize_common(self)
-
-
-@dataclass(frozen=True, eq=False, slots=True)
-class CircularBend(_AnnularStructure):
-    position: Any = (0.0, 0.0)
-    inner_radius: float = 1.0
-    outer_radius: float = 2.0
-    angle: float = 90.0
-    rotation: float = 0.0
-    material: Any = None
-    facecolor: str | None = None
-    optimize: bool = False
-    points: int = 64
-    depth: float = 0.0
-    z: float = 0.0
-    sidewall_angle: float = 0.0
-    width_to_z: float = 0.0
-    vertices: tuple = field(init=False)
-    interiors: tuple = field(init=False, default=())
-
-    def __post_init__(self):
-        position = _position(self.position, self.z)
-        inner = _positive("inner_radius", self.inner_radius)
-        outer = _positive("outer_radius", self.outer_radius)
-        if outer <= inner:
-            raise ValueError(
-                f"outer_radius ({outer}) must be greater than inner_radius ({inner})"
-            )
-        depth = _positive("depth", self.depth, allow_zero=True)
-        points = int(self.points)
-        if points < 2:
-            raise ValueError(f"points must be at least 2, got {points}")
-        theta = np.linspace(0.0, np.radians(float(self.angle)), points) + np.radians(
-            float(self.rotation)
-        )
-        outer_vertices = tuple(
-            (
-                position[0] + outer * np.cos(t),
-                position[1] + outer * np.sin(t),
-                position[2],
-            )
-            for t in theta
-        )
-        inner_vertices = tuple(
-            (
-                position[0] + inner * np.cos(t),
-                position[1] + inner * np.sin(t),
-                position[2],
-            )
-            for t in reversed(theta)
-        )
-        for name, value in (
-            ("position", position),
-            ("inner_radius", inner),
-            ("outer_radius", outer),
-            ("points", points),
-            ("depth", depth),
-            ("z", position[2]),
-            ("vertices", outer_vertices + inner_vertices),
-        ):
-            object.__setattr__(self, name, value)
-        _normalize_common(self)
-
-    @property
-    def color(self):
-        return DEFAULT_COLOR if self.facecolor is None else str(self.facecolor)
-
-    def updated_copy(self, **changes):
-        if "color" in changes:
-            changes["facecolor"] = changes.pop("color")
-        return Structure.updated_copy(self, **changes)
-
-    def rotate(self, angle, axis="z", point=None):
-        if axis == "z" and (
-            point is None or tuple(_position(point)) == tuple(self.position)
-        ):
-            return self.updated_copy(rotation=(self.rotation + float(angle)) % 360.0)
-        return PlanarStructure.rotate(self, angle, axis, point)
-
-
-@dataclass(frozen=True, eq=False, slots=True)
-class Taper(PlanarStructure):
-    position: Any = (0.0, 0.0)
-    input_width: float = 1.0
-    output_width: float = 0.5
-    length: float = 1.0
-    material: Any = None
-    color: str = field(default=DEFAULT_COLOR, metadata={"beamz_cache": False})
-    optimize: bool = False
-    depth: float = 0.0
-    z: float = 0.0
-    sidewall_angle: float = 0.0
-    width_to_z: float = 0.0
-    vertices: tuple = field(init=False)
-    interiors: tuple = field(init=False, default=())
-
-    def __post_init__(self):
-        position = _position(self.position, self.z)
-        input_width = _positive("input_width", self.input_width)
-        output_width = _positive("output_width", self.output_width)
-        length = _positive("length", self.length)
-        depth = _positive("depth", self.depth, allow_zero=True)
-        x, y, z = position
-        vertices = (
-            (x, y - input_width / 2, z),
-            (x + length, y - output_width / 2, z),
-            (x + length, y + output_width / 2, z),
-            (x, y + input_width / 2, z),
-        )
-        for name, value in (
-            ("position", position),
-            ("input_width", input_width),
-            ("output_width", output_width),
-            ("length", length),
-            ("depth", depth),
-            ("z", z),
-            ("vertices", vertices),
-        ):
-            object.__setattr__(self, name, value)
-        _normalize_common(self)
-
-    def _mesh_feature_sizes(self):
-        return (
-            self.length,
-            min(self.input_width, self.output_width),
-            self.depth or None,
-        )
-
-
-@dataclass(frozen=True, eq=False, slots=True)
-class Box(Structure):
-    center: Any = (0.0, 0.0, 0.0)
-    size: Any = (1.0, 1.0, 1.0)
-    material: Any = None
-
-    def __post_init__(self):
-        center = _position(self.center)
-        size = tuple(self.size)
-        if len(size) == 2:
-            size = (*size, 0.0)
-        if len(size) != 3:
-            raise ValueError("Box center and size must be 2D or 3D coordinate tuples.")
-        size = tuple(float(value) for value in size)
-        if any(np.isnan(value) or value < 0.0 for value in size):
-            raise ValueError(f"Box sizes must be non-negative, got {size!r}.")
-        object.__setattr__(self, "center", center)
-        object.__setattr__(self, "size", size)
-        _normalize_common(self)
-
-    @property
-    def lower(self):
-        return tuple(c - 0.5 * s for c, s in zip(self.center, self.size, strict=True))
-
-    @property
-    def upper(self):
-        return tuple(c + 0.5 * s for c, s in zip(self.center, self.size, strict=True))
-
-    position = property(lambda self: self.lower)
-    width = property(lambda self: self.size[0])
-    height = property(lambda self: self.size[1])
-    depth = property(lambda self: self.size[2])
-    is_3d = property(lambda self: bool(self.size[2] != 0.0))
-
-    def shifted(self, offset):
-        return self.updated_copy(
-            center=tuple(c + d for c, d in zip(self.center, offset, strict=True))
-        )
-
-    def shift(self, x, y, z=0):
-        return self.shifted((float(x), float(y), float(z)))
+        return None
 
     def to_rectangle(self, offset=(0.0, 0.0, 0.0), material=None):
         shifted = self.shifted(offset)
-        if not all(np.isfinite(value) for value in (*shifted.lower, *shifted.size)):
+        if not np.isfinite((*shifted.lower, *shifted.size)).all():
             raise ValueError(
                 "Infinite Box sizes must be clipped by Simulation(domain=...) before rasterization."
             )
@@ -603,47 +402,116 @@ class Box(Structure):
             position=shifted.lower,
             width=max(shifted.width, np.finfo(float).eps),
             height=max(shifted.height, np.finfo(float).eps),
-            depth=max(shifted.depth, 0.0),
+            depth=max(shifted.depth, 0),
             material=self.material if material is None else material,
         )
 
-    def _mesh_feature_sizes(self):
-        return tuple(value if value > 0.0 else None for value in self.size)
+    def to_dict(self):
+        """Serialize exact geometry to the native scene ABI; material lives on Object."""
+        if self.shape_kind == "box":
+            return {"type": "box", "bounds": {"min": self.lower, "max": self.upper}}
+        if self.shape_kind == "sphere":
+            return {"type": "sphere", "center": self.center, "radius": self.radius}
+        if self.shape_kind == "cylinder":
+            return {
+                "type": "cylinder",
+                "center": self.center[:2],
+                "radius": self.radius,
+                "z_min": self.z,
+                "z_max": self.z_max,
+            }
+        polygon = {"exterior": self.exterior, "holes": self.holes}
+        if self.sidewall_angle:
+            return dict(
+                type="tapered_extruded_polygon",
+                polygon=polygon,
+                z_min=self.z,
+                z_max=self.z_max,
+                sidewall_angle_degrees=self.sidewall_angle,
+                width_to_z=self.width_to_z,
+            )
+        return dict(
+            type="extruded_polygon", polygon=polygon, z_min=self.z, z_max=self.z_max
+        )
 
 
-@dataclass(frozen=True, eq=False, slots=True)
-class Sphere(Structure):
-    position: Any = (0.0, 0.0, 0.0)
-    radius: float = 1.0
-    material: Any = None
-    color: str = field(default=DEFAULT_COLOR, metadata={"beamz_cache": False})
-    optimize: bool = False
-    sidewall_angle: float = 0.0
-    width_to_z: float = 0.0
+# Named constructors keep procedural parameters in the same immutable geometry.
+Structure = Solid
 
-    def __post_init__(self):
-        object.__setattr__(self, "position", _position(self.position))
-        object.__setattr__(self, "radius", _positive("radius", self.radius))
-        _normalize_common(self)
 
-    center = property(lambda self: self.position)
-    vertices = property(lambda self: ())
-    interiors = property(lambda self: ())
-    depth = property(lambda self: 2.0 * self.radius)
-    z = property(lambda self: self.position[2] - self.radius)
+def Polygon(vertices=(), **attributes):
+    return Solid("polygon", vertices=vertices, **attributes)
 
-    def shift(self, x, y, z=0):
-        px, py, pz = self.position
-        return self.updated_copy(position=(px + float(x), py + float(y), pz + float(z)))
 
-    def scale(self, s_x, s_y=None, s_z=None):
-        if any(
-            value is not None and not np.isclose(float(s_x), float(value))
-            for value in (s_y, s_z)
-        ):
-            raise ValueError("Sphere scaling must be uniform.")
-        return self.updated_copy(radius=self.radius * float(s_x))
+def Rectangle(position=(0.0, 0.0, 0.0), width=1.0, height=1.0, depth=1.0, **attributes):
+    return Solid(
+        "rectangle",
+        position=position,
+        width=width,
+        height=height,
+        depth=depth,
+        z=attributes.pop("z", None),
+        **attributes,
+    )
 
-    def _mesh_feature_sizes(self):
-        diameter = 2.0 * self.radius
-        return diameter, diameter, diameter
+
+def Circle(position=(0.0, 0.0), radius=1.0, points=32, **attributes):
+    return Solid(
+        "circle", position=position, radius=radius, points=points, **attributes
+    )
+
+
+def Ring(
+    position=(0.0, 0.0), inner_radius=1.0, outer_radius=2.0, points=256, **attributes
+):
+    return Solid(
+        "ring",
+        position=position,
+        inner_radius=inner_radius,
+        outer_radius=outer_radius,
+        points=points,
+        z=attributes.pop("z", None),
+        **attributes,
+    )
+
+
+def CircularBend(
+    position=(0.0, 0.0),
+    inner_radius=1.0,
+    outer_radius=2.0,
+    angle=90.0,
+    rotation=0.0,
+    points=64,
+    **attributes,
+):
+    return Solid(
+        "bend",
+        position=position,
+        inner_radius=inner_radius,
+        outer_radius=outer_radius,
+        angle=angle,
+        rotation=rotation,
+        points=points,
+        **attributes,
+    )
+
+
+def Taper(
+    position=(0.0, 0.0), input_width=1.0, output_width=0.5, length=1.0, **attributes
+):
+    return Solid(
+        "taper",
+        position=position,
+        input_width=input_width,
+        output_width=output_width,
+        length=length,
+        **attributes,
+    )
+
+
+def Box(center=(0.0, 0.0, 0.0), size=(1.0, 1.0, 1.0), material=None):
+    return Solid("box", material=material, center=center, size=size)
+
+
+def Sphere(position=(0.0, 0.0, 0.0), radius=1.0, **attributes):
+    return Solid("sphere", position=position, radius=radius, **attributes)

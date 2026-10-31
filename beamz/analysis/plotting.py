@@ -1000,9 +1000,8 @@ def _draw_structure_slice(
     facecolor,
 ):
     """Draw one faithful geometric slice of a public structure specification."""
-    from beamz.design.structures import Box, Sphere
 
-    if isinstance(structure, Sphere):
+    if structure.shape_kind == "sphere":
         return _draw_sphere_slice(
             ax,
             structure,
@@ -1011,7 +1010,7 @@ def _draw_structure_slice(
             origin=origin,
             facecolor=facecolor,
         )
-    if isinstance(structure, Box):
+    if structure.shape_kind == "box":
         lower = structure.lower
         upper = structure.upper
         if normal == "z" and lower[2] <= position <= upper[2]:
