@@ -268,7 +268,7 @@ def _save_crossing_artifacts(
 
     fig, _ = results.plot_field(
         monitor_name="crossing_xy",
-        field_name="E",
+        field="E",
         frequency=float(np.median(scattering.frequencies)),
         val="abs^2",
     )

@@ -176,7 +176,7 @@ def field_intensity(result, name, *, frequency=None, title=None):
     fig, ax = plt.subplots(figsize=figsize)
     result.plot_field(
         monitor_name=name,
-        field_name="E",
+        field="E",
         frequency=frequency,
         val="abs^2",
         ax=ax,

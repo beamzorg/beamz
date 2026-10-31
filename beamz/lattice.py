@@ -733,7 +733,7 @@ def _curl_h_to_e_3d(
         (hx.shape[0] + 1, hx.shape[1], hx.shape[2]) if ey_shape is None else ey_shape,
         (hy.shape[0], hy.shape[1], hy.shape[2] + 1) if ez_shape is None else ez_shape,
     )
-    curls = tuple(
+    curls: tuple[Any, ...] = tuple(
         sum(
             sign
             * difference(
@@ -785,37 +785,6 @@ def advance_e_field(field, curl, conductivity, permittivity, dt, region):
     )
     updated += (dt / (EPS_0 * permittivity)) / denominator * curl[region]
     return field.at[region].set(updated)
-
-
-def component_index_arrays_3d(
-    component: str,
-    grid_shape: tuple[int, ...],
-    *,
-    stored_shape: tuple[int, ...] | None = None,
-    region: tuple[slice, slice, slice] | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return voxel indices sampled by a 3D Yee component on a cell-centered raster."""
-
-    # Stored-shape overrides support padded/cropped views while grid_shape still bounds voxels.
-    shape = (
-        tuple(int(v) for v in stored_shape)
-        if stored_shape is not None
-        else component_shape_3d(component, grid_shape)
-    )
-    offsets = component_axis_offsets_3d(component)
-    axes = ("z", "y", "x")
-    region = region or (slice(None), slice(None), slice(None))
-
-    indices: list[np.ndarray] = []
-    for axis, dim, grid_dim, axis_region in zip(
-        axes, shape, grid_shape, region, strict=False
-    ):
-        coord = np.arange(dim, dtype=np.float64) + offsets[axis]
-        idx = np.floor(coord).astype(np.int32)
-        idx = np.clip(idx, 0, int(grid_dim) - 1)
-        indices.append(idx[axis_region])
-
-    return (indices[0], indices[1], indices[2])
 
 
 def sample_voxel_grid_at_component_3d(

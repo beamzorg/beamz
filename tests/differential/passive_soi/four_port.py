@@ -426,7 +426,7 @@ def _save_four_port_artifacts(
     plt.close(fig)
     fig, _ = results.plot_field(
         monitor_name=field_monitor.name,
-        field_name="E",
+        field="E",
         frequency=float(np.median(scattering.frequencies)),
         val="abs^2",
     )
