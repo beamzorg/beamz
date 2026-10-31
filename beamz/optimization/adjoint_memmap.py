@@ -37,8 +37,6 @@ class ForwardFieldChunkWriter:
 
         self._buffers = {name: [] for name in field_names}
         self._chunk_lengths: list[int] = []
-        self._chunk_count = 0
-        self._total_steps = 0
 
     def append(self, fields: dict[str, np.ndarray]):
         """Append one forward step into the chunk buffers."""
@@ -50,7 +48,6 @@ class ForwardFieldChunkWriter:
                 )
             self._buffers[name].append(arr)
 
-        self._total_steps += 1
         if len(self._buffers[self.field_names[0]]) >= self.config.chunk_size:
             self.flush()
 
@@ -60,7 +57,7 @@ class ForwardFieldChunkWriter:
             return
 
         chunk_len = len(self._buffers[self.field_names[0]])
-        chunk_id = self._chunk_count
+        chunk_id = len(self._chunk_lengths)
 
         for name in self.field_names:
             out_path = self.path / f"chunk_{chunk_id:06d}_{name}.dat"
@@ -74,7 +71,6 @@ class ForwardFieldChunkWriter:
             mm.flush()
 
         self._chunk_lengths.append(chunk_len)
-        self._chunk_count += 1
         for name in self.field_names:
             self._buffers[name].clear()
 
@@ -86,7 +82,7 @@ class ForwardFieldChunkWriter:
             "field_shape": list(self.field_shape),
             "dtype": self.dtype.str,
             "chunk_lengths": self._chunk_lengths,
-            "total_steps": self._total_steps,
+            "total_steps": sum(self._chunk_lengths),
         }
         (self.path / "metadata.json").write_text(json.dumps(metadata, indent=2))
 
