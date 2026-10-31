@@ -15,7 +15,7 @@ from numpy.typing import NDArray
 from scipy.optimize import LinearConstraint, OptimizeResult, minimize, minimize_scalar
 
 from beamz.const import LIGHT_SPEED
-from beamz.design.dispersion import PoleResidue
+from beamz.design.dispersion import PoleResidue, _validate_nk
 
 
 def _basis(omega, poles) -> NDArray[np.complex128]:
@@ -254,19 +254,7 @@ def fit_nk_vector(
     Passivity is sampled over seven decades on either side of the fit band,
     with extra samples around resonances. No global passivity proof is claimed.
     """
-    wl, n, k = [np.asarray(v, dtype=float) for v in (wavelengths, n, k)]
-    if (
-        wl.ndim != 1
-        or wl.shape != n.shape
-        or wl.shape != k.shape
-        or wl.size < 4
-        or not np.isfinite([wl, n, k]).all()
-        or np.any(wl <= 0)
-        or np.any(n <= 0)
-        or np.any(k < 0)
-        or len(np.unique(wl)) != len(wl)
-    ):
-        raise ValueError("Require matching finite, unique wavelengths>0, n>0, k>=0.")
+    wl, n, k = _validate_nk(wavelengths, n, k, unique=True)
     weights = np.asarray(weights, dtype=float)
     if (
         weights.shape != (2,)
