@@ -373,7 +373,9 @@ def test_public_preview_records_immutable_processing_diagnostics(monkeypatch):
     )
     monkeypatch.setattr(solve, "mode_plane_context", lambda **kw: context)
     data = solve.solve_mode_plane(
-        simulation=SimpleNamespace(resolution=1e-7),
+        simulation=SimpleNamespace(
+            resolution=1e-7, _material_grid=lambda: SimpleNamespace(shape=(5, 5))
+        ),
         plane=None,
         mode_spec=ModeSpec(force_symmetry=True),
         freqs=[2e14],
