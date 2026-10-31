@@ -327,37 +327,19 @@ def snap_mode_source_region(
     companion_coord = (float(companion_index) + 1.0) * float(resolution)
 
     intervals: dict[str, SnappedInterval] = {}
-    if axis == "x":
-        intervals["y"] = snap_centered_extent(center[1], width, resolution, counts["y"])
-        if is_3d:
-            z_center = (
-                center[2] if len(center) > 2 else 0.5 * counts["z"] * float(resolution)
-            )
-            intervals["z"] = snap_centered_extent(
-                z_center,
-                float(height if height is not None else width),
-                resolution,
-                counts["z"],
-            )
-    elif axis == "y":
-        intervals["x"] = snap_centered_extent(center[0], width, resolution, counts["x"])
-        if is_3d:
-            z_center = (
-                center[2] if len(center) > 2 else 0.5 * counts["z"] * float(resolution)
-            )
-            intervals["z"] = snap_centered_extent(
-                z_center,
-                float(height if height is not None else width),
-                resolution,
-                counts["z"],
-            )
-    else:
-        intervals["x"] = snap_centered_extent(center[0], width, resolution, counts["x"])
-        intervals["y"] = snap_centered_extent(
-            center[1],
-            float(height if height is not None else width),
-            resolution,
-            counts["y"],
+    transverse_axes = tuple(name for name in _AXES if name != axis)
+    for name, extent in zip(
+        transverse_axes, (width, height if height is not None else width), strict=True
+    ):
+        if not is_3d and name == "z":
+            continue
+        coordinate = (
+            0.5 * counts["z"] * float(resolution)
+            if name == "z" and len(center) < 3
+            else center[_axis_pos(name)]
+        )
+        intervals[name] = snap_centered_extent(
+            coordinate, extent, resolution, counts[name]
         )
 
     return SnappedRegion(
@@ -396,13 +378,11 @@ def snap_mode_source_region_grid(
     )
     companion_coord = float(edges[axis][companion_index + 1])
 
-    extents = {
-        "x": {"y": float(width), "z": float(height if height is not None else width)},
-        "y": {"x": float(width), "z": float(height if height is not None else width)},
-        "z": {"x": float(width), "y": float(height if height is not None else width)},
-    }[axis]
+    transverse_axes = tuple(name for name in _AXES if name != axis)
     intervals = {}
-    for transverse, extent in extents.items():
+    for transverse, extent in zip(
+        transverse_axes, (width, height if height is not None else width), strict=True
+    ):
         if not is_3d and transverse == "z":
             continue
         coord = float(center[_axis_pos(transverse)])
@@ -479,41 +459,20 @@ def snap_plane_region(
     steps = {"x": float(dx), "y": float(dy), "z": float(dz)}
     axis = str(plane_normal).lower()
 
+    starts: dict[str, float] = dict(zip(_AXES, map(float, start), strict=True))
+    transverse_axes = tuple(name for name in _AXES if name != axis)
     if end is None:
-        x0, y0, z0 = (float(v) for v in start)
-        span0, span1 = (
-            (float(size[0]), float(size[1])) if size is not None else (0.0, 0.0)
-        )
-        if axis == "x":
-            plane_pos = x0
-            bounds = {
-                "y": (y0, y0 + span0),
-                "z": (z0, z0 + span1),
-            }
-        elif axis == "y":
-            plane_pos = y0
-            bounds = {
-                "x": (x0, x0 + span0),
-                "z": (z0, z0 + span1),
-            }
-        else:
-            plane_pos = z0
-            bounds = {
-                "x": (x0, x0 + span0),
-                "y": (y0, y0 + span1),
-            }
+        plane_pos = starts[axis]
+        bounds = {
+            name: (starts[name], starts[name] + float(extent))
+            for name, extent in zip(
+                transverse_axes, size if size is not None else (0.0, 0.0), strict=True
+            )
+        }
     else:
-        x0, y0, z0 = (float(v) for v in start)
-        x1, y1, z1 = (float(v) for v in end)
-        if axis == "x":
-            plane_pos = 0.5 * (x0 + x1)
-            bounds = {"y": (y0, y1), "z": (z0, z1)}
-        elif axis == "y":
-            plane_pos = 0.5 * (y0 + y1)
-            bounds = {"x": (x0, x1), "z": (z0, z1)}
-        else:
-            plane_pos = 0.5 * (z0 + z1)
-            bounds = {"x": (x0, x1), "y": (y0, y1)}
+        ends: dict[str, float] = dict(zip(_AXES, map(float, end), strict=True))
+        plane_pos = 0.5 * (starts[axis] + ends[axis])
+        bounds = {name: (starts[name], ends[name]) for name in transverse_axes}
 
     plane_index, plane_coord = snap_cell_center(plane_pos, steps[axis], counts[axis])
     intervals = {
@@ -550,29 +509,14 @@ def line_region_points(region: SnappedRegion) -> list[tuple[int, int]]:
 def plane_region_slices(
     region: SnappedRegion,
 ) -> tuple[int | slice, int | slice, int | slice]:
-    if region.normal_axis == "x":
-        y_interval = region.axis_interval("y")
-        z_interval = region.axis_interval("z")
-        return (
-            z_interval.as_slice() if z_interval is not None else slice(0, 0),
-            y_interval.as_slice() if y_interval is not None else slice(0, 0),
-            int(region.plane_index),
-        )
-    if region.normal_axis == "y":
-        x_interval = region.axis_interval("x")
-        z_interval = region.axis_interval("z")
-        return (
-            z_interval.as_slice() if z_interval is not None else slice(0, 0),
-            int(region.plane_index),
-            x_interval.as_slice() if x_interval is not None else slice(0, 0),
-        )
-    x_interval = region.axis_interval("x")
-    y_interval = region.axis_interval("y")
-    return (
-        int(region.plane_index),
-        y_interval.as_slice() if y_interval is not None else slice(0, 0),
-        x_interval.as_slice() if x_interval is not None else slice(0, 0),
-    )
+    indices: list[int | slice] = []
+    for axis in reversed(_AXES):
+        if axis == region.normal_axis:
+            indices.append(int(region.plane_index))
+        else:
+            interval = region.axis_interval(axis)
+            indices.append(interval.as_slice() if interval is not None else slice(0, 0))
+    return indices[0], indices[1], indices[2]
 
 
 def np_round_half_even(value: float) -> int:
