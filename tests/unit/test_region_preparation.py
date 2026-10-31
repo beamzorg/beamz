@@ -7,16 +7,20 @@ import numpy as np
 import pytest
 
 from beamz._region_array import RegionArray, place_region_array, tiles
-from beamz.lattice import component_shapes, sample_voxel_grid_at_component_3d
+from beamz.lattice import (
+    _sample_material_3d,
+    component_shapes,
+    sample_voxel_grid_at_component_3d,
+)
 from beamz.simulation.kernels import precompute_e_update_coefficients
-from beamz.simulation.region_materials import electric_coefficients, sample_material
+from beamz.simulation.region_materials import electric_coefficients
 
 
 @pytest.mark.parametrize("component", ["Ex", "Ey", "Ez", "Hx", "Hy", "Hz"])
 def test_sample_matches_global_at_boundaries_and_regions(component):
     grid = np.random.default_rng(8).uniform(1, 12, (9, 7, 11)).astype(np.float32)
     shape = component_shapes(grid.shape)[component]
-    recipe = sample_material(grid, component, shape)
+    recipe = _sample_material_3d(grid, component, shape, lazy=True)
     reference = np.asarray(sample_voxel_grid_at_component_3d(grid, component))
     np.testing.assert_array_equal(np.asarray(recipe), reference)
     for region in tiles(shape, np.float32, budget=64):
@@ -38,8 +42,8 @@ def test_coefficient_recipe_matches_eager(lossy):
         else np.array(0, np.float32)
     )
     shape = component_shapes(eps.shape)["Ex"]
-    epsilon = sample_material(eps, "Ex", shape)
-    conductivity = sample_material(sigma, "Ex", shape)
+    epsilon = _sample_material_3d(eps, "Ex", shape, lazy=True)
+    conductivity = _sample_material_3d(sigma, "Ex", shape, lazy=True)
     actual = electric_coefficients(shape, conductivity, epsilon, 1e-16)
     expected = precompute_e_update_coefficients(
         shape, np.asarray(conductivity), np.asarray(epsilon), 1e-16, (slice(None),) * 3
@@ -147,7 +151,6 @@ def test_region_basic_negative_and_strided_slices():
 def test_region_physical_conductivity_keeps_magnetic_update_lossless(scalar):
 
     from beamz.lattice import build_material_coefficients
-    from beamz.simulation.region_materials import build_region_materials
 
     shape = (3, 4, 5)
     sigma = np.asarray(100, np.float32) if scalar else np.full(shape, 100, np.float32)
@@ -160,7 +163,7 @@ def test_region_physical_conductivity_keeps_magnetic_update_lossless(scalar):
         **{c: np.zeros(s, np.float32) for c, s in component_shapes(shape).items()},
     )
     eager = build_material_coefficients(fields)
-    regional = build_region_materials(fields)
+    regional = build_material_coefficients(fields, lazy=True)
     for axis in "xyz":
         np.testing.assert_array_equal(getattr(regional, "sigma_m_h" + axis), 0)
         np.testing.assert_array_equal(getattr(eager, "sigma_m_h" + axis), 0)
@@ -168,3 +171,19 @@ def test_region_physical_conductivity_keeps_magnetic_update_lossless(scalar):
             np.asarray(getattr(regional, "sig_" + axis)),
             np.asarray(getattr(eager, "sig_" + axis)),
         )
+
+
+def test_material_sampler_reads_only_requested_tile_and_halo():
+    reads = []
+    shape = (100_000,) * 3
+
+    def read(region):
+        local_shape = tuple(s.stop - s.start for s in region)
+        assert max(local_shape) <= 4
+        reads.append(local_shape)
+        return np.ones(local_shape, np.float32)
+
+    cells = RegionArray(shape, np.float32, read)
+    support = _sample_material_3d(cells, "Ex", shape, lazy=True)
+    np.testing.assert_array_equal(support[100:103, 200:203, 300:303], 1)
+    assert reads == [(4, 4, 3)]
