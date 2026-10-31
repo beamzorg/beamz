@@ -22,7 +22,9 @@ from beamz.simulation.tensor_regions import TensorRegion
 
 # Requests are detached, hashable compiler inputs. They prevent later mutation of a
 # public Simulation or device object from changing a cached program's meaning.
-ShardingToken: TypeAlias = tuple[bool, str, int | None, str | None]
+ShardingToken: TypeAlias = tuple[
+    bool, Literal["auto", "z", "y", "x"], int | None, Literal["cpu", "gpu"] | None
+]
 
 
 @dataclass(frozen=True, slots=True)

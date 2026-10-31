@@ -19,6 +19,7 @@ from beamz.simulation.model import (
     ShardingConfig,
     ShardingLayout,
     ShardingPlan,
+    ShardingToken,
 )
 from beamz.simulation.preparation_trace import trace_preparation
 
@@ -57,7 +58,7 @@ def normalize_sharding_config(value) -> ShardingConfig:
     )
 
 
-def sharding_cache_token(value) -> tuple[bool, str, int | None, str | None]:
+def sharding_cache_token(value) -> ShardingToken:
     """Return a stable scalar cache token for a sharding selection."""
     # Key cached work by semantic execution inputs so equivalent states reuse
     # compilation safely.
