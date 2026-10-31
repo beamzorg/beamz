@@ -11,6 +11,9 @@ from typing import Any
 
 import numpy as np
 
+from beamz.design._material_layout import SUPPORTS
+from beamz.lattice import component_shapes
+
 from .schema import _CACHE_SCHEMA_VERSION, _ENGINE_VERSION
 
 _TENSORS = ("epsilon", "mu", "conductivity")
@@ -35,27 +38,10 @@ def _readonly(value: Any, *, copy: bool = False) -> np.ndarray:
 def _yee_tensor_shapes(
     cell_shape: tuple[int, int, int],
 ) -> dict[str, tuple[int, ...]]:
-    nz, ny, nx = cell_shape
-    ex, ey, ez = (
-        (nz + 1, ny + 1, nx),
-        (nz + 1, ny, nx + 1),
-        (
-            nz,
-            ny + 1,
-            nx + 1,
-        ),
-    )
+    shapes = component_shapes(cell_shape)
     return {
-        "epsilon_ex": ex,
-        "epsilon_ey": ey,
-        "epsilon_ez": ez,
-        "epsilon_node": (nz + 1, ny + 1, nx + 1),
-        "conductivity_ex": ex,
-        "conductivity_ey": ey,
-        "conductivity_ez": ez,
-        "mu_hx": (nz, ny, nx + 1),
-        "mu_hy": (nz, ny + 1, nx),
-        "mu_hz": (nz + 1, ny, nx),
+        **{source: shapes[component] for _, source, component, _, _ in SUPPORTS},
+        "epsilon_node": tuple(count + 1 for count in cell_shape),
     }
 
 

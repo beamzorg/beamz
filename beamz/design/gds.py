@@ -13,6 +13,15 @@ from typing import Any, Literal, Mapping
 import numpy as np
 
 from beamz.const import µm
+from beamz.design._gds_decode import material as _material  # noqa: F401
+from beamz.design._gds_decode import (
+    material_lookup,
+    polygon_points,
+    vertical_bounds,
+)
+from beamz.design._gds_decode import (
+    polygons_by_layer as _polygons_by_layer,
+)
 from beamz.design.core import Design
 from beamz.design.materials import Material
 from beamz.design.structures import Box, Polygon, Rectangle
@@ -104,10 +113,9 @@ def _resolve_component(component: Any, settings: Mapping[str, Any] | None):
 
 
 def _polygons_on_layer(component: Any, layer: Layer) -> tuple[np.ndarray, ...]:
-    polygons_by_layer = component.get_polygons_points(by="tuple")
+    polygons_by_layer = _polygons_by_layer(component)
     polygons = tuple(
-        np.asarray(points, dtype=float)[:, :2]
-        for points in polygons_by_layer.get(tuple(layer), ())
+        polygon_points(points) for points in polygons_by_layer.get(tuple(layer), ())
     )
     if not polygons:
         available = sorted(polygons_by_layer)
@@ -118,10 +126,6 @@ def _polygons_on_layer(component: Any, layer: Layer) -> tuple[np.ndarray, ...]:
     return polygons
 
 
-def _material(value: Material | float) -> Material:
-    return value if isinstance(value, Material) else Material(float(value))
-
-
 def _stack_layers(
     layer_stack: Any,
     *,
@@ -129,18 +133,15 @@ def _stack_layers(
     n_clad: float,
     material_map: Mapping[str, Material | float] | None,
 ) -> tuple[_StackLayer, ...]:
-    materials: dict[str, Material] = {
-        "si": Material(float(n_core) ** 2),
-        "silicon": Material(float(n_core) ** 2),
-        "sio2": Material(float(n_clad) ** 2),
-        "oxide": Material(float(n_clad) ** 2),
-        "air": Material(1.0),
-    }
-    materials.update(
+    materials = material_lookup(
         {
-            str(name).strip().lower(): _material(value)
-            for name, value in (material_map or {}).items()
-        }
+            "si": Material(float(n_core) ** 2),
+            "silicon": Material(float(n_core) ** 2),
+            "sio2": Material(float(n_clad) ** 2),
+            "oxide": Material(float(n_clad) ** 2),
+            "air": Material(1.0),
+        },
+        material_map,
     )
 
     layers = []
@@ -148,8 +149,7 @@ def _stack_layers(
         material = materials.get(str(getattr(level, "material", "")).lower())
         if material is None or str(name).lower() == "substrate":
             continue
-        zmin = float(level.zmin) * µm
-        zmax = zmin + float(level.thickness) * µm
+        zmin, zmax = vertical_bounds(level, µm)
         if zmax <= zmin:
             continue
         layers.append(
