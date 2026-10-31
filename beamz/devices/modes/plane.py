@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, cast
 
 import numpy as np
 
 from beamz.design.grid import RectilinearGrid
-from beamz.devices._placement import snap_centered_extent
+from beamz.devices._placement import SnappedRegion, snap_centered_extent
 from beamz.lattice import (
     component_shape_3d,
     sample_voxel_grid_at_component_3d,
@@ -255,16 +254,6 @@ def _axis_counts_from_grid_shape(grid_shape):
     return {"z": nz, "y": ny, "x": nx}
 
 
-def _center_by_axis(center, grid_shape, resolution):
-    counts = _axis_counts_from_grid_shape(grid_shape)
-    values = tuple(float(v) for v in center)
-    return {
-        "x": values[0] if len(values) > 0 else 0.5 * counts["x"] * float(resolution),
-        "y": values[1] if len(values) > 1 else 0.5 * counts["y"] * float(resolution),
-        "z": values[2] if len(values) > 2 else 0.5 * counts["z"] * float(resolution),
-    }
-
-
 def _plane_extent_by_axis(axis, width, height):
     height = float(width if height is None else height)
     width = float(width)
@@ -296,13 +285,13 @@ def _local_mode_plane_spec(
     *,
     axis,
     grid_shape,
-    center,
+    center: tuple[float, float, float],
     width,
     height,
     plane_index,
     offset_index,
     resolution,
-    snapped_region=None,
+    snapped_region: SnappedRegion | None = None,
     aperture_pad_cells: int | tuple[int, int] = 2,
     normal_halo_cells=0,
     material_origin_zyx=(0, 0, 0),
@@ -311,11 +300,11 @@ def _local_mode_plane_spec(
     """Build a compact local mode plane and metadata to shift it globally."""
     axis = str(axis).lower()
     counts = _axis_counts_from_grid_shape(grid_shape)
-    centers = _center_by_axis(center, grid_shape, resolution)
+    centers = dict(zip(("x", "y", "z"), map(float, center), strict=True))
     if snapped_region is not None:
-        for name in ("x", "y", "z"):
-            with suppress(Exception):
-                centers[name] = float(snapped_region.axis_coord(name))
+        centers.update(
+            (name, float(snapped_region.axis_coord(name))) for name in ("x", "y", "z")
+        )
 
     origin = {"z": 0, "y": 0, "x": 0}
     material_origin: dict[str, int] = dict(
@@ -332,13 +321,7 @@ def _local_mode_plane_spec(
     extents = _plane_extent_by_axis(axis, width, height)
 
     for transverse_axis in _TRANSVERSE_AXES_3D[axis]:
-        interval = None
-        if snapped_region is not None:
-            try:
-                interval = snapped_region.axis_interval(transverse_axis)
-            except Exception:
-                interval = None
-        if interval is None:
+        if snapped_region is None:
             interval = snap_centered_extent(
                 centers[transverse_axis],
                 extents[transverse_axis],
@@ -346,6 +329,8 @@ def _local_mode_plane_spec(
                 counts[transverse_axis],
                 min_cells=2,
             )
+        else:
+            interval = snapped_region.intervals[transverse_axis]
         pad = max(0, int(pads[transverse_axis]))
         start = int(interval.start) - pad
         stop = int(interval.stop) + pad

@@ -384,7 +384,8 @@ def test_solve_modes_rejects_invalid_shape_and_counts(kwargs):
         )
 
 
-def test_plane_helpers_cover_axes_interval_growth_and_snapping_fallback():
+@pytest.mark.parametrize("failure", ["coordinate", "interval"])
+def test_plane_helpers_allow_missing_regions_but_propagate_invalid_regions(failure):
     assert plane_module._plane_extent_by_axis("y", 2.0, 3.0) == {"x": 2.0, "z": 3.0}
     assert plane_module._plane_extent_by_axis("z", 2.0, 3.0) == {"x": 2.0, "y": 3.0}
     with pytest.raises(ValueError, match="Unsupported"):
@@ -393,13 +394,15 @@ def test_plane_helpers_cover_axes_interval_growth_and_snapping_fallback():
 
     class BrokenRegion:
         def axis_coord(self, _axis):
+            if failure == "coordinate":
+                raise RuntimeError("invalid snapped coordinate")
             return 0.0
 
-        def axis_interval(self, _axis):
-            raise RuntimeError("no snapped interval")
+        @property
+        def intervals(self):
+            raise RuntimeError("invalid snapped interval")
 
-    local = plane_module._local_mode_plane_spec(
-        np.ones((5, 5)),
+    options = dict(
         axis="x",
         grid_shape=(5, 5, 5),
         center=(2.5, 2.5, 2.5),
@@ -408,9 +411,13 @@ def test_plane_helpers_cover_axes_interval_growth_and_snapping_fallback():
         plane_index=2,
         offset_index=1,
         resolution=1.0,
-        snapped_region=BrokenRegion(),
     )
-    assert local["scalar_permittivity"].ndim == 2
+    local = plane_module._local_mode_plane_spec(np.ones((5, 5)), **options)
+    np.testing.assert_array_equal(local["scalar_permittivity"], np.ones((5, 5)))
+    with pytest.raises(RuntimeError, match="invalid snapped"):
+        plane_module._local_mode_plane_spec(
+            np.ones((5, 5)), snapped_region=BrokenRegion(), **options
+        )
 
 
 def _flat_tensor(nx=2, ny=2):
