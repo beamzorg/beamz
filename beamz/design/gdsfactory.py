@@ -21,7 +21,7 @@ import numpy as np
 
 from beamz.analysis import SParameterResult, s_parameters
 from beamz.const import LIGHT_SPEED, µm
-from beamz.design.gds import ImportedComponent, import_component
+from beamz.design.gds import ImportedComponent, _render_import, import_component
 from beamz.design.grid_spec import GridSpec
 from beamz.design.materials import Material
 from beamz.devices.boundaries import PML
@@ -509,19 +509,18 @@ def prepare(
             fill_levels=fill_levels,
             port_levels=port_levels,
         )
-    if imported._prepare is None:
+    source = imported._source
+    if source is None or imported.design is not source.design:
         raise ValueError(
-            "This ImportedComponent has no reusable import geometry; recreate it with import_component()."
+            "Imported geometry was edited or has no cached source; use a native Simulation."
         )
-    options: dict[str, Any] = dict(
-        design=imported.design,
+    imported = _render_import(
+        source.render,
         xy_padding=resolved.xy_padding,
         z_padding=resolved.z_padding,
         overlap=resolved.port_overlap,
+        bounds=source.bounds if bounds is None else bounds,
     )
-    if bounds is not None:
-        options["bounds"] = bounds
-    imported = imported._prepare(**options)
     if not imported.ports:
         raise ValueError("GDSFactory component has no optical ports to simulate.")
     ports = tuple(
