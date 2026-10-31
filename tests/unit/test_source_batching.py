@@ -77,3 +77,59 @@ def test_source_slabs_preserve_overlap_and_dynamic_slice_clamping(source_count):
     expected = np.asarray(original).copy()
     expected[2:4, 2:4, 2:4] += sum(range(1, source_count + 1))
     np.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.contract
+@pytest.mark.parametrize(
+    "index,coeff,slab,starts,sizes",
+    [
+        ((-1, slice(1, 3)), [2, 3], True, (3, 1), (1, 2)),
+        ((slice(None), slice(None, None, 2)), [[2, 3]] * 4, False, None, None),
+        ((slice(None), slice(None)), 2, False, None, None),
+        ((np.array([0, 2]), 1), [2, 3], False, None, None),
+    ],
+)
+@pytest.mark.parametrize("complex_fields", [False, True])
+def test_injection_packing_preserves_coefficients_and_provenance(
+    index, coeff, slab, starts, sizes, complex_fields
+):
+    from beamz.devices.sources.compiler import (
+        InjectionPlanEntry,
+        TemporalWaveform,
+        _compile_injection_plan,
+    )
+
+    values = np.asarray(coeff) * (1 + 2j)
+    waveform = TemporalWaveform(jnp.array([1.0, 2.0]), jnp.array([3.0, 4.0]))
+    entry = InjectionPlanEntry(
+        component="Ex",
+        timing="e",
+        index=index,
+        values=values,
+        waveform=waveform,
+        target_shape=(4, 4),
+        launched_power=2.5,
+    )
+    specs = _compile_injection_plan(
+        (entry,), source_index=7, complex_fields=complex_fields
+    )
+    expected_parts = [values] if complex_fields else [values.real, -values.imag]
+    assert len(specs) == len(expected_parts)
+    for spec, expected in zip(specs, expected_parts, strict=True):
+        assert spec.is_slab is slab
+        assert spec.slab_starts == starts
+        assert spec.slab_sizes == sizes
+        assert spec.source_index == 7
+        assert spec.launched_power == 2.5
+        assert spec.timing == "e"
+        assert spec.component == "Ex"
+        np.testing.assert_array_equal(
+            spec.coeff, expected.reshape(sizes) if slab else expected
+        )
+    if complex_fields:
+        np.testing.assert_array_equal(
+            specs[0].waveform, waveform.values - 1j * waveform.quadrature
+        )
+    else:
+        np.testing.assert_array_equal(specs[0].waveform, waveform.values)
+        np.testing.assert_array_equal(specs[1].waveform, waveform.quadrature)

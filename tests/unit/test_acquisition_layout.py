@@ -64,3 +64,30 @@ def test_local_sampling_ownership_sums_to_global_for_each_component_support():
             )
         )
     np.testing.assert_allclose(sum(contributions), expected)
+
+
+@pytest.mark.contract
+@pytest.mark.parametrize("monitor_type", ["FieldMonitor", "FluxMonitor", "ModeMonitor"])
+def test_compiler_preserves_validated_monitor_frequency_snapshot_and_interval(
+    monitor_type,
+):
+    import beamz as bz
+    from beamz.devices.monitors.compiler import compile_monitor_specs
+
+    frequencies = np.array([1.0, 2.0])
+    monitor = getattr(bz, monitor_type)(
+        center=(2.0, 2.0, 0.0),
+        size=(0.0, 2.0, 1.0),
+        freqs=frequencies,
+        interval=np.int64(3),
+    )
+    frequencies[:] = np.nan
+    fields = SimpleNamespace(
+        permittivity=np.ones((4, 4)),
+        **{c: np.zeros((4, 4)) for c in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")},
+    )
+    (layout,), max_records = compile_monitor_specs((monitor,), fields, 1.0, 10, 0.1)
+    np.testing.assert_array_equal(layout.freq_hz, [1.0, 2.0])
+    assert layout.freq_count == 2
+    assert layout.record_interval == layout.dft_record_interval == 3
+    assert max_records == 4
