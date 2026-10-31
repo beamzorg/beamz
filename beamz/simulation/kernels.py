@@ -355,6 +355,26 @@ def fused_update_h_lossy_3d_material_metric(
     return tuple(out)
 
 
+def _advance_e_diagonal(fields, conductivities, inverse_permittivities, curls, dt):
+    """Apply the same lossy constitutive solve to uniform and metric curls."""
+    one = jnp.asarray(1.0, dtype=fields[0].dtype)
+    dt_over_eps = jnp.asarray(dt, dtype=fields[0].dtype) / jnp.asarray(
+        EPS_0, dtype=fields[0].dtype
+    )
+    out = []
+    for field, conductivity, inv_permittivity, curl in zip(
+        fields, conductivities, inverse_permittivities, curls, strict=True
+    ):
+        inv_permittivity = material_values(inv_permittivity)
+        beta = conductivity * (0.5 * dt_over_eps) * inv_permittivity
+        denom = one + beta
+        out.append(
+            (one - beta) / denom * field
+            + (dt_over_eps * inv_permittivity / denom) * curl
+        )
+    return tuple(out)
+
+
 def fused_update_e_lossy_3d_material(
     hx,
     hy,
@@ -377,8 +397,6 @@ def fused_update_e_lossy_3d_material(
 ):
     """Advance all electric components directly from collocated material grids."""
     del hx, hy, hz
-    one = jnp.asarray(1.0, dtype=ex.dtype)
-    dt_over_eps = jnp.asarray(dt, dtype=ex.dtype) / jnp.asarray(EPS_0, dtype=ex.dtype)
     derivative_pairs = (
         (("hz_y", 1), ("hy_z", 0)),
         (("hx_z", 0), ("hz_x", 2)),
@@ -403,22 +421,13 @@ def fused_update_e_lossy_3d_material(
             ("Ex", "Ey", "Ez"),
             dt,
         )
-    out = []
-    for field, conductivity, inv_permittivity, curl in zip(
+    return _advance_e_diagonal(
         (ex, ey, ez),
         (conductivity_x, conductivity_y, conductivity_z),
         (inv_permittivity_x, inv_permittivity_y, inv_permittivity_z),
         curls,
-        strict=True,
-    ):
-        inv_permittivity = material_values(inv_permittivity)
-        beta = conductivity * (0.5 * dt_over_eps) * inv_permittivity
-        denom = one + beta
-        out.append(
-            (one - beta) / denom * field
-            + (dt_over_eps * inv_permittivity / denom) * curl
-        )
-    return tuple(out)
+        dt,
+    )
 
 
 def fused_update_e_lossy_3d_material_metric(
@@ -443,8 +452,6 @@ def fused_update_e_lossy_3d_material_metric(
 ):
     """Advance 3D E fields using staggered center-to-edge distances."""
     del hx, hy, hz
-    one = jnp.asarray(1.0, dtype=ex.dtype)
-    dt_over_eps = jnp.asarray(dt, dtype=ex.dtype) / jnp.asarray(EPS_0, dtype=ex.dtype)
     derivative_pairs = (
         (("hz_y", 1, metrics.h_to_e_y), ("hy_z", 0, metrics.h_to_e_z)),
         (("hx_z", 0, metrics.h_to_e_z), ("hz_x", 2, metrics.h_to_e_x)),
@@ -472,22 +479,13 @@ def fused_update_e_lossy_3d_material_metric(
             dt,
             cell_widths=constitutive_cell_widths(metrics),
         )
-    out = []
-    for field, conductivity, inv_permittivity, curl in zip(
+    return _advance_e_diagonal(
         (ex, ey, ez),
         (conductivity_x, conductivity_y, conductivity_z),
         (inv_permittivity_x, inv_permittivity_y, inv_permittivity_z),
         curls,
-        strict=True,
-    ):
-        inv_permittivity = material_values(inv_permittivity)
-        beta = conductivity * (0.5 * dt_over_eps) * inv_permittivity
-        denom = one + beta
-        out.append(
-            (one - beta) / denom * field
-            + (dt_over_eps * inv_permittivity / denom) * curl
-        )
-    return tuple(out)
+        dt,
+    )
 
 
 def cpml_update_h_from_e_3d(
@@ -810,37 +808,28 @@ def tm_xy_curl_e_to_h_2d(ez, resolution, hx_shape, hy_shape, metallic_edges):
     )
 
 
+def _pad_h_axis(field, axis, metallic_edges, periodic_axes, periodic_phases):
+    """Extend one H support with its periodic or metallic boundary samples."""
+    low = field[_axis_region(field.ndim, axis, 0, 1)]
+    high = field[_axis_region(field.ndim, axis, -1, None)]
+    if axis in periodic_axes:
+        phase = periodic_phases[axis] if periodic_phases else 1.0
+        low, high = high / phase, low * phase
+    low_edge, high_edge = (("bottom", "top"), ("left", "right"))[axis]
+    if low_edge in metallic_edges:
+        low = jnp.zeros_like(low)
+    if high_edge in metallic_edges:
+        high = jnp.zeros_like(high)
+    return jnp.concatenate((low, field, high), axis=axis)
+
+
 def _tm_xy_h_derivatives(
     hx, hy, resolution, metallic_edges, periodic_axes=frozenset(), periodic_phases=()
 ):
     """Return padded H derivatives on the complete Ez node lattice."""
     resolution = _scalar_like(resolution, hy.dtype)
-    left, right = (
-        (
-            hy[:, -1:] / (periodic_phases[1] if periodic_phases else 1.0),
-            hy[:, :1] * (periodic_phases[1] if periodic_phases else 1.0),
-        )
-        if 1 in periodic_axes
-        else (hy[:, :1], hy[:, -1:])
-    )
-    bottom, top = (
-        (
-            hx[-1:, :] / (periodic_phases[0] if periodic_phases else 1.0),
-            hx[:1, :] * (periodic_phases[0] if periodic_phases else 1.0),
-        )
-        if 0 in periodic_axes
-        else (hx[:1, :], hx[-1:, :])
-    )
-    if "left" in metallic_edges:
-        left = jnp.zeros_like(left)
-    if "right" in metallic_edges:
-        right = jnp.zeros_like(right)
-    if "bottom" in metallic_edges:
-        bottom = jnp.zeros_like(bottom)
-    if "top" in metallic_edges:
-        top = jnp.zeros_like(top)
-    padded_hy = jnp.concatenate((left, hy, right), axis=1)
-    padded_hx = jnp.concatenate((bottom, hx, top), axis=0)
+    padded_hy = _pad_h_axis(hy, 1, metallic_edges, periodic_axes, periodic_phases)
+    padded_hx = _pad_h_axis(hx, 0, metallic_edges, periodic_axes, periodic_phases)
     d_hy_dx = (padded_hy[:, 1:] - padded_hy[:, :-1]) / resolution
     d_hx_dy = (padded_hx[1:, :] - padded_hx[:-1, :]) / resolution
     return d_hy_dx, d_hx_dy
@@ -927,32 +916,8 @@ def _te_xy_h_derivatives(
 ):
     """Return padded Hz derivatives on the complete Ex and Ey supports."""
     resolution = _scalar_like(resolution, hz.dtype)
-    bottom, top = (
-        (
-            hz[-1:, :] / (periodic_phases[0] if periodic_phases else 1.0),
-            hz[:1, :] * (periodic_phases[0] if periodic_phases else 1.0),
-        )
-        if 0 in periodic_axes
-        else (hz[:1, :], hz[-1:, :])
-    )
-    left, right = (
-        (
-            hz[:, -1:] / (periodic_phases[1] if periodic_phases else 1.0),
-            hz[:, :1] * (periodic_phases[1] if periodic_phases else 1.0),
-        )
-        if 1 in periodic_axes
-        else (hz[:, :1], hz[:, -1:])
-    )
-    if "bottom" in metallic_edges:
-        bottom = jnp.zeros_like(bottom)
-    if "top" in metallic_edges:
-        top = jnp.zeros_like(top)
-    if "left" in metallic_edges:
-        left = jnp.zeros_like(left)
-    if "right" in metallic_edges:
-        right = jnp.zeros_like(right)
-    padded_y = jnp.concatenate((bottom, hz, top), axis=0)
-    padded_x = jnp.concatenate((left, hz, right), axis=1)
+    padded_y = _pad_h_axis(hz, 0, metallic_edges, periodic_axes, periodic_phases)
+    padded_x = _pad_h_axis(hz, 1, metallic_edges, periodic_axes, periodic_phases)
     return (
         (padded_y[1:, :] - padded_y[:-1, :]) / resolution,
         (padded_x[:, 1:] - padded_x[:, :-1]) / resolution,
@@ -1027,32 +992,8 @@ def tm_xy_curl_e_to_h_2d_metric(ez, metrics):
 def _tm_xy_h_derivatives_metric(
     hx, hy, metrics, metallic_edges, periodic_axes=frozenset(), periodic_phases=()
 ):
-    left, right = (
-        (
-            hy[:, -1:] / (periodic_phases[1] if periodic_phases else 1.0),
-            hy[:, :1] * (periodic_phases[1] if periodic_phases else 1.0),
-        )
-        if 1 in periodic_axes
-        else (hy[:, :1], hy[:, -1:])
-    )
-    bottom, top = (
-        (
-            hx[-1:, :] / (periodic_phases[0] if periodic_phases else 1.0),
-            hx[:1, :] * (periodic_phases[0] if periodic_phases else 1.0),
-        )
-        if 0 in periodic_axes
-        else (hx[:1, :], hx[-1:, :])
-    )
-    if "left" in metallic_edges:
-        left = jnp.zeros_like(left)
-    if "right" in metallic_edges:
-        right = jnp.zeros_like(right)
-    if "bottom" in metallic_edges:
-        bottom = jnp.zeros_like(bottom)
-    if "top" in metallic_edges:
-        top = jnp.zeros_like(top)
-    padded_hy = jnp.concatenate((left, hy, right), axis=1)
-    padded_hx = jnp.concatenate((bottom, hx, top), axis=0)
+    padded_hy = _pad_h_axis(hy, 1, metallic_edges, periodic_axes, periodic_phases)
+    padded_hx = _pad_h_axis(hx, 0, metallic_edges, periodic_axes, periodic_phases)
     return (
         _metric_difference(padded_hy, 1, metrics.h_to_e_x),
         _metric_difference(padded_hx, 0, metrics.h_to_e_y),
@@ -1129,32 +1070,8 @@ def te_xy_curl_e_to_h_2d_metric(ex, ey, metrics, hz_shape):
 def _te_xy_h_derivatives_metric(
     hz, metrics, metallic_edges, periodic_axes=frozenset(), periodic_phases=()
 ):
-    bottom, top = (
-        (
-            hz[-1:, :] / (periodic_phases[0] if periodic_phases else 1.0),
-            hz[:1, :] * (periodic_phases[0] if periodic_phases else 1.0),
-        )
-        if 0 in periodic_axes
-        else (hz[:1, :], hz[-1:, :])
-    )
-    left, right = (
-        (
-            hz[:, -1:] / (periodic_phases[1] if periodic_phases else 1.0),
-            hz[:, :1] * (periodic_phases[1] if periodic_phases else 1.0),
-        )
-        if 1 in periodic_axes
-        else (hz[:, :1], hz[:, -1:])
-    )
-    if "bottom" in metallic_edges:
-        bottom = jnp.zeros_like(bottom)
-    if "top" in metallic_edges:
-        top = jnp.zeros_like(top)
-    if "left" in metallic_edges:
-        left = jnp.zeros_like(left)
-    if "right" in metallic_edges:
-        right = jnp.zeros_like(right)
-    padded_y = jnp.concatenate((bottom, hz, top), axis=0)
-    padded_x = jnp.concatenate((left, hz, right), axis=1)
+    padded_y = _pad_h_axis(hz, 0, metallic_edges, periodic_axes, periodic_phases)
+    padded_x = _pad_h_axis(hz, 1, metallic_edges, periodic_axes, periodic_phases)
     return (
         _metric_difference(padded_y, 0, metrics.h_to_e_y),
         _metric_difference(padded_x, 1, metrics.h_to_e_x),
