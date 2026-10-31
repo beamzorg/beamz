@@ -551,13 +551,20 @@ def test_canonical_sources_reject_or_snapshot_mutable_nested_values():
     assert request.sources[0] is sim.sources[0]
 
 
-def test_setup_device_policy_is_immutable_and_replaceable():
+def test_setup_device_policy_is_immutable_and_replaceable(monkeypatch):
     sim = _simulation(setup_device="cpu")
     assert sim.setup_device_policy == "cpu"
-    assert sim.setup_device_resolved in {"cpu", "default"}
+    assert sim.setup_device_resolved == "cpu"
     changed = sim.updated_copy(setup_device="default")
     assert changed.setup_device_policy == "default"
     assert sim.setup_device_policy == "cpu"
+
+    def unavailable(_backend):
+        raise RuntimeError("CPU allocation failed")
+
+    monkeypatch.setattr("beamz.simulation.compile.jax.devices", unavailable)
+    with pytest.raises(RuntimeError, match="CPU allocation failed"):
+        simulation_core._resolved_setup_device_context(sim.setup_device_resolved)
 
 
 def test_compile_uses_resolved_setup_device_context(monkeypatch):

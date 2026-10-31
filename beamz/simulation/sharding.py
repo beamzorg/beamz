@@ -32,18 +32,13 @@ _INDEX_TO_AXIS = ("z", "y", "x")
 _MESH_AXIS = "fdtd"
 
 
-def _disabled_sharding_config() -> ShardingConfig:
-    # Use one canonical disabled value so cache tokens do not depend on input spelling.
-    return ShardingConfig(enabled=False)
-
-
 def normalize_sharding_config(value) -> ShardingConfig:
     """Normalize public sharding input into a stable configuration."""
 
     # Resolve device layout once on the host so execution receives concrete placement
     # objects.
     if value is None or value is False:
-        return _disabled_sharding_config()
+        return ShardingConfig()
     if isinstance(value, tuple):
         return ShardingConfig(*value)
     if isinstance(value, ShardingConfig):
@@ -51,9 +46,7 @@ def normalize_sharding_config(value) -> ShardingConfig:
     if value is True:
         return ShardingConfig(enabled=True)
     if isinstance(value, Mapping):
-        raw = dict(value)
-        enabled = bool(raw.pop("enabled", True))
-        return ShardingConfig(enabled=enabled, **raw)
+        return ShardingConfig(**{"enabled": True, **value})
     raise TypeError(
         "sharding must be None, bool, dict, tuple, or beamz.simulation.ShardingConfig"
     )
@@ -64,16 +57,13 @@ def sharding_cache_token(value) -> ShardingToken:
     # Key cached work by semantic execution inputs so equivalent states reuse
     # compilation safely.
     cfg = normalize_sharding_config(value)
-    return (bool(cfg.enabled), cfg.axis, cfg.num_devices, cfg.backend)
+    return (cfg.enabled, cfg.axis, cfg.num_devices, cfg.backend)
 
 
 def _select_sharding_axis(axis: str, grid_shape: tuple[int, int, int]) -> str:
     # Resolve device layout once on the host so execution receives concrete placement
     # objects.
-    axis = str(axis).lower()
     if axis != "auto":
-        if axis not in _AXIS_TO_INDEX:
-            raise ValueError("sharding axis must be one of: 'auto', 'z', 'y', 'x'")
         return axis
     lengths = tuple(int(v) for v in grid_shape)
     best = max(range(3), key=lambda idx: (lengths[idx], -idx))

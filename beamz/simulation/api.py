@@ -71,7 +71,6 @@ from beamz.simulation.model import (
     CompiledProgram,
     DomainSpec,
     RunConfig,
-    ShardingConfig,
     SimulationRequest,
     SimulationState,
 )
@@ -79,7 +78,7 @@ from beamz.simulation.preparation_trace import trace_preparation
 from beamz.simulation.results import MonitorResults as MonitorResults
 from beamz.simulation.results import SimulationResults as SimulationResults
 from beamz.simulation.results import SimulationRun as SimulationRun
-from beamz.simulation.sharding import sharding_cache_token
+from beamz.simulation.sharding import normalize_sharding_config
 
 _MONITOR_TYPES = (FieldMonitor, FieldRecorder, FluxMonitor, ModeMonitor)
 _MAX_MATERIAL_GRIDS = 4
@@ -491,31 +490,16 @@ def _setup_device_policy_label(policy) -> str:
 
 
 def _resolve_setup_device(policy):
-    # Device selection affects setup allocation only; numerical compilation chooses separately.
-    resolved = _setup_device_policy_label(policy)
-    normalized = resolved.strip().lower()
-    if normalized not in {
-        "auto",
-        "cpu",
-        "host",
-        "default",
-        "device",
-        "gpu",
-        "accelerator",
-    }:
-        raise ValueError(f"setup_device must be one of 'auto', 'cpu', or 'default', got {policy!r}.")  # fmt: skip
-    use_cpu = normalized in {"cpu", "host"} or (
-        env_bool("BEAMZ_SETUP_CPU", False) and normalized == "auto"
+    # Resolve policy once; allocation failures must surface in the setup context.
+    normalized = policy.strip().lower()
+    if normalized not in {"auto", "cpu", "default"}:
+        raise ValueError(f"setup_device must be auto, cpu, or default, got {policy!r}.")
+    return (
+        "cpu"
+        if normalized == "cpu"
+        or (normalized == "auto" and env_bool("BEAMZ_SETUP_CPU", False))
+        else "default"
     )
-    if not use_cpu:
-        return "default"
-    try:
-        import jax
-
-        devices = jax.devices("cpu")
-        return "cpu" if devices else "default"
-    except Exception:
-        return "default"
 
 
 def _normalize_devices(*, sources, monitors):
@@ -1191,7 +1175,6 @@ class Simulation:
         source_single_slab_dense: bool = False,
         backend: str = "jax",
         sharding=None,
-        compiler_sharding=None,
         progress: bool = False,
         schedule: str | None = None,
         expected_runs: int = 1,
@@ -1210,10 +1193,8 @@ class Simulation:
             compilation experiment and does not change source semantics.
         backend : str, default="jax"
             Resolved execution backend embedded in the compiler request.
-        sharding : tuple, optional
-            Stable sharding token used in request and compilation cache identity.
-        compiler_sharding : object, optional
-            Alias for sharding; simultaneous selections must agree.
+        sharding : ShardingConfig or compatible value, optional
+            Device-sharding policy, normalized once into the request.
         progress : bool, default=False
             Display setup progress while rasterizing the material grid.
         schedule : {"auto", "streamed", "mstep"}, optional
@@ -1242,12 +1223,7 @@ class Simulation:
         cuda_schedule, expected_runs = normalize_schedule_request(
             backend, schedule, expected_runs
         )
-        token = sharding_cache_token(sharding)
-        if compiler_sharding is not None:
-            compiler_token = sharding_cache_token(compiler_sharding)
-            if sharding is not None and token != compiler_token:
-                raise ValueError("sharding and compiler_sharding must agree.")
-            token = compiler_token
+        sharding = normalize_sharding_config(sharding)
         material_grid = self._material_grid(progress=progress)
         requested_steps = int(self.num_steps if num_steps is None else num_steps)
         # 2. Snapshot grid, run, and domain controls into immutable value objects, then
@@ -1263,7 +1239,7 @@ class Simulation:
                 backend=str(backend),
                 cuda_schedule=cuda_schedule,
                 cuda_expected_runs=expected_runs,
-                sharding=ShardingConfig(*token),
+                sharding=sharding,
                 resolution=self.resolution,
                 plane_2d=self.plane_2d,
                 is_3d=self.is_3d,
