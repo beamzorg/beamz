@@ -544,7 +544,7 @@ def test_build_port_projection_2d_preserves_requested_mode_index_without_seed(
 
     def fake_profile(self, monitor, axis, pad_cells):
         del self, monitor, axis, pad_cells
-        return np.ones((5,), dtype=np.complex128), np.arange(5, dtype=int), 1.0
+        return np.ones((5,), dtype=np.complex128), np.arange(5, dtype=int), 1.0, None
 
     monkeypatch.setattr(mp, "_monitor_profile_slice", fake_profile)
 

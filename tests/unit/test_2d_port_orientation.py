@@ -22,7 +22,7 @@ def test_forward_basis_has_positive_flux_and_backward_basis_negative(
     eps[25:35] = 3.4**2
     monkeypatch.setattr(
         "beamz.analysis.mode_projection._monitor_profile_slice",
-        lambda *_: (eps, np.arange(eps.size), dx),
+        lambda *_: (eps, np.arange(eps.size), dx, None),
     )
     port = Port(
         center=(1.5e-6, 1.5e-6, 0),
@@ -67,7 +67,7 @@ def test_staggered_plane_wave_superposition_recovers_both_amplitudes(
     weights = dx * np.linspace(0.8, 1.2, count) if weighted else dx
     monkeypatch.setattr(
         "beamz.analysis.mode_projection._monitor_profile_slice",
-        lambda *_: (np.full(count, neff**2), np.arange(count), weights),
+        lambda *_: (np.full(count, neff**2), np.arange(count), weights, None),
     )
     port = Port(
         center=(1e-6, 1e-6, 0),
@@ -119,7 +119,7 @@ def test_modal_extraction_rejects_power_orthogonal_fields(monkeypatch, weighted)
     measure = dx * np.array([1.0, 1.5, 2.0]) if weighted else dx
     monkeypatch.setattr(
         "beamz.analysis.mode_projection._monitor_profile_slice",
-        lambda *_: (np.full(3, 2.0), np.arange(3), measure),
+        lambda *_: (np.full(3, 2.0), np.arange(3), measure, None),
     )
     port = Port(
         center=(1e-6, 1e-6, 0),
