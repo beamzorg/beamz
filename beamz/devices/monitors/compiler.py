@@ -350,7 +350,7 @@ def compile_monitor_specs(
     for mon_idx, monitor in enumerate(monitors):
         if not isinstance(monitor, _Monitor):
             raise TypeError(f"Unsupported monitor object {type(monitor).__name__!s}.")
-        is_3d = np.asarray(fields.permittivity).ndim == 3
+        is_3d = is_3d_grid
         if (
             not is_3d
             and isinstance(monitor, ModeMonitor)
@@ -360,7 +360,7 @@ def compile_monitor_specs(
                 f"ModeMonitor polarization {monitor.mode_spec.polarization!r} does "
                 f"not match the Simulation polarization {polarization_2d!r}."
             )
-        interval = max(1, int(monitor.interval))
+        interval = monitor.interval
         records = int(math.ceil(num_steps / interval))
         max_records = max(max_records, records)
 
@@ -465,15 +465,8 @@ def compile_monitor_specs(
             field_buffer_count += len(shapes)
             continue
 
-        dft_freqs = np.asarray(monitor.freqs, dtype=np.float64).ravel()
-        if dft_freqs.size > 0 and not np.all(np.isfinite(dft_freqs)):
-            raise ValueError("Monitor frequencies must be finite values in Hz")
-        if dft_freqs.size > 0 and np.any(dft_freqs <= 0.0):
-            raise ValueError("Monitor frequencies must be strictly positive")
-
-        freq_points = dft_freqs
-        freq_interval = monitor.interval
-        dft_t_end_val = np.inf
+        # Immutable monitor specs validate frequencies and intervals at construction.
+        freq_points = monitor.freqs
         dft_components = getattr(monitor, "dft_components", None)
         if dft_components is None:
             dft_component_mask = np.ones((6,), dtype=np.float32)
@@ -518,9 +511,9 @@ def compile_monitor_specs(
             canonical_components=selected,
             component_signs=tuple(sign for _, sign in public),
             dft_enabled=True,
-            dft_record_interval=freq_interval,
+            dft_record_interval=interval,
             dft_t_start=0.0,
-            dft_t_end=dft_t_end_val,
+            dft_t_end=np.inf,
             dft_window_code=0,
             dft_normalization_code=0,
             dft_length_unit=1e-6,

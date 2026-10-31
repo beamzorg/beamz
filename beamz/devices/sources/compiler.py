@@ -230,10 +230,14 @@ def _as_slab_spec(
     coeff,
     waveform: jnp.ndarray,
     target_shape: tuple[int, ...],
+    *,
+    source_index: int = -1,
+    launched_power: float | None = None,
 ) -> CompiledSourceSpec:
     """Build a packed source spec, using slab metadata for slice/int indices."""
     starts: list[int] = []
     sizes: list[int] = []
+    slab_sizes = None
 
     if len(index) == len(target_shape):
         for dim, key in enumerate(index):
@@ -255,22 +259,12 @@ def _as_slab_spec(
                 continue
             break
         else:
-            coeff_dtype = np.complex64 if np.iscomplexobj(coeff) else np.float32
-            coeff_np = np.asarray(coeff, dtype=coeff_dtype)
-            slab_sizes = tuple(sizes)
-            expected = int(np.prod(slab_sizes))
-            if coeff_np.size == expected:
-                coeff_np = coeff_np.reshape(slab_sizes)
-                return CompiledSourceSpec(
-                    component=component,
-                    timing=timing,
-                    index=index,
-                    coeff=jnp.asarray(coeff_np),
-                    waveform=waveform,
-                    is_slab=True,
-                    slab_starts=tuple(starts),
-                    slab_sizes=slab_sizes,
-                )
+            coeff_np = np.asarray(
+                coeff, dtype=np.complex64 if np.iscomplexobj(coeff) else np.float32
+            )
+            if coeff_np.size == int(np.prod(sizes)):
+                slab_sizes = tuple(sizes)
+                coeff = coeff_np.reshape(slab_sizes)
 
     return CompiledSourceSpec(
         component=component,
@@ -280,6 +274,11 @@ def _as_slab_spec(
             coeff, dtype=jnp.complex64 if np.iscomplexobj(coeff) else jnp.float32
         ),
         waveform=waveform,
+        is_slab=slab_sizes is not None,
+        slab_starts=tuple(starts) if slab_sizes is not None else None,
+        slab_sizes=slab_sizes,
+        source_index=source_index,
+        launched_power=launched_power,
     )
 
 
@@ -311,17 +310,14 @@ def _compile_injection_plan(
             parts.append((-np.imag(values), entry.waveform.quadrature))
 
         for coeff, waveform in parts:
-            spec = _as_slab_spec(
-                component=entry.component,
-                timing=entry.timing,
-                index=entry.index,
-                coeff=coeff,
-                waveform=waveform,
-                target_shape=entry.target_shape,
-            )
             specs.append(
-                replace(
-                    spec,
+                _as_slab_spec(
+                    component=entry.component,
+                    timing=entry.timing,
+                    index=entry.index,
+                    coeff=coeff,
+                    waveform=waveform,
+                    target_shape=entry.target_shape,
                     source_index=source_index,
                     launched_power=entry.launched_power,
                 )
