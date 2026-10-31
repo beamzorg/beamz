@@ -261,60 +261,24 @@ def _solve_one_frequency(
         target_neff = float(np.sqrt(np.max(np.abs(eps_tensor))))
     target_neff = _shift_target_neff(float(target_neff))
 
-    if not material_grid.is_diagonal:
-        # User supplied a full tensor grid with no coordinate transform.
-        return _solve_one_frequency_scipy_tensorial(
-            eps_tensor=eps_tensor,
-            mu_tensor=mu_tensor,
-            dlf=dlf,
-            dlb=dlb,
-            freq=freq,
-            num_modes=num_modes,
-            target_neff=target_neff,
-            pml_spec=pml_spec,
-            direction=direction,
-            krylov_dim=krylov_dim,
-            boundary_spec=boundary_spec,
+    if material_grid.is_diagonal:
+        solve, unknowns, backend_kind = (
+            solve_diagonal_scipy_reference,
+            2,
+            "diagonal_scipy_reference",
         )
-    # Ordinary scalar/diagonal grids use the diagonal sparse formulation.
-    return _solve_one_frequency_scipy(
-        eps_tensor=eps_tensor,
-        mu_tensor=mu_tensor,
-        dlf=dlf,
-        dlb=dlb,
-        freq=freq,
-        num_modes=num_modes,
-        target_neff=target_neff,
-        pml_spec=pml_spec,
-        direction=direction,
-        krylov_dim=krylov_dim,
-        boundary_spec=boundary_spec,
-    )
-
-
-def _solve_one_frequency_scipy(
-    *,
-    eps_tensor: np.ndarray,
-    mu_tensor: np.ndarray,
-    dlf: tuple[np.ndarray, np.ndarray],
-    dlb: tuple[np.ndarray, np.ndarray],
-    freq: float,
-    num_modes: int,
-    target_neff: float,
-    pml_spec: PmlSpec,
-    direction: str,
-    krylov_dim: int | None,
-    boundary_spec: BoundarySpec,
-) -> tuple[np.ndarray, dict[str, np.ndarray], dict[str, object]]:
-    """Run the diagonal SciPy solver and reshape its fields."""
-    # The diagonal solver has two transverse unknowns per cell: Ex and Ey.
-    nx = len(dlf[0])
-    ny = len(dlf[1])
+    else:
+        solve, unknowns, backend_kind = (
+            solve_tensorial_scipy_reference,
+            4,
+            "tensorial_scipy_reference",
+        )
+    nx, ny = material_grid.shape
     actual_krylov_dim = 32 if krylov_dim is None else int(krylov_dim)
 
     # Convert frequency into the nondimensional derivative scale and angular
     # frequency expected by the sparse reference implementation.
-    n_complex, fields, solver_info = solve_diagonal_scipy_reference(
+    n_complex, fields, solver_info = solve(
         eps_tensor=eps_tensor,
         mu_tensor=mu_tensor,
         dlf=dlf,
@@ -329,7 +293,7 @@ def _solve_one_frequency_scipy(
         dmin_pml=boundary_spec.dmin_pml,
         dmin_pmc=boundary_spec.dmin_pmc,
         krylov_dim=actual_krylov_dim,
-        initial_vector=_default_initial_vector(2 * nx * ny, shape=(nx, ny)),
+        initial_vector=_default_initial_vector(unknowns * nx * ny, shape=(nx, ny)),
     )
 
     # Solver fields are flattened by component; reshape them back to grid
@@ -339,62 +303,7 @@ def _solve_one_frequency_scipy(
         _fields_to_grid(fields, (nx, ny)),
         _solver_info_with_context(
             solver_info,
-            backend_kind="diagonal_scipy_reference",
-            shape=(nx, ny),
-            krylov_dim=actual_krylov_dim,
-        ),
-    )
-
-
-def _solve_one_frequency_scipy_tensorial(
-    *,
-    eps_tensor: np.ndarray,
-    mu_tensor: np.ndarray,
-    dlf: tuple[np.ndarray, np.ndarray],
-    dlb: tuple[np.ndarray, np.ndarray],
-    freq: float,
-    num_modes: int,
-    target_neff: float,
-    pml_spec: PmlSpec,
-    direction: str,
-    krylov_dim: int | None,
-    boundary_spec: BoundarySpec,
-) -> tuple[np.ndarray, dict[str, np.ndarray], dict[str, object]]:
-    """Run the tensorial SciPy solver and reshape its fields."""
-    # The tensorial solver keeps four transverse unknowns per cell:
-    # Ex, Ey, Hx, and Hy.
-    nx = len(dlf[0])
-    ny = len(dlf[1])
-    actual_krylov_dim = 32 if krylov_dim is None else int(krylov_dim)
-
-    # Full tensor coupling uses the first-order operator and solves directly for
-    # effective index rather than n_eff squared.
-    n_complex, fields, solver_info = solve_tensorial_scipy_reference(
-        eps_tensor=eps_tensor,
-        mu_tensor=mu_tensor,
-        dlf=dlf,
-        dlb=dlb,
-        num_modes=num_modes,
-        neff_guess=target_neff,
-        direction=direction,
-        derivative_scale=C_0 / (2 * np.pi * freq),
-        omega=2 * np.pi * freq,
-        num_pml=pml_spec.num_cells,
-        pml_profile=pml_spec.profile_dict(),
-        dmin_pml=boundary_spec.dmin_pml,
-        dmin_pmc=boundary_spec.dmin_pmc,
-        krylov_dim=actual_krylov_dim,
-        initial_vector=_default_initial_vector(4 * nx * ny, shape=(nx, ny)),
-    )
-
-    # Keep return structure identical to the diagonal path so solve_modes does
-    # not need backend-specific field handling.
-    return (
-        n_complex,
-        _fields_to_grid(fields, (nx, ny)),
-        _solver_info_with_context(
-            solver_info,
-            backend_kind="tensorial_scipy_reference",
+            backend_kind=backend_kind,
             shape=(nx, ny),
             krylov_dim=actual_krylov_dim,
         ),
