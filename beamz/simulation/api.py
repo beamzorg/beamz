@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import os
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from collections.abc import Sequence
-from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from importlib import import_module
 from typing import Any, Literal
@@ -247,17 +246,7 @@ def _prepare_design(design, *, domain, size, background, grid_spec, resolution, 
     sim_size = _normalize_domain(domain, size)
     if design is not None and not isinstance(design, Design):
         raise TypeError("Simulation design must be a canonical Design.")
-    if design is not None and sim_size is None:
-        resolution, grid, time, use_realized_grid = _resolve_design_time_and_grid(
-            design,
-            grid_spec=grid_spec,
-            resolution=resolution,
-            time=time,
-            run_time=run_time,
-            require_uniform_grid=require_uniform_grid,
-        )
-        return design, resolution, grid, time, (0.0, 0.0, 0.0), use_realized_grid
-    if design is not None and not design._centered_coordinates:
+    if design is not None and (sim_size is None or not design._centered_coordinates):
         resolution, grid, time, use_realized_grid = _resolve_design_time_and_grid(
             design,
             grid_spec=grid_spec,
@@ -493,9 +482,8 @@ def _setup_device_policy_label(policy) -> str:
     return os.getenv("BEAMZ_SETUP_DEVICE", "auto") if policy is None else str(policy)
 
 
-def _setup_device_context(policy, *, design, resolution):
+def _resolve_setup_device(policy):
     # Device selection affects setup allocation only; numerical compilation chooses separately.
-    del design, resolution
     resolved = _setup_device_policy_label(policy)
     normalized = resolved.strip().lower()
     if normalized not in {
@@ -512,18 +500,14 @@ def _setup_device_context(policy, *, design, resolution):
         env_bool("BEAMZ_SETUP_CPU", False) and normalized == "auto"
     )
     if not use_cpu:
-        return nullcontext(None), "default"
+        return "default"
     try:
         import jax
 
         devices = jax.devices("cpu")
-        return (
-            (jax.default_device(devices[0]), "cpu")
-            if devices
-            else (nullcontext(None), "default")
-        )
+        return "cpu" if devices else "default"
     except Exception:
-        return nullcontext(None), "default"
+        return "default"
 
 
 def _normalize_devices(*, sources, monitors):
@@ -546,11 +530,7 @@ def _normalize_devices(*, sources, monitors):
     sources = dedupe(sources, expected_types=CANONICAL_SOURCE_TYPES, kind="sources")
     monitors = dedupe(monitors, expected_types=_MONITOR_TYPES, kind="monitors")
     duplicates = sorted(
-        {
-            monitor.name
-            for monitor in monitors
-            if sum(m.name == monitor.name for m in monitors) > 1
-        }
+        name for name, count in Counter(m.name for m in monitors).items() if count > 1
     )
     if duplicates:
         raise ValueError(f"Duplicate monitor names: {', '.join(duplicates)}.")
@@ -834,9 +814,7 @@ class Simulation:
             if not isinstance(raster_options, RasterOptions):
                 raise TypeError("raster_options must be RasterOptions or None.")
         setup_device_policy = _setup_device_policy_label(setup_device)
-        _, setup_device_resolved = _setup_device_context(
-            setup_device, design=design, resolution=resolution
-        )
+        setup_device_resolved = _resolve_setup_device(setup_device)
         # 4. Assign the fully normalized specification atomically through the frozen
         # dataclass escape hatch so no partially initialized simulation is observable.
         object.__setattr__(self, "design", design)

@@ -17,11 +17,7 @@ def sample_material(grid, component, shape):
         pairs, bounds = [], []
         for axis, key, n in zip("zyx", region, grid.shape, strict=True):
             hi = np.clip(np.arange(key.start, key.stop), 0, n - 1)
-            lo = (
-                np.clip(hi - 1, 0, n - 1)
-                if component.startswith("E") and offsets[axis] == 0
-                else hi
-            )
+            lo = hi
             # At the high boundary both bracketing cells clamp to the last voxel.
             if component.startswith("E") and offsets[axis] == 0:
                 lo = np.clip(np.arange(key.start, key.stop) - 1, 0, n - 1)
