@@ -931,18 +931,8 @@ def test_local_launch_power_matches_dense_yee_diagnostic(
     )
     planar = mode_launch_module.planar_tfsf
     dt = 1e-10
-    residuals = planar.compute_discrete_3d_h_phasor_residuals(
-        profile,
-        fields,
-        resolution=1.0,
-        max_shift=12,
-        dt=dt,
-    ) + planar.compute_discrete_3d_e_phasor_residuals(
-        profile,
-        fields,
-        resolution=1.0,
-        max_shift=12,
-        dt=dt,
+    residuals = planar.compute_discrete_3d_phasor_residuals(
+        profile, fields, resolution=1.0, max_shift=12, dt=dt
     )
     powers = []
     measure = mode_launch_module._yee_plane_power_3d
