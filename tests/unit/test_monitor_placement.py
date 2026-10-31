@@ -60,8 +60,7 @@ def test_source_region_preserves_scalar_and_realized_grid_tie_policies(axis, sig
 
     from beamz.design.grid import RectilinearGrid
     from beamz.devices._placement import (
-        snap_mode_source_region,
-        snap_mode_source_region_grid,
+        mode_source_region,
     )
 
     # Coordinate 2 is equidistant from centers 1.5 and 2.5: scalar half-even
@@ -74,9 +73,12 @@ def test_source_region_preserves_scalar_and_realized_grid_tie_policies(axis, sig
         direction_sign=sign,
         is_3d=True,
     )
-    scalar = snap_mode_source_region(**arguments, grid_shape=(5, 5, 5), resolution=1.0)
-    realized = snap_mode_source_region_grid(
-        **arguments, grid=RectilinearGrid(*(np.arange(6.0),) * 3)
+    scalar = mode_source_region(**arguments, grid_shape=(5, 5, 5), resolution=1.0)
+    realized = mode_source_region(
+        **arguments,
+        grid_shape=None,
+        resolution=None,
+        grid=RectilinearGrid(*(np.arange(6.0),) * 3),
     )
     assert scalar.plane_index == 2
     assert realized.plane_index == 1
@@ -104,14 +106,20 @@ def test_realized_source_support_translates_with_grid_origin():
     import numpy as np
 
     from beamz.design.grid import RectilinearGrid
-    from beamz.devices._placement import snap_mode_source_region_grid
+    from beamz.devices._placement import mode_source_region
 
     grid = RectilinearGrid(np.array([0, 1, 3, 6.0]), np.arange(5.0), np.arange(4.0))
     offset = (10.0, -4.0, 7.0)
     arguments = dict(width=2.0, height=2.0, axis="x", direction_sign=-1, is_3d=True)
-    original = snap_mode_source_region_grid(center=(2, 2, 2), grid=grid, **arguments)
-    moved = snap_mode_source_region_grid(
-        center=tuple(2 + v for v in offset), grid=grid.translated(offset), **arguments
+    original = mode_source_region(
+        center=(2, 2, 2), grid=grid, grid_shape=None, resolution=None, **arguments
+    )
+    moved = mode_source_region(
+        center=tuple(2 + v for v in offset),
+        grid=grid.translated(offset),
+        grid_shape=None,
+        resolution=None,
+        **arguments,
     )
     assert moved.plane_index == original.plane_index
     assert moved.companion_index == original.companion_index
@@ -121,3 +129,32 @@ def test_realized_source_support_translates_with_grid_origin():
         assert (a.start, a.stop) == (b.start, b.stop)
         assert b.lower == a.lower + offset[i]
         assert b.upper == a.upper + offset[i]
+
+
+def test_mode_plane_crop_uses_realized_shifted_edges_and_preserves_full_axes():
+    import numpy as np
+
+    from beamz.design.grid import RectilinearGrid
+
+    grid = RectilinearGrid(
+        np.array([10.0, 11.0, 13.0, 16.0]),
+        np.array([-4.0, -3.0, -1.0, 2.0]),
+        np.array([7.0, 8.0, 10.0]),
+    )
+    # x overlaps only the wide middle cell, y is full, z clips to the final cell.
+    assert grid.crop((12.0, 0.0, 20.0), (1.0, 0.0, 2.0)) == (
+        slice(1, 2),
+        slice(0, 3),
+        slice(1, 2),
+    )
+
+
+def test_legacy_monitor_display_requires_coordinates():
+    from types import SimpleNamespace
+
+    from beamz.analysis.plotting import _monitor_plane_display
+
+    with pytest.raises(ValueError, match="requires tangential coordinates"):
+        _monitor_plane_display(
+            SimpleNamespace(grid=None), None, normal="z", origin=(0, 0, 0)
+        )

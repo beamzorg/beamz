@@ -10,12 +10,10 @@ import jax.numpy as jnp
 import numpy as np
 
 from beamz.devices._placement import (
-    SnappedInterval,
     SnappedRegion,
     line_region_coordinates,
     line_region_points,
     snap_axis_aligned_line_region_grid,
-    snap_plane_region_grid,
 )
 from beamz.devices.monitors.monitors import (
     FieldMonitor,
@@ -44,30 +42,6 @@ def _sampling_indices(indices):
 
 def _empty_array() -> jnp.ndarray:
     return jnp.empty(0, dtype=jnp.float32)
-
-
-def _compact_sample_region(region: SnappedRegion | None) -> SnappedRegion | None:
-    """Retain exact indices and plane coordinates without duplicating grid edges."""
-    if region is None:
-        return None
-    intervals = {
-        axis: SnappedInterval(
-            interval.start,
-            interval.stop,
-            interval.step,
-            physical_bounds=(interval.lower, interval.upper),
-        )
-        for axis, interval in region.intervals.items()
-    }
-    return SnappedRegion(
-        region.ndim,
-        region.normal_axis,
-        region.plane_index,
-        region.plane_coord,
-        intervals,
-        region.companion_index,
-        region.companion_coord,
-    )
 
 
 @dataclass(frozen=True)
@@ -298,20 +272,8 @@ def _inactive_sampling_plan(point_count: int):
 def _monitor_plane_quadrature(monitor: _Monitor, fields, resolution: float, grid):
     """Share plane placement and component supports across recorder/DFT plans."""
     base_shape = common_grid_shape_3d(fields)
-    region = (
-        snap_plane_region_grid(
-            center=monitor.center,
-            size=monitor.size,
-            plane_normal=monitor.plane_normal,
-            grid=grid,
-        )
-        if grid is not None
-        else monitor.get_snapped_region(
-            dx=resolution,
-            dy=resolution,
-            dz=resolution,
-            field_shape=base_shape,
-        )
+    region = monitor.get_snapped_region(
+        grid=grid, dx=resolution, dy=resolution, dz=resolution, field_shape=base_shape
     )
     quadrature = compile_yee_plane_quadrature_3d(
         center=monitor.center,
@@ -341,7 +303,7 @@ def _spectral_sampling_spec(common, dft, region, **geometry):
         dft_sampling=SamplingPlan(
             tuple(plan[0] for plan in dft), tuple(plan[1] for plan in dft)
         ),
-        sample_region=_compact_sample_region(region),
+        sample_region=region,
     )
 
 
@@ -466,7 +428,7 @@ def compile_monitor_specs(
                 region, quadrature = _monitor_plane_quadrature(
                     monitor, fields, resolution, active_grid if use_geometry else None
                 )
-                sample_region = _compact_sample_region(region)
+                sample_region = region
                 output_shape = tuple(
                     int(values.size) for values in quadrature.coordinates
                 )
@@ -574,20 +536,12 @@ def compile_monitor_specs(
                     raise ValueError(
                         "Planar 2D FieldMonitor sampling requires the xy plane."
                     )
-                region = (
-                    snap_plane_region_grid(
-                        center=monitor.center,
-                        size=monitor.size,
-                        plane_normal="z",
-                        grid=active_grid,
-                    )
-                    if active_grid is not None
-                    else monitor.get_snapped_region(
-                        dx=resolution,
-                        dy=resolution,
-                        dz=resolution,
-                        field_shape=(1, *fields.permittivity.shape),
-                    )
+                region = monitor.get_snapped_region(
+                    grid=active_grid,
+                    dx=resolution,
+                    dy=resolution,
+                    dz=resolution,
+                    field_shape=(1, *fields.permittivity.shape),
                 )
                 assert region is not None
                 coords = {}
