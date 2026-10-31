@@ -11,6 +11,15 @@ from jax.sharding import PartitionSpec as P
 _MESH_AXIS = "fdtd"
 
 
+def _shard_map():
+    try:
+        return jax.shard_map
+    except AttributeError:
+        from jax.experimental.shard_map import shard_map
+
+        return shard_map
+
+
 def exchange_faces(value, *, axis, num_devices, lower=True, upper=True):
     """Exchange adjacent one-cell faces inside a manual ``fdtd`` mesh.
 
@@ -76,10 +85,7 @@ def scan_local_cpml(state, program, *, assemble=False):
     """
     plan = program.sharding
     axis = plan.layout.axis
-    try:
-        shard_map = jax.shard_map
-    except AttributeError:
-        from jax.experimental.shard_map import shard_map
+    shard_map = _shard_map()
 
     updates = {}
     for phase in ("h", "e"):

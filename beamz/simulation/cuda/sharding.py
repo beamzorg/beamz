@@ -11,7 +11,7 @@ from jax.sharding import PartitionSpec as P
 
 from beamz.simulation import _cuda_abi as abi
 from beamz.simulation.backend import CudaBackendUnavailable
-from beamz.simulation.distributed import _owned_psi, exchange_faces
+from beamz.simulation.distributed import _owned_psi, _shard_map, exchange_faces
 
 _MESH_AXIS = "fdtd"
 
@@ -89,10 +89,7 @@ def _phase(state, ctx, coeffs, *, phase):
 
     # Keep the compatibility import local: older supported JAX installations
     # expose shard_map through the experimental module.
-    try:
-        shard_map = jax.shard_map
-    except AttributeError:
-        from jax.experimental.shard_map import shard_map
+    shard_map = _shard_map()
 
     @partial(
         shard_map,
