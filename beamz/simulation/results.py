@@ -563,7 +563,7 @@ class SimulationMetadata:
             is_3d=bool(simulation.is_3d),
             plane_2d=str(simulation.plane_2d),
             coordinate_offset=(offset[0], offset[1], offset[2]),
-            time=_array_snapshot(simulation.time, dtype=float),
+            time=simulation.time,
             width=float(design.width),
             height=float(design.height),
             depth=float(design.depth),
@@ -710,16 +710,12 @@ class MonitorResults:
         for name in ("dft_base_dt", "resolution", "normal_sign", "power_scale"):
             object.__setattr__(self, name, float(getattr(self, name)))
         object.__setattr__(self, "normal_axis", int(self.normal_axis))
-        raw_fields = (
-            self.dft_fields if self._raw_dft_fields is None else self._raw_dft_fields
-        )
-        raw_power = (
-            self.power_spectrum
-            if self._raw_power_spectrum is None
-            else self._raw_power_spectrum
-        )
-        object.__setattr__(self, "_raw_dft_fields", immutable_snapshot(raw_fields))
-        object.__setattr__(self, "_raw_power_spectrum", _array_snapshot(raw_power))
+        for name, current, snapshot in (
+            ("_raw_dft_fields", self.dft_fields, immutable_snapshot),
+            ("_raw_power_spectrum", self.power_spectrum, _array_snapshot),
+        ):
+            raw = getattr(self, name)
+            object.__setattr__(self, name, current if raw is None else snapshot(raw))
 
     def get_dft_frequencies(self):
         """Return frequencies associated with frequency-domain acquisitions.
@@ -875,9 +871,7 @@ class MonitorResults:
         if spec.recorder_index >= 0:
             recorder_count = int(np.asarray(state.recorded_counts[spec.recorder_index]))
             fields = {
-                component: np.asarray(
-                    state.recorded_fields[buffer_index][:recorder_count]
-                ).copy()
+                component: state.recorded_fields[buffer_index][:recorder_count]
                 for component, buffer_index in zip(
                     spec.components, spec.field_buffer_indices, strict=True
                 )
@@ -891,11 +885,11 @@ class MonitorResults:
                 field_times=np.asarray(
                     state.recorded_times[spec.recorder_index][:recorder_count],
                     dtype=float,
-                ).copy(),
+                ),
                 field_steps=np.asarray(
                     state.recorded_steps[spec.recorder_index][:recorder_count],
                     dtype=int,
-                ).copy(),
+                ),
                 sample_region=spec.sample_region,
             )
         dft_fields: dict[str, np.ndarray] = {}
@@ -944,19 +938,17 @@ class MonitorResults:
         return cls(
             monitor=monitor,
             fields={},
-            power_history=np.asarray(state.powers[i, :count], dtype=float).copy(),
-            power_timestamps=np.asarray(
-                state.timestamps[i, :count], dtype=float
-            ).copy(),
-            power_spectrum=np.asarray(power_spectrum, dtype=np.complex64).copy(),
+            power_history=np.asarray(state.powers[i, :count], dtype=float),
+            power_timestamps=np.asarray(state.timestamps[i, :count], dtype=float),
+            power_spectrum=np.asarray(power_spectrum, dtype=np.complex64),
             dft_fields=dft_fields,
-            dft_frequencies=dft_frequencies.copy(),
+            dft_frequencies=dft_frequencies,
             dft_weight_sum=np.asarray(
                 state.dft_weight_sum[
                     spec.dft_weight_offset : spec.dft_weight_offset + fc
                 ],
                 dtype=np.float64,
-            ).copy(),
+            ),
             dft_base_dt=float(config.dt),
             dft_amplitude_scale=1.0
             if np.iscomplexobj(getattr(state, "ex", 0.0))
@@ -1409,7 +1401,6 @@ class SimulationResults:
             raise TypeError("SimulationResults.from_run requires Simulation.")
         if not isinstance(runtime_fields, CompiledGrid):
             raise TypeError("SimulationResults.from_run requires CompiledGrid.")
-        monitor_results_dict = dict(monitor_results)
         metadata = SimulationMetadata.from_simulation(
             simulation,
             runtime_fields=runtime_fields,
@@ -1418,9 +1409,7 @@ class SimulationResults:
         if completed_steps is not None:
             metadata = replace(
                 metadata,
-                time=_array_snapshot(
-                    simulation.time[: int(completed_steps)], dtype=float
-                ),
+                time=simulation.time[: int(completed_steps)],
             )
         monitor_results_dict = {
             name: replace(
@@ -1429,7 +1418,7 @@ class SimulationResults:
                     simulation, result.monitor, runtime_fields=runtime_fields
                 ),
             )
-            for name, result in monitor_results_dict.items()
+            for name, result in monitor_results.items()
         }
         result = cls(
             metadata=metadata,
