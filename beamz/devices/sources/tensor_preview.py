@@ -8,7 +8,7 @@ import numpy as np
 
 from beamz.devices._placement import snap_mode_source_region_grid
 from beamz.devices.modes.discrete import _solve_beamz_mode
-from beamz.devices.modes.plane import solve_mode_plane_3d
+from beamz.devices.modes.plane import mode_plane_solve_arguments, solve_mode_plane_3d
 from beamz.devices.modes.specs import ModeData
 from beamz.lattice import component_axis_offsets_3d
 
@@ -39,6 +39,19 @@ def solve_tensor_mode_plane(
         is_3d=True,
         grid=grid,
     )
+    arguments = mode_plane_solve_arguments(
+        materials,
+        spec=spec,
+        num_modes=spec.num_modes,
+        center=center,
+        width=width,
+        height=height,
+        snapped=snapped,
+        direction=signed,
+        resolution=simulation.resolution,
+        dt=simulation.dt,
+        grid=grid,
+    )
     solved = []
     for frequency in frequencies:
         # Share the finalized candidate basis, but prepare each mode separately.
@@ -48,30 +61,11 @@ def solve_tensor_mode_plane(
                 solve_mode_plane_3d(
                     np.asarray(materials.permittivity),
                     np.asarray(materials.permeability),
-                    material_tensors=materials.tensors,
+                    **arguments,
                     yee_materials=materials.yee_materials,
-                    yee_tensors=materials.yee_tensors,
                     frequency=frequency,
-                    resolution=simulation.resolution,
-                    dt=simulation.dt,
-                    axis=axis,
-                    direction=signed,
-                    grid_shape=materials.shape,
-                    center=center,
-                    width=width,
-                    height=height,
-                    plane_index=snapped.plane_index,
-                    offset_index=snapped.companion_index,
                     mode_index=index,
-                    polarization=spec.polarization,
-                    target_neff=spec.target_neff,
-                    num_modes=spec.num_modes,
-                    snapped_region=snapped,
-                    grid=grid,
                     solver=solver,
-                    force_symmetry=spec.force_symmetry,
-                    min_aperture_fraction=spec.min_aperture_fraction,
-                    solver_padding_cells=spec.solver_padding_cells,
                 )
                 for index in range(spec.num_modes)
             ]
