@@ -42,7 +42,8 @@ class Context:
     dt_scalar: object = None
 
 
-def _observe(_program, state, _index, time, _dt, *fields):
+def _observe(_program, state, _index, time, _dt):
+    fields = tuple(getattr(state, p + a) for p in "eh" for a in "xyz")
     return state._replace(
         dft_vec_re=state.dft_vec_re + sum(fields) * time,
         dft_vec_im=state.dft_vec_im - sum(fields),
@@ -125,7 +126,6 @@ def native_model(monkeypatch):
             state.current_step,
             observation_time,
             ctx.dt_scalar,
-            *(getattr(out, p + a) for p in "eh" for a in "xyz"),
         )
         return out._replace(t=observation_time, current_step=state.current_step + 1)
 

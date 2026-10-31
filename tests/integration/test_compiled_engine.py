@@ -860,11 +860,6 @@ def test_compiled_static_monitor_physical_dft_uses_centered_tm_xy_sampling():
     )
 
     monitor_state = _monitor_state(
-        powers=jnp.zeros((1, 1), dtype=jnp.float32),
-        timestamps=jnp.zeros((1, 1), dtype=jnp.float32),
-        counts=jnp.zeros((1,), dtype=jnp.int32),
-        freq_flux_re=jnp.zeros((1, 1), dtype=jnp.float32),
-        freq_flux_im=jnp.zeros((1, 1), dtype=jnp.float32),
         dft_vec_re=jnp.zeros((6,), dtype=jnp.float32),
         dft_vec_im=jnp.zeros((6,), dtype=jnp.float32),
         dft_weight_sum=jnp.zeros((1,), dtype=jnp.float32),
@@ -872,18 +867,20 @@ def test_compiled_static_monitor_physical_dft_uses_centered_tm_xy_sampling():
 
     tm_ez = jnp.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=jnp.float32)
 
-    updated = monitor_runtime.update_monitors(
-        program,
-        monitor_state,
-        abs_step=jnp.asarray(0, dtype=jnp.int32),
-        t_phys=jnp.asarray(0.0, dtype=jnp.float32),
-        dt_scalar=jnp.asarray(1.0, dtype=jnp.float32),
+    monitor_state = monitor_state._replace(
         ex=jnp.zeros((1, 1), dtype=jnp.float32),
         ey=jnp.zeros((1, 1), dtype=jnp.float32),
         ez=tm_ez,
         hx=jnp.zeros((1, 2), dtype=jnp.float32),
         hy=jnp.zeros((2, 1), dtype=jnp.float32),
         hz=jnp.zeros((1, 1), dtype=jnp.float32),
+    )
+    updated = monitor_runtime.update_monitors(
+        program,
+        monitor_state,
+        abs_step=jnp.asarray(0, dtype=jnp.int32),
+        t_phys=jnp.asarray(0.0, dtype=jnp.float32),
+        dt_scalar=jnp.asarray(1.0, dtype=jnp.float32),
     )
 
     expected = 2.5 / np.sqrt(2.0 * np.pi)
@@ -1304,28 +1301,25 @@ def test_compiled_static_monitor_dft_uses_current_sample_phase(time, expected):
     )
 
     monitor_state = _monitor_state(
-        powers=jnp.zeros((1, 1), dtype=jnp.float32),
-        timestamps=jnp.zeros((1, 1), dtype=jnp.float32),
-        counts=jnp.zeros((1,), dtype=jnp.int32),
-        freq_flux_re=jnp.zeros((1, 1), dtype=jnp.float32),
-        freq_flux_im=jnp.zeros((1, 1), dtype=jnp.float32),
         dft_vec_re=jnp.zeros((6,), dtype=jnp.float32),
         dft_vec_im=jnp.zeros((6,), dtype=jnp.float32),
         dft_weight_sum=jnp.zeros((1,), dtype=jnp.float32),
     )
 
-    updated = monitor_runtime.update_monitors(
-        program,
-        monitor_state,
-        abs_step=jnp.asarray(0, dtype=jnp.int32),
-        t_phys=jnp.asarray(time, dtype=jnp.float32),
-        dt_scalar=jnp.asarray(1.0, dtype=jnp.float32),
+    monitor_state = monitor_state._replace(
         ex=jnp.zeros((1, 1), dtype=jnp.float32),
         ey=jnp.zeros((1, 1), dtype=jnp.float32),
         ez=jnp.asarray([[2.0]], dtype=jnp.float32),
         hx=jnp.zeros((1, 1), dtype=jnp.float32),
         hy=jnp.zeros((1, 1), dtype=jnp.float32),
         hz=jnp.zeros((1, 1), dtype=jnp.float32),
+    )
+    updated = monitor_runtime.update_monitors(
+        program,
+        monitor_state,
+        abs_step=jnp.asarray(0, dtype=jnp.int32),
+        t_phys=jnp.asarray(time, dtype=jnp.float32),
+        dt_scalar=jnp.asarray(1.0, dtype=jnp.float32),
     )
 
     np.testing.assert_allclose(

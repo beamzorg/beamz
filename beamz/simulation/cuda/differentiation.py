@@ -173,12 +173,6 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
             old.current_step,
             out.t,
             context.dt_scalar,
-            out.ex,
-            out.ey,
-            out.ez,
-            out.hx,
-            out.hy,
-            out.hz,
         )
         old, coeffs, sources, clock = values
         h_source = any(getattr(coeff_flags, f"h_source_{axis}") for axis in "xyz")
@@ -341,12 +335,6 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
                     initial_step + index,
                     observation_time,
                     ctx.dt_scalar,
-                    primal.ex,
-                    primal.ey,
-                    primal.ez,
-                    primal.hx,
-                    primal.hy,
-                    primal.hz,
                 )
 
             # Only vector DFT recorders enter this path; their field Jacobian

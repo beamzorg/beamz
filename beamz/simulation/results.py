@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from importlib import import_module
 from types import MappingProxyType
-from typing import Any, Protocol
+from typing import Any
 
 import numpy as np
 
@@ -18,7 +18,7 @@ from beamz.devices.monitors.compiler import CompiledMonitorSpec
 from beamz.devices.monitors.monitors import _Monitor
 from beamz.lattice import canonical_component_2d
 
-from .model import CompiledGrid, SimulationState
+from .model import CompiledGrid, RunConfig, SimulationState
 from .observe import (
     monitor_dft_component,
     monitor_dft_flux,
@@ -26,33 +26,6 @@ from .observe import (
     monitor_frequencies,
     renormalize_result,
 )
-
-
-class _MonitorBuffers(Protocol):
-    """Packed monitor arrays consumed when detaching a run."""
-
-    powers: Any
-    timestamps: Any
-    counts: Any
-    freq_flux_re: Any
-    freq_flux_im: Any
-    dft_vec_re: Any
-    dft_vec_im: Any
-    dft_weight_sum: Any
-    recorded_fields: Any
-    recorded_steps: Any
-    recorded_times: Any
-    recorded_counts: Any
-
-
-class _RunConfigLike(Protocol):
-    """Execution values needed to decode packed monitor arrays."""
-
-    dt: float
-    resolution: float
-    is_3d: bool
-    plane_2d: str
-    polarization_2d: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -783,8 +756,8 @@ class MonitorResults:
         cls,
         monitor: _Monitor,
         spec: CompiledMonitorSpec,
-        state: _MonitorBuffers,
-        config: _RunConfigLike,
+        state: SimulationState,
+        config: RunConfig,
     ) -> "MonitorResults":
         """Detach one monitor's immutable data from packed runtime state.
 
@@ -810,10 +783,8 @@ class MonitorResults:
         application code receives instances from ``Simulation.run()`` or
         ``Simulation.advance()`` rather than calling it directly.
         """
-        i = int(spec.monitor_index)
         fc = int(spec.freq_count)
         pc = int(spec.dft_point_count)
-        count = int(np.asarray(state.counts[i]))
         if spec.recorder_index >= 0:
             recorder_count = int(np.asarray(state.recorded_counts[spec.recorder_index]))
             fields = {
@@ -864,8 +835,8 @@ class MonitorResults:
         return cls(
             monitor=monitor,
             fields={},
-            power_history=np.asarray(state.powers[i, :count], dtype=float),
-            power_timestamps=np.asarray(state.timestamps[i, :count], dtype=float),
+            power_history=np.empty(0, dtype=float),
+            power_timestamps=np.empty(0, dtype=float),
             power_spectrum=np.empty(0, dtype=np.complex64),
             dft_fields=dft_fields,
             dft_frequencies=dft_frequencies,
@@ -1214,7 +1185,7 @@ class SimulationResults:
             keywords in reusable code.
         **kwargs : object
             Field-selection and Matplotlib options such as ``monitor_name``,
-            ``field_name``, ``frequency``, ``frame``, ``val``, ``ax``, and
+            ``field``, ``frequency``, ``frame``, ``val``, ``ax``, and
             ``figsize``. ``show`` defaults to ``False``.
 
         Returns
@@ -1226,7 +1197,7 @@ class SimulationResults:
         --------
         >>> fig, ax = results.plot_field(
         ...     monitor_name="frequency_fields",
-        ...     field_name="Ez",
+        ...     field="Ez",
         ...     val="abs",
         ... )
         """

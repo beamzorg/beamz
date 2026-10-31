@@ -694,12 +694,6 @@ def forward_step(
         state.current_step,
         t_phys,
         ctx.dt_scalar,
-        state.ex,
-        state.ey,
-        state.ez,
-        state.hx,
-        state.hy,
-        state.hz,
     )
     if cfg.backend == "jax" and cfg.is_3d and not cfg.sharding.enabled:
         # Keep a common field layout across scan iterations. Recent JAX can
@@ -1385,7 +1379,10 @@ def initial_program_state(
     if (
         program.monitors
         and continuation is not None
-        and continuation.counts.shape == monitor_values["counts"].shape
+        and all(
+            getattr(continuation, name).shape == monitor_values[name].shape
+            for name in ("dft_vec_re", "dft_vec_im", "dft_weight_sum")
+        )
         and recorder_compatible
     ):
         monitor_values = {
@@ -1623,26 +1620,6 @@ def _execute_chunk(program, state, *, monitor_steps, donate_state, timed):
     return sharding_runtime.crop_state(program, state), elapsed
 
 
-def _run_program_state(program, state, *, monitor_steps, donate_state):
-    return _execute_chunk(
-        program,
-        state,
-        monitor_steps=monitor_steps,
-        donate_state=donate_state,
-        timed=False,
-    )[0]
-
-
-def _run_program_state_timed(program, state, *, monitor_steps, donate_state):
-    return _execute_chunk(
-        program,
-        state,
-        monitor_steps=monitor_steps,
-        donate_state=donate_state,
-        timed=True,
-    )
-
-
 def _performance_for(
     program: CompiledProgram, *, runtime_s: float, steps: int
 ) -> SimulationPerformance:
@@ -1731,50 +1708,6 @@ def _finish_run(simulation, program, state, store_full_materials, stats, report)
     return SimulationRun(results=results, state=state)
 
 
-def run_simulation_program(
-    simulation,
-    program: CompiledProgram,
-    state: SimulationState,
-    *,
-    progress: bool,
-    store_full_materials: bool,
-    monitor_steps: int,
-    donate_state: bool,
-    performance: bool,
-    report_performance: bool,
-) -> SimulationRun:
-    """Execute one continuation and separate durable results from runtime state."""
-    compiling = progress and not program_is_compiled(program, donate_state=donate_state)
-    if compiling:
-        _print_inline_status("Compiling simulation...")
-    state, runtime_s = _execute_chunk(
-        program,
-        state,
-        monitor_steps=monitor_steps,
-        donate_state=donate_state,
-        timed=performance,
-    )
-    if progress:
-        if compiling:
-            _finish_inline_progress()
-        _print_inline_progress(
-            program.config.num_steps,
-            program.config.num_steps,
-            label="Running simulation",
-        )
-        _finish_inline_progress()
-    stats = (
-        _performance_for(
-            program, runtime_s=runtime_s, steps=int(program.config.num_steps)
-        )
-        if performance
-        else None
-    )
-    return _finish_run(
-        simulation, program, state, store_full_materials, stats, report_performance
-    )
-
-
 _PROGRESS_CHUNK_COUNT = 20
 
 
@@ -1785,7 +1718,7 @@ def _progress_chunk_lengths(total_steps: int) -> tuple[int, ...]:
     return (chunk_steps,) * full_chunks + ((remainder,) if remainder else ())
 
 
-def run_simulation_with_progress(
+def run_simulation_program(
     simulation,
     state: SimulationState | None,
     *,
@@ -1796,19 +1729,20 @@ def run_simulation_with_progress(
     donate_state: bool,
     backend: str,
     performance: bool,
-    report_performance: bool,
+    progress: bool,
     schedule: str | None = None,
     expected_runs: int = 1,
 ) -> SimulationRun:
-    """Run a segment in compiled chunks and report actual completed timesteps."""
+    """Run one segment; optional progress changes chunking, not lifecycle ownership."""
     from beamz.simulation.cuda.schedule import normalize_expected_runs
 
     expected_runs = normalize_expected_runs(expected_runs)
-    chunk_lengths = _progress_chunk_lengths(num_steps)
+    chunk_lengths = _progress_chunk_lengths(num_steps) if progress else (num_steps,)
     # This API already knows how often each executable will run. Account for
     # that work even when visible progress divides a long run into short calls.
     chunk_reuse = Counter(chunk_lengths)
-    _print_inline_status("Compiling simulation...")
+    if progress:
+        _print_inline_status("Compiling simulation...")
     try:
         programs = {
             length: simulation.compile(
@@ -1825,19 +1759,22 @@ def run_simulation_with_progress(
             state = SimulationState.initial(
                 programs[chunk_lengths[0]].grid, t=float(simulation.time[0])
             )
-        for program in programs.values():
-            compile_program_execution(
-                program,
-                runtime_inputs(program, state, monitor_steps=monitor_steps),
-                donate_state=donate_state,
-            )
+        if progress:
+            for program in programs.values():
+                compile_program_execution(
+                    program,
+                    runtime_inputs(program, state, monitor_steps=monitor_steps),
+                    donate_state=donate_state,
+                )
     finally:
-        _finish_inline_progress()
+        if progress:
+            _finish_inline_progress()
 
     completed = 0
     runtime_s = 0.0
     program = programs[chunk_lengths[-1]]
-    _print_inline_progress(0, num_steps, label="Running simulation")
+    if progress:
+        _print_inline_progress(0, num_steps, label="Running simulation")
     try:
         for length in chunk_lengths:
             program = programs[length]
@@ -1850,9 +1787,11 @@ def run_simulation_with_progress(
             )
             runtime_s += elapsed
             completed += length
-            _print_inline_progress(completed, num_steps, label="Running simulation")
+            if progress:
+                _print_inline_progress(completed, num_steps, label="Running simulation")
     finally:
-        _finish_inline_progress()
+        if progress:
+            _finish_inline_progress()
 
     stats = (
         _performance_for(program, runtime_s=runtime_s, steps=num_steps)
@@ -1860,7 +1799,7 @@ def run_simulation_with_progress(
         else None
     )
     return _finish_run(
-        simulation, program, state, store_full_materials, stats, report_performance
+        simulation, program, state, store_full_materials, stats, performance
     )
 
 

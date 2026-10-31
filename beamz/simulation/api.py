@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from collections import Counter, OrderedDict
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, fields, replace
 from importlib import import_module
 from typing import Any, Literal
 
@@ -61,7 +61,6 @@ from beamz.simulation.execute import (
     clear_execution_cache,
     execute_step,
     run_simulation_program,
-    run_simulation_with_progress,
     run_until_terminated,
 )
 from beamz.simulation.execute import (
@@ -71,7 +70,8 @@ from beamz.simulation.model import (
     AutoTermination,
     CompiledProgram,
     DomainSpec,
-    RunSpec,
+    RunConfig,
+    ShardingConfig,
     SimulationRequest,
     SimulationState,
 )
@@ -242,63 +242,70 @@ def _resolve_design_time_and_grid(
     return resolution, grid, time, use_realized_grid
 
 
-def _prepare_design(design, *, domain, size, background, grid_spec, resolution, time, run_time, require_uniform_grid, plane_2d):  # fmt: skip
+def _prepare_design(
+    design,
+    *,
+    domain,
+    size,
+    background,
+    grid_spec,
+    resolution,
+    time,
+    run_time,
+    require_uniform_grid,
+    plane_2d,
+):
     # 1. Resolve the optional domain/size alias. An already domain-based design can keep its coordinates and only needs grid/time normalization.
     sim_size = _normalize_domain(domain, size)
     if design is not None and not isinstance(design, Design):
         raise TypeError("Simulation design must be a canonical Design.")
-    if design is not None and (sim_size is None or not design._centered_coordinates):
-        resolution, grid, time, use_realized_grid = _resolve_design_time_and_grid(
-            design,
-            grid_spec=grid_spec,
-            resolution=resolution,
-            time=time,
-            run_time=run_time,
-            require_uniform_grid=require_uniform_grid,
+    offset = (0.0, 0.0, 0.0)
+    if design is None or (sim_size is not None and design._centered_coordinates):
+        # 2. A centered-coordinate design or explicit size must be converted into Beamz's
+        # positive-domain coordinate system; reject the request when neither form is present.
+        if sim_size is None:
+            raise ValueError("Simulation requires either design=... or domain=....")
+        design_structures = list(design.structures) if design is not None else []
+        source_structures = design_structures
+        background = background or (
+            design.background if design is not None else Material(1.0)
         )
-        return design, resolution, grid, time, (0.0, 0.0, 0.0), use_realized_grid
-    # 2. A centered-coordinate design or explicit size must be converted into Beamz's
-    # positive-domain coordinate system; reject the request when neither form is present.
-    if sim_size is None:
-        raise ValueError("Simulation requires either design=... or domain=....")
-    design_structures = list(design.structures) if design is not None else []
-    source_structures = design_structures
-    background = background or (
-        design.background if design is not None else Material(1.0)
-    )
-    offset = (0.5 * sim_size[0], 0.5 * sim_size[1], 0.5 * sim_size[2])
-    # 3. Rebuild the design at the requested domain size and translate every structure by the half-domain offset so its physical placement is preserved.
-    new_design = Design(
-        width=sim_size[0], height=sim_size[1], depth=sim_size[2], background=background
-    )
-    for structure in source_structures:
-        new_design += _structure_to_domain(structure, offset, sim_size)
-    if grid_spec is not None:
-        # Mesh requests use the same public coordinates as geometry and devices.
-        grid_spec = replace(
-            grid_spec,
-            overrides=tuple(
-                replace(
-                    item,
-                    center=tuple(
-                        value + delta
-                        for value, delta in zip(item.center, offset, strict=True)
-                    ),
-                )
-                for item in grid_spec.overrides
-            ),
-            snapping_points=tuple(
-                tuple(
-                    None if value is None else value + delta
-                    for value, delta in zip(point, offset, strict=True)
-                )
-                for point in grid_spec.snapping_points
-            ),
+        offset = (0.5 * sim_size[0], 0.5 * sim_size[1], 0.5 * sim_size[2])
+        # 3. Rebuild the design at the requested domain size and translate every structure by the half-domain offset so its physical placement is preserved.
+        new_design = Design(
+            width=sim_size[0],
+            height=sim_size[1],
+            depth=sim_size[2],
+            background=background,
         )
-    # 4. Resolve adaptive spacing from the rebuilt material set, derive the final time
-    # grid, and return the offset needed to shift sources and monitors consistently.
+        for structure in source_structures:
+            new_design += _structure_to_domain(structure, offset, sim_size)
+        if grid_spec is not None:
+            # Mesh requests use the same public coordinates as geometry and devices.
+            grid_spec = replace(
+                grid_spec,
+                overrides=tuple(
+                    replace(
+                        item,
+                        center=tuple(
+                            value + delta
+                            for value, delta in zip(item.center, offset, strict=True)
+                        ),
+                    )
+                    for item in grid_spec.overrides
+                ),
+                snapping_points=tuple(
+                    tuple(
+                        None if value is None else value + delta
+                        for value, delta in zip(point, offset, strict=True)
+                    )
+                    for point in grid_spec.snapping_points
+                ),
+            )
+        design = new_design
+    # Resolve grid/time once after any centered-domain translation.
     resolution, grid, time, use_realized_grid = _resolve_design_time_and_grid(
-        new_design,
+        design,
         grid_spec=grid_spec,
         resolution=resolution,
         time=time,
@@ -306,9 +313,9 @@ def _prepare_design(design, *, domain, size, background, grid_spec, resolution, 
         require_uniform_grid=require_uniform_grid,
     )
     public_offset = (
-        offset if new_design.is_3d else grid_vector_to_physical_2d(offset, plane_2d)
+        offset if design.is_3d else grid_vector_to_physical_2d(offset, plane_2d)
     )
-    return new_design, resolution, grid, time, public_offset, use_realized_grid
+    return design, resolution, grid, time, public_offset, use_realized_grid
 
 
 def _prepare_material_grid(
@@ -667,18 +674,18 @@ class Simulation:
     monitors: tuple[_Monitor, ...]
     boundaries: tuple[object, ...]
     resolution: float
-    grid: RectilinearGrid
+    grid: RectilinearGrid = field(init=False)
     time: np.ndarray
     plane_2d: str
     polarization: str
     grid_spec: GridSpec | None
     run_time: float | None
     setup_device_policy: str
-    setup_device_resolved: str
+    setup_device_resolved: str = field(compare=False)
     normalize_source: int | None
     raster_options: Any
-    coordinate_offset: tuple[float, float, float]
-    _uses_realized_grid: bool
+    coordinate_offset: tuple[float, float, float] = field(compare=False)
+    _uses_realized_grid: bool = field(compare=False)
 
     def __init__(
         self,
@@ -815,27 +822,14 @@ class Simulation:
             if not isinstance(raster_options, RasterOptions):
                 raise TypeError("raster_options must be RasterOptions or None.")
         setup_device_policy = _setup_device_policy_label(setup_device)
-        setup_device_resolved = _resolve_setup_device(setup_device)
+        setup_device_resolved = _resolve_setup_device(setup_device_policy)
         # 4. Assign the fully normalized specification atomically through the frozen
         # dataclass escape hatch so no partially initialized simulation is observable.
-        object.__setattr__(self, "design", design)
-        object.__setattr__(self, "material_grid", material_grid)
-        object.__setattr__(self, "sources", sources)
-        object.__setattr__(self, "monitors", monitors)
-        object.__setattr__(self, "boundaries", boundaries)
-        object.__setattr__(self, "resolution", resolution)
-        object.__setattr__(self, "grid", grid)
-        object.__setattr__(self, "time", time)
-        object.__setattr__(self, "plane_2d", plane_2d)
-        object.__setattr__(self, "polarization", polarization)
-        object.__setattr__(self, "grid_spec", grid_spec)
-        object.__setattr__(self, "run_time", run_time)
-        object.__setattr__(self, "setup_device_policy", setup_device_policy)
-        object.__setattr__(self, "setup_device_resolved", setup_device_resolved)
-        object.__setattr__(self, "normalize_source", normalize_source)
-        object.__setattr__(self, "raster_options", raster_options)
-        object.__setattr__(self, "coordinate_offset", tuple(float(v) for v in offset))
-        object.__setattr__(self, "_uses_realized_grid", uses_realized_grid)
+        coordinate_offset = tuple(float(v) for v in offset)
+        _uses_realized_grid = uses_realized_grid
+        values = locals()
+        for item in fields(self):
+            object.__setattr__(self, item.name, values[item.name])
 
     @property
     def size(self):
@@ -906,23 +900,7 @@ class Simulation:
         This is an advanced introspection method. Use :meth:`updated_copy` to
         construct a modified simulation instead of editing the returned values.
         """
-        return (
-            self.design,
-            self.material_grid,
-            self.sources,
-            self.monitors,
-            self.boundaries,
-            self.resolution,
-            self.grid,
-            self.time,
-            self.plane_2d,
-            self.polarization,
-            self.grid_spec,
-            self.run_time,
-            self.setup_device_policy,
-            self.normalize_source,
-            self.raster_options,
-        )
+        return tuple(getattr(self, item.name) for item in fields(self) if item.compare)
 
     def __eq__(self, other):
         # Compare canonical cache tokens so array content, not object identity, defines equality.
@@ -967,23 +945,15 @@ class Simulation:
         Replacement goes through the normal constructor validation and therefore
         produces independent compilation-cache identity when numerical inputs change.
         """
-        # Reject unknown replacement keys before reconstructing through the canonical constructor.
-        allowed = {
-            "design",
-            "material_grid",
-            "sources",
-            "monitors",
-            "boundaries",
-            "resolution",
-            "time",
-            "plane_2d",
-            "polarization",
-            "grid_spec",
-            "run_time",
-            "setup_device",
-            "normalize_source",
-            "raster_options",
+        values = {
+            item.name: getattr(self, item.name)
+            for item in fields(self)
+            if item.init and item.compare
         }
+        values["setup_device"] = self.setup_device_policy
+        del values["setup_device_policy"]
+        values["design"] = None if self.material_grid is not None else self.design
+        allowed = values.keys()
         unknown = set(changes) - allowed
         if unknown:
             raise TypeError(
@@ -999,23 +969,6 @@ class Simulation:
                         _shift_device_to_domain(value, offset, plane_2d=self.plane_2d)
                         for value in changes[name] or ()
                     )
-        # 3. Start from the current public specification and overlay validated changes so omitted values retain their normalized forms.
-        values = {
-            "design": None if self.material_grid is not None else self.design,
-            "material_grid": self.material_grid,
-            "sources": self.sources,
-            "monitors": self.monitors,
-            "boundaries": self.boundaries,
-            "resolution": self.resolution,
-            "time": self.time,
-            "plane_2d": self.plane_2d,
-            "polarization": self.polarization,
-            "grid_spec": self.grid_spec,
-            "run_time": self.run_time,
-            "setup_device": self.setup_device_policy,
-            "normalize_source": self.normalize_source,
-            "raster_options": self.raster_options,
-        }
         values.update(changes)
         if "design" in changes and "material_grid" not in changes:
             values["material_grid"] = None
@@ -1300,7 +1253,7 @@ class Simulation:
         # 2. Snapshot grid, run, and domain controls into immutable value objects, then
         # attach normalized sources, monitors, boundaries, and sharding configuration.
         return SimulationRequest(
-            RunSpec(
+            RunConfig(
                 dt=float(self.dt),
                 num_steps=requested_steps,
                 total_steps=int(self.num_steps),
@@ -1310,7 +1263,14 @@ class Simulation:
                 backend=str(backend),
                 cuda_schedule=cuda_schedule,
                 cuda_expected_runs=expected_runs,
-                sharding=token,
+                sharding=ShardingConfig(*token),
+                resolution=self.resolution,
+                plane_2d=self.plane_2d,
+                is_3d=self.is_3d,
+                polarization_2d=self.polarization,
+                metric_kind=self.grid.metric_kind_for(
+                    ("x", "y", "z") if self.is_3d else ("x", "y")
+                ),
             ),
             DomainSpec(
                 tuple(float(v) for v in self.size),  # type: ignore[arg-type]
@@ -1624,42 +1584,19 @@ class Simulation:
         steps = remaining if num_steps is None else int(num_steps)
         if not 0 < steps <= remaining:
             raise ValueError(f"num_steps must be in [1, {remaining}], got {steps}.")
-        if progress:
-            return run_simulation_with_progress(
-                self,
-                state,
-                num_steps=steps,
-                sharding=sharding,
-                backend=backend,
-                schedule=schedule,
-                expected_runs=expected_runs,
-                store_full_materials=bool(store_full_materials),
-                monitor_steps=remaining,
-                donate_state=bool(donate_state),
-                performance=bool(performance),
-                report_performance=bool(performance),
-            )
-
-        program = self.compile(
+        return run_simulation_program(
+            self,
+            state,
             num_steps=steps,
             sharding=sharding,
             backend=backend,
             schedule=schedule,
             expected_runs=expected_runs,
-            progress=False,
-        )
-        if state is None:
-            state = SimulationState.initial(program.grid, t=float(self.time[0]))
-        return run_simulation_program(
-            self,
-            program,
-            state,
-            progress=False,
             store_full_materials=bool(store_full_materials),
             monitor_steps=remaining,
             donate_state=bool(donate_state),
             performance=bool(performance),
-            report_performance=bool(performance),
+            progress=bool(progress),
         )
 
     def run(

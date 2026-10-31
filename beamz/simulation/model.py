@@ -28,17 +28,28 @@ ShardingToken: TypeAlias = tuple[
 
 
 @dataclass(frozen=True, slots=True)
-class RunSpec:
-    # This record is an immutable ownership boundary between flexible public input and
-    # deterministic compilation.
+class ShardingConfig:
+    enabled: bool = False
+    axis: Literal["auto", "z", "y", "x"] = "auto"
+    num_devices: int | None = None
+    backend: Literal["cpu", "gpu"] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RunConfig:
+    resolution: float
     dt: float
     num_steps: int
-    total_steps: int
-    t0: float
-    loop_kind: str
-    source_single_slab_dense: bool
-    sharding: ShardingToken
+    plane_2d: str
+    is_3d: bool
+    total_steps: int = 0
+    t0: float = 0.0
+    metric_kind: str = "isotropic_uniform"
+    polarization_2d: str = "tm"
+    loop_kind: str = "scan"
+    source_single_slab_dense: bool = False
     backend: str = "jax"
+    sharding: ShardingConfig = ShardingConfig()
     cuda_flags: int = 0
     cuda_graph_cache_capacity: int = 32
     cuda_storage_axes: tuple[int, int, int] = (0, 1, 2)
@@ -62,7 +73,7 @@ class DomainSpec:
 class SimulationRequest:
     # This record is an immutable ownership boundary between flexible public input and
     # deterministic compilation.
-    run: RunSpec
+    run: RunConfig
     domain: DomainSpec
     materials: MaterialGrid
     sources: tuple[object, ...]
@@ -151,10 +162,6 @@ class SimulationState(NamedTuple):
     polarization : tuple of array-like
         Complex auxiliary polarization arrays for occupied dispersive supports.
         Empty for nondispersive simulations. Preserved during continuation.
-    powers, timestamps, counts : array-like
-        Time-domain monitor accumulators and valid-sample counts.
-    freq_flux_re, freq_flux_im : array-like
-        Real and imaginary frequency-domain flux accumulators.
     dft_vec_re, dft_vec_im, dft_weight_sum : array-like
         Packed field-DFT accumulators and normalization weights.
     recorded_fields : tuple of array-like
@@ -195,11 +202,6 @@ class SimulationState(NamedTuple):
     hz: Any
     cpml_psi_h_terms: tuple[Any, ...]
     cpml_psi_e_terms: tuple[Any, ...]
-    powers: Any
-    timestamps: Any
-    counts: Any
-    freq_flux_re: Any
-    freq_flux_im: Any
     dft_vec_re: Any
     dft_vec_im: Any
     dft_weight_sum: Any
@@ -235,7 +237,6 @@ class SimulationState(NamedTuple):
         state is guaranteed to match the simulation's compiled lattice.
         """
 
-        empty2 = jnp.zeros((0, 0), dtype=jnp.float32)
         return cls(
             # Copies keep the compiled lattice reusable when JAX donates runtime buffers.
             ex=_copy_initial_field(fields.Ex),
@@ -246,11 +247,6 @@ class SimulationState(NamedTuple):
             hz=_copy_initial_field(fields.Hz),
             cpml_psi_h_terms=(),
             cpml_psi_e_terms=(),
-            powers=empty2,
-            timestamps=empty2,
-            counts=jnp.zeros((0,), dtype=jnp.int32),
-            freq_flux_re=empty2,
-            freq_flux_im=empty2,
             dft_vec_re=jnp.zeros((0,), dtype=jnp.float32),
             dft_vec_im=jnp.zeros((0,), dtype=jnp.float32),
             dft_weight_sum=jnp.zeros((0,), dtype=jnp.float32),
@@ -338,14 +334,6 @@ class CpmlTerm:
     b: jnp.ndarray
     inv_kappa: jnp.ndarray
     slab: CpmlPackedSlabSpec
-
-
-@dataclass(frozen=True, slots=True)
-class ShardingConfig:
-    enabled: bool = False
-    axis: Literal["auto", "z", "y", "x"] = "auto"
-    num_devices: int | None = None
-    backend: Literal["cpu", "gpu"] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -462,28 +450,6 @@ class ShardingLayout:
             "padded_shapes",
         ):
             object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
-
-
-@dataclass(frozen=True, slots=True)
-class RunConfig:
-    resolution: float
-    dt: float
-    num_steps: int
-    plane_2d: str
-    is_3d: bool
-    t0: float = 0.0
-    metric_kind: str = "isotropic_uniform"
-    polarization_2d: str = "tm"
-    loop_kind: str = "scan"
-    source_single_slab_dense: bool = False
-    backend: str = "jax"
-    sharding: ShardingConfig = ShardingConfig()
-    cuda_flags: int = 0
-    cuda_graph_cache_capacity: int = 32
-    cuda_storage_axes: tuple[int, int, int] = (0, 1, 2)
-    cuda_memory_policy: str = "auto"
-    cuda_schedule: str = "streamed"
-    cuda_expected_runs: int = 1
 
 
 @dataclass(frozen=True, slots=True, eq=False)

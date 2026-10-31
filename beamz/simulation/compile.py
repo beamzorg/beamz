@@ -41,9 +41,7 @@ from beamz.simulation.model import (
     DerivativeMetricPlan,
     MetallicPlan,
     RunConfig,
-    ShardingConfig,
     ShardingPlan,
-    ShardingToken,
     SimulationRequest,
     UpdateCoefficients,
 )
@@ -69,56 +67,30 @@ from .sharding import (
 
 @dataclass(frozen=True, slots=True)
 class CompiledProgramKey:
-    # Group these values because their positional and shape relationships form one
-    # invariant.
-    num_steps: int
-    total_steps: int
-    t0: float
-    dt: float
-    is_3d: bool
-    plane_2d: str
-    polarization_2d: str
-    loop_kind: str
-    source_single_slab_dense: bool
-    backend: str
-    cuda_flags: int
-    cuda_graph_cache_capacity: int
-    cuda_storage_axes: tuple[int, int, int]
-    sharding: ShardingToken
+    """Semantic input tokens plus the canonical immutable execution controls."""
+
+    run: RunConfig
+    domain: tuple[bool, str, str]
     materials: HashToken
     sources: tuple[HashToken, ...]
     monitors: tuple[HashToken, ...]
     boundaries: tuple[HashToken, ...]
     cuda_tuning_policy: tuple = ()
-    cuda_memory_policy: str = "auto"
-    cuda_schedule: str = "streamed"
-    cuda_expected_runs: int = 1
 
     @classmethod
     def from_request(cls, request: SimulationRequest) -> CompiledProgramKey:
-        # Reduce rich objects to semantic tokens; large arrays must not become key members.
+        # Arrays enter keys by content tokens; evolving field values never do.
         return cls(
-            request.run.num_steps,
-            request.run.total_steps,
-            request.run.t0,
-            request.run.dt,
-            request.domain.is_3d,
-            request.domain.plane_2d,
-            request.domain.polarization_2d,
-            request.run.loop_kind,
-            request.run.source_single_slab_dense,
-            request.run.backend,
-            request.run.cuda_flags,
-            request.run.cuda_graph_cache_capacity,
-            request.run.cuda_storage_axes,
-            request.run.sharding,
+            request.run,
+            (
+                request.domain.is_3d,
+                request.domain.plane_2d,
+                request.domain.polarization_2d,
+            ),
             cache_token(request.materials),
             tuple(cache_token(source) for source in request.sources),
             tuple(cache_token(monitor) for monitor in request.monitors),
             tuple(cache_token(boundary) for boundary in request.boundaries),
-            cuda_memory_policy=request.run.cuda_memory_policy,
-            cuda_schedule=request.run.cuda_schedule,
-            cuda_expected_runs=request.run.cuda_expected_runs,
         )
 
 
@@ -133,27 +105,30 @@ def _preparation_key(key: CompiledProgramKey):
         CUDA_FIELD_PAD_Y8,
     )
 
-    cuda_backend = key.backend in {"cuda_streamed", "cuda_mstep"}
+    run = key.run
+    cuda_backend = run.backend in {"cuda_streamed", "cuda_mstep"}
 
     return replace(
         key,
-        num_steps=0,
-        total_steps=0,
-        t0=0,
+        run=replace(
+            run,
+            num_steps=0,
+            total_steps=0,
+            t0=0,
+            cuda_schedule="streamed",
+            cuda_expected_runs=1,
+            backend="cuda_streamed" if cuda_backend else run.backend,
+            cuda_flags=run.cuda_flags
+            & (CUDA_BF16_PSI | CUDA_FIELD_PAD32 | CUDA_FIELD_PAD64 | CUDA_FIELD_PAD_Y8)
+            if cuda_backend
+            else run.cuda_flags,
+            cuda_memory_policy="auto",
+            cuda_graph_cache_capacity=0,
+            cuda_storage_axes=(0, 1, 2) if cuda_backend else run.cuda_storage_axes,
+        ),
         sources=(),
         monitors=(),
         cuda_tuning_policy=(),
-        cuda_schedule="streamed",
-        cuda_expected_runs=1,
-        backend="cuda_streamed" if cuda_backend else key.backend,
-        cuda_flags=key.cuda_flags
-        & (CUDA_BF16_PSI | CUDA_FIELD_PAD32 | CUDA_FIELD_PAD64 | CUDA_FIELD_PAD_Y8)
-        if cuda_backend
-        else key.cuda_flags,
-        cuda_memory_policy="auto",
-        cuda_graph_cache_capacity=0,
-        # Storage permutations are applied by the runtime to these canonical arrays.
-        cuda_storage_axes=(0, 1, 2) if cuda_backend else key.cuda_storage_axes,
     )
 
 
@@ -403,7 +378,7 @@ def _prepare_compilation(
     resolution = float(request.materials.resolution)
     dt = float(request.run.dt)
     num_steps = int(request.run.num_steps)
-    sharding_cfg = ShardingConfig(*request.run.sharding)
+    sharding_cfg = request.run.sharding
     sharding_layout = sharding.layout
     effective_sharding = (
         replace(
@@ -470,25 +445,15 @@ def _prepare_compilation(
         raise ValueError(
             "Invalid compiled loop kind. Use one of: scan, fori_loop."
         ) from exc
-    config = RunConfig(
+    config = replace(
+        request.run,
         resolution=resolution,
-        dt=dt,
-        num_steps=num_steps,
         plane_2d=request.domain.plane_2d,
-        is_3d=bool(request.domain.is_3d),
-        t0=float(request.run.t0),
+        is_3d=request.domain.is_3d,
         metric_kind=request.materials.metric_kind,
         polarization_2d=request.domain.polarization_2d,
         loop_kind=loop_kind,
-        source_single_slab_dense=bool(request.run.source_single_slab_dense),
-        backend=str(request.run.backend),
         sharding=effective_sharding,
-        cuda_flags=int(request.run.cuda_flags),
-        cuda_graph_cache_capacity=int(request.run.cuda_graph_cache_capacity),
-        cuda_storage_axes=request.run.cuda_storage_axes,
-        cuda_memory_policy=request.run.cuda_memory_policy,
-        cuda_schedule=request.run.cuda_schedule,
-        cuda_expected_runs=request.run.cuda_expected_runs,
     )
     return _CompileSetup(
         dt,
@@ -670,7 +635,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     vector = bloch_wavevector(
         request.boundaries, is_3d=request.domain.is_3d, plane_2d=request.domain.plane_2d
     )
-    if any(vector) and (request.run.backend != "jax" or request.run.sharding[0]):
+    if any(vector) and (request.run.backend != "jax" or request.run.sharding.enabled):
         raise ValueError(
             "Nonzero Bloch wavevectors require single-device JAX execution."
         )
@@ -693,7 +658,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             or any(isinstance(m, ModeMonitor) for m in request.monitors)
         ) and (
             request.run.backend not in {"jax", "cuda_streamed"}
-            or request.run.sharding[0]
+            or request.run.sharding.enabled
         ):
             raise ValueError(
                 "Tensor modal workflows require single-device JAX or streamed CUDA execution"
@@ -708,7 +673,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             raise ValueError(
                 "Dispersive mode sources and mode monitors are not yet supported; use plane-wave excitation and field/flux monitors."
             )
-        if request.run.backend != "jax" or request.run.sharding[0]:
+        if request.run.backend != "jax" or request.run.sharding.enabled:
             raise ValueError("Dispersive media require single-device JAX execution.")
         if request.materials.uses_full_permittivity:
             raise ValueError(
@@ -732,7 +697,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     )
     early_sharding = build_sharding_plan(
         metadata,
-        ShardingConfig(*request.run.sharding),
+        request.run.sharding,
         is_3d=request.domain.is_3d,
         aligned_components=True,
     )

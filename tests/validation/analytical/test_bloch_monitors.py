@@ -109,12 +109,6 @@ def test_complex_dft_and_recorder_preserve_both_quadratures():
         jnp.asarray(0),
         jnp.asarray(dt),
         jnp.asarray(dt),
-        state.ex,
-        state.ey,
-        state.ez,
-        state.hx,
-        state.hy,
-        state.hz,
     )
     result = MonitorResults.from_compiled_state(
         sim.monitors[0], program.monitors[0], observed, program.config
