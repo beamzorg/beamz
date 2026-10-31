@@ -15,6 +15,7 @@ from beamz.design._gds_decode import (
 from beamz.design._gds_decode import (
     polygons_by_layer as _polygons_by_layer,
 )
+from beamz.design.structures import Solid
 
 from ..schema import (
     Material,
@@ -40,7 +41,7 @@ def _region_polygons(
     level: Any,
     polygons_by_layer: Mapping[tuple[int, int], Any],
     unit_scale: float,
-) -> list[Polygon]:
+) -> list[Solid]:
     layer_expression = getattr(level, "layer", None)
     get_shapes = getattr(layer_expression, "get_shapes", None)
     if callable(get_shapes):
@@ -146,7 +147,7 @@ def _z_to_bias_profile(value: Any) -> tuple[np.ndarray, np.ndarray]:
     return z, bias
 
 
-def _offset_polygon(polygon: Polygon, distance: float) -> list[Polygon]:
+def _offset_polygon(polygon: Solid, distance: float) -> list[Solid]:
     if distance == 0.0:
         return [polygon]
     from shapely.geometry import Polygon as ShapelyPolygon

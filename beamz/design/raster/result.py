@@ -11,12 +11,11 @@ from typing import Any
 
 import numpy as np
 
-from beamz.design._material_layout import SUPPORTS
-from beamz.lattice import component_shapes
+from beamz.design._material_layout import CELL_TENSORS, material_fields, support_shapes
 
-from .schema import _CACHE_SCHEMA_VERSION, _ENGINE_VERSION
+from .schema import _CACHE_SCHEMA_VERSION, _ENGINE_VERSION, Grid
 
-_TENSORS = ("epsilon", "mu", "conductivity")
+_TENSORS = CELL_TENSORS
 _METADATA = {
     "cache_schema",
     "engine_version",
@@ -29,25 +28,9 @@ _METADATA = {
 }
 
 
-def _readonly(value: Any, *, copy: bool = False) -> np.ndarray:
-    array = np.array(value, copy=copy) if copy else np.asarray(value)
-    array.setflags(write=False)
-    return array
-
-
-def _yee_tensor_shapes(
-    cell_shape: tuple[int, int, int],
-) -> dict[str, tuple[int, ...]]:
-    shapes = component_shapes(cell_shape)
-    return {
-        **{source: shapes[component] for _, source, component, _, _ in SUPPORTS},
-        "epsilon_node": tuple(count + 1 for count in cell_shape),
-    }
-
-
 @dataclass(frozen=True, slots=True, init=False)
 class RasterResult:
-    grid_edges: tuple[np.ndarray, np.ndarray, np.ndarray]
+    grid: Grid
     smoothing: str
     yee_tensors: Mapping[str, np.ndarray]
     tensors: Mapping[str, np.ndarray]
@@ -59,7 +42,7 @@ class RasterResult:
         self,
         native: Any,
         *,
-        grid_edges: tuple[np.ndarray, np.ndarray, np.ndarray],
+        grid: Grid,
         smoothing: str,
     ):
         payload = dict(native.take_arrays())
@@ -67,7 +50,7 @@ class RasterResult:
         scene_hash = str(payload.pop("scene_hash"))
         tensors = {name: payload.pop(f"tensor_{name}") for name in _TENSORS}
         self._assign(
-            grid_edges,
+            grid,
             smoothing,
             payload,
             tensors,
@@ -78,7 +61,7 @@ class RasterResult:
 
     def _assign(
         self,
-        grid_edges: tuple[np.ndarray, np.ndarray, np.ndarray],
+        grid: Grid,
         smoothing: str,
         yee_tensors: Mapping[str, Any],
         tensors: Mapping[str, Any],
@@ -88,44 +71,28 @@ class RasterResult:
         cache_hit: bool,
     ) -> None:
         assign = object.__setattr__
-        edges = tuple(_readonly(values, copy=True) for values in grid_edges)
-        cell_shape = (len(edges[2]) - 1, len(edges[1]) - 1, len(edges[0]) - 1)
-        shapes = _yee_tensor_shapes(cell_shape)
-        unknown = set(yee_tensors) - set(shapes)
-        if unknown:
-            raise ValueError(
-                f"Native raster output has unknown fields: {sorted(unknown)}"
-            )
-        checked_yee_tensors = {}
-        for name, value in yee_tensors.items():
-            array = _readonly(value)
-            if (
-                array.ndim != 4
-                or array.shape[0] not in (1, 3, 6)
-                or array.shape[1:] != shapes[name]
-            ):
-                raise ValueError(
-                    f"{name} has shape {array.shape}; expected compact "
-                    f"(1|3|6, {', '.join(str(value) for value in shapes[name])})."
-                )
-            checked_yee_tensors[name] = array
-        assign(self, "grid_edges", edges)
+        cell_shape = grid.shape_zyx
+        assign(self, "grid", grid)
         assign(self, "smoothing", str(smoothing))
-        assign(self, "yee_tensors", MappingProxyType(checked_yee_tensors))
-        checked_tensors = {}
-        for name in _TENSORS:
-            array = _readonly(tensors[name])
-            if (
-                array.ndim != 4
-                or array.shape[0] not in (1, 3, 6)
-                or array.shape[1:] != cell_shape
-            ):
-                raise ValueError(
-                    f"{name} tensor has shape {array.shape}; expected compact "
-                    f"(1|3|6, {cell_shape[0]}, {cell_shape[1]}, {cell_shape[2]})."
-                )
-            checked_tensors[name] = array
-        assign(self, "tensors", MappingProxyType(checked_tensors))
+        for name, values, shapes in (
+            ("yee_tensors", yee_tensors, support_shapes(cell_shape, raster=True)),
+            (
+                "tensors",
+                {name: tensors[name] for name in _TENSORS},
+                dict.fromkeys(_TENSORS, cell_shape),
+            ),
+        ):
+            assign(
+                self,
+                name,
+                material_fields(
+                    values,
+                    shapes,
+                    compact=True,
+                    copy=False,
+                    label="native raster output",
+                ),
+            )
         assign(self, "diagnostics", MappingProxyType(dict(diagnostics)))
         assign(self, "scene_hash", str(scene_hash))
         assign(self, "cache_hit", bool(cache_hit))
@@ -144,7 +111,7 @@ class RasterResult:
         """Validate and freeze fields assembled outside the native raster call."""
         result = cls.__new__(cls)
         result._assign(
-            grid_edges,
+            Grid(*grid_edges),
             smoothing,
             yee_tensors,
             tensors,
@@ -153,6 +120,10 @@ class RasterResult:
             cache_hit=False,
         )
         return result
+
+    @property
+    def grid_edges(self):
+        return self.grid.edges
 
     @property
     def is_uniform(self) -> bool:
@@ -215,7 +186,7 @@ class RasterResult:
                 raise ValueError(f"Raster cache has unknown fields: {sorted(unknown)}")
             result = cls.__new__(cls)
             result._assign(
-                cached_edges,  # type: ignore[arg-type]
+                Grid(*cached_edges),
                 smoothing,
                 {
                     name.removeprefix("yee__"): values[name].copy()

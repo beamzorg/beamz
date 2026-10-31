@@ -11,7 +11,6 @@ from beamz.design._geometry import planar_geometry
 from beamz.design.materials import Material, MaterialProtocol
 from beamz.design.structures import (
     Polygon,
-    Ring,
 )
 
 _DEFAULT_DOMAIN_SIZE = object()
@@ -76,7 +75,10 @@ def _union_replacements(structures):
     ):
         mergeable = []
         for index, structure in group:
-            if not getattr(structure, "material", None) or isinstance(structure, Ring):
+            if (
+                not getattr(structure, "material", None)
+                or structure.shape_kind == "ring"
+            ):
                 continue
             polygon = planar_geometry(structure)
             if polygon is not None and polygon.is_valid:

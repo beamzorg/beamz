@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import operator
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 import numpy as np
 
 from beamz.design.grid import RectilinearGrid as Grid
 from beamz.design.materials import Material
+from beamz.design.structures import Polygon as _Polygon
+from beamz.design.structures import Solid
 
 from . import _native  # type: ignore[attr-defined]
 
@@ -30,110 +32,47 @@ def _integer(value: Any, name: str, *, minimum: int = 0) -> int:
     return result
 
 
-def _points(values: Iterable[Iterable[float]], dimensions: int) -> list[list[float]]:
-    result = [[float(value) for value in point] for point in values]
-    if any(len(point) != dimensions for point in result):
-        raise ValueError(f"Every point must contain {dimensions} coordinates.")
-    if not np.isfinite(result).all():
-        raise ValueError("Coordinates must be finite.")
-    return result
+def Polygon(exterior, holes=()):
+    return _Polygon(exterior, interiors=holes)
 
 
-@dataclass(frozen=True, slots=True)
-class Polygon:
-    exterior: tuple[tuple[float, float], ...]
-    holes: tuple[tuple[tuple[float, float], ...], ...] = ()
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "exterior": _points(self.exterior, 2),
-            "holes": [_points(hole, 2) for hole in self.holes],
-        }
+def Box(minimum, maximum):
+    return Solid("box", bounds=(minimum, maximum))
 
 
-@dataclass(frozen=True, slots=True)
-class Box:
-    minimum: tuple[float, float, float]
-    maximum: tuple[float, float, float]
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "type": "box",
-            "bounds": {
-                "min": _points((self.minimum,), 3)[0],
-                "max": _points((self.maximum,), 3)[0],
-            },
-        }
+def Sphere(center, radius):
+    return Solid("sphere", position=center, radius=radius)
 
 
-@dataclass(frozen=True, slots=True)
-class Sphere:
-    center: tuple[float, float, float]
-    radius: float
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "type": "sphere",
-            "center": _points((self.center,), 3)[0],
-            "radius": float(self.radius),
-        }
+def Cylinder(center, radius, z_min, z_max):
+    return Solid(
+        "cylinder",
+        position=(*center, z_min),
+        z=z_min,
+        radius=radius,
+        depth=z_max - z_min,
+    )
 
 
-@dataclass(frozen=True, slots=True)
-class Cylinder:
-    center: tuple[float, float]
-    radius: float
-    z_min: float
-    z_max: float
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "type": "cylinder",
-            "center": _points((self.center,), 2)[0],
-            "radius": float(self.radius),
-            "z_min": float(self.z_min),
-            "z_max": float(self.z_max),
-        }
+def ExtrudedPolygon(polygon, z_min, z_max):
+    return _extrude_polygon(polygon, z_min, z_max)
 
 
-@dataclass(frozen=True, slots=True)
-class ExtrudedPolygon:
-    polygon: Polygon
-    z_min: float
-    z_max: float
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "type": "extruded_polygon",
-            "polygon": self.polygon.to_dict(),
-            "z_min": float(self.z_min),
-            "z_max": float(self.z_max),
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class TaperedExtrudedPolygon:
-    polygon: Polygon
-    z_min: float
-    z_max: float
-    sidewall_angle_degrees: float
-    width_to_z: float = 0.0
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "type": "tapered_extruded_polygon",
-            "polygon": self.polygon.to_dict(),
-            "z_min": float(self.z_min),
-            "z_max": float(self.z_max),
-            "sidewall_angle_degrees": float(self.sidewall_angle_degrees),
-            "width_to_z": float(self.width_to_z),
-        }
+def TaperedExtrudedPolygon(
+    polygon, z_min, z_max, sidewall_angle_degrees, width_to_z=0.0
+):
+    return _extrude_polygon(polygon, z_min, z_max, sidewall_angle_degrees, width_to_z)
 
 
 def _extrude_polygon(polygon, z_min, z_max, sidewall=0.0, width_to_z=0.0):
-    if sidewall != 0.0:
-        return TaperedExtrudedPolygon(polygon, z_min, z_max, sidewall, width_to_z)
-    return ExtrudedPolygon(polygon, z_min, z_max)
+    return _Polygon(
+        polygon.vertices,
+        interiors=polygon.interiors,
+        z=z_min,
+        depth=z_max - z_min,
+        sidewall_angle=sidewall,
+        width_to_z=width_to_z,
+    )
 
 
 def _mesh_arrays(vertices: Any, triangles: Any) -> tuple[np.ndarray, np.ndarray]:
@@ -210,7 +149,7 @@ class Mesh:
         }
 
 
-Geometry = Box | Sphere | Cylinder | ExtrudedPolygon | TaperedExtrudedPolygon | Mesh
+Geometry = Solid | Mesh
 
 
 @dataclass(frozen=True, slots=True)

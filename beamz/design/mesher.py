@@ -73,17 +73,12 @@ class _SpacingProfile:
             np.minimum(left + slope * (x - lower), right + slope * (upper - x)),
         )
         h = np.maximum(h, np.finfo(float).tiny)
-        density = np.zeros(x.size, dtype=np.float64)
-        for index, (x0, x1, h0, h1) in enumerate(
-            zip(x[:-1], x[1:], h[:-1], h[1:], strict=True), start=1
-        ):
-            delta = x1 - x0
-            gradient = (h1 - h0) / delta
-            if abs(gradient) <= 32.0 * np.finfo(float).eps:
-                integral = delta / h0
-            else:
-                integral = np.log(h1 / h0) / gradient
-            density[index] = density[index - 1] + integral
+        delta = np.diff(x)
+        gradient = np.diff(h) / delta
+        linear = abs(gradient) > 32.0 * np.finfo(float).eps
+        integral = delta / h[:-1]
+        np.divide(np.log(h[1:] / h[:-1]), gradient, out=integral, where=linear)
+        density = np.r_[0.0, np.cumsum(integral)]
         return cls(x, h, density)
 
     @property
@@ -92,27 +87,30 @@ class _SpacingProfile:
 
     def coordinate_at_density(self, density: np.ndarray) -> np.ndarray:
         values = np.asarray(density, dtype=np.float64)
-        result = np.empty_like(values)
-        for output_index, target in np.ndenumerate(values):
-            if target <= 0.0:
-                result[output_index] = self.coordinates[0]
-                continue
-            if target >= self.cumulative_density[-1]:
-                result[output_index] = self.coordinates[-1]
-                continue
-            segment = int(
-                np.searchsorted(self.cumulative_density, target, side="right") - 1
-            )
-            x0, x1 = self.coordinates[segment : segment + 2]
-            h0, h1 = self.spacings[segment : segment + 2]
-            local_density = target - self.cumulative_density[segment]
-            gradient = (h1 - h0) / (x1 - x0)
-            if abs(gradient) <= 32.0 * np.finfo(float).eps:
-                offset = local_density * h0
-            else:
-                offset = h0 * np.expm1(gradient * local_density) / gradient
-            result[output_index] = x0 + offset
-        return result
+        clipped = np.clip(values, 0.0, self.cumulative_density[-1])
+        segments = np.clip(
+            np.searchsorted(self.cumulative_density, clipped, side="right") - 1,
+            0,
+            self.coordinates.size - 2,
+        )
+        x0, x1 = self.coordinates[segments], self.coordinates[segments + 1]
+        h0, h1 = self.spacings[segments], self.spacings[segments + 1]
+        local_density = clipped - self.cumulative_density[segments]
+        gradient = (h1 - h0) / (x1 - x0)
+        linear = abs(gradient) > 32.0 * np.finfo(float).eps
+        offset = np.asarray(local_density * h0)
+        np.divide(
+            h0 * np.expm1(gradient * local_density), gradient, out=offset, where=linear
+        )
+        return np.where(
+            values <= 0.0,
+            self.coordinates[0],
+            np.where(
+                values >= self.cumulative_density[-1],
+                self.coordinates[-1],
+                x0 + offset,
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,6 +281,16 @@ class _GradedMesher:
                 "max_spacings must contain one value per coordinate interval."
             )
 
+        def check_budget(counts, reason):
+            self._check_cell_budget(
+                counts,
+                max_cells=max_cells,
+                axis_name=axis_name,
+                coords=coords,
+                caps=caps,
+                reason=reason,
+            )
+
         theoretical_slope = 2.0 * (self.max_scale - 1.0) / (self.max_scale + 1.0)
         slope = theoretical_slope * self.transition_safety
         target_tolerance = 128.0 * np.finfo(float).eps
@@ -292,14 +300,7 @@ class _GradedMesher:
             initial_counts = [
                 _cell_count(profile.total_density) for profile in profiles
             ]
-            self._check_cell_budget(
-                initial_counts,
-                max_cells=max_cells,
-                axis_name=axis_name,
-                coords=coords,
-                caps=caps,
-                reason="initial graded-spacing envelope",
-            )
+            check_budget(initial_counts, "initial graded-spacing envelope")
             counts = np.asarray(initial_counts, dtype=np.int64)
             # Keep a mandatory interval as one cell when it already satisfies its
             # hard cap. Its profile density can be just above one because the
@@ -308,14 +309,7 @@ class _GradedMesher:
             interval_lengths = np.diff(coords)
             counts[interval_lengths <= caps * (1.0 + target_tolerance)] = 1
             for _refinement_pass in range(self.max_refinement_passes):
-                self._check_cell_budget(
-                    counts,
-                    max_cells=max_cells,
-                    axis_name=axis_name,
-                    coords=coords,
-                    caps=caps,
-                    reason="neighbor-ratio refinement",
-                )
+                check_budget(counts, "neighbor-ratio refinement")
                 edges, owners = self._realize(profiles, counts)
                 widths = np.diff(edges)
                 target_limits = caps[owners]
@@ -328,14 +322,7 @@ class _GradedMesher:
                         counts[interval] = _refined_cell_count(
                             int(counts[interval]), required_factor
                         )
-                    self._check_cell_budget(
-                        counts,
-                        max_cells=max_cells,
-                        axis_name=axis_name,
-                        coords=coords,
-                        caps=caps,
-                        reason="hard-spacing refinement",
-                    )
+                    check_budget(counts, "hard-spacing refinement")
                     continue
                 if widths.size < 2:
                     return edges
@@ -367,14 +354,7 @@ class _GradedMesher:
                     counts[interval] = _refined_cell_count(
                         counts[interval], required_factor
                     )
-                self._check_cell_budget(
-                    counts,
-                    max_cells=max_cells,
-                    axis_name=axis_name,
-                    coords=coords,
-                    caps=caps,
-                    reason="neighbor-ratio refinement",
-                )
+                check_budget(counts, "neighbor-ratio refinement")
             slope *= 0.65
 
         raise RuntimeError(

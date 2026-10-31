@@ -121,7 +121,7 @@ def _normalize_domain(domain, size):
 
 def _structure_to_domain(structure, offset, domain_size):
     # Clip infinite boxes to the finite simulation domain before shifting centered geometry.
-    if isinstance(structure, Box):
+    if structure.shape_kind == "box":
         if any(not np.isfinite(v) for v in structure.size):
             structure = Box(
                 center=structure.center,

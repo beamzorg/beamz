@@ -25,7 +25,7 @@ from beamz.design._gds_decode import (
 from beamz.design._geometry import polygon_rings
 from beamz.design.core import Design
 from beamz.design.materials import Material
-from beamz.design.structures import Box, Polygon, Rectangle
+from beamz.design.structures import Polygon, Rectangle
 from beamz.devices.ports import Port
 
 Layer = tuple[int, int]
@@ -565,7 +565,7 @@ def export_gds(
             and getattr(structure, "material", None) not in layer_map
         ):
             continue
-        if isinstance(structure, Box):
+        if structure.shape_kind == "box":
             structure = structure.to_rectangle()
         material_key = _material_key(structure)
         if material_key is None:
