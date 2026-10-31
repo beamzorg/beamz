@@ -21,6 +21,7 @@ class PublicConfigCase:
 
     name: str
     factory: Callable[[], Any]
+    configuration_type: type | None = None
 
 
 CONSTANT_EXPORTS = (
@@ -79,17 +80,18 @@ CONFIGURATION_CASES = (
         ),
     ),
     PublicConfigCase("Design", lambda: bz.Design(width=2.0, height=2.0)),
-    PublicConfigCase("Box", bz.Box),
-    PublicConfigCase("Rectangle", bz.Rectangle),
-    PublicConfigCase("Circle", bz.Circle),
-    PublicConfigCase("Ring", bz.Ring),
-    PublicConfigCase("CircularBend", bz.CircularBend),
+    PublicConfigCase("Box", bz.Box, bz.design.Solid),
+    PublicConfigCase("Rectangle", bz.Rectangle, bz.design.Solid),
+    PublicConfigCase("Circle", bz.Circle, bz.design.Solid),
+    PublicConfigCase("Ring", bz.Ring, bz.design.Solid),
+    PublicConfigCase("CircularBend", bz.CircularBend, bz.design.Solid),
     PublicConfigCase(
         "Polygon",
         lambda: bz.Polygon(vertices=((0.0, 0.0), (1.0, 0.0), (0.0, 1.0))),
+        bz.design.Solid,
     ),
-    PublicConfigCase("Taper", bz.Taper),
-    PublicConfigCase("Sphere", bz.Sphere),
+    PublicConfigCase("Taper", bz.Taper, bz.design.Solid),
+    PublicConfigCase("Sphere", bz.Sphere, bz.design.Solid),
     PublicConfigCase(
         "ModeSource",
         lambda: bz.ModeSource(

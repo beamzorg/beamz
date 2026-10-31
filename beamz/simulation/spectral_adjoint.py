@@ -32,7 +32,7 @@ _COMPONENTS = ("ex", "ey", "ez", "hx", "hy", "hz")
 
 
 class SpectralAdjoint:
-    """Internal backend bound to a validated fixed-grid TopologyProblem."""
+    """Internal backend bound to a validated fixed-grid CompiledDesignProblem."""
 
     def __init__(self, problem, reduce_objective, *, decay_tolerance):
         self.problem = problem

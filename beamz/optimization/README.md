@@ -141,7 +141,7 @@ def transmission(data):
     return jnp.mean(jnp.abs(outgoing / incoming) ** 2)
 
 
-optimizer = opt.AdamOptimizer(
+optimizer = opt.Optimizer(
     design=design,
     learning_rate=0.1,
 )
@@ -202,8 +202,8 @@ simulation = result.to_simulation()
 By default, retain scalar history and the latest parameters, gradient, and optimizer
 state. Set `store_full_results=True` to retain parameter/gradient snapshots.
 `checkpoint_every=5` saves every five updates and at the final update; callbacks
-receive `callback(result)`. Both workflows share the same result and checkpoint
-format. The two checkpoint formats previously introduced on this branch are
+receive `callback(result)`. Rectangular, extruded, volumetric, and arbitrary-mask regions share this result
+and checkpoint format. The two checkpoint formats previously introduced on this branch are
 rejected explicitly; rerun the examples to generate current checkpoints.
 Numerical fingerprint 6 also rejects earlier histories: the current 3D mode solver
 searches additional eigenmode candidates before applying TE/TM preference,
@@ -215,30 +215,64 @@ See the [mode-converter notebook](../../examples/notebooks/topology_mode_convert
 and [scheduled WDM notebook](../../examples/notebooks/topology_wdm_4channel.ipynb)
 for complete inverse-design examples.
 
-## Lower-level control
+## Arbitrary masks and optimizer control
 
-`TopologyProblem` binds a `TopologySpec` mask to a simulation and a composable
-modal objective. Its existing API remains available:
+`MaskedDesignRegion` describes full-grid boolean masks. It uses the same
+`InverseDesign` construction, compiled density map, and `Optimizer` as rectangular
+regions. The outside raster and outside-mask latent parameters stay fixed.
 
 ```python
-problem = opt.TopologyProblem(
+region = opt.MaskedDesignRegion(
+    region_mask=mask,  # NumPy bool array in material-grid order
+    pixel_size=simulation.resolution,
+    eps_bounds=(1, 4),
+    filter_radius=150e-9,
+    projection_type="heaviside",  # also "ssp" or "identity"
+)
+design = opt.InverseDesign(
     simulation,
-    topology,  # TopologySpec containing the design mask and optimizer settings
-    opt.ModePower("output", reference_monitor="input"),
+    region,
+    objective=opt.ModePower("output", reference_monitor="input"),
     gradient_backend="autodiff",
 )
-result = problem.run(steps=20, checkpoint="results/topology.npz")
-geometry = problem.export_design(result)
+optimizer = opt.Optimizer(
+    design,
+    learning_rate=0.04,
+    method="adam",  # or "sgd"
+    schedule=opt.OptimizationSchedule(beta=opt.LinearSchedule(1, 8, 20)),
+    evaluate_after=True,
+)
+partial = optimizer.run(steps=20, stop_after=8, checkpoint="results/masked.npz")
+result = optimizer.run(steps=20, resume=optimizer.load_result("results/masked.npz"))
+geometry = result.export_design()
 ```
 
-`ModePower` and `SoftMinModePower` combine using arithmetic, for example
-`transmission - 0.2 * reflection`. `autodiff.py`, `projections.py`, and
-`polygonize.py` contain the density transforms, SSP projection, and geometry export
-helpers for custom loops.
+A built-in `objective` is optional on the design; a user callable can instead be
+passed to `optimizer.run(objective, steps=...)`. `ModePower` and `SoftMinModePower`
+remain composable, for example `transmission - 0.2 * reflection`. Direct
+`design.value`, `value_and_grad`, and `spectra` evaluate a design's bound modal
+objective; user callables use `design.make_objective_fn` and `jax.value_and_grad`.
+Both share the same compiled material map, source/monitor binding, and gradient
+backend. Custom penalties apply after the region's physical density transforms.
+
+`evaluate_after=False` retains pre-update scores without a second forward solve
+(the default); enable it to record the actual post-update objective as well.
+`stop_after` pauses at an absolute completed-step count and pins the total `steps`
+horizon for that result. Resuming must retain that horizon. Without `stop_after`,
+the target number of updates may be extended, while the explicit schedule retains
+its own fixed horizon. Checkpoint identity includes the optimizer method,
+learning rate, objective/closures, penalties, schedules, and physical design.
+
+The former `TopologyProblem.run` and `TopologySpec`/`TopologyState` update workflow
+has been removed. Configure spatial transforms on the region, continuation on
+`OptimizationSchedule`, and Adam/SGD on `Optimizer`. Evolving parameters and
+optimizer state live only in `InverseDesignResult`. `autodiff.py`,
+`projections.py`, `topology.py`, and `polygonize.py` retain mathematical helpers for
+custom loops, including external optimizers that consume `value_and_grad`.
 
 ## Export topology to GDS
 
-Both workflows and their results accept the same geometry controls:
+All designs and their results accept the same geometry controls:
 
 ```python
 from beamz import Material
@@ -265,7 +299,7 @@ export_gds(
   the representation without recovering missing physical information. It does
   not change the FDTD mesh or smooth the density with an additional filter.
 
-All density arrays use `(y, x)` order. For `density_to_polygons` and
+Planar density arrays use `(y, x)` order; volumetric arrays use `(z, y, x)`. For `density_to_polygons` and
 `density_to_shapely_geometry`, `x0, y0` are **cell-edge origins**, while density
 values are at cell centers. `dx, dy` are the physical cell sizes. Cropped arrays
 need their true edge origin; retain surrounding samples when external material
@@ -273,8 +307,8 @@ context matters. `region_mask` clips a full density field to an exact union of
 cells, with the exterior values supplying interpolation context.
 
 To hold a waveguide connection during optimization, pass disjoint boolean
-`fixed_solid` and `fixed_void` arrays to `TopologyDesignRegion` or `TopologySpec`.
-Region arrays have `params_shape`; spec arrays have `region_mask.shape` and must
+`fixed_solid` and `fixed_void` arrays to `TopologyDesignRegion` or `MaskedDesignRegion`.
+Region arrays have `params_shape`; mask-region arrays have `region_mask.shape` and must
 lie inside that region. Fixed cells are applied before filtering and after
 projection, have zero gradients with respect to their parameters, and retain
 exact footprints during geometry export. They do not guarantee connectivity
@@ -301,12 +335,12 @@ contours alone do not establish better performance.
 ### Shared internal density and modal contracts
 
 The masked topology and design-region conic filters share radial kernel and
-convolution mechanics. Their boundary contracts remain distinct: `TopologySpec`
+convolution mechanics. Their boundary contracts remain distinct: `MaskedDesignRegion`
 rounds physical radius to integer cells and uses edge padding with fixed-structure
 context; `FilterProject` rounds up and uses its configured reflect/edge padding.
 Host kernel construction and the volumetric FFT specialization are retained.
 
-Both optimization facades now use one density export overlay, with exact mask
+All regions use one density export overlay, with exact mask
 clipping and fixed footprints, planar extrusion, and independent volumetric
 layers. Contour holes and nested islands use explicit pairwise even/odd geometry
 composition rather than a separate containment tree. The frozen notebook

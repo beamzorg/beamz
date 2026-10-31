@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from beamz.optimization import TopologyProblem
+from beamz.optimization import InverseDesign
 from tests.topology_case import make_problem
 from tests.validation.invariants.test_spectral_adjoint_gradients import (
     perturbed_density,
@@ -31,9 +31,9 @@ def test_broadband_basis_preserves_full_gradient(polarization):
         ("frequency", "adjoint", "frequency"),
         ("grouped", "adjoint", "auto"),
     ]:
-        problem = TopologyProblem(
+        problem = InverseDesign(
             simulation,
-            base.topology,
+            base.design_region,
             base.objective,
             gradient_backend=backend,
             adjoint_source_grouping=grouping,

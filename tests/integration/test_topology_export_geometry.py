@@ -11,7 +11,6 @@ from beamz.optimization import (
     InverseDesign,
     InverseDesignResult,
     TopologyDesignRegion,
-    TopologyProblem,
 )
 from tests.topology_case import make_problem
 
@@ -60,12 +59,16 @@ def test_workflow_exports_pin_port_footprints(problem, mode, spacing):
     assert geometry.covers(box(1.99e-6, 1.61e-6, 2.19e-6, 2.39e-6))
     assert geometry.intersection(box(2e-6, 1.2e-6, 2.2e-6, 1.6e-6)).area < 1e-25
 
-    global_solid = np.zeros_like(problem.topology.region_mask)
+    global_solid = np.zeros_like(problem.design_region.region_mask)
     global_void = global_solid.copy()
     global_solid[12:28, 20:40] = solid
     global_void[12:28, 20:40] = void
-    spec = replace(problem.topology, fixed_solid=global_solid, fixed_void=global_void)
-    lower = TopologyProblem(problem.simulation, spec, problem.objective)
+    spec = replace(
+        problem.design_region, fixed_solid=global_solid, fixed_void=global_void
+    )
+    lower = InverseDesign(
+        problem.simulation, spec, problem.objective, gradient_backend="autodiff"
+    )
     full_params = np.full(spec.region_mask.shape, 0.8)
     result = InverseDesignResult(
         lower, (full_params,), None, fingerprint=lower.fingerprint, _initial_beta=1
@@ -80,6 +83,6 @@ def test_workflow_exports_pin_port_footprints(problem, mode, spacing):
 
 
 def test_topology_fixed_cells_must_be_inside_region(problem):
-    mask = np.ones_like(problem.topology.region_mask)
+    mask = np.ones_like(problem.design_region.region_mask)
     with pytest.raises(ValueError, match="inside"):
-        replace(problem.topology, fixed_solid=mask)
+        replace(problem.design_region, fixed_solid=mask)

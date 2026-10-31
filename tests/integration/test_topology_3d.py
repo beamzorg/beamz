@@ -6,7 +6,7 @@ import jax
 import numpy as np
 import pytest
 
-from beamz.optimization import AdamOptimizer
+from beamz.optimization import Optimizer
 from tests.topology_3d_case import make_3d_design, mode_power
 
 
@@ -62,7 +62,7 @@ def test_ordinary_modal_analysis_and_resume(tmp_path):
             results.mode("output").amps.sel(direction=direction, mode_index=0).values
         )
         np.testing.assert_allclose(actual, expected, rtol=3e-5, atol=1e-7)
-    optimizer = AdamOptimizer(
+    optimizer = Optimizer(
         design=design,
         learning_rate=0.05,
     )
@@ -79,7 +79,7 @@ def test_ordinary_modal_analysis_and_resume(tmp_path):
     assert all(s.depth == pytest.approx(0.4e-6) for s in exported.structures[-2:])
     # The native material-grid view contains the same pattern throughout z.
     patch = np.asarray(full.to_simulation()._material_grid().permittivity)[
-        design._slices
+        design._problem._density_map.slices
     ]
     np.testing.assert_allclose(
         patch, np.broadcast_to(patch[0], patch.shape), rtol=0, atol=0

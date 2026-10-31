@@ -1,6 +1,8 @@
 """Topology design regions, initialization, and transforms in metre units."""
 
 from dataclasses import dataclass, field
+from functools import partial
+from types import MappingProxyType
 from typing import Any
 
 import jax.numpy as jnp
@@ -13,8 +15,9 @@ from .autodiff import (
     _conic_filter,
     _conic_kernel,
     apply_fixed_density,
+    transform_density,
 )
-from .projections import smoothed_heaviside
+from .projections import smoothed_heaviside, validate_projection_options
 
 
 @dataclass(frozen=True)
@@ -279,11 +282,63 @@ class TopologyDesignRegion(Specification):
             params = apply_fixed_density(params, self.fixed_solid, self.fixed_void)
         return params
 
+    def bind(self, simulation, grid):
+        """Resolve a region once onto the simulation's canonical material lattice."""
+        center = np.asarray(self.center) + np.asarray(simulation.coordinate_offset)
+        shape, dl = grid.material_grid.shape, simulation.resolution
+        ndim = len(shape)
+        if self.parameterization == "volumetric" and ndim != 3:
+            raise ValueError("Volumetric design regions require a 3D simulation.")
+        sizes = np.asarray(self.size[:ndim])
+        if ndim == 3 and (not np.isfinite(sizes[2]) or sizes[2] <= 0):
+            raise ValueError("A 3D design region requires finite positive thickness.")
+        low, counts = (center[:ndim] - sizes / 2) / dl, sizes / dl
+        if not (
+            np.allclose(low, np.round(low), rtol=0, atol=1e-6)
+            and np.allclose(counts, np.round(counts), rtol=0, atol=1e-6)
+        ):
+            raise ValueError("Design-region bounds must align to the simulation grid.")
+        starts, counts = (
+            np.round(low).astype(int)[::-1],
+            np.round(counts).astype(int)[::-1],
+        )
+        if np.any(starts < 0) or np.any(starts + counts > shape):
+            raise ValueError("The design region must lie inside the simulation.")
+        slices = tuple(slice(a, a + n) for a, n in zip(starts, counts, strict=True))
+        mask = np.zeros(shape, dtype=bool)
+        mask[slices] = True
+        mask.setflags(write=False)
+        # Preserve exact snapped cell edges, avoiding one-ulp seams at fixed guides.
+        origin = [
+            slices[-1].start * dl,
+            slices[-2].start * dl,
+            float(center[2] - sizes[2] / 2) if ndim == 3 else 0.0,
+        ]
+        depth = self.size[2] if ndim == 3 else 0.0
+        return DensityParameterization(
+            self.params_shape,
+            self.pixel_size,
+            self.eps_bounds,
+            self.material_density,
+            self.fixed_solid,
+            self.fixed_void,
+            mask,
+            slices,
+            configuration=self,
+            geometry=dict(
+                origin=tuple(origin),
+                depth=depth,
+                layer_depth=self.pixel_size
+                if self.parameterization == "volumetric"
+                else depth,
+            ),
+        )
+
     def eps_values(self, params, *, beta=None):
         low, high = self.eps_bounds
         return low + (high - low) * self.material_density(params, beta=beta)
 
-    def penalty_value(self, params, *, beta=None):
+    def penalty_value(self, params, *, beta=None, density_map=None):
         if not self.penalties:
             return 0.0
         density = (
@@ -292,6 +347,148 @@ class TopologyDesignRegion(Specification):
             else self.material_density(params, beta=beta)
         )
         return sum(penalty(density, self.pixel_size) for penalty in self.penalties)
+
+
+@dataclass(frozen=True)
+class MaskedDesignRegion(Specification):
+    """Arbitrary optimizable cells on the simulation's material grid.
+
+    The full-grid parameters retain their outside-mask values during updates.
+    Conic/morphology filters round radius to cells and use edge padding with
+    fixed high-index geometry as boundary context. This differs deliberately
+    from a rectangular FilterProject's reflect padding and rounded-up radius.
+    Fixed solid/void cells must lie inside the mask; export clips to its exact
+    cell union. Pixel size must equal the FDTD resolution for this region kind.
+    """
+
+    region_mask: Any
+    pixel_size: float
+    eps_bounds: tuple[float, float] = (1.0, 12.0)
+    filter_radius: float = 0.0
+    projection_eta: float = 0.5
+    projection_type: str = "heaviside"
+    ssp_smoothing_radius: float = 0.55
+    filter_type: str = "conic"
+    morphology_operation: str = "openclose"
+    morphology_smooth_tau: float = 0.01
+    fixed_solid: Any = field(default=None, repr=False, compare=False)
+    fixed_void: Any = field(default=None, repr=False, compare=False)
+    initialization_spec: Any = UniformInitializationSpec()
+    penalties: tuple = ()
+    penalty_input: str = field(default="density", metadata={"beamz_cache": False})
+
+    def __post_init__(self):
+        from beamz.devices._immutable import readonly_array
+
+        mask = readonly_array(self.region_mask, dtype=bool)
+        if mask.ndim not in (2, 3) or not np.any(mask):
+            raise ValueError(
+                "Topology mask must be nonempty and two- or three-dimensional."
+            )
+        if not np.isfinite(self.pixel_size) or self.pixel_size <= 0:
+            raise ValueError("pixel_size must be finite and positive.")
+        if (
+            len(self.eps_bounds) != 2
+            or not np.isfinite(self.eps_bounds).all()
+            or not 0 < self.eps_bounds[0] < self.eps_bounds[1]
+        ):
+            raise ValueError("Require finite 0 < eps_bounds[0] < eps_bounds[1].")
+        if not np.isfinite(self.filter_radius) or self.filter_radius < 0:
+            raise ValueError("filter_radius must be finite and nonnegative.")
+        if not 0 < self.projection_eta < 1:
+            raise ValueError("projection_eta must lie strictly between zero and one.")
+        validate_projection_options(self.projection_type, self.ssp_smoothing_radius)
+        if not hasattr(self.initialization_spec, "create_parameters"):
+            raise TypeError(
+                "initialization_spec must provide create_parameters(shape)."
+            )
+        if self.penalty_input not in ("density", "parameters") or any(
+            not callable(p) for p in self.penalties
+        ):
+            raise ValueError(
+                "Use callable penalties and penalty_input=density or parameters."
+            )
+        solid, void = fixed_density_masks(self.fixed_solid, self.fixed_void, mask.shape)
+        if any(p is not None and np.any(p & ~mask) for p in (solid, void)):
+            raise ValueError("Fixed density cells must lie inside region_mask.")
+        object.__setattr__(self, "region_mask", mask)
+        object.__setattr__(self, "fixed_solid", solid)
+        object.__setattr__(self, "fixed_void", void)
+        object.__setattr__(self, "eps_bounds", tuple(self.eps_bounds))
+        object.__setattr__(self, "penalties", tuple(self.penalties))
+
+    @property
+    def params_shape(self):
+        return self.region_mask.shape
+
+    @property
+    def initial_parameters(self):
+        values = self.initialization_spec.create_parameters(self.params_shape)
+        values = np.where(self.region_mask, values, 0).astype(np.float32)
+        self.check_params(values)
+        return values
+
+    def check_params(self, params):
+        check_density(params, self.params_shape, "Parameters")
+
+    def bind(self, simulation, grid):
+        if self.region_mask.shape != grid.material_grid.shape:
+            raise ValueError("Topology mask must match the simulation material grid.")
+        if not np.isclose(self.pixel_size, simulation.resolution, rtol=1e-10, atol=0):
+            raise ValueError("Topology and simulation resolution must agree.")
+        if self.region_mask.ndim == 3 and (
+            self.filter_radius or self.projection_type == "ssp"
+        ):
+            raise ValueError(
+                "3D masked regions require zero filter radius and no SSP; use TopologyDesignRegion for 3D transforms."
+            )
+        low, high = self.eps_bounds
+        context = np.asarray(grid.material_grid.permittivity) >= low + 0.9 * (
+            high - low
+        )
+        context &= ~self.region_mask
+        context.setflags(write=False)
+        transform = partial(
+            transform_density,
+            mask=self.region_mask,
+            eta=self.projection_eta,
+            radius=int(round(self.filter_radius / self.pixel_size)),
+            filter_type=self.filter_type,
+            morphology_operation=self.morphology_operation,
+            morphology_tau=self.morphology_smooth_tau,
+            fixed_structure_mask=context,
+            projection_type=self.projection_type,
+            ssp_smoothing_radius=self.ssp_smoothing_radius,
+            fixed_solid=self.fixed_solid,
+            fixed_void=self.fixed_void,
+        )
+        return DensityParameterization(
+            self.params_shape,
+            self.pixel_size,
+            self.eps_bounds,
+            transform,
+            self.fixed_solid,
+            self.fixed_void,
+            self.region_mask,
+            configuration=self,
+            context=context,
+            geometry=dict(
+                origin=grid.material_grid.origin,
+                background=self.region_mask,
+                region_mask=self.region_mask,
+            ),
+        )
+
+    def penalty_value(self, params, *, beta=None, density_map=None):
+        if not self.penalties:
+            return 0.0
+        assert density_map is not None
+        values = (
+            params
+            if self.penalty_input == "parameters"
+            else density_map.physical(params, beta)
+        )
+        return sum(p(values, self.pixel_size) for p in self.penalties)
 
 
 @dataclass(frozen=True)
@@ -311,6 +508,15 @@ class DensityParameterization:
     fixed_void: Any = None
     mask: Any = None
     slices: tuple | None = None
+    configuration: Any = None
+    context: Any = None
+    geometry: Any = field(default_factory=dict)
+
+    def __post_init__(self):
+        object.__setattr__(self, "geometry", MappingProxyType(dict(self.geometry)))
+
+    def canonical_spec(self):
+        return self.configuration, self.mask, self.slices, self.context
 
     def density(self, params, *, beta=None):
         return self.transform(params, beta=beta)
@@ -344,7 +550,14 @@ class DensityParameterization:
     def export(self, design, params, *, beta=None, context=None, **geometry):
         from .polygonize import _export_density
 
+        if self.slices is None and np.ndim(self.mask) == 3:
+            raise ValueError(
+                "3D mask polygon export is unsupported; use a volumetric TopologyDesignRegion."
+            )
         density = np.asarray(self.density(params, beta=beta))
+        if self.slices is not None:
+            geometry.setdefault("background", np.ones(self.shape[-2:]))
+        context = self.context if context is None else context
         if context is not None:
             density = np.where(self.mask, self.physical(params, beta), context)
         return _export_density(
@@ -354,5 +567,5 @@ class DensityParameterization:
             dx=self.pixel_size,
             fixed_solid=self.fixed_solid,
             fixed_void=self.fixed_void,
-            **geometry,
+            **{**self.geometry, **geometry},
         )

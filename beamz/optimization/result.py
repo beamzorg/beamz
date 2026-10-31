@@ -9,10 +9,11 @@ from typing import Any
 import jax
 import numpy as np
 
+from beamz.devices._immutable import readonly_array
+
 from ._checkpoint import load_optimizer_state, save_checkpoint
 from ._validation import check_density
 from .schedules import OptimizationSchedule
-from .topology import _readonly_array
 
 
 @dataclass(frozen=True)
@@ -95,12 +96,12 @@ class InverseDesignResult:
     ):
         """Export physical density as contours or exact pixels (lengths in metres)."""
         options = dict(threshold=threshold, mode=mode, sample_spacing=sample_spacing)
-        if hasattr(self.design, "topology"):
-            return self.design.export_design(self, **options)
         return self.design.export_design(
             self.params[index],
             **options,
-            beta=self.settings(index).get("beta"),
+            beta=self.beta
+            if self.schedule is None
+            else self.settings(index).get("beta"),
         )
 
     def plot_optimization(self, ax=None):
@@ -121,7 +122,7 @@ class InverseDesignResult:
     def _append(
         self, params, optimizer_state, record, *, gradient=None, snapshots=False
     ):
-        params = _readonly_array(params)
+        params = readonly_array(params)
         return replace(
             self,
             params=(*self.params, params) if snapshots else (params,),
@@ -130,9 +131,9 @@ class InverseDesignResult:
             grad=()
             if gradient is None
             else (
-                (*self.grad, _readonly_array(gradient))
+                (*self.grad, readonly_array(gradient))
                 if snapshots
-                else (_readonly_array(gradient),)
+                else (readonly_array(gradient),)
             ),
             initial_objective=(
                 record.objective_before
@@ -158,9 +159,6 @@ class InverseDesignResult:
             grad=np.asarray(self.grad),
             **{f"opt_{i}": np.asarray(v) for i, v in enumerate(leaves)},
         )
-
-
-TopologyResult = InverseDesignResult
 
 
 def load_result(path, *, design, fingerprint, optimizer, shape, schedule=None):
@@ -211,10 +209,10 @@ def load_result(path, *, design, fingerprint, optimizer, shape, schedule=None):
         raise ValueError("Checkpoint history exceeds its continuation schedule.")
     return InverseDesignResult(
         design,
-        tuple(_readonly_array(v) for v in params),
+        tuple(readonly_array(v) for v in params),
         state,
         history,
-        tuple(_readonly_array(v) for v in grads),
+        tuple(readonly_array(v) for v in grads),
         fingerprint,
         schedule,
         meta.get("initial_objective"),

@@ -14,7 +14,7 @@ from beamz import (
     Rectangle,
     Simulation,
 )
-from beamz.optimization import ModePower, TopologyProblem, TopologySpec
+from beamz.optimization import InverseDesign, MaskedDesignRegion, ModePower
 
 
 def make_problem(
@@ -78,17 +78,10 @@ def make_problem(
         & (y * dx >= 1.2e-6 - 1e-15)
         & (y * dx < 2.8e-6 - 1e-15)
     )
-    topo = TopologySpec(
-        design=sim.design,
-        region_mask=mask,
-        resolution=dx,
-        filter_radius=0.2e-6,
-        eps_min=1,
-        eps_max=4,
-        learning_rate=0.04,
-        beta_schedule=(1, 8),
+    topo = MaskedDesignRegion(
+        region_mask=mask, filter_radius=0.2e-6, pixel_size=dx, eps_bounds=(1, 4)
     )
-    return TopologyProblem(
+    return InverseDesign(
         sim,
         topo,
         ModePower(
@@ -97,6 +90,7 @@ def make_problem(
             reference_monitor="input" if reference else None,
         ),
         checkpoint_interval=checkpoint_interval,
+        gradient_backend="autodiff",
     )
 
 
@@ -151,15 +145,8 @@ def make_wdm_problem(dx=100e-9, run_time=220e-15, polarization="tm"):
         & (y * dx >= 1e-6 - 1e-15)
         & (y * dx < 4e-6 - 1e-15)
     )
-    topo = TopologySpec(
-        design=sim.design,
-        region_mask=mask,
-        resolution=dx,
-        eps_min=1,
-        eps_max=4,
-        filter_radius=0.15e-6,
-        learning_rate=0.035,
-        beta_schedule=(1, 16),
+    topo = MaskedDesignRegion(
+        region_mask=mask, filter_radius=0.15e-6, pixel_size=dx, eps_bounds=(1, 4)
     )
 
     def band(port, which):
@@ -168,5 +155,31 @@ def make_wdm_problem(dx=100e-9, run_time=220e-15, polarization="tm"):
     desired = 0.5 * (band("upper", slice(0, 3)) + band("lower", slice(3, 6)))
     leakage = 0.5 * (band("lower", slice(0, 3)) + band("upper", slice(3, 6)))
     reflection = ModePower("input", direction="-", reference_monitor="input")
-    p = TopologyProblem(sim, topo, desired - 0.4 * leakage - 0.1 * reflection)
+    p = InverseDesign(
+        sim,
+        topo,
+        desired - 0.4 * leakage - 0.1 * reflection,
+        gradient_backend="autodiff",
+    )
     return p
+
+
+def make_optimizer(
+    problem, steps, *, method="adam", learning_rate=None, preset="converter"
+):
+    """Explicit optimizer settings formerly stored in the topology fixture."""
+    from beamz.optimization import LinearSchedule, OptimizationSchedule, Optimizer
+    from beamz.optimization._validation import step_count
+
+    steps = step_count(steps, "steps", minimum=1)
+    end, default_rate = (16.0, 0.035) if preset == "wdm" else (8.0, 0.04)
+    schedule = OptimizationSchedule(
+        beta=end if steps == 1 else LinearSchedule(1, end, steps)
+    )
+    return Optimizer(
+        problem,
+        default_rate if learning_rate is None else learning_rate,
+        method=method,
+        schedule=schedule,
+        evaluate_after=True,
+    )

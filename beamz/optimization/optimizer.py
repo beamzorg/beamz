@@ -1,4 +1,4 @@
-"""Adam workflow and inspectable, non-pickle optimization histories."""
+"""Density optimization and inspectable, non-pickle histories."""
 
 import hashlib
 import inspect
@@ -12,15 +12,15 @@ import jax.numpy as jnp
 import numpy as np
 
 from beamz._cache_tokens import cache_token
+from beamz.devices._immutable import readonly_array
 from beamz.simulation.differentiable import TOPOLOGY_NUMERICS_VERSION
 
 from ._validation import step_count
 from .design import InverseDesign
 from .objectives import ModalObjective
-from .region import FilterProject, Specification
+from .region import FilterProject, MaskedDesignRegion, Specification
 from .result import InverseDesignResult, OptimizationStep, load_result
 from .schedules import OptimizationSchedule
-from .topology import _readonly_array as _frozen
 
 
 def _optimize(
@@ -30,7 +30,7 @@ def _optimize(
     evaluate,
     optimizer,
     settings,
-    update=None,
+    parameter_mask=None,
     evaluate_after=None,
     snapshots=False,
     score_sign=1,
@@ -43,8 +43,9 @@ def _optimize(
     if stop < result.completed_steps:
         raise ValueError("steps must be at least the number of completed steps.")
     initial_steps = result.completed_steps
-    params = jnp.asarray(result.final_params) if update is None else result.final_params
-    state = result.optimizer_state
+    params = jnp.asarray(result.final_params)
+    # Checkpoints decode NumPy leaves; keep resumed arithmetic identical to live JAX state.
+    state = jax.tree.map(jnp.asarray, result.optimizer_state)
     for index in range(result.completed_steps, stop):
         start = time.perf_counter()
         current = settings(index)
@@ -54,12 +55,13 @@ def _optimize(
             or not np.isfinite(gradient).all()
         ):
             raise FloatingPointError("Nonfinite objective, penalty, or gradient.")
-        if update is None:
-            updates, state = optimizer.update(-gradient, state, params)
-            updated = jnp.clip(params + cast(jax.Array, updates), 0, 1)
-            max_update = float(jnp.max(jnp.abs(updated - params)))
-        else:
-            updated, state, max_update = update(params, state, gradient)
+        if parameter_mask is not None:
+            gradient = jnp.where(parameter_mask, gradient, 0)
+        updates, state = optimizer.update(-gradient, state, params)
+        updated = jnp.clip(params + cast(jax.Array, updates), 0, 1)
+        if parameter_mask is not None:
+            updated = jnp.where(parameter_mask, updated, params)
+        max_update = float(jnp.max(jnp.abs(updated - params)))
         after = None if evaluate_after is None else evaluate_after(updated, current)
         record = OptimizationStep(
             index + 1,
@@ -78,7 +80,7 @@ def _optimize(
             state,
             record,
             snapshots=snapshots,
-            gradient=gradient if update is None else None,
+            gradient=gradient,
         )
         if checkpoint is not None and (
             result.completed_steps % checkpoint_every == 0
@@ -133,8 +135,8 @@ def _function_token(function, seen=None):
 
 
 @dataclass(frozen=True)
-class AdamOptimizer(Specification):
-    """Run or resume a differentiable objective to a target total step count.
+class Optimizer(Specification):
+    """Run or resume an Adam or SGD differentiable objective to a target total step count.
 
     Scalar history and the latest state are retained by default. Enable
     store_full_results to retain parameter and gradient snapshots as well.
@@ -142,18 +144,26 @@ class AdamOptimizer(Specification):
 
     design: InverseDesign
     learning_rate: float
+    method: str = "adam"
+    evaluate_after: bool = False
     maximize: bool = True
     store_full_results: bool = False
     objective_id: str | None = None
     schedule: OptimizationSchedule | None = None
 
     def __post_init__(self):
+        if self.method not in ("adam", "sgd"):
+            raise ValueError("method must be adam or sgd.")
         if self.schedule is not None:
             if not isinstance(self.schedule, OptimizationSchedule):
                 raise TypeError("schedule must be an OptimizationSchedule.")
-            if self.schedule.beta is not None and not any(
-                isinstance(t, FilterProject)
-                for t in self.design.design_region.transformations
+            if (
+                self.schedule.beta is not None
+                and not isinstance(self.design.design_region, MaskedDesignRegion)
+                and not any(
+                    isinstance(t, FilterProject)
+                    for t in getattr(self.design.design_region, "transformations", ())
+                )
             ):
                 raise ValueError(
                     "A beta schedule requires a FilterProject transformation."
@@ -180,13 +190,15 @@ class AdamOptimizer(Specification):
             _function_token(fn)
             if isinstance(fn, types.FunctionType)
             else cache_token(fn)
-            for fn in region.transformations + region.penalties
+            for fn in getattr(region, "transformations", ()) + region.penalties
         )
         token = cache_token(
             (
                 TOPOLOGY_NUMERICS_VERSION,
                 self.design,
                 self.learning_rate,
+                self.method,
+                self.evaluate_after,
                 self.maximize,
                 function,
                 pipeline,
@@ -199,10 +211,12 @@ class AdamOptimizer(Specification):
 
     def run(
         self,
-        objective,
+        objective=None,
         callback=None,
         *,
         steps,
+        initial_params=None,
+        stop_after=None,
         resume=None,
         checkpoint=None,
         checkpoint_every=1,
@@ -215,18 +229,33 @@ class AdamOptimizer(Specification):
         import optax
 
         steps = step_count(steps, "steps")
+        objective = self.design.objective if objective is None else objective
         fingerprint = self._fingerprint(objective)
-        optimizer = optax.adam(self.learning_rate)
+        stop = steps if stop_after is None else step_count(stop_after, "stop_after")
+        if stop > steps:
+            raise ValueError("stop_after must not exceed steps.")
+        optimizer = getattr(optax, self.method)(self.learning_rate)
         if resume is None:
-            params = self.design.design_region.initial_parameters
+            params = (
+                self.design.design_region.initial_parameters
+                if initial_params is None
+                else initial_params
+            )
+            self.design.design_region.check_params(params)
             result = InverseDesignResult(
                 self.design,
-                (_frozen(params),),
+                (readonly_array(params),),
                 optimizer.init(jnp.asarray(params)),
                 fingerprint=fingerprint,
                 schedule=self.schedule,
+                total_steps=steps if stop_after is not None else None,
+                _initial_beta=None
+                if self.schedule is None
+                else cast(float | None, self.schedule.values(0)["beta"]),
             )
         else:
+            if initial_params is not None:
+                raise ValueError("Use initial_params or resume, not both.")
             result = (
                 resume
                 if isinstance(resume, InverseDesignResult)
@@ -236,18 +265,30 @@ class AdamOptimizer(Specification):
                 raise ValueError(
                     "Result belongs to a different design, objective, or optimizer."
                 )
-        evaluate = jax.value_and_grad(
-            lambda params, settings: self.design._evaluate(
-                params, objective, self.maximize, **settings
-            ),
-            has_aux=True,
-        )
+        if result.total_steps is not None and result.total_steps != steps:
+            raise ValueError("Resume must preserve the total schedule horizon.")
+        evaluate = self.design._objective_gradient(objective, self.maximize)
         return _optimize(
             result,
-            steps,
+            stop,
             evaluate=evaluate,
             optimizer=optimizer,
             settings=lambda i: {} if self.schedule is None else self.schedule.values(i),
+            parameter_mask=getattr(self.design.design_region, "region_mask", None),
+            evaluate_after=(
+                (
+                    lambda params, current: (
+                        float(
+                            self.design._evaluate(
+                                params, objective, self.maximize, **current
+                            )[0]
+                        )
+                        * (1 if self.maximize else -1)
+                    )
+                )
+                if self.evaluate_after
+                else None
+            ),
             snapshots=self.store_full_results,
             score_sign=1 if self.maximize else -1,
             checkpoint=checkpoint,
@@ -255,14 +296,16 @@ class AdamOptimizer(Specification):
             callback=callback,
         )
 
-    def load_result(self, path, post_process_fn):
+    def load_result(self, path, post_process_fn=None):
         import optax
 
         return load_result(
             path,
             design=self.design,
-            fingerprint=self._fingerprint(post_process_fn),
-            optimizer=optax.adam(self.learning_rate),
+            fingerprint=self._fingerprint(
+                self.design.objective if post_process_fn is None else post_process_fn
+            ),
+            optimizer=getattr(optax, self.method)(self.learning_rate),
             shape=self.design.design_region.params_shape,
             schedule=self.schedule,
         )
