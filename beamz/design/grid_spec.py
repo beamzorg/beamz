@@ -13,7 +13,7 @@ from beamz.design._geometry import planar_geometry
 from beamz.design._geometry import structure_bounds as _structure_bounds
 from beamz.design.grid import RectilinearGrid
 from beamz.design.mesher import _GradedMesher
-from beamz.design.structures import Solid
+from beamz.design.structures import Shape
 
 AxisValues = tuple[float, float, float]
 OptionalAxisValues = tuple[float | None, float | None, float | None]
@@ -466,7 +466,7 @@ def _design_coordinate_offset(design: Any) -> AxisValues:
     )
 
 
-def _polygon_opposing_features(structure: Solid) -> list[_OpposingFeature]:
+def _polygon_opposing_features(structure: Shape) -> list[_OpposingFeature]:
     """Return reliable local distances between opposing material faces.
 
     Boundary vertex spacing is deliberately excluded: refining a curved polygon's
@@ -733,7 +733,7 @@ def _merge_mesh_feature_regions(
 
 
 def _polygon_mesh_feature_regions(
-    structure: Solid,
+    structure: Shape,
     *,
     material_spacing: float,
     spec: GridSpec,

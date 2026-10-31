@@ -105,7 +105,7 @@ EXPECTED_EXPORTS = {
         "Rectangle",
         "Circle",
         "Ring",
-        "Solid",
+        "Shape",
         "CircularBend",
         "Polygon",
         "Taper",

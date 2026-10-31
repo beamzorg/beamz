@@ -69,7 +69,7 @@ def _arc(position, radius, angles):
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class Solid:
+class Shape:
     """One immutable geometry value shared by design and native raster scenes.
 
     Named constructors retain shape parameters for functional transforms and
@@ -111,7 +111,7 @@ class Solid:
         if self.material is not None and not isinstance(
             self.material, MaterialProtocol
         ):
-            raise TypeError("Solid.material must satisfy MaterialProtocol.")
+            raise TypeError("Shape.material must satisfy MaterialProtocol.")
         color = self.facecolor if self.shape_kind == "bend" else self.color
         assign(self, "color", DEFAULT_COLOR if color is None else str(color))
         for name in ("sidewall_angle", "width_to_z"):
@@ -436,15 +436,15 @@ class Solid:
 
 
 # Named constructors keep procedural parameters in the same immutable geometry.
-Structure = Solid
+Structure = Shape
 
 
 def Polygon(vertices=(), **attributes):
-    return Solid("polygon", vertices=vertices, **attributes)
+    return Shape("polygon", vertices=vertices, **attributes)
 
 
 def Rectangle(position=(0.0, 0.0, 0.0), width=1.0, height=1.0, depth=1.0, **attributes):
-    return Solid(
+    return Shape(
         "rectangle",
         position=position,
         width=width,
@@ -456,7 +456,7 @@ def Rectangle(position=(0.0, 0.0, 0.0), width=1.0, height=1.0, depth=1.0, **attr
 
 
 def Circle(position=(0.0, 0.0), radius=1.0, points=32, **attributes):
-    return Solid(
+    return Shape(
         "circle", position=position, radius=radius, points=points, **attributes
     )
 
@@ -464,7 +464,7 @@ def Circle(position=(0.0, 0.0), radius=1.0, points=32, **attributes):
 def Ring(
     position=(0.0, 0.0), inner_radius=1.0, outer_radius=2.0, points=256, **attributes
 ):
-    return Solid(
+    return Shape(
         "ring",
         position=position,
         inner_radius=inner_radius,
@@ -484,7 +484,7 @@ def CircularBend(
     points=64,
     **attributes,
 ):
-    return Solid(
+    return Shape(
         "bend",
         position=position,
         inner_radius=inner_radius,
@@ -499,7 +499,7 @@ def CircularBend(
 def Taper(
     position=(0.0, 0.0), input_width=1.0, output_width=0.5, length=1.0, **attributes
 ):
-    return Solid(
+    return Shape(
         "taper",
         position=position,
         input_width=input_width,
@@ -510,8 +510,8 @@ def Taper(
 
 
 def Box(center=(0.0, 0.0, 0.0), size=(1.0, 1.0, 1.0), material=None):
-    return Solid("box", material=material, center=center, size=size)
+    return Shape("box", material=material, center=center, size=size)
 
 
 def Sphere(position=(0.0, 0.0, 0.0), radius=1.0, **attributes):
-    return Solid("sphere", position=position, radius=radius, **attributes)
+    return Shape("sphere", position=position, radius=radius, **attributes)

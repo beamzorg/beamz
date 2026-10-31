@@ -41,7 +41,7 @@ not achieve the below-40,000 goal.
 - Source compilation uses one flat immutable injection entry and one emitter.
   Slab shapes, waveform quadrature/timing, launch power and native runtime source
   specifications retain their existing contracts.
-- Geometry constructors return a frozen `Solid`, shared with native raster scenes.
+- Geometry constructors return a frozen `Shape`, shared with native raster scenes.
   Inspect `shape_kind` instead of using constructor functions in `isinstance`.
   Exact primitives, holes, shape-specific transforms, mesh features and terminal
   padding remain explicit. Native boxes retain literal bounds to avoid thin-layer
