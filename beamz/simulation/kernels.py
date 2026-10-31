@@ -1798,85 +1798,63 @@ def select_update_kernel(ctx: CompiledStepContext) -> StepUpdateKernel:
 
         return StepUpdateKernel(ctx.config.backend, update_h, update_e)
 
-    # 1. Describe variants in priority order: stateful boundaries must precede generic
-    # dimensional kernels or their auxiliary state would be ignored.
     boundary = ctx.boundary
     metric = ctx.config.metric_kind != "isotropic_uniform"
-    variants = (
-        (
-            ctx.is_3d and metric and boundary.cpml.enabled,
-            f"{ctx.config.metric_kind}_cpml_3d",
-            update_h_3d_cpml_metric,
-            update_e_3d_cpml_metric,
-        ),  # fmt: skip
-        (
-            ctx.is_3d and metric,
-            f"{ctx.config.metric_kind}_yee_3d",
-            update_h_3d_yee_metric,
-            update_e_3d_yee_metric,
-        ),  # fmt: skip
-        (
-            ctx.is_3d and boundary.cpml.enabled,
-            "cpml_3d",
+    family = "3d" if ctx.is_3d else ctx.config.polarization_2d
+    variants = {
+        ("3d", False, False): (
+            update_h_3d_yee,
+            update_e_3d_yee,
+        ),
+        ("3d", False, True): (
             update_h_3d_cpml,
             update_e_3d_cpml,
-        ),  # fmt: skip
-        (ctx.is_3d, "yee_3d", update_h_3d_yee, update_e_3d_yee),
-        (
-            (not ctx.is_3d)
-            and metric
-            and ctx.config.polarization_2d == "tm"
-            and boundary.cpml.enabled,
-            f"{ctx.config.metric_kind}_physical_tm_xy_cpml",
-            update_h_2d_tm_xy_cpml_metric,
-            update_e_2d_tm_xy_cpml_metric,
-        ),  # fmt: skip
-        (
-            (not ctx.is_3d) and metric and ctx.config.polarization_2d == "tm",
-            f"{ctx.config.metric_kind}_physical_tm_xy",
-            update_h_2d_tm_xy_metric,
-            update_e_2d_tm_xy_metric,
-        ),  # fmt: skip
-        (
-            (not ctx.is_3d)
-            and ctx.config.polarization_2d == "tm"
-            and boundary.cpml.enabled,
-            "physical_tm_xy_cpml",
-            update_h_2d_tm_xy_cpml,
-            update_e_2d_tm_xy_cpml,
-        ),  # fmt: skip
-        (
-            (not ctx.is_3d) and ctx.config.polarization_2d == "tm",
-            "physical_tm_xy",
+        ),
+        ("3d", True, False): (
+            update_h_3d_yee_metric,
+            update_e_3d_yee_metric,
+        ),
+        ("3d", True, True): (
+            update_h_3d_cpml_metric,
+            update_e_3d_cpml_metric,
+        ),
+        ("tm", False, False): (
             update_h_2d_tm_xy,
             update_e_2d_tm_xy,
-        ),  # fmt: skip
-        (
-            (not ctx.is_3d) and metric and boundary.cpml.enabled,
-            f"{ctx.config.metric_kind}_physical_te_xy_cpml",
-            update_h_2d_te_xy_cpml_metric,
-            update_e_2d_te_xy_cpml_metric,
-        ),  # fmt: skip
-        (
-            (not ctx.is_3d) and metric,
-            f"{ctx.config.metric_kind}_physical_te_xy",
-            update_h_2d_te_xy_metric,
-            update_e_2d_te_xy_metric,
-        ),  # fmt: skip
-        (
-            (not ctx.is_3d) and boundary.cpml.enabled,
-            "physical_te_xy_cpml",
-            update_h_2d_te_xy_cpml,
-            update_e_2d_te_xy_cpml,
-        ),  # fmt: skip
-        (
-            not ctx.is_3d,
-            "physical_te_xy",
+        ),
+        ("tm", False, True): (
+            update_h_2d_tm_xy_cpml,
+            update_e_2d_tm_xy_cpml,
+        ),
+        ("tm", True, False): (
+            update_h_2d_tm_xy_metric,
+            update_e_2d_tm_xy_metric,
+        ),
+        ("tm", True, True): (
+            update_h_2d_tm_xy_cpml_metric,
+            update_e_2d_tm_xy_cpml_metric,
+        ),
+        ("te", False, False): (
             update_h_2d_te_xy,
             update_e_2d_te_xy,
-        ),  # fmt: skip
-    )
-
-    # 2. Every supported runtime is canonical 3D, TMxy, or TExy.
-    _, kind, update_h, update_e = next(variant for variant in variants if variant[0])
+        ),
+        ("te", False, True): (
+            update_h_2d_te_xy_cpml,
+            update_e_2d_te_xy_cpml,
+        ),
+        ("te", True, False): (
+            update_h_2d_te_xy_metric,
+            update_e_2d_te_xy_metric,
+        ),
+        ("te", True, True): (
+            update_h_2d_te_xy_cpml_metric,
+            update_e_2d_te_xy_cpml_metric,
+        ),
+    }
+    update_h, update_e = variants[family, metric, boundary.cpml.enabled]
+    kind = "yee_3d" if ctx.is_3d else f"physical_{family}_xy"
+    if boundary.cpml.enabled:
+        kind = "cpml_3d" if ctx.is_3d else kind + "_cpml"
+    if metric:
+        kind = f"{ctx.config.metric_kind}_{kind}"
     return StepUpdateKernel(kind, update_h, update_e)
