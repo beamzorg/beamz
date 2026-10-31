@@ -61,6 +61,15 @@ class NativeSchedulePlan:
         return bool(self.flags & abi.NATIVE_SCHEDULE_TEMPORAL)
 
 
+def _phase_materials(coeffs, phase):
+    """Native ABI order: x/y/z decay, then x/y/z source; arrays stay dynamic."""
+    return tuple(
+        getattr(coeffs, f"{phase}_{kind}_{axis}")
+        for kind in ("decay", "source")
+        for axis in "xyz"
+    )
+
+
 def _metallic_edge_mask(edges: frozenset[str]) -> int:
     order = ("front", "back", "bottom", "top", "left", "right")
     return sum(1 << index for index, name in enumerate(order) if name in edges)
@@ -447,67 +456,33 @@ def _ffi_phase(
 
 def update_h(state, ctx, coeffs) -> SimulationState:
     """Advance the three magnetic fields and optional CPML memory on CUDA."""
-    target = abi.CUDA_STREAMED_TARGET
-    terms = ctx.boundary.cpml.h_terms
-    materials = (
-        coeffs.h_decay_x,
-        coeffs.h_decay_y,
-        coeffs.h_decay_z,
-        coeffs.h_source_x,
-        coeffs.h_source_y,
-        coeffs.h_source_z,
-    )
-    outputs = _ffi_phase(
-        target,
-        _PHASE_H,
-        (state.hx, state.hy, state.hz),
-        (state.ex, state.ey, state.ez),
-        materials,
-        terms,
-        state.cpml_psi_h_terms,
-        _phase_metrics(ctx, _PHASE_H),
-        metric_kind=_metric_kind_code(ctx),
-        dt=ctx.dt,
-        resolution=ctx.resolution,
-        cuda_flags=ctx.config.cuda_flags,
-        metallic_edges=ctx.boundary.cpml.metallic_edges,
-        differentiable=ctx.differentiable,
-    )
-    return state._replace(
-        hx=outputs[0],
-        hy=outputs[1],
-        hz=outputs[2],
-        cpml_psi_h_terms=outputs[3:],
-    )
+    return _update_phase(state, ctx, coeffs, phase=_PHASE_H)
 
 
 def update_e(state, ctx, coeffs) -> SimulationState:
     """Advance the three electric fields and optional CPML memory on CUDA."""
-    target = abi.CUDA_STREAMED_TARGET
-    terms = ctx.boundary.cpml.e_terms
+    return _update_phase(state, ctx, coeffs, phase=_PHASE_E)
+
+
+def _update_phase(state, ctx, coeffs, *, phase):
+    # Phase is a Python constant chosen before tracing, including the tensor ABI.
+    prefix, other = ("h", "e") if phase == _PHASE_H else ("e", "h")
+    terms = getattr(ctx.boundary.cpml, prefix + "_terms")
     tensor_payload = None
-    if coeffs.e_inverse_offdiagonal.size:
+    if phase == _PHASE_E and coeffs.e_inverse_offdiagonal.size:
         from .tensor import coefficients, payload
 
         tensor_payload = payload(ctx, coeffs)
         coeffs = coefficients(ctx, coeffs)
-    materials = (
-        coeffs.e_decay_x,
-        coeffs.e_decay_y,
-        coeffs.e_decay_z,
-        coeffs.e_source_x,
-        coeffs.e_source_y,
-        coeffs.e_source_z,
-    )
     outputs = _ffi_phase(
-        target,
-        _PHASE_E,
-        (state.ex, state.ey, state.ez),
-        (state.hx, state.hy, state.hz),
-        materials,
+        abi.CUDA_STREAMED_TARGET,
+        phase,
+        tuple(getattr(state, prefix + axis) for axis in "xyz"),
+        tuple(getattr(state, other + axis) for axis in "xyz"),
+        _phase_materials(coeffs, prefix),
         terms,
-        state.cpml_psi_e_terms,
-        _phase_metrics(ctx, _PHASE_E),
+        getattr(state, f"cpml_psi_{prefix}_terms"),
+        _phase_metrics(ctx, phase),
         metric_kind=_metric_kind_code(ctx),
         dt=ctx.dt,
         resolution=ctx.resolution,
@@ -517,10 +492,8 @@ def update_e(state, ctx, coeffs) -> SimulationState:
         tensor_payload=tensor_payload,
     )
     return state._replace(
-        ex=outputs[0],
-        ey=outputs[1],
-        ez=outputs[2],
-        cpml_psi_e_terms=outputs[3:],
+        **dict(zip((prefix + axis for axis in "xyz"), outputs[:3], strict=True)),
+        **{f"cpml_psi_{prefix}_terms": outputs[3:]},
     )
 
 
@@ -528,22 +501,8 @@ def _cpml_graph_io(state, ctx, coeffs):
     fields = _fields(state)
     h_terms = ctx.boundary.cpml.h_terms
     e_terms = ctx.boundary.cpml.e_terms
-    h_materials = (
-        coeffs.h_decay_x,
-        coeffs.h_decay_y,
-        coeffs.h_decay_z,
-        coeffs.h_source_x,
-        coeffs.h_source_y,
-        coeffs.h_source_z,
-    )
-    e_materials = (
-        coeffs.e_decay_x,
-        coeffs.e_decay_y,
-        coeffs.e_decay_z,
-        coeffs.e_source_x,
-        coeffs.e_source_y,
-        coeffs.e_source_z,
-    )
+    h_materials = _phase_materials(coeffs, "h")
+    e_materials = _phase_materials(coeffs, "e")
     h_payload = (
         *h_materials,
         _term_metadata(h_terms),
@@ -582,20 +541,7 @@ def _cpml_graph_io(state, ctx, coeffs):
 
 def _yee_graph_io(state, ctx, coeffs):
     fields = _fields(state)
-    materials = (
-        coeffs.h_decay_x,
-        coeffs.h_decay_y,
-        coeffs.h_decay_z,
-        coeffs.h_source_x,
-        coeffs.h_source_y,
-        coeffs.h_source_z,
-        coeffs.e_decay_x,
-        coeffs.e_decay_y,
-        coeffs.e_decay_z,
-        coeffs.e_source_x,
-        coeffs.e_source_y,
-        coeffs.e_source_z,
-    )
+    materials = (*_phase_materials(coeffs, "h"), *_phase_materials(coeffs, "e"))
     arguments = (
         *fields,
         *materials,
@@ -797,14 +743,7 @@ def _uniform_cpml_thickness(ctx) -> int:
 
 
 def _packed_e_material(coeffs) -> bool:
-    values = (
-        coeffs.e_decay_x,
-        coeffs.e_decay_y,
-        coeffs.e_decay_z,
-        coeffs.e_source_x,
-        coeffs.e_source_y,
-        coeffs.e_source_z,
-    )
+    values = _phase_materials(coeffs, "e")
     return all(value.ndim == 1 for value in values[:3]) and all(
         value.ndim in (1, 2) and value.dtype == jnp.int32
         for value in (coeffs.e_source_x, coeffs.e_source_y, coeffs.e_source_z)
@@ -849,14 +788,7 @@ def _temporal_cpml_fields_supported(ctx, coeffs, nsteps: int) -> bool:
         or _uniform_cpml_thickness(ctx) <= 0
     ):
         return False
-    h_values = (
-        coeffs.h_decay_x,
-        coeffs.h_decay_y,
-        coeffs.h_decay_z,
-        coeffs.h_source_x,
-        coeffs.h_source_y,
-        coeffs.h_source_z,
-    )
+    h_values = _phase_materials(coeffs, "h")
     e_sources = (coeffs.e_source_x, coeffs.e_source_y, coeffs.e_source_z)
     return all(value.ndim == 0 for value in h_values) and all(
         value.size > 0
@@ -875,20 +807,7 @@ def _temporal_yee_supported(ctx, coeffs, nsteps: int) -> bool:
         or _metallic_edge_mask(ctx.boundary.cpml.metallic_edges) != 63
     ):
         return False
-    values = (
-        coeffs.h_decay_x,
-        coeffs.h_decay_y,
-        coeffs.h_decay_z,
-        coeffs.h_source_x,
-        coeffs.h_source_y,
-        coeffs.h_source_z,
-        coeffs.e_decay_x,
-        coeffs.e_decay_y,
-        coeffs.e_decay_z,
-        coeffs.e_source_x,
-        coeffs.e_source_y,
-        coeffs.e_source_z,
-    )
+    values = (*_phase_materials(coeffs, "h"), *_phase_materials(coeffs, "e"))
     return all(value.ndim in (0, 3) for value in values)
 
 
@@ -1354,20 +1273,7 @@ def run_steps(state, ctx, coeffs, nsteps: int) -> SimulationState:
             **_program_attributes(ctx, nsteps, plan),
         )
         return _replace_graph_outputs(state, outputs)
-    materials = (
-        coeffs.h_decay_x,
-        coeffs.h_decay_y,
-        coeffs.h_decay_z,
-        coeffs.h_source_x,
-        coeffs.h_source_y,
-        coeffs.h_source_z,
-        coeffs.e_decay_x,
-        coeffs.e_decay_y,
-        coeffs.e_decay_z,
-        coeffs.e_source_x,
-        coeffs.e_source_y,
-        coeffs.e_source_z,
-    )
+    materials = (*_phase_materials(coeffs, "h"), *_phase_materials(coeffs, "e"))
     if plan.layout == abi.PROGRAM_LAYOUT_YEE_TEMPORAL:
         workspace = tuple(jnp.empty_like(value) for value in fields)
         call = _ffi_call(

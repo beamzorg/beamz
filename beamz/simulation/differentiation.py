@@ -36,6 +36,7 @@ from beamz.simulation.execute import (
     initial_program_state,
 )
 from beamz.simulation.model import CompiledProgram, SimulationState, UpdateCoefficients
+from beamz.simulation.observe import dft_buffer_layout
 
 
 def _checkpoint_interval(value, num_steps):
@@ -115,12 +116,9 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
             return state
         values, weights = [], []
         for mon in program.monitors:
-            count = 6 * mon.freq_count * mon.dft_point_count if mon.dft_enabled else 0
-            values.append(slice(mon.dft_value_offset, mon.dft_value_offset + count))
-            weight_count = mon.freq_count if mon.dft_enabled else 0
-            weights.append(
-                slice(mon.dft_weight_offset, mon.dft_weight_offset + weight_count)
-            )
+            layout = dft_buffer_layout(mon)
+            values.append(layout.values if mon.dft_enabled else slice(0, 0))
+            weights.append(layout.weights if mon.dft_enabled else slice(0, 0))
         return state._replace(
             dft_vec_re=tuple(state.dft_vec_re[key] for key in values),
             dft_vec_im=tuple(state.dft_vec_im[key] for key in values),
@@ -391,14 +389,9 @@ class DifferentiableSimulation:
         an explicit part of the caller's objective.
         """
         spec = self._monitor(monitor)
-        count = 6 * spec.freq_count * spec.dft_point_count
-        start = spec.dft_value_offset
-        values = (
-            state.dft_vec_re[start : start + count]
-            + 1j * state.dft_vec_im[start : start + count]
-        ).reshape((6, spec.freq_count, spec.dft_point_count))
-        start = spec.dft_weight_offset
-        weights = state.dft_weight_sum[start : start + spec.freq_count]
+        layout = dft_buffer_layout(spec)
+        values = layout.unpack(state.dft_vec_re, state.dft_vec_im)
+        weights = state.dft_weight_sum[layout.weights]
         values = values * (2.0 / jnp.maximum(weights, 1e-18))[None, :, None]
         h_phase = jnp.exp(-1j * jnp.pi * spec.freq_hz * self.program.config.dt)
         return values.at[3:].multiply(h_phase[None, :, None])

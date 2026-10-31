@@ -20,6 +20,7 @@ from beamz.lattice import canonical_component_2d
 
 from .model import CompiledGrid, SimulationState
 from .observe import (
+    dft_buffer_layout,
     monitor_dft_component,
     monitor_dft_flux,
     monitor_flux,
@@ -896,16 +897,11 @@ class MonitorResults:
         if spec.dft_enabled and fc > 0 and pc > 0:
             from beamz.lattice import public_component_2d
 
-            value_offset = int(spec.dft_value_offset)
-            value_count = 6 * fc * pc
-            packed_re = np.asarray(
-                state.dft_vec_re[value_offset : value_offset + value_count],
-                dtype=np.float64,
-            ).reshape(6, fc, pc)
-            packed_im = np.asarray(
-                state.dft_vec_im[value_offset : value_offset + value_count],
-                dtype=np.float64,
-            ).reshape(6, fc, pc)
+            layout = dft_buffer_layout(spec)
+            packed_re, packed_im = (
+                np.asarray(value[layout.values], dtype=np.float64).reshape(layout.shape)
+                for value in (state.dft_vec_re, state.dft_vec_im)
+            )
             comp_mask_arr = np.asarray(spec.dft_component_mask, dtype=np.float32)
             for comp_i, comp_name in enumerate(("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")):
                 if comp_mask_arr[comp_i] <= 0.0:
@@ -944,9 +940,7 @@ class MonitorResults:
             dft_fields=dft_fields,
             dft_frequencies=dft_frequencies,
             dft_weight_sum=np.asarray(
-                state.dft_weight_sum[
-                    spec.dft_weight_offset : spec.dft_weight_offset + fc
-                ],
+                state.dft_weight_sum[dft_buffer_layout(spec).weights],
                 dtype=np.float64,
             ),
             dft_base_dt=float(config.dt),

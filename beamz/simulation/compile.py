@@ -1065,47 +1065,40 @@ def compile_program(
         raise CudaBackendUnavailable(
             "Dispersive media require backend='jax' (including JAX GPU)."
         )
-    cuda_grid_supported = simulation.is_3d
     multi_device = sharding_token[0] and sharding_token[2] != 1
-    cuda_material_supported = not material_grid.uses_full_permittivity or (
-        requested_backend in {"cuda", "cuda_streamed"}
-    )
-    # Explicit streamed requests opt into the phase-by-phase sharded path.
-    # Auto remains on the established JAX path pending CUDA hardware validation.
-    cuda_sharding_supported = not multi_device or (
-        requested_backend in {"cuda", "cuda_streamed"}
-    )
-    cuda_periodic_supported = not any(
-        isinstance(boundary, Periodic) for boundary in simulation.boundaries
-    )
-    if requested_backend not in {"auto", "jax"} and not cuda_grid_supported:
-        requirement = "a 3D simulation"
-        raise CudaBackendUnavailable(
-            f"CUDA execution currently requires {requirement}; this simulation "
-            f"requires {metric_kind!r} metrics. Use backend='jax'."
-        )
-    if requested_backend not in {"auto", "jax"} and not cuda_material_supported:
-        raise CudaBackendUnavailable(
+    # One ordered capability ledger drives both automatic fallback and explicit
+    # rejection. Schedule-specific restrictions remain with their own planner.
+    streamed_request = requested_backend in {"cuda", "cuda_streamed"}
+    cuda_requirements = (
+        (
+            simulation.is_3d,
+            "CUDA execution currently requires a 3D simulation; this simulation "
+            f"requires {metric_kind!r} metrics. Use backend='jax'.",
+        ),
+        (
+            not material_grid.uses_full_permittivity or streamed_request,
             "Full-tensor permittivity requires backend='jax' or "
-            "backend='cuda_streamed'; the CUDA mstep schedule is not supported."
-        )
-    if requested_backend not in {"auto", "jax"} and not cuda_sharding_supported:
-        raise CudaBackendUnavailable(
+            "backend='cuda_streamed'; the CUDA mstep schedule is not supported.",
+        ),
+        # Auto retains JAX for multi-device runs pending CUDA hardware validation.
+        (
+            not multi_device or streamed_request,
             "CUDA multi-device sharding requires backend='cuda_streamed'; "
-            "use backend='jax' for other sharded configurations."
-        )
-    if requested_backend not in {"auto", "jax"} and not cuda_periodic_supported:
-        raise CudaBackendUnavailable(
-            "CUDA execution does not yet support periodic boundaries; "
-            "use backend='jax'."
-        )
-    cuda_problem_supported = (
-        cuda_grid_supported
-        and cuda_material_supported
-        and cuda_sharding_supported
-        and cuda_periodic_supported
-        and not has_dispersion
+            "use backend='jax' for other sharded configurations.",
+        ),
+        (
+            not any(
+                isinstance(boundary, Periodic) for boundary in simulation.boundaries
+            ),
+            "CUDA execution does not yet support periodic boundaries; use backend='jax'.",
+        ),
     )
+    unsupported = tuple(
+        reason for supported, reason in cuda_requirements if not supported
+    )
+    if requested_backend not in {"auto", "jax"} and unsupported:
+        raise CudaBackendUnavailable(unsupported[0])
+    cuda_problem_supported = not unsupported and not has_dispersion
     resolved_backend = (
         "jax"
         if requested_backend == "auto" and not cuda_problem_supported
