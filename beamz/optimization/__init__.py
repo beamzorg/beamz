@@ -2,7 +2,14 @@
 
 from . import adjoint_memmap, topology, utils
 from .design import InverseDesign
-from .objectives import ModePower, SoftMinModePower, WeightedObjective
+from .objectives import (
+    CollectionConePower,
+    DirectionalPower,
+    ModePower,
+    SoftMinModePower,
+    TargetBeamOverlap,
+    WeightedObjective,
+)
 from .optimizer import AdamOptimizer
 from .polygonize import (
     density_to_polygons,
@@ -24,6 +31,9 @@ from .schedules import LinearSchedule, OptimizationSchedule, StepSchedule
 from .topology import TopologySpec, TopologyState
 
 __all__ = [
+    "CollectionConePower",
+    "DirectionalPower",
+    "TargetBeamOverlap",
     "LinearSchedule",
     "OptimizationSchedule",
     "StepSchedule",

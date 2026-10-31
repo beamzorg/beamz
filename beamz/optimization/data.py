@@ -11,7 +11,8 @@ from typing import Any, Mapping
 import jax.numpy as jnp
 import numpy as np
 
-from beamz.devices.monitors import ModeMonitor
+from beamz.analysis.far_field import bind_surface_data
+from beamz.devices.monitors import FieldMonitor, ModeMonitor
 
 from .objectives import ModePower
 
@@ -120,3 +121,14 @@ def bind_modal_data(results, program, names, cache=None):
         )
 
     return data
+
+
+def bind_simulation_data(results, program, names, cache=None):
+    """Bind modal and planar-field outputs from one differentiable simulation."""
+    modes = [n for n in names if isinstance(results[n].monitor, ModeMonitor)]
+    surfaces = [n for n in names if isinstance(results[n].monitor, FieldMonitor)]
+    if len(modes) + len(surfaces) != len(names):
+        raise ValueError("Differentiable outputs require ModeMonitor or FieldMonitor.")
+    modal = bind_modal_data(results, program, modes, cache)
+    fields = bind_surface_data(results, program, surfaces)
+    return lambda state: MappingProxyType({**modal(state), **fields(state)})
