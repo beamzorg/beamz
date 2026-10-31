@@ -15,6 +15,65 @@ _AXES: tuple[Axis, Axis, Axis] = ("x", "y", "z")
 
 
 @dataclass(frozen=True, slots=True)
+class GridAxis:
+    """An edge-backed axis with explicit placement policy.
+
+    ``uniform`` retains legacy half-even centers and tolerant interval endpoints.
+    ``edges`` uses first-nearest centers and exact overlapping edge searches.
+    Policies describe numerical conventions, never alternative geometry stores.
+    """
+
+    edges: np.ndarray
+    policy: Literal["uniform", "edges"] = "edges"
+
+    @property
+    def count(self) -> int:
+        return self.edges.size - 1
+
+    @property
+    def step(self) -> float:
+        return float(self.edges[1] - self.edges[0])
+
+    def center(self, coordinate: float) -> tuple[int, float]:
+        if self.policy == "uniform":
+            index = round((float(coordinate) - self.edges[0]) / self.step - 0.5)
+            index = max(0, min(index, self.count - 1))
+            value = self.edges[0] + (index + 0.5) * self.step
+        else:
+            centers = 0.5 * (self.edges[:-1] + self.edges[1:])
+            index = int(np.argmin(np.abs(centers - coordinate)))
+            value = centers[index]
+        return int(index), float(value)
+
+    def interval(self, lower: float, upper: float, *, min_cells=1):
+        lo, hi = sorted((float(lower), float(upper)))
+        if self.policy == "uniform":
+            eps = 1e-12 * max(abs(lo), abs(hi), abs(self.step), 1.0)
+            start = int(np.floor((lo - self.edges[0] + eps) / self.step))
+            stop = int(np.ceil((hi - self.edges[0] - eps) / self.step))
+        else:
+            start = int(np.searchsorted(self.edges, lo, side="right") - 1)
+            stop = int(np.searchsorted(self.edges, hi, side="left"))
+        start, stop = (max(0, min(value, self.count)) for value in (start, stop))
+        need = max(1, int(min_cells))
+        if stop - start < need:
+            midpoint = 0.5 * (lo + hi)
+            if self.policy == "uniform":
+                cell = int(np.floor((midpoint - self.edges[0]) / self.step))
+                cell = max(0, min(cell, self.count - 1))
+                stop = min(self.count, cell + need)
+                start = max(0, stop - need)
+            else:
+                cell, _ = self.center(midpoint)
+                start = max(0, min(cell, self.count - need))
+                stop = min(self.count, start + need)
+        return start, stop
+
+    def edge(self, index: int) -> float:
+        return float(self.edges[index])
+
+
+@dataclass(frozen=True, slots=True)
 class AxisGridQuality:
     """Cell-size and grading diagnostics for one rectilinear axis."""
 
@@ -178,6 +237,28 @@ class RectilinearGrid:
 
     def axis_edges(self, axis: Axis | int) -> np.ndarray:
         return getattr(self, f"{_axis_name(axis)}_edges")
+
+    def axis(
+        self, axis: Axis | int, *, policy: Literal["uniform", "edges"] = "edges"
+    ) -> GridAxis:
+        return GridAxis(self.axis_edges(axis), policy)
+
+    def crop(self, center, size, *, axes=("z", "y", "x")) -> tuple[slice, ...]:
+        """Cell-overlap crop in requested array-axis order; nonpositive spans are full."""
+        selectors = []
+        for axis in axes:
+            i = "xyz".index(axis)
+            span = float(size[i])
+            geometry = self.axis(axis)
+            if span <= 0.0 or not np.isfinite(span):
+                start, stop = 0, geometry.count
+            else:
+                midpoint = float(center[i])
+                start, stop = geometry.interval(
+                    midpoint - span / 2, midpoint + span / 2
+                )
+            selectors.append(slice(start, stop))
+        return tuple(selectors)
 
     def cell_widths(self, axis: Axis | int) -> np.ndarray:
         return np.diff(self.axis_edges(axis))

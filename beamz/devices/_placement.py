@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
 import numpy as np
+
+from beamz.design.grid import GridAxis, RectilinearGrid
 
 _AXES = ("x", "y", "z")
 
@@ -148,123 +149,51 @@ class SnappedRegion:
         )
 
 
-def snap_cell_center(coord: float, step: float, count: int) -> tuple[int, float]:
-    if count <= 0:
-        return 0, 0.0
-    idx = int(np_round_half_even((float(coord) / float(step)) - 0.5))
-    idx = max(0, min(idx, count - 1))
-    return idx, (float(idx) + 0.5) * float(step)
+def _uniform_axis(step, count):
+    return GridAxis(float(step) * np.arange(count + 1, dtype=float), "uniform")
 
 
-def snap_edge_interval(
-    lower: float,
-    upper: float,
-    step: float,
-    count: int,
-    *,
-    min_cells: int = 1,
-) -> SnappedInterval:
-    if count <= 0:
-        return SnappedInterval(0, 0, float(step))
-
-    lo = min(float(lower), float(upper))
-    hi = max(float(lower), float(upper))
-    eps = 1e-12 * max(abs(lo), abs(hi), abs(float(step)), 1.0)
-
-    start = int(math.floor((lo + eps) / float(step)))
-    stop = int(math.ceil((hi - eps) / float(step)))
-
-    start = max(0, min(start, count))
-    stop = max(0, min(stop, count))
-
-    need = max(1, int(min_cells))
-    if stop - start < need:
-        center = 0.5 * (lo + hi)
-        cell = int(math.floor(center / float(step)))
-        cell = max(0, min(cell, count - 1))
-        start = cell
-        stop = min(count, cell + need)
-        start = max(0, stop - need)
-
-    return SnappedInterval(start=int(start), stop=int(stop), step=float(step))
-
-
-def snap_rectilinear_cell_center(coord: float, edges) -> tuple[int, float]:
-    """Snap a coordinate to the nearest physical cell center."""
-    edge_array = np.asarray(edges, dtype=np.float64)
-    centers = 0.5 * (edge_array[:-1] + edge_array[1:])
-    if centers.size == 0:
-        return 0, 0.0
-    index = int(np.argmin(np.abs(centers - float(coord))))
-    return index, float(centers[index])
-
-
-def snap_rectilinear_edge_interval(
-    lower: float,
-    upper: float,
-    edges,
-    *,
-    min_cells: int = 1,
-) -> SnappedInterval:
-    """Snap physical bounds to the overlapping rectilinear cells."""
-    edge_array = np.asarray(edges, dtype=np.float64)
-    count = max(0, edge_array.size - 1)
-    if count == 0:
-        return SnappedInterval(0, 0, 0.0, tuple(edge_array))
-    lo, hi = sorted((float(lower), float(upper)))
-    start = int(np.searchsorted(edge_array, lo, side="right") - 1)
-    stop = int(np.searchsorted(edge_array, hi, side="left"))
-    start = max(0, min(start, count))
-    stop = max(0, min(stop, count))
-    need = max(1, int(min_cells))
-    if stop - start < need:
-        cell, _ = snap_rectilinear_cell_center(0.5 * (lo + hi), edge_array)
-        start = max(0, min(cell, count - need))
-        stop = min(count, start + need)
-    representative = float(np.min(np.diff(edge_array)))
+def _axis_interval(axis, lower, upper, *, min_cells=1):
+    start, stop = axis.interval(lower, upper, min_cells=min_cells)
     return SnappedInterval(
-        int(start),
-        int(stop),
-        representative,
-        tuple(float(value) for value in edge_array),
+        start,
+        stop,
+        axis.step if axis.policy == "uniform" else float(np.min(np.diff(axis.edges))),
+        physical_bounds=(axis.edge(start), axis.edge(stop)),
     )
 
 
-@dataclass(frozen=True)
-class _PlacementAxis:
-    """Geometry retaining scalar half-even/tolerance or edge first-tie policy."""
-
-    count: int
-    step: float
-    edges: np.ndarray | None = None
-
-    def center(self, coordinate):
-        if self.edges is None:
-            return snap_cell_center(coordinate, self.step, self.count)
-        return snap_rectilinear_cell_center(coordinate, self.edges)
-
-    def interval(self, lower, upper):
-        if self.edges is None:
-            return snap_edge_interval(lower, upper, self.step, self.count)
-        return snap_rectilinear_edge_interval(lower, upper, self.edges)
-
-    def edge(self, index):
-        return index * self.step if self.edges is None else float(self.edges[index])
+def snap_cell_center(coord: float, step: float, count: int) -> tuple[int, float]:
+    return (0, 0.0) if count <= 0 else _uniform_axis(step, count).center(coord)
 
 
-def _grid_axes(grid):
-    return {
-        name: _PlacementAxis(len(edges) - 1, 0.0, edges)
-        for name in _AXES
-        for edges in (np.asarray(grid.axis_edges(name)),)
-    }
+def snap_edge_interval(lower, upper, step, count, *, min_cells=1):
+    if count <= 0:
+        return SnappedInterval(0, 0, float(step))
+    return _axis_interval(_uniform_axis(step, count), lower, upper, min_cells=min_cells)
+
+
+def snap_rectilinear_cell_center(coord, edges):
+    if len(edges) < 2:
+        return 0, 0.0
+    return GridAxis(np.asarray(edges, dtype=float)).center(coord)
+
+
+def snap_rectilinear_edge_interval(lower, upper, edges, *, min_cells=1):
+    if len(edges) < 2:
+        return SnappedInterval(0, 0, 0.0, tuple(edges))
+    return _axis_interval(
+        GridAxis(np.asarray(edges, dtype=float)), lower, upper, min_cells=min_cells
+    )
+
+
+def _grid_axes(grid, *, policy="edges"):
+    return {name: grid.axis(name, policy=policy) for name in _AXES}
 
 
 def _uniform_axes(shape, steps):
-    return {
-        name: _PlacementAxis(count, float(step))
-        for name, count, step in zip(_AXES, reversed(shape), steps, strict=True)
-    }
+    grid = RectilinearGrid.from_spacing(tuple(reversed(shape)), tuple(steps))
+    return _grid_axes(grid, policy="uniform")
 
 
 def _snap_region(ndim, axis, coordinate, bounds, axes, *, companion_sign=None):
@@ -281,7 +210,7 @@ def _snap_region(ndim, axis, coordinate, bounds, axes, *, companion_sign=None):
         axis,
         index,
         coordinate,
-        {name: axes[name].interval(*limits) for name, limits in bounds.items()},
+        {name: _axis_interval(axes[name], *limits) for name, limits in bounds.items()},
         companion,
         None if companion is None else axes[axis].edge(companion + 1),
     )
@@ -350,71 +279,22 @@ def mode_source_region(
     height,
     axis,
     direction_sign,
-    grid_shape,
-    resolution,
+    grid_shape=None,
+    resolution=None,
     is_3d,
     grid=None,
 ):
-    if grid is not None:
-        return snap_mode_source_region_grid(
-            center=center,
-            width=width,
-            height=height,
-            axis=axis,
-            direction_sign=direction_sign,
-            grid=grid,
-            is_3d=is_3d,
-        )
-    return snap_mode_source_region(
-        center=center,
-        width=width,
-        height=height,
-        axis=axis,
-        direction_sign=direction_sign,
-        grid_shape=grid_shape,
-        resolution=resolution,
-        is_3d=is_3d,
-    )
-
-
-def snap_mode_source_region(
-    *,
-    center: tuple[float, ...],
-    width: float,
-    height: float | None,
-    axis: str,
-    direction_sign: float,
-    grid_shape: tuple[int, ...],
-    resolution: float,
-    is_3d: bool,
-) -> SnappedRegion:
-    counts = _counts_by_axis(grid_shape, is_3d)
-    axes = {name: _PlacementAxis(count, resolution) for name, count in counts.items()}
+    if grid is None:
+        if grid_shape is None or resolution is None:
+            raise ValueError("Mode placement requires a grid or shape and resolution.")
+        shape = grid_shape if is_3d else (1, *grid_shape)
+        axes = _uniform_axes(shape, (resolution,) * 3)
+        default_z = 0.5 * shape[0] * resolution
+    else:
+        axes = _grid_axes(grid)
+        default_z = None
     return _snap_mode_region(
-        center,
-        width,
-        height,
-        axis,
-        direction_sign,
-        axes,
-        is_3d,
-        default_z=0.5 * counts["z"] * float(resolution),
-    )
-
-
-def snap_mode_source_region_grid(
-    *,
-    center: tuple[float, ...],
-    width: float,
-    height: float | None,
-    axis: str,
-    direction_sign: float,
-    grid,
-    is_3d: bool,
-) -> SnappedRegion:
-    """Snap a mode launch to the realized rectilinear Yee grid."""
-    return _snap_mode_region(
-        center, width, height, axis, direction_sign, _grid_axes(grid), is_3d
+        center, width, height, axis, direction_sign, axes, is_3d, default_z
     )
 
 
@@ -548,17 +428,5 @@ def plane_region_slices(
     return indices[0], indices[1], indices[2]
 
 
-def np_round_half_even(value: float) -> int:
-    return int(round(float(value)))
-
-
 def _axis_pos(axis: str) -> int:
     return {"x": 0, "y": 1, "z": 2}[str(axis).lower()]
-
-
-def _counts_by_axis(grid_shape: tuple[int, ...], is_3d: bool) -> dict[str, int]:
-    if is_3d:
-        nz, ny, nx = (int(v) for v in grid_shape)
-        return {"x": nx, "y": ny, "z": nz}
-    ny, nx = (int(v) for v in grid_shape)
-    return {"x": nx, "y": ny, "z": 1}
