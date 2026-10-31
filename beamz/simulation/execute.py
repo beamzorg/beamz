@@ -1540,41 +1540,45 @@ def execute_step(
     )
 
 
-def _run_program_state(
-    program: CompiledProgram,
-    state: SimulationState,
-    *,
-    monitor_steps: int,
-    donate_state: bool,
-) -> SimulationState:
-    """Execute a program and return its cropped continuation state."""
-    state = run_program(
-        program,
-        runtime_inputs(program, state, monitor_steps=monitor_steps),
-        donate_state=donate_state,
-    )
-    state.ez.block_until_ready()
-    return sharding_runtime.crop_state(program, state)
+def _execute_chunk(program, state, *, monitor_steps, donate_state, timed):
+    """Restore, place, execute, synchronize and crop one owned continuation.
 
-
-def _run_program_state_timed(
-    program: CompiledProgram,
-    state: SimulationState,
-    *,
-    monitor_steps: int,
-    donate_state: bool,
-) -> tuple[SimulationState, float]:
-    """Run a ready executable and measure only its device-complete execution."""
+    Compilation precedes the timer; the untimed path retains lazy compilation.
+    Neither path derives clocks on the host or copies a donated input afterward.
+    """
     state = runtime_inputs(program, state, monitor_steps=monitor_steps)
-    state, coeffs = _place_program_inputs(program, state)
-    executable = _compiled_program_execution(
-        program, state, coeffs, donate_state=donate_state
-    )
-    started = perf_counter()
-    state = executable(*_execution_arguments(program, state, coeffs))
+    if timed:
+        state, coeffs = _place_program_inputs(program, state)
+        executable = _compiled_program_execution(
+            program, state, coeffs, donate_state=donate_state
+        )
+        started = perf_counter()
+        state = executable(*_execution_arguments(program, state, coeffs))
+    else:
+        state = run_program(program, state, donate_state=donate_state)
     state.ez.block_until_ready()
-    runtime_s = max(perf_counter() - started, np.finfo(float).tiny)
-    return sharding_runtime.crop_state(program, state), runtime_s
+    elapsed = max(perf_counter() - started, np.finfo(float).tiny) if timed else 0.0
+    return sharding_runtime.crop_state(program, state), elapsed
+
+
+def _run_program_state(program, state, *, monitor_steps, donate_state):
+    return _execute_chunk(
+        program,
+        state,
+        monitor_steps=monitor_steps,
+        donate_state=donate_state,
+        timed=False,
+    )[0]
+
+
+def _run_program_state_timed(program, state, *, monitor_steps, donate_state):
+    return _execute_chunk(
+        program,
+        state,
+        monitor_steps=monitor_steps,
+        donate_state=donate_state,
+        timed=True,
+    )
 
 
 def _performance_for(
@@ -1625,17 +1629,39 @@ def compiled_xla_memory_analysis(
     }
 
 
-def _finish_run(simulation, program, state, store_full_materials, stats, report):
-    """Detach the shared results of a complete or progress-chunked segment."""
-    results = SimulationResults.from_run(
+def _run_results(
+    simulation,
+    program,
+    state,
+    store_full_materials,
+    *,
+    monitor_results=None,
+    **metadata,
+):
+    """Detach acquisitions and source/material metadata at the run boundary."""
+    return SimulationResults.from_run(
         simulation,
         runtime_fields=program.grid,
-        monitor_results=_decode_monitor_results(simulation, program, state),
-        completed_steps=int(state.current_step),
+        monitor_results=(
+            _decode_monitor_results(simulation, program, state)
+            if monitor_results is None
+            else monitor_results
+        ),
         store_full_materials=store_full_materials,
         source_launch_powers=_compiled_source_launch_powers(
             program, len(simulation.sources)
         ),
+        **metadata,
+    )
+
+
+def _finish_run(simulation, program, state, store_full_materials, stats, report):
+    results = _run_results(
+        simulation,
+        program,
+        state,
+        store_full_materials,
+        completed_steps=int(state.current_step),
         performance=stats,
     )
     if stats is not None and report:
@@ -1659,15 +1685,13 @@ def run_simulation_program(
     compiling = progress and not program_is_compiled(program, donate_state=donate_state)
     if compiling:
         _print_inline_status("Compiling simulation...")
-    runtime_s = None
-    if performance:
-        state, runtime_s = _run_program_state_timed(
-            program, state, monitor_steps=monitor_steps, donate_state=donate_state
-        )
-    else:
-        state = _run_program_state(
-            program, state, monitor_steps=monitor_steps, donate_state=donate_state
-        )
+    state, runtime_s = _execute_chunk(
+        program,
+        state,
+        monitor_steps=monitor_steps,
+        donate_state=donate_state,
+        timed=performance,
+    )
     if progress:
         if compiling:
             _finish_inline_progress()
@@ -1681,7 +1705,7 @@ def run_simulation_program(
         _performance_for(
             program, runtime_s=runtime_s, steps=int(program.config.num_steps)
         )
-        if runtime_s is not None
+        if performance
         else None
     )
     return _finish_run(
@@ -1755,21 +1779,14 @@ def run_simulation_with_progress(
     try:
         for length in chunk_lengths:
             program = programs[length]
-            if performance:
-                state, elapsed = _run_program_state_timed(
-                    program,
-                    state,
-                    monitor_steps=monitor_steps,
-                    donate_state=donate_state,
-                )
-                runtime_s += elapsed
-            else:
-                state = _run_program_state(
-                    program,
-                    state,
-                    monitor_steps=monitor_steps,
-                    donate_state=donate_state,
-                )
+            state, elapsed = _execute_chunk(
+                program,
+                state,
+                monitor_steps=monitor_steps,
+                donate_state=donate_state,
+                timed=performance,
+            )
+            runtime_s += elapsed
             completed += length
             _print_inline_progress(completed, num_steps, label="Running simulation")
     finally:
@@ -1859,15 +1876,14 @@ def run_until_terminated(
                     progress=False,
                 )
             )
-            if performance:
-                state, elapsed = _run_program_state_timed(
-                    program, state, monitor_steps=remaining, donate_state=True
-                )
-                runtime_s += elapsed
-            else:
-                state = _run_program_state(
-                    program, state, monitor_steps=remaining, donate_state=True
-                )
+            state, elapsed = _execute_chunk(
+                program,
+                state,
+                monitor_steps=remaining,
+                donate_state=True,
+                timed=performance,
+            )
+            runtime_s += elapsed
             # Convergence uses raw acquisitions. Building a durable result here
             # repeatedly normalizes the full source record and copies metadata.
             monitor_results = _decode_monitor_results(simulation, program, state)
@@ -1953,14 +1969,12 @@ def run_until_terminated(
         max_field=max_field,
         consecutive_checks=successful_checks,
     )
-    results = SimulationResults.from_run(
+    results = _run_results(
         simulation,
-        runtime_fields=program.grid,
+        program,
+        state,
+        store_full_materials,
         monitor_results=monitor_results,
-        store_full_materials=store_full_materials,
-        source_launch_powers=_compiled_source_launch_powers(
-            program, len(simulation.sources)
-        ),
     )
     if reason == "converged":
         results = _complete_converged_dft_weights(results, simulation, first_program)

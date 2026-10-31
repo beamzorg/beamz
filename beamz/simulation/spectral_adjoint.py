@@ -25,7 +25,7 @@ from beamz.simulation.differentiable import (
     topology_yee_permittivity,
 )
 from beamz.simulation.execute import build_step_context, forward_step
-from beamz.simulation.observe import monitor_dft_sample_scale
+from beamz.simulation.observe import dft_buffer_layout, monitor_dft_sample_scale
 
 _IMPEDANCE = np.sqrt(MU_0 / EPS_0)
 _COMPONENTS = ("ex", "ey", "ez", "hx", "hy", "hz")
@@ -336,12 +336,8 @@ class SpectralAdjoint:
     def _adjoint_sources(self, grad_re, grad_im):
         plans = []
         for mon in self.program.monitors:
-            count = 6 * mon.freq_count * mon.dft_point_count
-            start = mon.dft_value_offset
-            gradients = (
-                np.asarray(grad_re[start : start + count])
-                - 1j * np.asarray(grad_im[start : start + count])
-            ).reshape(6, mon.freq_count, mon.dft_point_count)
+            layout = dft_buffer_layout(mon)
+            gradients = np.conj(layout.unpack(np.asarray(grad_re), np.asarray(grad_im)))
             scale = float(
                 monitor_dft_sample_scale(
                     1.0,

@@ -419,6 +419,29 @@ def monitor_frequency_size(specs: tuple[CompiledMonitorSpec, ...]) -> int:
     return int(max(int(spec.freq_count) for spec in specs))
 
 
+@dataclass(frozen=True)
+class DftBufferLayout:
+    """Interpret the compiler's component-major DFT arena without owning arrays."""
+
+    shape: tuple[int, int, int]
+    values: slice
+    weights: slice
+
+    def unpack(self, real, imag):
+        return (real[self.values] + 1j * imag[self.values]).reshape(self.shape)
+
+
+def dft_buffer_layout(spec, *, local_offsets=False):
+    frequencies, points = int(spec.freq_count), int(spec.dft_point_count)
+    value_start = 0 if local_offsets else int(spec.dft_value_offset)
+    weight_start = 0 if local_offsets else int(spec.dft_weight_offset)
+    return DftBufferLayout(
+        (6, frequencies, points),
+        slice(value_start, value_start + 6 * frequencies * points),
+        slice(weight_start, weight_start + frequencies),
+    )
+
+
 def monitor_dft_value_size(specs: tuple[CompiledMonitorSpec, ...]) -> int:
     """Return the exact number of real values in one vector-DFT arena."""
     return sum(6 * int(spec.freq_count) * int(spec.dft_point_count) for spec in specs)
@@ -450,30 +473,19 @@ def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any
     # concrete empty arrays of the same ranks as an enabled state.
     specs = program.monitors
     dft_dtype = monitor_dft_accumulator_dtype()
-    if not specs:
-        values = tuple(
-            jnp.zeros(shape, dtype=dtype)
-            for shape, dtype in (
-                ((0, 0), jnp.float32),
-                ((0, 0), jnp.float32),
-                ((0,), jnp.int32),
-                ((0, 0), jnp.float32),
-                ((0, 0), jnp.float32),
-                ((0,), dft_dtype),
-                ((0,), dft_dtype),
-                ((0,), dft_dtype),
-            )
-        ) + ((), (), (), ())
-        return dict(zip(MONITOR_FIELDS, values, strict=True))
     # 2. Keep scalar histories rectangular, but size vector DFT arenas by the exact sum
     # of monitor payloads. Offsets live in each immutable CompiledMonitorSpec.
     n = len(specs)
-    max_records = max(
-        1,
-        monitor_state_size(
-            specs,
-            program.config.num_steps if num_steps is None else int(num_steps),
-        ),
+    max_records = (
+        max(
+            1,
+            monitor_state_size(
+                specs,
+                program.config.num_steps if num_steps is None else int(num_steps),
+            ),
+        )
+        if specs
+        else 0
     )
     max_freq = monitor_frequency_size(specs)
     dft_value_count = monitor_dft_value_size(specs)
@@ -618,18 +630,10 @@ def _accumulate_dft(
         )
     )
     nf, npnt = mon.freq_count, mon.dft_point_count
-    value_offset = 0 if local_offsets else int(mon.dft_value_offset)
-    value_count = 6 * int(nf) * int(npnt)
-    weight_offset = 0 if local_offsets else int(mon.dft_weight_offset)
-    d_re = d_re.at[value_offset : value_offset + value_count].add(
-        delta_re[:, :nf, :npnt].reshape(-1)
-    )
-    d_im = d_im.at[value_offset : value_offset + value_count].add(
-        delta_im[:, :nf, :npnt].reshape(-1)
-    )
-    d_w = d_w.at[weight_offset : weight_offset + nf].add(
-        jnp.full((nf,), window, dtype=dtype)
-    )
+    layout = dft_buffer_layout(mon, local_offsets=local_offsets)
+    d_re = d_re.at[layout.values].add(delta_re[:, :nf, :npnt].reshape(-1))
+    d_im = d_im.at[layout.values].add(delta_im[:, :nf, :npnt].reshape(-1))
+    d_w = d_w.at[layout.weights].add(jnp.full((nf,), window, dtype=dtype))
     return d_re, d_im, d_w
 
 
