@@ -13,6 +13,60 @@ import jax.numpy as jnp
 import numpy as np
 
 
+def _rotate_cpml_terms(old, axes, order, transpose=None):
+    """Rotate metadata alone for planning, and profiles at the native boundary."""
+    if not old:
+        return ()
+    result = []
+    for index, original in enumerate(order):
+        term = old[original]
+        axis = axes.index(term.axis)
+        if transpose is not None and (
+            axis != (1, 0, 0, 2, 2, 1)[index]
+            or term.sign != (1 if index % 2 == 0 else -1)
+        ):
+            raise ValueError("Cyclic storage requires canonical 3D CPML curl terms")
+        term = replace(
+            term,
+            component=term.component[0] + "xyz"[index // 2],
+            axis=axis,
+            slab=term.slab._replace(
+                axis=axis, shape=tuple(term.slab.shape[a] for a in axes)
+            ),
+        )
+        if transpose is not None:
+            term = replace(
+                term,
+                a=transpose(term.a),
+                b=transpose(term.b),
+                inv_kappa=transpose(term.inv_kappa),
+            )
+        result.append(term)
+    return tuple(result)
+
+
+def _rotate_monitor_indices(flat, shape, axes, *, xp):
+    coordinates = (
+        flat // (shape[1] * shape[2]),
+        (flat // shape[2]) % shape[1],
+        flat % shape[2],
+    )
+    remapped = (coordinates[axes[0]] * shape[axes[1]] + coordinates[axes[1]]) * shape[
+        axes[2]
+    ] + coordinates[axes[2]]
+    return xp.where((flat >= 0) & (flat < math.prod(shape)), remapped, -1)
+
+
+def _rotate_edges(edges, axes):
+    faces = (("front", "back"), ("bottom", "top"), ("left", "right"))
+    return frozenset(
+        faces[new][side]
+        for new, old in enumerate(axes)
+        for side in range(2)
+        if faces[old][side] in edges
+    )
+
+
 def mstep_plan_inputs(program, groups, monitors):
     """Rotate only dependency metadata; the executable shares the full transform."""
     from types import SimpleNamespace
@@ -28,24 +82,10 @@ def mstep_plan_inputs(program, groups, monitors):
     stored_shapes = tuple(tuple(shapes[c][a] for a in axes) for c in order)
     terms = tuple(2 * c + k for c in components for k in range(2))
 
-    def rotate_terms(old):
-        if not old:
-            return ()
-        return tuple(
-            replace(
-                old[i],
-                component=old[i].component[0] + "xyz"[j // 2],
-                axis=axes.index(old[i].axis),
-                slab=old[i].slab._replace(
-                    axis=axes.index(old[i].axis),
-                    shape=tuple(old[i].slab.shape[a] for a in axes),
-                ),
-            )
-            for j, i in enumerate(terms)
-        )
-
     cpml = replace(
-        cpml, h_terms=rotate_terms(cpml.h_terms), e_terms=rotate_terms(cpml.e_terms)
+        cpml,
+        h_terms=_rotate_cpml_terms(cpml.h_terms, axes, terms),
+        e_terms=_rotate_cpml_terms(cpml.e_terms, axes, terms),
     )
     stored_groups = tuple(
         None
@@ -70,15 +110,7 @@ def mstep_plan_inputs(program, groups, monitors):
             # Monitor component lanes use E,H order; native banks use H,E.
             shape = shapes[(old + 3) % 6]
             flat = original[:, old]
-            coord = (
-                flat // (shape[1] * shape[2]),
-                (flat // shape[2]) % shape[1],
-                flat % shape[2],
-            )
-            remapped = (coord[axes[0]] * shape[axes[1]] + coord[axes[1]]) * shape[
-                axes[2]
-            ] + coord[axes[2]]
-            rows.append(np.where((flat >= 0) & (flat < math.prod(shape)), remapped, -1))
+            rows.append(_rotate_monitor_indices(flat, shape, axes, xp=np))
         indices = np.stack(rows, axis=1)
     return stored_shapes, cpml, stored_groups, indices
 
@@ -175,48 +207,12 @@ def wrap_program_call(original, axes):
             dft_vec_im=_permute_monitor_arena(state.dft_vec_im, counts, six_components),
         )
 
-        def boundary_terms(old_terms):
-            if not old_terms:
-                return ()
-            result = []
-            for new_index, old_index in enumerate(terms):
-                term = old_terms[old_index]
-                component = term.component[0] + "xyz"[new_index // 2]
-                axis = inverse_axes[term.axis]
-                if axis != (1, 0, 0, 2, 2, 1)[new_index] or term.sign != (
-                    1 if new_index % 2 == 0 else -1
-                ):
-                    raise ValueError(
-                        "Cyclic storage requires canonical 3D CPML curl terms"
-                    )
-                result.append(
-                    replace(
-                        term,
-                        component=component,
-                        axis=axis,
-                        a=transpose(term.a),
-                        b=transpose(term.b),
-                        inv_kappa=transpose(term.inv_kappa),
-                        slab=term.slab._replace(
-                            axis=axis, shape=tuple(term.slab.shape[a] for a in axes)
-                        ),
-                    )
-                )
-            return tuple(result)
-
-        faces = (("front", "back"), ("bottom", "top"), ("left", "right"))
         old_cpml = ctx.boundary.cpml
-        new_edges = frozenset(
-            faces[new][side]
-            for new, old in enumerate(axes)
-            for side in range(2)
-            if faces[old][side] in old_cpml.metallic_edges
-        )
         cpml = replace(
             old_cpml,
-            metallic_edges=new_edges,
-            h_terms=boundary_terms(old_cpml.h_terms),
-            e_terms=boundary_terms(old_cpml.e_terms),
+            metallic_edges=_rotate_edges(old_cpml.metallic_edges, axes),
+            h_terms=_rotate_cpml_terms(old_cpml.h_terms, axes, terms, transpose),
+            e_terms=_rotate_cpml_terms(old_cpml.e_terms, axes, terms, transpose),
         )
         new_ctx = replace(
             ctx,
@@ -273,17 +269,7 @@ def wrap_program_call(original, axes):
                 name = ("ex", "ey", "ez", "hx", "hy", "hz")[old]
                 shape = getattr(state, name).shape
                 flat = monitors[0][:, old]
-                coord = (
-                    flat // (shape[1] * shape[2]),
-                    (flat // shape[2]) % shape[1],
-                    flat % shape[2],
-                )
-                remapped = (coord[axes[0]] * shape[axes[1]] + coord[axes[1]]) * shape[
-                    axes[2]
-                ] + coord[axes[2]]
-                new_indices.append(
-                    jnp.where((flat >= 0) & (flat < math.prod(shape)), remapped, -1)
-                )
+                new_indices.append(_rotate_monitor_indices(flat, shape, axes, xp=jnp))
             new_monitors = (
                 jnp.stack(new_indices, axis=1),
                 monitors[1][:, six_components],
@@ -373,35 +359,8 @@ def wrap_sharded_phase(original, axes):
             )
         order = tuple(2 * c + k for c in components for k in range(2)) if terms else ()
         inverse_terms = tuple(order.index(t) for t in range(len(terms)))
-        rotated_terms = []
-        for new_index, old_index in enumerate(order):
-            term = terms[old_index]
-            axis = inverse_axes[term.axis]
-            if axis != (1, 0, 0, 2, 2, 1)[new_index] or term.sign != (
-                1 if new_index % 2 == 0 else -1
-            ):
-                raise ValueError("Cyclic storage requires canonical 3D CPML curl terms")
-            rotated_terms.append(
-                replace(
-                    term,
-                    component=term.component[0] + "xyz"[new_index // 2],
-                    axis=axis,
-                    a=transpose(term.a),
-                    b=transpose(term.b),
-                    inv_kappa=transpose(term.inv_kappa),
-                    slab=term.slab._replace(
-                        axis=axis, shape=tuple(term.slab.shape[a] for a in axes)
-                    ),
-                )
-            )
-        faces = (("front", "back"), ("bottom", "top"), ("left", "right"))
-        old_edges = kwargs["metallic_edges"]
-        kwargs["metallic_edges"] = frozenset(
-            faces[new][side]
-            for new, old in enumerate(axes)
-            for side in range(2)
-            if faces[old][side] in old_edges
-        )
+        rotated_terms = _rotate_cpml_terms(terms, axes, order, transpose)
+        kwargs["metallic_edges"] = _rotate_edges(kwargs["metallic_edges"], axes)
         geometry = kwargs["shard_geometry"]
         # Origin and return-curl mode are unchanged. Axis and component shapes
         # rotate with the fields; normal-first storage makes the new axis zero.
@@ -423,7 +382,7 @@ def wrap_sharded_phase(original, axes):
             tuple(
                 transpose(materials[base + c]) for base in (0, 3) for c in components
             ),
-            tuple(rotated_terms),
+            rotated_terms,
             tuple(transpose(psi[t]) for t in order),
             tuple(metrics[a] for a in axes),
             **kwargs,
