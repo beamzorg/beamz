@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from dataclasses import replace
-from typing import Literal, cast, overload
+from typing import Any, Literal, cast, overload
 
 import numpy as np
 
@@ -499,7 +499,7 @@ def mode_plane_solve_arguments(
     dt,
     grid,
     num_modes,
-):
+) -> dict[str, Any]:
     """Common launch/preview inputs to the finite-plane solver.
 
     Callers still choose the numerical solver and its direction; candidate basis
