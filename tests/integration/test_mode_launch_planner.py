@@ -427,8 +427,8 @@ def test_mode_launch_recomputes_nonfinite_discrete_wave_number(monkeypatch):
     calls = []
     monkeypatch.setattr(
         mode_launch_module,
-        "solve_mode_plane_3d",
-        lambda *_args, **_kwargs: mode,
+        "bind_material_mode_plane",
+        lambda *_args, **_kwargs: SimpleNamespace(solve=lambda index: mode),
     )
     monkeypatch.setattr(
         mode_launch_module,

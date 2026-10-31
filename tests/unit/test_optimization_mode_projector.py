@@ -74,7 +74,7 @@ def test_projector_interpolation_and_coupled_basis(monkeypatch, axis, singular):
         seen.append(port.mode_spec)
         return projections[port.mode_spec.mode_index]
 
-    monkeypatch.setattr(modes, "_build_port_projection", build)
+    monkeypatch.setattr("beamz.analysis.mode_projection._build_port_projection", build)
     project = modes.build_mode_projector(None, "port")
     for index, spec in enumerate(seen):
         assert spec == replace(monitor.mode_spec, mode_index=index)

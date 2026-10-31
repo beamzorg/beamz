@@ -9,8 +9,8 @@ import pytest
 import beamz as bz
 from beamz.design.discretization import MaterialGrid
 from beamz.design.grid import RectilinearGrid
-from beamz.devices.modes import discrete
-from beamz.devices.modes.plane import solve_mode_plane_3d
+from beamz.devices.modes import discrete, plane
+from beamz.devices.modes.plane import bind_material_mode_plane
 
 
 @pytest.fixture
@@ -76,8 +76,14 @@ def discrete_overlap(left, right):
 @pytest.mark.parametrize("num_modes", [1, 2, 3])
 def test_preview_solves_each_candidate_pool_once(preview_fixture, num_modes):
     sim, source = preview_fixture(num_modes)
-    with patch.object(discrete, "solve_grid", wraps=discrete.solve_grid) as solve:
+    with (
+        patch.object(discrete, "solve_grid", wraps=discrete.solve_grid) as solve,
+        patch.object(
+            plane, "_local_component_materials", wraps=plane._local_component_materials
+        ) as supports,
+    ):
         data = source.solve_modes(sim)
+    assert supports.call_count == 1
     assert [call.kwargs["num_modes"] for call in solve.call_args_list] == [
         2 * num_modes + 5
     ]
@@ -180,13 +186,22 @@ def test_preview_launch_and_projection_share_the_mode_family(
     launched = []
 
     def launch(*args, **kwargs):
-        mode = solve_mode_plane_3d(*args, **kwargs)
-        launched.append(mode)
-        return mode
+        family = bind_material_mode_plane(*args, **kwargs)
+        solve = family.solve
+
+        class CapturedFamily:
+            def solve(self, index):
+                mode = solve(index)
+                launched.append(mode)
+                return mode
+
+        return CapturedFamily()
 
     for index in range(3):
         src = source.updated_copy(mode_spec=replace(source.mode_spec, mode_index=index))
-        with patch("beamz.devices.sources.mode_launch.solve_mode_plane_3d", launch):
+        with patch(
+            "beamz.devices.sources.mode_launch.bind_material_mode_plane", launch
+        ):
             sim.updated_copy(sources=[src]).compile(backend="jax")
     assert len(launched) == 3
     for mode in launched:
@@ -204,11 +219,18 @@ def test_preview_launch_and_projection_share_the_mode_family(
     projected = []
 
     def projection(*args, **kwargs):
-        mode = solve_mode_plane_3d(*args, **kwargs)
-        projected.append(mode)
-        return mode
+        family = bind_material_mode_plane(*args, **kwargs)
+        solve = family.solve
 
-    with patch("beamz.analysis.mode_projection.solve_mode_plane_3d", projection):
+        class CapturedFamily:
+            def solve(self, index):
+                mode = solve(index)
+                projected.append(mode)
+                return mode
+
+        return CapturedFamily()
+
+    with patch("beamz.analysis.mode_projection.bind_material_mode_plane", projection):
         result.mode("review")
     assert len(projected) == 3
     for mode in projected:

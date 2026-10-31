@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from functools import partial
-
 import numpy as np
 
 from beamz.devices._placement import snap_mode_source_region_grid
-from beamz.devices.modes.discrete import _solve_beamz_mode
-from beamz.devices.modes.plane import mode_plane_solve_arguments, solve_mode_plane_3d
+from beamz.devices.modes.plane import bind_material_mode_plane
 from beamz.devices.modes.specs import ModeData
 from beamz.lattice import component_axis_offsets_3d
 
@@ -39,37 +36,22 @@ def solve_tensor_mode_plane(
         is_3d=True,
         grid=grid,
     )
-    arguments = mode_plane_solve_arguments(
-        materials,
-        spec=spec,
-        num_modes=spec.num_modes,
-        center=center,
-        width=width,
-        height=height,
-        snapped=snapped,
-        direction=signed,
-        resolution=simulation.resolution,
-        dt=simulation.dt,
-        grid=grid,
-    )
     solved = []
     for frequency in frequencies:
-        # Share the finalized candidate basis, but prepare each mode separately.
-        solver = partial(_solve_beamz_mode, basis_cache={})
-        solved.append(
-            [
-                solve_mode_plane_3d(
-                    np.asarray(materials.permittivity),
-                    np.asarray(materials.permeability),
-                    **arguments,
-                    yee_materials=materials.yee_materials,
-                    frequency=frequency,
-                    mode_index=index,
-                    solver=solver,
-                )
-                for index in range(spec.num_modes)
-            ]
+        family = bind_material_mode_plane(
+            materials,
+            spec=spec,
+            center=center,
+            width=width,
+            height=height,
+            snapped=snapped,
+            direction=signed,
+            resolution=simulation.resolution,
+            dt=simulation.dt,
+            grid=grid,
+            frequency=frequency,
         )
+        solved.append([family.solve(index) for index in range(spec.num_modes)])
 
     def collocated(mode, prefix):
         fields = []

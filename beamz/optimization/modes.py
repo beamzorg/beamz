@@ -1,7 +1,5 @@
 """Fixed modal projections for objectives built from differentiable DFT fields."""
 
-from dataclasses import replace
-
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -10,50 +8,8 @@ from beamz.analysis.data import analysis_data
 from beamz.analysis.modal_projection.geometry import (
     _monitor_analysis_plane_3d,
 )
-from beamz.analysis.mode_projection import (
-    _build_port_projection,
-    _modal_coefficient_rows_3d,
-)
+from beamz.analysis.mode_projection import _coupled_projection, _monitor_port
 from beamz.devices.monitors.monitors import ModeMonitor
-from beamz.devices.ports import Port
-
-
-def _monitor_port(monitor, mode_index, polarization=None):
-    """Adapt a monitor without dropping solver, symmetry, or refinement options."""
-    return Port(
-        center=monitor.center,
-        size=monitor.size,
-        name=f"{monitor.name}_mode_{mode_index}",
-        monitor_name=monitor.name,
-        direction="+",
-        mode_spec=replace(
-            monitor.mode_spec,
-            mode_index=mode_index,
-            polarization=monitor.mode_spec.polarization or polarization,
-        ),
-    )
-
-
-def _coupled_projection(data, port, monitor, frequency, cache):
-    """Bind all modes together, preserving the monitor's complete ModeSpec."""
-    key = ("coupled_rows", monitor.name, float(frequency))
-    if key not in cache:
-        mode_cache = cache.setdefault(("mode_projections", monitor.name), {})
-        projections = [
-            _build_port_projection(
-                data,
-                port.updated_copy(
-                    name=f"{monitor.name}_mode_{index}",
-                    mode_spec=replace(port.mode_spec, mode_index=index),
-                ),
-                monitor,
-                float(frequency),
-                mode_cache,
-            )
-            for index in range(monitor.mode_spec.num_modes)
-        ]
-        cache[key] = projections, _modal_coefficient_rows_3d(projections)
-    return cache[key]
 
 
 def build_mode_projector(results, monitor):
