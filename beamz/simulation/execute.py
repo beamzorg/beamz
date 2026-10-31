@@ -809,13 +809,7 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
         not rest for _group, rest in source_batches.values()
     )
     graph_monitors_supported = bool(program.monitors) and all(
-        monitor.recorder_index < 0
-        and not monitor.accumulate_power
-        and not monitor.accumulate_frequency
-        and monitor.dft_enabled
-        and monitor.freq_count > 0
-        and monitor.dft_point_count > 0
-        for monitor in program.monitors
+        monitor_runtime.is_vector_dft_monitor(monitor) for monitor in program.monitors
     )
     packed_graph_monitors = None
     if (
