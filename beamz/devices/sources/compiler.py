@@ -960,6 +960,19 @@ _TRANSVERSE_AXES: dict[FieldAxis3D, tuple[FieldAxis3D, FieldAxis3D]] = {
 _FIELD_COMPONENTS = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
 
 
+def _beam_transverse_extents(size, axis: FieldAxis3D) -> tuple[float, float]:
+    values = np.asarray(size, dtype=np.float64).reshape(-1)
+    if values.size == 1:
+        values = np.repeat(values, 2)
+    elif values.size == 3:
+        values = values[[_AXES.index(name) for name in _TRANSVERSE_AXES[axis]]]
+    elif values.size != 2:
+        raise ValueError("size must be a scalar, 2-tuple, or 3-tuple.")
+    if np.any(~np.isfinite(values)) or np.any(values <= 0.0):
+        raise ValueError("size extents must be positive finite values.")
+    return float(values[0]), float(values[1])
+
+
 def gaussian_beam_wavelength(source) -> float:
     if source.wavelength is not None:
         return float(source.wavelength)
@@ -974,10 +987,8 @@ def gaussian_beam_wavelength(source) -> float:
 def gaussian_beam_waist_radius(source) -> float:
     if source.waist_radius is not None:
         return float(source.waist_radius)
-    values = np.asarray(source.size, dtype=np.float64).reshape(-1)
-    if values.size == 0:
-        raise ValueError("GaussianBeamSource size must not be empty.")
-    return 0.25 * float(np.min(values))
+    axis, _ = _parse_direction(source.direction)
+    return 0.25 * min(_beam_transverse_extents(source.size, axis))
 
 
 def gaussian_beam_field_profile(source, fields, *, resolution: float) -> FieldProfile3D:
@@ -1078,7 +1089,7 @@ class GaussianBeamProfile:
         if float(self.power) < 0.0:
             raise ValueError("power must be non-negative.")
         _parse_direction(self.direction)
-        self._transverse_extents()
+        _beam_transverse_extents(self.size, self.axis)
 
     @property
     def axis(self) -> FieldAxis3D:
@@ -1212,22 +1223,6 @@ class GaussianBeamProfile:
             phase_plane_coord=phase_plane_coord,
         )
 
-    def _transverse_extents(self) -> tuple[float, float]:
-        values = np.asarray(self.size, dtype=np.float64).reshape(-1)
-        if values.size == 1:
-            out = (float(values[0]), float(values[0]))
-        elif values.size == 2:
-            out = (float(values[0]), float(values[1]))
-        elif values.size == 3:
-            extents: dict[FieldAxis3D, float] = dict(zip(_AXES, values, strict=True))
-            t1_axis, t2_axis = _TRANSVERSE_AXES[self.axis]
-            out = (float(extents[t1_axis]), float(extents[t2_axis]))
-        else:
-            raise ValueError("size must be a scalar, 2-tuple, or 3-tuple.")
-        if any((not np.isfinite(v)) or v <= 0.0 for v in out):
-            raise ValueError("size extents must be positive finite values.")
-        return out
-
     def _transverse_slices(
         self,
         resolution: float,
@@ -1236,7 +1231,7 @@ class GaussianBeamProfile:
         center_xyz: dict[FieldAxis3D, float] = dict(
             zip(_AXES, _as_xyz(self.center, name="center"), strict=True)
         )
-        extents = self._transverse_extents()
+        extents = _beam_transverse_extents(self.size, self.axis)
         out: dict[FieldAxis3D, slice] = {}
         dims = {"z": grid_shape[0], "y": grid_shape[1], "x": grid_shape[2]}
         for axis_name, extent in zip(_TRANSVERSE_AXES[self.axis], extents, strict=True):

@@ -90,17 +90,21 @@ def _expand_residuals(residuals, fields, components):
     return expanded
 
 
-def test_gaussian_beam_source_emits_compiled_planar_tfsf_specs():
+@pytest.mark.parametrize(
+    "size, waist_radius",
+    [((1.2 * um, 1.2 * um), 0.35 * um), ((0.0, 1.2 * um, 1.2 * um), None)],
+)
+def test_gaussian_beam_source_emits_compiled_planar_tfsf_specs(size, waist_radius):
     fields = _empty_3d_fields()
     source = GaussianBeamSource(
         center=(1.0 * um, 1.0 * um, 1.0 * um),
-        size=(1.2 * um, 1.2 * um),
+        size=size,
         source_time=_pulse(1.55 * um),
         direction="+x",
         angle_theta=0.0,
         angle_phi=0.0,
         pol_angle=0.0,
-        waist_radius=0.35 * um,
+        waist_radius=waist_radius,
     )
     dt = 0.15 * um / (LIGHT_SPEED * np.sqrt(3.0))
 
