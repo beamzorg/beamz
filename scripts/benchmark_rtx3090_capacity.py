@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from rtx3090_benchmark import source_environment, source_revision
     from rtx3090_capacity import (
         BARE_WORKLOAD,
         MODAL_WORKLOAD,
@@ -34,6 +35,7 @@ try:
         write_capacity_artifacts,
     )
 except ModuleNotFoundError:
+    from scripts.rtx3090_benchmark import source_environment, source_revision
     from scripts.rtx3090_capacity import (
         BARE_WORKLOAD,
         MODAL_WORKLOAD,
@@ -69,21 +71,6 @@ DEFAULT_RESOLUTIONS_NM = (
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _git(root: Path, *args: str) -> str:
-    return subprocess.run(
-        ("git", *args),
-        cwd=root,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-
-
-def _revision(root: Path) -> str:
-    commit = _git(root, "rev-parse", "HEAD")
-    return commit + ("-dirty" if _git(root, "status", "--porcelain") else "")
 
 
 def _parse_mib(value: str) -> int:
@@ -158,15 +145,9 @@ def _child_environment(root: Path, allocator_fraction: float) -> dict[str, str]:
     does, so an editable installation or another checkout cannot silently
     replace the candidate under measurement.
     """
-    environment = os.environ.copy()
-    source_paths = [str(root)]
-    if previous_path := environment.get("PYTHONPATH"):
-        source_paths.append(previous_path)
-    environment["PYTHONPATH"] = os.pathsep.join(source_paths)
+    environment = source_environment(root)
     environment["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
     environment["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(allocator_fraction)
-    environment["BEAMZ_DISABLE_JAX_PERSISTENT_CACHE"] = "1"
-    environment.pop("JAX_COMPILATION_CACHE_DIR", None)
     return environment
 
 
@@ -710,7 +691,7 @@ def run_sweep(args: argparse.Namespace) -> tuple[CapacitySweep, dict[str, Path]]
         detail = failures[-1].detail if failures else "no child attempts completed"
         raise RuntimeError(f"capacity sweep produced no measurements:\n{detail}")
     sweep = CapacitySweep(
-        beamz_revision=_revision(root),
+        beamz_revision=source_revision(root),
         device=device,
         driver_version=(
             None
