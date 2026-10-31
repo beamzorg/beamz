@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
 import numpy as np
 
 from beamz.devices._immutable import (
+    Replaceable,
     canonical_tuple,
     finite_tuple,
     immutable_snapshot,
     nonnegative_finite_extents,
     normalize_source_signal,
+    shifted_coordinates,
 )
 from beamz.devices.modes.specs import ModeData, ModeSpec
 
@@ -76,7 +78,7 @@ def plane_axis_and_spans(plane):
 
 
 @dataclass(frozen=True)
-class ModeSource:
+class ModeSource(Replaceable):
     """Inject a solved waveguide mode through a finite plane.
 
     The zero extent in ``size`` selects the injection axis. ``direction`` is
@@ -153,20 +155,14 @@ class ModeSource:
         fwidth = float(getattr(self.source_time, "fwidth", self.frequency / 10.0))
         return chebyshev_frequency_nodes(self.frequency, fwidth, count)
 
-    def updated_copy(self, **changes):
-        """Return a source with selected canonical fields replaced."""
-        return replace(self, **changes)
-
     def shifted(self, offset):
         """Return a translated source."""
-        delta = tuple(float(value) for value in offset)
-        if len(delta) != 3:
-            raise ValueError("ModeSource offsets must contain three values.")
-        return replace(
-            self,
-            center=tuple(
-                value + shift for value, shift in zip(self.center, delta, strict=True)
-            ),
+        return self.updated_copy(
+            center=shifted_coordinates(
+                self.center,
+                offset,
+                mismatch="ModeSource offsets must contain three values.",
+            )
         )
 
     def solve_modes(self, simulation, freqs=None, mode_spec=None) -> ModeData:
@@ -210,7 +206,7 @@ class ModeSource:
 
 
 @dataclass(frozen=True, slots=True)
-class GaussianSource:
+class GaussianSource(Replaceable):
     """Inject a Gaussian spatial profile into an FDTD simulation.
 
     In 2D it excites the active out-of-plane component: ``Ez`` for TMz and
@@ -257,16 +253,6 @@ class GaussianSource:
             normalize_source_signal(self.signal, name="GaussianSource.signal"),
         )
 
-    def updated_copy(self, **changes):
-        """Return a source with selected configuration fields replaced.
-
-        Parameters
-        ----------
-        **changes
-            Source field names and replacement values.
-        """
-        return replace(self, **changes)
-
     def shifted(self, offset):
         """Return the source translated by a physical coordinate offset.
 
@@ -275,14 +261,12 @@ class GaussianSource:
         offset : tuple of float
             Cartesian translation in metres.
         """
-        offset = tuple(float(v) for v in offset)
-        if len(offset) != len(self.position):
-            raise ValueError(
-                "GaussianSource offset dimensionality must match its position."
+        return self.updated_copy(
+            position=shifted_coordinates(
+                self.position,
+                offset,
+                mismatch="GaussianSource offset dimensionality must match its position.",
             )
-        return replace(
-            self,
-            position=tuple(a + b for a, b in zip(self.position, offset, strict=True)),
         )
 
 
@@ -304,7 +288,7 @@ def _as_direction(value) -> Direction3D:
 
 
 @dataclass(frozen=True, slots=True)
-class GaussianBeamSource:
+class GaussianBeamSource(Replaceable):
     """Launch an angled 3D Gaussian beam through a planar TF/SF boundary.
 
     Parameters
@@ -400,22 +384,13 @@ class GaussianBeamSource:
         offset : tuple of float
             Cartesian translation in metres.
         """
-        return replace(
-            self,
-            center=tuple(
-                a + b for a, b in zip(self.center, tuple(offset), strict=True)
-            ),
+        return self.updated_copy(
+            center=shifted_coordinates(
+                self.center,
+                offset,
+                mismatch="GaussianBeamSource offsets must contain three values.",
+            )
         )
-
-    def updated_copy(self, **changes):
-        """Return a beam with selected configuration fields replaced.
-
-        Parameters
-        ----------
-        **changes
-            Beam-source field names and replacement values.
-        """
-        return replace(self, **changes)
 
     def source_spectrum(self, freqs, *, normalize: bool = True) -> np.ndarray | None:
         """Return the complex temporal spectrum at frequencies in hertz.
@@ -448,7 +423,7 @@ class GaussianBeamSource:
 
 
 @dataclass(frozen=True, slots=True)
-class CustomSource:
+class CustomSource(Replaceable):
     """Describe an immutable precomputed field injection.
 
     Parameters
@@ -488,16 +463,6 @@ class CustomSource:
         object.__setattr__(
             self, "target_shape", tuple(int(v) for v in self.target_shape)
         )
-
-    def updated_copy(self, **changes):
-        """Return an injection with selected immutable fields replaced.
-
-        Parameters
-        ----------
-        **changes
-            Injection field names and replacement values.
-        """
-        return replace(self, **changes)
 
     def shifted(self, offset):
         """Keep grid-indexed injections unchanged by coordinate normalization."""
