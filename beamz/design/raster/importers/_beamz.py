@@ -5,6 +5,7 @@ from typing import Any
 import numpy as np
 
 from beamz._cache_tokens import HashToken, cache_token
+from beamz.design._geometry import extrusion_bounds, polygon_rings, structure_bounds
 
 from ..schema import (
     Box,
@@ -60,16 +61,23 @@ def _extend_clipped_polygon(
 def _z_bounds(structure, design, extrusion_depth, padded_size):
     if design.depth == 0:
         return 0.0, float(extrusion_depth)
-    lower = float(getattr(structure, "z", 0.0) or 0.0)
-    upper = lower + float(getattr(structure, "depth", 0.0) or design.depth)
+    lower, upper = extrusion_bounds(structure, design.depth)
     return lower, padded_size[2] if _same_coordinate(upper, design.depth) else upper
 
 
-def _padded_upper(upper, physical_size, padded_size):
-    return tuple(
-        padded_size[axis] if _same_coordinate(value, physical_size[axis]) else value
-        for axis, value in enumerate(upper)
-    )
+def _padded_upper(
+    upper: tuple[float, float, float],
+    physical_size: tuple[float, float, float],
+    padded_size: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    def coordinate(axis: int) -> float:
+        return (
+            padded_size[axis]
+            if _same_coordinate(upper[axis], physical_size[axis])
+            else upper[axis]
+        )
+
+    return coordinate(0), coordinate(1), coordinate(2)
 
 
 def from_beamz(
@@ -118,8 +126,7 @@ def from_beamz(
             objects.append(Object(geometry, _material_id, _index, _index))
 
         if isinstance(structure, BeamZBox):
-            lower_values = tuple(float(value) for value in structure.lower)
-            upper_values = tuple(float(value) for value in structure.upper)
+            lower_values, upper_values = structure_bounds(structure)
             lower = (lower_values[0], lower_values[1], lower_values[2])
             upper = (upper_values[0], upper_values[1], upper_values[2])
             if design.depth == 0:
@@ -174,18 +181,15 @@ def from_beamz(
             )
             continue
 
+        shell, *holes = polygon_rings(structure)
         vertices = _extend_clipped_polygon(
-            tuple((float(x), float(y)) for x, y, *_ in structure.vertices),
+            shell,
             design_size=physical_size[:2],
             padded_size=padded_size[:2],
         )
-        holes = tuple(
-            tuple((float(x), float(y)) for x, y, *_ in ring)
-            for ring in getattr(structure, "interiors", ())
-        )
         if len(vertices) < 3:
             raise TypeError(f"Unsupported BeamZ structure {type(structure).__name__}.")
-        polygon = Polygon(vertices, holes)
+        polygon = Polygon(vertices, tuple(holes))
         geometry = _extrude_polygon(
             polygon,
             z_min,

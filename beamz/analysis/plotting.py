@@ -12,6 +12,7 @@ import numpy as np
 from beamz._helpers import get_si_scale_and_label
 from beamz.analysis._coordinates import monitor_plane_coordinates_3d
 from beamz.analysis.data import AnalysisData, analysis_inputs, static_fields
+from beamz.design._geometry import extrusion_bounds, planar_geometry
 from beamz.devices.visualization import visual_spec_from_device
 from beamz.lattice import plane_axes_3d
 from beamz.simulation.observe import source_field_amplitude_normalization
@@ -863,34 +864,6 @@ def _layout_slice(normal, position, *, design, origin) -> AxisSlice:
     )
 
 
-def _structure_z_bounds(structure, design) -> tuple[float, float]:
-    """Return the physical z extent used by the design rasterization bridge."""
-    lower = float(getattr(structure, "z", 0.0) or 0.0)
-    depth = float(getattr(structure, "depth", 0.0) or 0.0)
-    if depth == 0.0:
-        depth = float(design.depth)
-    return lower, lower + depth
-
-
-def _planar_structure_geometry(structure):
-    """Build a Shapely geometry for a planar BeamZ structure when available."""
-    vertices = _vertices_2d(getattr(structure, "vertices", ()))
-    if len(vertices) < 3:
-        return None
-    from shapely.geometry import Polygon
-    from shapely.geometry.polygon import orient
-
-    holes = [
-        _vertices_2d(interior)
-        for interior in getattr(structure, "interiors", ())
-        if len(interior) >= 3
-    ]
-    geometry = Polygon(vertices, holes=holes)
-    if not geometry.is_valid:
-        geometry = geometry.buffer(0)
-    return orient(geometry, sign=1.0) if not geometry.is_empty else None
-
-
 def _polygon_geometries(geometry):
     """Yield the polygon leaves of a Shapely geometry collection."""
     if geometry is None or geometry.is_empty:
@@ -1059,10 +1032,10 @@ def _draw_structure_slice(
             )
         return ()
 
-    geometry = _planar_structure_geometry(structure)
+    geometry = planar_geometry(structure, repair=True)
     if geometry is None:
         return ()
-    z_min, z_max = _structure_z_bounds(structure, design)
+    z_min, z_max = extrusion_bounds(structure, design.depth)
     if normal == "z":
         if z_min <= position <= z_max:
             return _path_patch(
@@ -1111,7 +1084,7 @@ def _draw_geometry_cross_section(ax, sim, *, normal, position, origin, colors):
         if not design.is_3d:
             _path_patch(
                 ax,
-                _planar_structure_geometry(structure),
+                planar_geometry(structure, repair=True),
                 normal=normal,
                 origin=origin,
                 facecolor=_layout_color(material, colors),
