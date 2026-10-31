@@ -12,6 +12,7 @@ import numpy as np
 from beamz.devices._placement import (
     SnappedInterval,
     SnappedRegion,
+    line_region_coordinates,
     line_region_points,
     snap_axis_aligned_line_region_grid,
     snap_plane_region_grid,
@@ -155,24 +156,7 @@ def _compile_monitor_2d_interpolation(
     if sample_coords is not None:
         line_coords = sample_coords
     elif grid is not None and region is not None:
-        if region.normal_axis == "x":
-            interval = region.axis_interval("y")
-            dst_y_values = np.asarray(grid.centers("y"))[
-                int(interval.start) : int(interval.stop)
-            ]
-            line_coords = (
-                np.full(dst_y_values.shape, float(region.plane_coord)),
-                dst_y_values,
-            )
-        else:
-            interval = region.axis_interval("x")
-            dst_x_values = np.asarray(grid.centers("x"))[
-                int(interval.start) : int(interval.stop)
-            ]
-            line_coords = (
-                dst_x_values,
-                np.full(dst_x_values.shape, float(region.plane_coord)),
-            )
+        line_coords = line_region_coordinates(region, grid=grid)
     else:
         line_coords = monitor._line_sample_coords_2d(
             resolution, resolution, field_shape=field_shape
@@ -273,6 +257,23 @@ def _monitor_plane_quadrature(monitor: _Monitor, fields, resolution: float, grid
         grid=grid,
     )
     return region, quadrature
+
+
+def _spectral_sampling_spec(common, samples, dft, region, **geometry):
+    """Adapt all sampling families to the existing packed acquisition contract."""
+    geometry["integration_weights"] = jnp.asarray(
+        geometry.get("integration_weights", ()), dtype=jnp.float32
+    )
+    return CompiledMonitorSpec(
+        **common,
+        **geometry,
+        dft_point_count=int(dft[0][0].shape[0]),
+        sample_flat_idx=tuple(plan[0] for plan in samples),
+        sample_weights=tuple(plan[1] for plan in samples),
+        dft_flat_idx=tuple(plan[0] for plan in dft),
+        dft_weights=tuple(plan[1] for plan in dft),
+        sample_region=_compact_sample_region(region),
+    )
 
 
 def compile_monitor_specs(
@@ -548,16 +549,13 @@ def compile_monitor_specs(
                     )
                 )
                 specs.append(
-                    CompiledMonitorSpec(
-                        **common,
+                    _spectral_sampling_spec(
+                        common,
+                        plans,
+                        plans,
+                        region,
                         power_scale=1.0,
                         normal_axis=2,
-                        dft_point_count=point_count,
-                        sample_flat_idx=tuple(plan[0] for plan in plans),
-                        sample_weights=tuple(plan[1] for plan in plans),
-                        dft_flat_idx=tuple(plan[0] for plan in plans),
-                        dft_weights=tuple(plan[1] for plan in plans),
-                        sample_region=_compact_sample_region(region),
                     )
                 )
                 continue
@@ -605,7 +603,6 @@ def compile_monitor_specs(
                 component_plans.get(name, inactive)
                 for name in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
             )
-            dft_plans = sample_plans
             normal_axis, normal_sign = _monitor_normal_2d(
                 monitor, resolution, region_2d
             )
@@ -627,20 +624,15 @@ def compile_monitor_specs(
                 )
 
             specs.append(
-                CompiledMonitorSpec(
-                    **common,
+                _spectral_sampling_spec(
+                    common,
+                    sample_plans,
+                    sample_plans,
+                    region_2d,
                     power_scale=float(power_scale),
                     normal_axis=normal_axis,
                     normal_sign=normal_sign,
-                    dft_point_count=point_count,
-                    sample_flat_idx=tuple(plan[0] for plan in sample_plans),
-                    sample_weights=tuple(plan[1] for plan in sample_plans),
-                    dft_flat_idx=tuple(plan[0] for plan in dft_plans),
-                    dft_weights=tuple(plan[1] for plan in dft_plans),
-                    integration_weights=jnp.asarray(
-                        integration_weights, dtype=jnp.float32
-                    ),
-                    sample_region=_compact_sample_region(region_2d),
+                    integration_weights=integration_weights,
                 )
             )
         else:
@@ -663,20 +655,14 @@ def compile_monitor_specs(
                 sample_plans.append(inactive)
                 dft_plans.append(plan if needs_dft else inactive)
             specs.append(
-                CompiledMonitorSpec(
-                    **common,
+                _spectral_sampling_spec(
+                    common,
+                    sample_plans,
+                    dft_plans,
+                    region,
                     power_scale=quadrature.sample_area,
                     normal_axis=quadrature.normal_axis,
-                    normal_sign=1.0,
-                    dft_point_count=point_count,
-                    sample_flat_idx=tuple(plan[0] for plan in sample_plans),
-                    sample_weights=tuple(plan[1] for plan in sample_plans),
-                    dft_flat_idx=tuple(plan[0] for plan in dft_plans),
-                    dft_weights=tuple(plan[1] for plan in dft_plans),
-                    integration_weights=jnp.asarray(
-                        quadrature.integration_weights, dtype=jnp.float32
-                    ),
-                    sample_region=_compact_sample_region(region),
+                    integration_weights=quadrature.integration_weights,
                 )
             )
 

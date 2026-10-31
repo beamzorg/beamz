@@ -486,6 +486,49 @@ def _local_mode_plane_spec(
     }
 
 
+def mode_plane_solve_arguments(
+    materials,
+    *,
+    spec,
+    center,
+    width,
+    height,
+    snapped,
+    direction,
+    resolution,
+    dt,
+    grid,
+    num_modes,
+):
+    """Common launch/preview inputs to the finite-plane solver.
+
+    Callers still choose the numerical solver and its direction; candidate basis
+    caching and calibrated injection remain outside this geometry/material adapter.
+    """
+    return dict(
+        material_tensors=getattr(materials, "tensors", None),
+        yee_tensors=getattr(materials, "yee_tensors", None),
+        resolution=resolution,
+        dt=dt,
+        axis=snapped.normal_axis,
+        direction=direction,
+        grid_shape=materials.shape,
+        center=center,
+        width=width,
+        height=height,
+        plane_index=snapped.plane_index,
+        offset_index=snapped.companion_index,
+        snapped_region=snapped,
+        grid=grid,
+        polarization=spec.polarization,
+        target_neff=spec.target_neff,
+        num_modes=num_modes,
+        force_symmetry=spec.force_symmetry,
+        min_aperture_fraction=spec.min_aperture_fraction,
+        solver_padding_cells=spec.solver_padding_cells,
+    )
+
+
 def solve_mode_plane_3d(
     permittivity,
     permeability,

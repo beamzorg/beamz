@@ -246,6 +246,18 @@ def _merge_profiles(lhs, rhs, *, key: str | None = None):
     return lhs_arr + rhs_arr
 
 
+def _absorber_slices(shape, axis, side, count):
+    """Slab and first-interior sample shared by extrusion and diagnostics."""
+    destination = [slice(None)] * len(shape)
+    reference = [slice(None)] * len(shape)
+    if side == "low":
+        destination[axis], reference[axis] = slice(0, count), count
+    else:
+        destination[axis] = slice(shape[axis] - count, shape[axis])
+        reference[axis] = shape[axis] - count - 1
+    return tuple(destination), tuple(reference)
+
+
 class _AbsorberCompiler:
     """Lower one immutable Device specification into grid-aware solver arrays."""
 
@@ -269,10 +281,7 @@ class _AbsorberCompiler:
         profile = self._resolved_profile_boundary(fields, resolution, dt)
 
         if self.spec.formulation == "cpml":
-            if fields.permittivity.ndim == 3:
-                out = profile._create_cpml_profiles_3d(fields, domain_size)
-            else:
-                out = profile._create_cpml_profiles_2d(fields, domain_size)
+            out = profile._create_cpml_profiles(fields, domain_size)
             self._extend_cpml_materials_to_absorber(fields, out)
             return out
 
@@ -391,91 +400,40 @@ class _AbsorberCompiler:
     def _extend_cpml_materials_to_absorber(self, fields, pml_data):
         """Copy first-interior material values through active CPML slabs."""
 
-        # Iterate in deterministic axis order because profile and component tuples
-        # must remain aligned.
-        for attr in ("permittivity", "conductivity", "permeability"):
-            source = getattr(fields, attr)
+        counts = self._pml_material_edge_counts(fields.permittivity, pml_data)
+        region_setup = getattr(fields, "region_setup", False)
+
+        def extend(source):
             source_arr = np.asarray(source)
             if source_arr.ndim == 0:
-                continue
-            if getattr(fields, "region_setup", False):
-                counts = self._pml_material_edge_counts(fields.permittivity, pml_data)
-                if not _extrusion_changes_material(source_arr, counts):
-                    continue
+                return source
+            if region_setup and not _extrusion_changes_material(source_arr, counts):
+                return source
             material = np.array(source_arr, copy=True)
-            for _edge, axis, side, count in self._pml_material_edge_counts(
-                material, pml_data
-            ):
+            for _edge, axis, side, count in counts:
                 if count <= 0 or count >= material.shape[axis]:
                     continue
-                if side == "low":
-                    dst_sel = [slice(None)] * material.ndim
-                    dst_sel[axis] = slice(0, count)
-                    ref_sel = [slice(None)] * material.ndim
-                    ref_sel[axis] = count
-                else:
-                    dst_sel = [slice(None)] * material.ndim
-                    dst_sel[axis] = slice(material.shape[axis] - count, None)
-                    ref_sel = [slice(None)] * material.ndim
-                    ref_sel[axis] = material.shape[axis] - count - 1
-                material[tuple(dst_sel)] = np.expand_dims(
-                    material[tuple(ref_sel)], axis=axis
+                destination, reference = _absorber_slices(
+                    material.shape, axis, side, count
                 )
-            setattr(
-                fields,
-                attr,
+                material[destination] = np.expand_dims(material[reference], axis=axis)
+            return (
                 material
-                if getattr(fields, "region_setup", False)
-                else jnp.asarray(material, dtype=source_arr.dtype),
-            )
-        for name, source in getattr(fields, "yee_materials", {}).items():
-            source_arr = np.asarray(source)
-            if source_arr.ndim == 0:
-                continue
-            if getattr(fields, "region_setup", False):
-                counts = self._pml_material_edge_counts(fields.permittivity, pml_data)
-                if not _extrusion_changes_material(source_arr, counts):
-                    continue
-            material = np.array(source_arr, copy=True)
-            for _edge, axis, side, count in self._pml_material_edge_counts(
-                np.asarray(fields.permittivity), pml_data
-            ):
-                if count <= 0 or count >= material.shape[axis]:
-                    continue
-                if side == "low":
-                    destination = [slice(None)] * material.ndim
-                    destination[axis] = slice(0, count)
-                    reference = [slice(None)] * material.ndim
-                    reference[axis] = count
-                else:
-                    destination = [slice(None)] * material.ndim
-                    destination[axis] = slice(material.shape[axis] - count, None)
-                    reference = [slice(None)] * material.ndim
-                    reference[axis] = material.shape[axis] - count - 1
-                material[tuple(destination)] = np.expand_dims(
-                    material[tuple(reference)], axis=axis
-                )
-            fields.yee_materials[name] = (
-                material
-                if getattr(fields, "region_setup", False)
+                if region_setup
                 else jnp.asarray(material, dtype=source_arr.dtype)
             )
+
+        for attr in ("permittivity", "conductivity", "permeability"):
+            setattr(fields, attr, extend(getattr(fields, attr)))
+        for name, source in getattr(fields, "yee_materials", {}).items():
+            fields.yee_materials[name] = extend(source)
 
     @staticmethod
     def _pml_edge_material_varies(material, axis: int, side: str, count: int) -> bool:
         # Map storage axes to named physical walls once so every boundary path uses
         # the same convention.
         mat = np.asarray(material)
-        if side == "low":
-            slab_sel = [slice(None)] * mat.ndim
-            slab_sel[axis] = slice(0, count)
-            ref_sel: list[Any] = [slice(None)] * mat.ndim
-            ref_sel[axis] = count
-        else:
-            slab_sel = [slice(None)] * mat.ndim
-            slab_sel[axis] = slice(mat.shape[axis] - count, mat.shape[axis])
-            ref_sel = [slice(None)] * mat.ndim
-            ref_sel[axis] = mat.shape[axis] - count - 1
+        slab_sel, ref_sel = _absorber_slices(mat.shape, axis, side, count)
         slab = mat[tuple(slab_sel)]
         ref = np.expand_dims(mat[tuple(ref_sel)], axis=axis)
         return bool(np.any(np.abs(slab - ref) > 1e-9))
@@ -726,170 +684,99 @@ class _AbsorberCompiler:
             mask |= grid > 0
         return {"formulation": "sponge", "mask": mask, **profiles}
 
-    def _create_cpml_profiles_2d(self, fields, domain_size):
-        """Create sigma/kappa/alpha CPML profiles for 2D."""
-        # Public planes are already canonical y/x, so one axis table can drive both
-        # cell-centered diagnostics and the selected polarization's Yee profiles.
-        ny, nx = fields.permittivity.shape
-        width, height, _ = domain_size
-        edges = set(self._get_edges_for_dimensionality(False))
+    def _create_cpml_profiles(self, fields, domain_size):
+        """Compile native CPML supports from a dimension-specific support table."""
+        shape = fields.permittivity.shape
+        ndim = len(shape)
+        axis_index = {axis: ndim - 1 - i for i, axis in enumerate("xyz"[:ndim])}
         axes = {
-            "x": (nx, width, "left", "right"),
-            "y": (ny, height, "bottom", "top"),
+            axis: (shape[axis_index[axis]], domain_size[i], low, high)
+            for i, (axis, low, high) in enumerate(
+                (
+                    ("x", "left", "right"),
+                    ("y", "bottom", "top"),
+                    ("z", "front", "back"),
+                )[:ndim]
+            )
         }
+        edges = set(self._get_edges_for_dimensionality(ndim == 3))
+        geometry = _rectilinear_geometry(fields)
 
-        def expand(axis, value):
-            return value[:, None] if axis == "y" else value[None, :]
+        def compact(axis, value):
+            broadcast = [1] * ndim
+            broadcast[axis_index[axis]] = value.shape[0]
+            return jnp.reshape(value, broadcast)
 
         out: dict[str, Any] = {"formulation": "cpml"}
-        geometry = _rectilinear_geometry(fields)
         for axis, (cells, length, low, high) in axes.items():
+            coords = (
+                jnp.asarray(geometry.centers(axis) - geometry.axis_edges(axis)[0])
+                if geometry is not None
+                else jnp.linspace(0, length, cells)
+            )
             values = self._compute_1d_cpml_profile(
-                (
-                    jnp.asarray(geometry.centers(axis) - geometry.axis_edges(axis)[0])
-                    if geometry is not None
-                    else jnp.linspace(0, length, cells)
-                ),
-                length,
-                low in edges,
-                high in edges,
+                coords, length, low in edges, high in edges
             )
             for family, value in zip(("sigma", "kappa", "alpha"), values, strict=True):
-                out[f"{family}_{axis}"] = expand(axis, value)
-        out.update(
-            sigma_z=jnp.zeros((1, 1)),
-            kappa_z=jnp.ones((1, 1)),
-            alpha_z=jnp.zeros((1, 1)),
-        )
-        out["mask"] = (out["sigma_x"] > 0) | (out["sigma_y"] > 0)
+                out[f"{family}_{axis}"] = compact(axis, value)
 
-        polarization = fields.polarization_2d
-        supports = (
-            (
-                ("Ez", "x", nx + 1, "E"),
-                ("Ez", "y", ny + 1, "E"),
-                ("Hx", "y", ny, "H"),
-                ("Hy", "x", nx, "H"),
+        if ndim == 3:
+            supports = tuple(
+                (spec.name, spec.target_component, spec.derivative_axis)
+                for spec in (*CPML_3D_H_DERIVATIVES, *CPML_3D_E_DERIVATIVES)
             )
-            if polarization == "tm"
-            else (
-                ("Hz", "x", nx, "H"),
-                ("Hz", "y", ny, "H"),
-                ("Ex", "y", ny + 1, "E"),
-                ("Ey", "x", nx + 1, "E"),
+        else:
+            out.update(
+                sigma_z=jnp.zeros((1, 1)),
+                kappa_z=jnp.ones((1, 1)),
+                alpha_z=jnp.zeros((1, 1)),
             )
-        )
+            out["mask"] = (out["sigma_x"] > 0) | (out["sigma_y"] > 0)
+            supports = (
+                (
+                    ("Ez_x", "Ez", "x"),
+                    ("Ez_y", "Ez", "y"),
+                    ("Hx_y", "Hx", "y"),
+                    ("Hy_x", "Hy", "x"),
+                )
+                if fields.polarization_2d == "tm"
+                else (
+                    ("Hz_x", "Hz", "x"),
+                    ("Hz_y", "Hz", "y"),
+                    ("Ex_y", "Ex", "y"),
+                    ("Ey_x", "Ey", "x"),
+                )
+            )
         staggered = {}
-        for component, axis, samples, kind in supports:
+        for name, component, axis in supports:
             cells, length, low, high = axes[axis]
+            kind = "E" if component_axis_offsets_3d(component)[axis] == 0 else "H"
             values = self._compute_fdtdx_staggered_profile_1d(
-                samples,
+                getattr(fields, component).shape[axis_index[axis]],
                 float(length) / max(cells, 1),
                 low in edges,
                 high in edges,
                 sample_kind=kind,
                 domain_cells=cells,
                 sample_coordinates=(
-                    geometry.axis_edges(axis)
-                    if geometry is not None and kind == "E"
-                    else (geometry.centers(axis) if geometry is not None else None)
-                ),
+                    geometry.axis_edges(axis) if kind == "E" else geometry.centers(axis)
+                )
+                if geometry is not None
+                else None,
                 domain_bounds=(
-                    (geometry.axis_edges(axis)[0], geometry.axis_edges(axis)[-1])
-                    if geometry is not None
-                    else None
-                ),
+                    geometry.axis_edges(axis)[0],
+                    geometry.axis_edges(axis)[-1],
+                )
+                if geometry is not None
+                else None,
             )
             for family, value in zip(("sigma", "kappa", "alpha"), values, strict=True):
-                staggered[f"{component}_{axis}_{family}"] = expand(axis, value)
-        out[f"{polarization}_xy_cpml"] = staggered
-        return out
-
-    def _create_cpml_profiles_3d(self, fields, domain_size):
-        """Create sigma/kappa/alpha CPML profiles for 3D."""
-        # 1. Build cell-centered profiles along x, y, and z for material-level CPML
-        # metadata and diagnostics.
-        shape = fields.permittivity.shape
-        nz, ny, nx = shape
-        width, height, depth = domain_size
-
-        edges = set(self._get_edges_for_dimensionality(True))
-        axis_index = {"z": 0, "y": 1, "x": 2}
-        axes = {
-            "x": (nx, width, "left", "right"),
-            "y": (ny, height, "bottom", "top"),
-            "z": (nz, depth, "front", "back"),
-        }
-        out: dict[str, Any] = {"formulation": "cpml"}
-        geometry = _rectilinear_geometry(fields)
-        for axis, (cells, length, low, high) in axes.items():
-            values = self._compute_1d_cpml_profile(
-                (
-                    jnp.asarray(geometry.centers(axis) - geometry.axis_edges(axis)[0])
-                    if geometry is not None
-                    else jnp.linspace(0, length, cells)
-                ),
-                length,
-                low in edges,
-                high in edges,
-            )
-            broadcast_shape = [1, 1, 1]
-            broadcast_shape[axis_index[axis]] = cells
-            for family, value in zip(("sigma", "kappa", "alpha"), values, strict=True):
-                out[f"{family}_{axis}"] = jnp.reshape(value, broadcast_shape)
-
-        def compact_axis(profile, axis_name):
-            # Reshape 1D profiles for broadcasting along the two transverse axes.
-            shape_1d = [1, 1, 1]
-            shape_1d[axis_index[axis_name]] = profile.shape[0]
-            return jnp.reshape(profile, tuple(shape_1d))
-
-        def profile_for_spec(spec):
-            # Build this profile on its exact staggered support to avoid interpolation
-            # inside timestep kernels.
-            target = getattr(fields, spec.target_component)
-            target_shape = tuple(int(v) for v in target.shape)
-            axis_name = spec.derivative_axis
-            cells, length, low_edge, high_edge = axes[axis_name]
-            offset = component_axis_offsets_3d(spec.target_component)[axis_name]
-            sample_kind = "E" if offset == 0.0 else "H"
-            return self._compute_fdtdx_staggered_profile_1d(
-                target_shape[axis_index[axis_name]],
-                float(length) / max(cells, 1),
-                low_edge in edges,
-                high_edge in edges,
-                sample_kind=sample_kind,
-                domain_cells=cells,
-                sample_coordinates=(
-                    geometry.axis_edges(axis_name)
-                    if geometry is not None and sample_kind == "E"
-                    else (geometry.centers(axis_name) if geometry is not None else None)
-                ),
-                domain_bounds=(
-                    (
-                        geometry.axis_edges(axis_name)[0],
-                        geometry.axis_edges(axis_name)[-1],
-                    )
-                    if geometry is not None
-                    else None
-                ),
-            )
-
-        # 3. Generate sigma/kappa/alpha for every directional curl term independently;
-        # each target component has distinct support even along the same physical axis.
-        for spec in (*CPML_3D_H_DERIVATIVES, *CPML_3D_E_DERIVATIVES):
-            sigma_1d, kappa_1d, alpha_1d = profile_for_spec(spec)
-            out[f"cpml3d_{spec.name}_sigma"] = compact_axis(
-                sigma_1d, spec.derivative_axis
-            )
-            out[f"cpml3d_{spec.name}_kappa"] = compact_axis(
-                kappa_1d, spec.derivative_axis
-            )
-            out[f"cpml3d_{spec.name}_alpha"] = compact_axis(
-                alpha_1d, spec.derivative_axis
-            )
-        # 4. Return both compact broadcastable base profiles and all native derivative
-        # profiles needed by the compiled 3D CPML kernel.
+                key = f"cpml3d_{name}_{family}" if ndim == 3 else f"{name}_{family}"
+                staggered[key] = compact(axis, value)
+        if ndim == 3:
+            out.update(staggered)
+        else:
+            out[f"{fields.polarization_2d}_xy_cpml"] = staggered
         return out
 
 

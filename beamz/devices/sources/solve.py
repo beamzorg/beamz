@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from types import SimpleNamespace
 from typing import Literal, cast
 
 import numpy as np
@@ -22,38 +21,27 @@ def _require_cell_mode_materials(material_grid, *, operation: str) -> None:
         )
 
 
-def _profile_crop_slices(eps_profile, *, profile_axes, center, size, resolution):
-    grid_axis_to_coord_index = {0: 2, 1: 1, 2: 0}
+def _profile_crop_slices(
+    eps_profile, *, profile_axes, center, size, resolution, grid=None
+):
     slices = []
     for dim, grid_axis in enumerate(profile_axes):
-        coord_index = grid_axis_to_coord_index[int(grid_axis)]
+        coord_index = 2 - int(grid_axis)
         span = float(size[coord_index])
         if span <= 0.0 or not np.isfinite(span):
             slices.append(slice(None))
             continue
         midpoint = float(center[coord_index])
-        start = int(np.floor((midpoint - 0.5 * span) / resolution))
-        stop = int(np.ceil((midpoint + 0.5 * span) / resolution))
-        start = int(np.clip(start, 0, eps_profile.shape[dim] - 1))
-        stop = int(np.clip(stop, start + 1, eps_profile.shape[dim]))
-        slices.append(slice(start, stop))
-    return tuple(slices)
-
-
-def _profile_crop_slices_grid(eps_profile, *, profile_axes, center, size, grid):
-    storage_axis = {0: "z", 1: "y", 2: "x"}
-    public_coord = {"x": 0, "y": 1, "z": 2}
-    slices = []
-    for dim, grid_axis in enumerate(profile_axes):
-        axis = storage_axis[int(grid_axis)]
-        span = float(size[public_coord[axis]])
-        if span <= 0.0 or not np.isfinite(span):
-            slices.append(slice(None))
-            continue
-        midpoint = float(center[public_coord[axis]])
-        edges = np.asarray(grid.axis_edges(axis), dtype=float)
-        start = int(np.searchsorted(edges, midpoint - 0.5 * span, side="right") - 1)
-        stop = int(np.searchsorted(edges, midpoint + 0.5 * span, side="left"))
+        lower, upper = midpoint - 0.5 * span, midpoint + 0.5 * span
+        if grid is None:
+            start, stop = (
+                int(np.floor(lower / resolution)),
+                int(np.ceil(upper / resolution)),
+            )
+        else:
+            edges = np.asarray(grid.axis_edges("xyz"[coord_index]), dtype=float)
+            start = int(np.searchsorted(edges, lower, side="right") - 1)
+            stop = int(np.searchsorted(edges, upper, side="left"))
         start = int(np.clip(start, 0, eps_profile.shape[dim] - 1))
         stop = int(np.clip(stop, start + 1, eps_profile.shape[dim]))
         slices.append(slice(start, stop))
@@ -61,30 +49,9 @@ def _profile_crop_slices_grid(eps_profile, *, profile_axes, center, size, grid):
 
 
 def _simulation_grid_view(simulation):
-    fields = getattr(simulation, "fields", None)
-    if fields is None or not hasattr(fields, "permittivity"):
-        material_grid = simulation._material_grid()
-        grid = material_grid
-        _require_cell_mode_materials(grid, operation="ModeSource.solve_modes()")
-        return grid
-    material_grid = getattr(fields, "material_grid", None)
-    _require_cell_mode_materials(
-        material_grid,
-        operation="ModeSource.solve_modes()",
-    )
-    return SimpleNamespace(
-        permittivity=fields.permittivity,
-        conductivity=getattr(fields, "conductivity", None),
-        permeability=getattr(fields, "permeability", None),
-        resolution=float(simulation.resolution),
-        design=simulation.design,
-        shape=tuple(int(v) for v in fields.permittivity.shape),
-        width=float(getattr(simulation.design, "width", 0.0) or 0.0),
-        height=float(getattr(simulation.design, "height", 0.0) or 0.0),
-        depth=float(getattr(simulation.design, "depth", 0.0) or 0.0),
-        tensors=getattr(material_grid, "tensors", {}),
-        grid=getattr(fields, "geometry", getattr(simulation, "grid", None)),
-    )
+    grid = simulation._material_grid()
+    _require_cell_mode_materials(grid, operation="ModeSource.solve_modes()")
+    return grid
 
 
 def _resolve_solver_direction(axis: str, direction=None) -> str:
@@ -162,12 +129,8 @@ def mode_plane_context(*, simulation, plane) -> ModePlaneContext:
         center=center,
         size=tuple(float(value) for value in plane.size),
     )
-    crop_slices = (
-        _profile_crop_slices_grid(**crop_kwargs, grid=geometry)
-        if geometry is not None
-        else _profile_crop_slices(
-            **crop_kwargs, resolution=float(simulation.resolution)
-        )
+    crop_slices = _profile_crop_slices(
+        **crop_kwargs, grid=geometry, resolution=float(simulation.resolution)
     )
     if geometry is None:
         profile_edges = None
@@ -226,11 +189,8 @@ def solve_mode_plane(
     if frequencies.size == 0:
         raise ValueError("Mode solving requires at least one frequency.")
 
-    fields = getattr(simulation, "fields", None)
-    materials = getattr(fields, "material_grid", None)
-    if materials is None and hasattr(simulation, "_material_grid"):
-        materials = simulation._material_grid()
-    if materials is not None and len(materials.shape) == 3:
+    materials = simulation._material_grid()
+    if len(materials.shape) == 3:
         from .tensor_preview import solve_tensor_mode_plane
 
         return solve_tensor_mode_plane(
