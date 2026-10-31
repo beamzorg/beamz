@@ -569,23 +569,13 @@ def _plan_3d_mode_source(
         grid=metric_grid,
         power_weights=discrete_mode.integration_weights,
     )
-    residuals = (
-        *planar_tfsf.compute_discrete_3d_h_phasor_residuals(
-            field_profile,
-            fields,
-            resolution=float(resolution),
-            max_shift=12,
-            dt=float(dt or 0.0),
-        ),
-        *planar_tfsf.compute_discrete_3d_e_phasor_residuals(
-            field_profile,
-            fields,
-            resolution=float(resolution),
-            max_shift=12,
-            dt=float(dt or 0.0),
-        ),
+    residuals = planar_tfsf.compute_discrete_3d_phasor_residuals(
+        field_profile,
+        fields,
+        resolution=float(resolution),
+        max_shift=12,
+        dt=float(dt or 0.0),
     )
-    residuals = tuple(residuals)
     launch_power_ratio, unscaled_launched_power = _launch_power_diagnostics_3d(
         source,
         field_profile,

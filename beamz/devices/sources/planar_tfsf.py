@@ -680,7 +680,7 @@ def advance_incident_e_3d(
     }
 
 
-def _compute_3d_h_phasor_residuals_dense(
+def _compute_3d_phasor_residuals_dense(
     field_profile: FieldProfile3D,
     fields,
     *,
@@ -714,84 +714,10 @@ def _compute_3d_h_phasor_residuals_dense(
         resolution=resolution,
     )
     h_mask_next = advance_incident_h_3d(fields, masked_prev, dt, resolution=resolution)
-    delta = {
+    h_delta = {
         component: h_target_next[component] - h_mask_next[component]
         for component in _H_COMPONENTS_3D
     }
-    return dense_3d_delta_residuals(
-        delta,
-        timing="h",
-        component_indices=component_indices,
-    )
-
-
-def compute_discrete_3d_h_phasor_residuals(
-    field_profile: FieldProfile3D,
-    fields,
-    *,
-    resolution: float,
-    max_shift: int,
-    dt: float,
-) -> tuple[ModeSource3DResidual, ...]:
-    """Complex carrier H residuals for the launched-side TF/SF update."""
-    context = local_3d_phasor_context(
-        field_profile,
-        fields,
-        resolution=resolution,
-        max_shift=max_shift,
-    )
-    if context is None:
-        return _compute_3d_h_phasor_residuals_dense(
-            field_profile,
-            fields,
-            resolution=resolution,
-            max_shift=max_shift,
-            dt=dt,
-        )
-    local_profile, local_fields, component_slices = context
-    return _compute_3d_h_phasor_residuals_dense(
-        local_profile,
-        local_fields,
-        resolution=resolution,
-        max_shift=max_shift,
-        dt=dt,
-        component_indices=component_slices,
-    )
-
-
-def _compute_3d_e_phasor_residuals_dense(
-    field_profile: FieldProfile3D,
-    fields,
-    *,
-    resolution: float,
-    max_shift: int,
-    dt: float,
-    component_indices: dict[str, tuple[slice, slice, slice]] | None = None,
-) -> tuple[ModeSource3DResidual, ...]:
-    full_prev = build_incident_3d_phasor_state(
-        field_profile,
-        fields,
-        resolution=resolution,
-        t_e=0.0,
-        t_h=-0.5 * float(dt),
-        masked=False,
-        max_shift=max_shift,
-    )
-    masked_prev = build_incident_3d_phasor_state(
-        field_profile,
-        fields,
-        resolution=resolution,
-        t_e=0.0,
-        t_h=-0.5 * float(dt),
-        masked=True,
-        max_shift=max_shift,
-    )
-    h_full_next = advance_incident_h_3d(fields, full_prev, dt, resolution=resolution)
-    h_target_next = mask_incident_3d_state_to_launched_side(
-        field_profile,
-        h_full_next,
-        resolution=resolution,
-    )
     e_full_next = advance_incident_e_3d(
         fields,
         full_prev,
@@ -811,18 +737,21 @@ def _compute_3d_e_phasor_residuals_dense(
         dt,
         resolution=resolution,
     )
-    delta = {
+    e_delta = {
         component: e_target_next[component] - e_mask_next[component]
         for component in _E_COMPONENTS_3D
     }
-    return dense_3d_delta_residuals(
-        delta,
-        timing="e",
-        component_indices=component_indices,
+    return (
+        *dense_3d_delta_residuals(
+            h_delta, timing="h", component_indices=component_indices
+        ),
+        *dense_3d_delta_residuals(
+            e_delta, timing="e", component_indices=component_indices
+        ),
     )
 
 
-def compute_discrete_3d_e_phasor_residuals(
+def compute_discrete_3d_phasor_residuals(
     field_profile: FieldProfile3D,
     fields,
     *,
@@ -830,27 +759,18 @@ def compute_discrete_3d_e_phasor_residuals(
     max_shift: int,
     dt: float,
 ) -> tuple[ModeSource3DResidual, ...]:
-    """Complex carrier E residuals for the launched-side TF/SF update."""
+    """Complex carrier H/E residuals sharing one local TF/SF incident state."""
     context = local_3d_phasor_context(
+        field_profile, fields, resolution=resolution, max_shift=max_shift
+    )
+    component_indices = None
+    if context is not None:
+        field_profile, fields, component_indices = context
+    return _compute_3d_phasor_residuals_dense(
         field_profile,
         fields,
         resolution=resolution,
         max_shift=max_shift,
-    )
-    if context is None:
-        return _compute_3d_e_phasor_residuals_dense(
-            field_profile,
-            fields,
-            resolution=resolution,
-            max_shift=max_shift,
-            dt=dt,
-        )
-    local_profile, local_fields, component_slices = context
-    return _compute_3d_e_phasor_residuals_dense(
-        local_profile,
-        local_fields,
-        resolution=resolution,
-        max_shift=max_shift,
         dt=dt,
-        component_indices=component_slices,
+        component_indices=component_indices,
     )

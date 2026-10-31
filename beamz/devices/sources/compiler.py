@@ -26,8 +26,7 @@ from .mode_launch import (
     plan_mode_source_launch,
 )
 from .planar_tfsf import (
-    compute_discrete_3d_e_phasor_residuals,
-    compute_discrete_3d_h_phasor_residuals,
+    compute_discrete_3d_phasor_residuals,
 )
 from .specs import (
     CustomSource,
@@ -1433,21 +1432,12 @@ def field_profile_phasor_residuals(
     resolution: float,
     max_shift: int = 1,
 ):
-    return (
-        *compute_discrete_3d_h_phasor_residuals(
-            profile,
-            fields,
-            resolution=float(resolution),
-            max_shift=int(max(1, max_shift)),
-            dt=float(dt),
-        ),
-        *compute_discrete_3d_e_phasor_residuals(
-            profile,
-            fields,
-            resolution=float(resolution),
-            max_shift=int(max(1, max_shift)),
-            dt=float(dt),
-        ),
+    return compute_discrete_3d_phasor_residuals(
+        profile,
+        fields,
+        resolution=float(resolution),
+        max_shift=int(max(1, max_shift)),
+        dt=float(dt),
     )
 
 
