@@ -275,72 +275,7 @@ def _build_discrete_port_projection_3d(
         )
     else:
         integration_weights = float(d_area)
-    _, plus_components = _discrete_mode_projection_grids_3d(
-        sim,
-        discrete_mode,
-        discrete_mode.backward_profiles,
-        monitor=monitor,
-        axis=axis,
-        components=proj_components,
-        analysis_coords0=analysis_coords0,
-        analysis_coords1=analysis_coords1,
-    )
-    _, minus_components = _discrete_mode_projection_grids_3d(
-        sim,
-        discrete_mode,
-        discrete_mode.profiles,
-        monitor=monitor,
-        axis=axis,
-        components=proj_components,
-        analysis_coords0=analysis_coords0,
-        analysis_coords1=analysis_coords1,
-    )
-    if any(
-        name not in plus_components or name not in minus_components
-        for name in proj_components
-    ):
-        missing_components = [
-            name
-            for name in proj_components
-            if name not in plus_components or name not in minus_components
-        ]
-        raise RuntimeError(
-            "Discrete mode is missing projection components: "
-            + ", ".join(missing_components)
-        )
-
-    plus_components = {
-        name: np.asarray(plus_components[name], dtype=np.complex128)
-        for name in proj_components
-    }
-    minus_components = {
-        name: np.asarray(minus_components[name], dtype=np.complex128)
-        for name in proj_components
-    }
-    if discrete_mode.diagnostics.get("full_tensor_operator", False):
-        # Launch phasors use exp(+i omega t); recorded DFTs use exp(+i omega t)
-        # in the integral, and therefore store their complex conjugates.
-        plus_components = {
-            name: np.conjugate(value) for name, value in plus_components.items()
-        }
-        minus_components = {
-            name: np.conjugate(value) for name, value in minus_components.items()
-        }
-    _normalize_profiles(
-        plus_components,
-        axis=axis,
-        measure=integration_weights,
-        direction_sign=float(direction_sign),
-        max_scale=1e6,
-    )
-    _normalize_profiles(
-        minus_components,
-        axis=axis,
-        measure=integration_weights,
-        direction_sign=float(direction_sign),
-        max_scale=1e6,
-    )
-    # Preserve the directional measurement response, then normalize each
+    # Preserve the distinct directional measurement responses, normalizing each
     # measured basis to the same discrete flux watt as the source and monitor.
     sampling = dict(
         axis=axis,
@@ -351,50 +286,61 @@ def _build_discrete_port_projection_3d(
         resolution=sim.resolution,
         grid=grid,
     )
-    plus_components = _sample_modal_basis_normal_3d(
-        plus_components, direction=-1, direction_sign=float(direction_sign), **sampling
-    )
-    minus_components = _sample_modal_basis_normal_3d(
-        minus_components, direction=1, direction_sign=float(direction_sign), **sampling
-    )
+    directional_components = []
+    for profiles, direction in (
+        (discrete_mode.backward_profiles, -1),
+        (discrete_mode.profiles, 1),
+    ):
+        _, components = _discrete_mode_projection_grids_3d(
+            sim,
+            discrete_mode,
+            profiles,
+            monitor=monitor,
+            axis=axis,
+            components=proj_components,
+            analysis_coords0=analysis_coords0,
+            analysis_coords1=analysis_coords1,
+        )
+        missing = [name for name in proj_components if name not in components]
+        if missing:
+            raise RuntimeError(
+                "Discrete mode is missing projection components: " + ", ".join(missing)
+            )
+        if discrete_mode.diagnostics.get("full_tensor_operator", False):
+            # Launch phasors and recorded DFTs use conjugate conventions.
+            components = {
+                name: np.conjugate(value) for name, value in components.items()
+            }
+        _normalize_profiles(
+            components,
+            axis=axis,
+            measure=integration_weights,
+            direction_sign=float(direction_sign),
+            max_scale=1e6,
+        )
+        directional_components.append(
+            _sample_modal_basis_normal_3d(
+                components,
+                direction=direction,
+                direction_sign=float(direction_sign),
+                **sampling,
+            )
+        )
+    plus_components, minus_components = directional_components
     if axis == "z" and discrete_mode.diagnostics.get("canonical_axis_rotation", False):
         # The canonical x-frame solver carries +z in its forward profiles.
         # Keep the established z-port convention: a_plus is the +z branch.
         plus_components, minus_components = minus_components, plus_components
+    basis = (plus_components, minus_components)
     overlap_matrix = np.asarray(
         [
             [
                 _modal_overlap(
-                    plus_components,
-                    plus_components,
-                    axis,
-                    integration_weights,
-                    direction_sign=direction_sign,
-                ),
-                _modal_overlap(
-                    plus_components,
-                    minus_components,
-                    axis,
-                    integration_weights,
-                    direction_sign=direction_sign,
-                ),
-            ],
-            [
-                _modal_overlap(
-                    minus_components,
-                    plus_components,
-                    axis,
-                    integration_weights,
-                    direction_sign=direction_sign,
-                ),
-                _modal_overlap(
-                    minus_components,
-                    minus_components,
-                    axis,
-                    integration_weights,
-                    direction_sign=direction_sign,
-                ),
-            ],
+                    a, b, axis, integration_weights, direction_sign=direction_sign
+                )
+                for b in basis
+            ]
+            for a in basis
         ],
         dtype=np.complex128,
     )
@@ -409,14 +355,8 @@ def _build_discrete_port_projection_3d(
         "components": tuple(proj_components),
         "condition_number": float(np.linalg.cond(overlap_matrix)),
         "mode_neff": mode_neff,
-        "mode_components": {
-            name: np.asarray(plus_components[name], dtype=np.complex128)
-            for name in proj_components
-        },
-        "mode_components_bwd": {
-            name: np.asarray(minus_components[name], dtype=np.complex128)
-            for name in proj_components
-        },
+        "mode_components": plus_components,
+        "mode_components_bwd": minus_components,
         "overlap_matrix": overlap_matrix,
         "axis": axis,
         "direction_sign": float(direction_sign),
@@ -458,31 +398,20 @@ def _build_port_projection_2d(
     eps_profile = np.asarray(eps_profile, dtype=np.complex128)
     target_neff = 0.98 * np.sqrt(max(float(np.max(np.real(eps_profile))), 1e-12))
     mode_count = int(spec.mode_index) + 1
-    if grid_edges is None:
-        neffs, e_fields, h_fields, _ = solve_modes(
-            eps=eps_profile,
-            omega=2.0 * np.pi * float(frequency),
-            dL=float(sim.resolution),
-            m=mode_count,
-            direction=spec.projection_direction,
-            filter_pol=spec.polarization,
-            target_neff=target_neff,
-            force_symmetry=mode_spec.force_symmetry,
-            return_fields=True,
-        )
-    else:
-        neffs, e_fields, h_fields, _ = solve_modes(
-            eps=eps_profile,
-            omega=2.0 * np.pi * float(frequency),
-            dL=float(sim.resolution),
-            m=mode_count,
-            direction=spec.projection_direction,
-            filter_pol=spec.polarization,
-            target_neff=target_neff,
-            force_symmetry=mode_spec.force_symmetry,
-            return_fields=True,
-            grid_edges=(np.asarray(grid_edges, dtype=np.float64),),
-        )
+    neffs, e_fields, h_fields, _ = solve_modes(
+        eps=eps_profile,
+        omega=2.0 * np.pi * float(frequency),
+        dL=float(sim.resolution),
+        m=mode_count,
+        direction=spec.projection_direction,
+        filter_pol=spec.polarization,
+        target_neff=target_neff,
+        force_symmetry=mode_spec.force_symmetry,
+        return_fields=True,
+        grid_edges=None
+        if grid_edges is None
+        else (np.asarray(grid_edges, dtype=np.float64),),
+    )
     if len(neffs) <= int(spec.mode_index):
         raise ValueError(
             f"Mode solver returned {len(neffs)} modes for requested "

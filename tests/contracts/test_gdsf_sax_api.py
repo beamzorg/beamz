@@ -568,6 +568,7 @@ def test_build_port_projection_2d_preserves_requested_mode_index_without_seed(
         filter_pol,
         target_neff,
         return_fields,
+        grid_edges=None,
         force_symmetry=False,
     ):
         requested.append(force_symmetry)
