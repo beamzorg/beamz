@@ -9,10 +9,10 @@ import jax
 import jax.numpy as jnp
 from jax.sharding import PartitionSpec as P
 
+from beamz.lattice import CURL_TERMS
 from beamz.simulation.distributed import _shard_map, exchange_halos
 
 _AXIS = "fdtd"
-_CURL = (((2, 1), (1, 0)), ((0, 0), (2, 2)), ((1, 2), (0, 1)))
 _EDGES = (("front", "back"), ("bottom", "top"), ("left", "right"))
 
 
@@ -95,9 +95,10 @@ def _phase(state, ctx, coeffs, *, phase):
                     if _EDGES[d][1] in edges:
                         constrained = constrained | (coordinate == physical[d] - 1)
             curl = jnp.zeros_like(target)
-            for which, (source_component, derivative_axis) in enumerate(
-                _CURL[component]
+            for which, (source_name, derivative_axis, _sign) in enumerate(
+                CURL_TERMS[component]
             ):
+                source_component = "xyz".index(source_name)
                 source = halos[source_component]
                 # One-cell zero pads make both stagger directions static slices.
                 padding = [(0, 0) if d == axis else (1, 1) for d in range(3)]

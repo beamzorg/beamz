@@ -31,9 +31,11 @@ from beamz.simulation._cuda_abi import (
     CUDA_TEMPORAL_PAIR,
 )
 from beamz.simulation.execute import (
+    build_step_context,
     compiled_source_batches,
     forward_step,
     initial_program_state,
+    scan_steps,
 )
 from beamz.simulation.model import CompiledProgram, SimulationState, UpdateCoefficients
 from beamz.simulation.observe import dft_buffer_layout
@@ -97,16 +99,12 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
         if cfg.backend != "jax"
         else cfg
     )
-    context = kernels.CompiledStepContext(
+    context = replace(
+        build_step_context(program),
         config=config,
-        boundary=program.boundary,
         source_batches=None,
-        metrics=program.metrics,
-        resolution=float(cfg.resolution),
-        dt=float(cfg.dt),
-        dt_scalar=jnp.asarray(cfg.dt, dtype=jnp.float32),
-        is_3d=cfg.is_3d,
         differentiable=True,
+        low_memory=False,
     )
     update_kernel = kernels.select_update_kernel(context)
     source_count = max((spec.source_index for spec in program.sources), default=-1) + 1
@@ -213,21 +211,14 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
                 )
             return pack_dft(out)
 
-        def chunk(carry, _unused):
-            return jax.lax.scan(step, carry, xs=None, length=interval)[0], None
-
-        # Only chunk boundary states survive the forward pass. The backward pass
-        # replays a chunk and retains its local trajectory, then releases it.
-        chunks, tail = divmod(cfg.num_steps, interval)
-        out = jax.lax.scan(
-            jax.checkpoint(chunk, prevent_cse=False), state, xs=None, length=chunks
-        )[0]
-        if tail:
-            out = jax.checkpoint(
-                lambda carry: jax.lax.scan(step, carry, xs=None, length=tail)[0],
-                prevent_cse=False,
-            )(out)
-        return pack_dft(out)
+        return pack_dft(
+            scan_steps(
+                step,
+                state,
+                cfg.num_steps,
+                checkpoint_interval=interval,
+            )
+        )
 
     return jax.jit(run)
 

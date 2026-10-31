@@ -61,6 +61,14 @@ class NativeSchedulePlan:
         return bool(self.flags & abi.NATIVE_SCHEDULE_TEMPORAL)
 
 
+def _cpml_payload(terms):
+    """Metadata and profile arrays in the shared forward/transpose ABI order."""
+    return (
+        _term_metadata(terms),
+        *(value for term in terms for value in (term.a, term.b, term.inv_kappa)),
+    )
+
+
 def _phase_materials(coeffs, phase):
     """Native ABI order: x/y/z decay, then x/y/z source; arrays stay dynamic."""
     return tuple(
@@ -254,10 +262,8 @@ def reverse_material_step(
             for kind in ("decay", "source")
             for axis in "xyz"
         ),
-        _term_metadata(h_terms),
-        *(value for term in h_terms for value in (term.a, term.b, term.inv_kappa)),
-        _term_metadata(e_terms),
-        *(value for term in e_terms for value in (term.a, term.b, term.inv_kappa)),
+        *_cpml_payload(h_terms),
+        *_cpml_payload(e_terms),
         *_phase_metrics(ctx, _PHASE_H),
         *_phase_metrics(ctx, _PHASE_E),
         *known_h,
@@ -412,16 +418,11 @@ def _ffi_phase(
         )
     if terms and len(terms) != 6:
         raise ValueError("3D CUDA CPML requires exactly six derivative terms per phase")
-    metadata = _term_metadata(terms)
-    term_arrays = tuple(
-        value for term in terms for value in (term.a, term.b, term.inv_kappa)
-    )
     arguments = (
         *targets,
         *sources,
         *materials,
-        metadata,
-        *term_arrays,
+        *_cpml_payload(terms),
         *psi_terms,
         *metrics,
         *((shard_geometry,) if shard_geometry is not None else ()),
@@ -505,14 +506,12 @@ def _cpml_graph_io(state, ctx, coeffs):
     e_materials = _phase_materials(coeffs, "e")
     h_payload = (
         *h_materials,
-        _term_metadata(h_terms),
-        *(value for term in h_terms for value in (term.a, term.b, term.inv_kappa)),
+        *_cpml_payload(h_terms),
         *state.cpml_psi_h_terms,
     )
     e_payload = (
         *e_materials,
-        _term_metadata(e_terms),
-        *(value for term in e_terms for value in (term.a, term.b, term.inv_kappa)),
+        *_cpml_payload(e_terms),
         *state.cpml_psi_e_terms,
     )
     arguments = (
@@ -910,28 +909,16 @@ def _native_schedule_plan(
     )
 
 
-def run_source_group_steps(state, ctx, coeffs, groups, nsteps: int) -> SimulationState:
-    """Advance packed slab-source groups in every leapfrog phase on CUDA."""
-    if nsteps < 1:
-        raise ValueError("CUDA step count must be positive")
-    source_arguments = _source_group_arguments(groups)
-    plan = _native_schedule_plan(
-        state, ctx, coeffs, nsteps, kind="source", groups=groups
-    )
-    use_temporal_cpml = plan.uses_temporal_fields
-    arguments, result_values, aliases = (
+def _scheduled_graph_io(state, ctx, coeffs, plan):
+    return (
         _temporal_cpml_graph_io(state, ctx, coeffs, plan.temporal_steps)
-        if use_temporal_cpml
+        if plan.uses_temporal_fields and ctx.boundary.cpml.enabled
         else _graph_io(state, ctx, coeffs)
     )
-    call = _ffi_call(abi.CUDA_PROGRAM_TARGET, result_values, aliases)
-    outputs = call(
-        *arguments,
-        *source_arguments,
-        state.current_step,
-        **_program_attributes(ctx, nsteps, plan),
-    )
-    if use_temporal_cpml:
+
+
+def _replace_native_outputs(state, ctx, outputs, nsteps, plan):
+    if plan.uses_temporal_fields and ctx.boundary.cpml.enabled:
         return _replace_temporal_cpml_outputs(
             state,
             outputs,
@@ -942,6 +929,25 @@ def run_source_group_steps(state, ctx, coeffs, groups, nsteps: int) -> Simulatio
     if ctx.boundary.cpml.enabled:
         return _replace_graph_outputs(state, outputs)
     return _replace_fields(state, outputs)
+
+
+def run_source_group_steps(state, ctx, coeffs, groups, nsteps: int) -> SimulationState:
+    """Advance packed slab-source groups in every leapfrog phase on CUDA."""
+    if nsteps < 1:
+        raise ValueError("CUDA step count must be positive")
+    source_arguments = _source_group_arguments(groups)
+    plan = _native_schedule_plan(
+        state, ctx, coeffs, nsteps, kind="source", groups=groups
+    )
+    arguments, result_values, aliases = _scheduled_graph_io(state, ctx, coeffs, plan)
+    call = _ffi_call(abi.CUDA_PROGRAM_TARGET, result_values, aliases)
+    outputs = call(
+        *arguments,
+        *source_arguments,
+        state.current_step,
+        **_program_attributes(ctx, nsteps, plan),
+    )
+    return _replace_native_outputs(state, ctx, outputs, nsteps, plan)
 
 
 def pack_dft_monitors(monitors):
@@ -1200,12 +1206,7 @@ def run_program_steps(
         groups=groups,
         monitor_count=int(packed_monitors[0].shape[0]),
     )
-    use_temporal_cpml = plan.uses_temporal_fields
-    arguments, result_values, aliases = (
-        _temporal_cpml_graph_io(state, ctx, coeffs, plan.temporal_steps)
-        if use_temporal_cpml
-        else _graph_io(state, ctx, coeffs)
-    )
+    arguments, result_values, aliases = _scheduled_graph_io(state, ctx, coeffs, plan)
     arguments = (*arguments, *source_arguments)
     arguments, result_values, aliases, state_output_count, _ = _monitor_io(
         state,
@@ -1237,18 +1238,7 @@ def run_program_steps(
         *arguments,
         **_program_attributes(ctx, nsteps, plan),
     )
-    if use_temporal_cpml:
-        next_state = _replace_temporal_cpml_outputs(
-            state,
-            outputs,
-            nsteps,
-            plan.temporal_steps,
-            bool(ctx.config.cuda_flags & abi.CUDA_CPML_PAIR),
-        )
-    elif ctx.boundary.cpml.enabled:
-        next_state = _replace_graph_outputs(state, outputs)
-    else:
-        next_state = _replace_fields(state, outputs)
+    next_state = _replace_native_outputs(state, ctx, outputs, nsteps, plan)
     return _replace_dft(next_state, outputs, state_output_count)
 
 
@@ -1264,42 +1254,15 @@ def run_steps(state, ctx, coeffs, nsteps: int) -> SimulationState:
         return run_source_group_steps(
             state, ctx, coeffs, (None,) * _SOURCE_GROUP_COUNT, nsteps
         )
-    fields = _fields(state)
-    if ctx.boundary.cpml.enabled:
-        arguments, result_values, aliases = _cpml_graph_io(state, ctx, coeffs)
-        call = _ffi_call(abi.CUDA_PROGRAM_TARGET, result_values, aliases)
-        outputs = call(
-            *arguments,
-            **_program_attributes(ctx, nsteps, plan),
-        )
-        return _replace_graph_outputs(state, outputs)
-    materials = (*_phase_materials(coeffs, "h"), *_phase_materials(coeffs, "e"))
+    arguments, results, aliases = _graph_io(state, ctx, coeffs)
     if plan.layout == abi.PROGRAM_LAYOUT_YEE_TEMPORAL:
+        fields = _fields(state)
         workspace = tuple(jnp.empty_like(value) for value in fields)
-        call = _ffi_call(
-            abi.CUDA_PROGRAM_TARGET,
-            (*fields, *workspace),
-            {index: index for index in range(2 * _FIELD_COUNT)},
-        )
-        outputs = call(
-            *fields,
-            *workspace,
-            *materials,
-            *_phase_metrics(ctx, _PHASE_H),
-            *_phase_metrics(ctx, _PHASE_E),
-            **_program_attributes(ctx, nsteps, plan),
-        )
-        return _replace_fields(state, outputs)
-    call = _ffi_call(
-        abi.CUDA_PROGRAM_TARGET,
-        fields,
-        {index: index for index in range(_FIELD_COUNT)},
-    )
-    outputs = call(
-        *fields,
-        *materials,
-        *_phase_metrics(ctx, _PHASE_H),
-        *_phase_metrics(ctx, _PHASE_E),
+        arguments = (*fields, *workspace, *arguments[_FIELD_COUNT:])
+        results = (*fields, *workspace)
+        aliases = {index: index for index in range(2 * _FIELD_COUNT)}
+    outputs = _ffi_call(abi.CUDA_PROGRAM_TARGET, results, aliases)(
+        *arguments,
         **_program_attributes(ctx, nsteps, plan),
     )
-    return _replace_fields(state, outputs)
+    return _replace_native_outputs(state, ctx, outputs, nsteps, plan)

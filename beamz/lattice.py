@@ -524,12 +524,23 @@ def yee_flux(
     return 0.5 * jnp.real(total) if phasor else total
 
 
+# Target x/y/z; source component, derivative array axis (zyx), curl sign.
+CURL_TERMS = (
+    (("z", 1, 1), ("y", 0, -1)),
+    (("x", 0, 1), ("z", 2, -1)),
+    (("y", 2, 1), ("x", 1, -1)),
+)
+
+
 def curl_e_to_h_3d(ex, ey, ez, resolution):
     """Differentiate the complete electric Yee supports onto H sites."""
-    return (
-        ((ez[:, 1:, :] - ez[:, :-1, :]) - (ey[1:, :, :] - ey[:-1, :, :])) / resolution,
-        ((ex[1:, :, :] - ex[:-1, :, :]) - (ez[:, :, 1:] - ez[:, :, :-1])) / resolution,
-        ((ey[:, :, 1:] - ey[:, :, :-1]) - (ex[:, 1:, :] - ex[:, :-1, :])) / resolution,
+    fields = dict(zip("xyz", (ex, ey, ez), strict=True))
+    return tuple(
+        sum(
+            sign * adjacent_difference(fields[source], axis, resolution)
+            for source, axis, sign in terms
+        )
+        for terms in CURL_TERMS
     )
 
 
@@ -546,13 +557,16 @@ def _rectilinear_inverse_distances(grid, axis: str, *, backward: bool) -> np.nda
 
 def curl_e_to_h_3d_metric(ex, ey, ez, grid):
     """Differentiate electric fields using exact rectilinear cell widths."""
-    ix = _rectilinear_inverse_distances(grid, "x", backward=False)
-    iy = _rectilinear_inverse_distances(grid, "y", backward=False)
-    iz = _rectilinear_inverse_distances(grid, "z", backward=False)
-    return (
-        metric_adjacent_difference(ez, 1, iy) - metric_adjacent_difference(ey, 0, iz),
-        metric_adjacent_difference(ex, 0, iz) - metric_adjacent_difference(ez, 2, ix),
-        metric_adjacent_difference(ey, 2, ix) - metric_adjacent_difference(ex, 1, iy),
+    inverse = tuple(
+        _rectilinear_inverse_distances(grid, axis, backward=False) for axis in "zyx"
+    )
+    fields = dict(zip("xyz", (ex, ey, ez), strict=True))
+    return tuple(
+        sum(
+            sign * metric_adjacent_difference(fields[source], axis, inverse[axis])
+            for source, axis, sign in terms
+        )
+        for terms in CURL_TERMS
     )
 
 
@@ -645,13 +659,14 @@ def build_h_boundary_views_for_e_3d(
             periodic=axis in periodic_axes,
             periodic_phase=periodic_phases[axis] if periodic_phases else 1.0,
         )
-        for name, component, field, axis in (
-            ("hz_y", "Hz", hz, 1),
-            ("hy_z", "Hy", hy, 0),
-            ("hx_z", "Hx", hx, 0),
-            ("hz_x", "Hz", hz, 2),
-            ("hy_x", "Hy", hy, 2),
-            ("hx_y", "Hx", hx, 1),
+        for terms in CURL_TERMS
+        for source, axis, _sign in terms
+        for name, component, field in (
+            (
+                "h" + source + "_" + "zyx"[axis],
+                "H" + source,
+                (hx, hy, hz)["xyz".index(source)],
+            ),
         )
     }
 
@@ -718,14 +733,15 @@ def _curl_h_to_e_3d(
         (hx.shape[0] + 1, hx.shape[1], hx.shape[2]) if ey_shape is None else ey_shape,
         (hy.shape[0], hy.shape[1], hy.shape[2] + 1) if ez_shape is None else ez_shape,
     )
-    dz, dy, dx = distances
-    curls = (
-        difference(boundary_views["hz_y"], 1, dy)
-        - difference(boundary_views["hy_z"], 0, dz),
-        difference(boundary_views["hx_z"], 0, dz)
-        - difference(boundary_views["hz_x"], 2, dx),
-        difference(boundary_views["hy_x"], 2, dx)
-        - difference(boundary_views["hx_y"], 1, dy),
+    curls = tuple(
+        sum(
+            sign
+            * difference(
+                boundary_views["h" + source + "_" + "zyx"[axis]], axis, distances[axis]
+            )
+            for source, axis, sign in terms
+        )
+        for terms in CURL_TERMS
     )
     if any(curl.shape != shape for curl, shape in zip(curls, expected, strict=True)):
         raise ValueError(
