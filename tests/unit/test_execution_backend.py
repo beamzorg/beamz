@@ -423,9 +423,9 @@ def test_backend_participates_in_compiled_program_identity():
     )
 
     assert jax_key != cuda_key
-    assert jax_key.backend == "jax"
-    assert cuda_key.backend == "cuda_streamed"
-    assert mstep_key.backend == "cuda_mstep"
+    assert jax_key.run.backend == "jax"
+    assert cuda_key.run.backend == "cuda_streamed"
+    assert mstep_key.run.backend == "cuda_mstep"
     assert mstep_key != cuda_key
 
 

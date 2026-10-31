@@ -12,7 +12,7 @@ from beamz.design.discretization import MaterialGrid
 from beamz.devices._boundary_compile import lower_boundaries
 from beamz.lattice import component_shapes
 from beamz.simulation.compile import _compile_grid
-from beamz.simulation.model import DomainSpec, RunSpec, SimulationRequest
+from beamz.simulation.model import DomainSpec, RunConfig, SimulationRequest
 
 # =============================================================================
 # Constants
@@ -46,7 +46,14 @@ def compiled_grid(
         float(shape[0]) * resolution if is_3d else 0.0,
     )
     request = SimulationRequest(
-        RunSpec(1.0, 1, 1, 0.0, "scan", False, (False, "auto", None, None)),
+        RunConfig(
+            resolution=resolution,
+            dt=1.0,
+            num_steps=1,
+            total_steps=1,
+            plane_2d=plane_2d,
+            is_3d=is_3d,
+        ),
         DomainSpec(size, is_3d, plane_2d, (0.0, 0.0, 0.0), polarization),
         material_grid,
         (),

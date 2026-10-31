@@ -385,11 +385,6 @@ def monitor_dft_weight_size(specs: tuple[CompiledMonitorSpec, ...]) -> int:
 
 
 MONITOR_FIELDS = (
-    "powers",
-    "timestamps",
-    "counts",
-    "freq_flux_re",
-    "freq_flux_im",
     "dft_vec_re",
     "dft_vec_im",
     "dft_weight_sum",
@@ -403,9 +398,7 @@ MONITOR_FIELDS = (
 def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any]:
     specs = program.monitors
     dft_dtype = monitor_dft_accumulator_dtype()
-    n = len(specs)
-    # Retain empty scalar-history members for public state/checkpoint compatibility.
-    # The compiler emits field DFTs and recorders; flux is derived from those fields.
+    # Flux is derived from acquired field DFTs; only produced state is allocated.
     dft_value_count = monitor_dft_value_size(specs)
     dft_weight_count = monitor_dft_weight_size(specs)
     recorder_specs = tuple(spec for spec in specs if spec.recorder_index >= 0)
@@ -414,11 +407,6 @@ def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any
     )
     # 3. Initialize every accumulated quantity at zero.
     values = (
-        jnp.zeros((n, 0), dtype=jnp.float32),
-        jnp.zeros((n, 0), dtype=jnp.float32),
-        jnp.zeros((n,), dtype=jnp.int32),
-        jnp.zeros((n, 0), dtype=jnp.float32),
-        jnp.zeros((n, 0), dtype=jnp.float32),
         jnp.zeros((dft_value_count,), dtype=dft_dtype),
         jnp.zeros((dft_value_count,), dtype=dft_dtype),
         jnp.zeros((dft_weight_count,), dtype=dft_dtype),
@@ -602,12 +590,6 @@ def update_monitors(
     abs_step: jnp.ndarray,
     t_phys: jnp.ndarray,
     dt_scalar: jnp.ndarray,
-    ex: jnp.ndarray,
-    ey: jnp.ndarray,
-    ez: jnp.ndarray,
-    hx: jnp.ndarray,
-    hy: jnp.ndarray,
-    hz: jnp.ndarray,
 ) -> SimulationState:
     # 1. Return immediately when no monitor plan exists; touching empty buffers would add
     # needless operations to every compiled timestep.
@@ -627,7 +609,8 @@ def update_monitors(
             list(dft_vec_im),
             list(dft_weight_sum),
         )
-    field_arrays = (ex, ey, ez, hx, hy, hz)
+    components = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
+    field_arrays = tuple(getattr(state, name.lower()) for name in components)
 
     # 3. Every scalar and spectral monitor follows the same sampling and accumulator path;
     # geometry and dimensional choices are already encoded in its weighted gathers.
@@ -700,7 +683,7 @@ def update_monitors(
         state,
         abs_step,
         t_phys,
-        {"Ex": ex, "Ey": ey, "Ez": ez, "Hx": hx, "Hy": hy, "Hz": hz},
+        dict(zip(components, field_arrays, strict=True)),
     )
     return state._replace(
         dft_vec_re=tuple(dft_vec_re) if segmented_dft else dft_vec_re,

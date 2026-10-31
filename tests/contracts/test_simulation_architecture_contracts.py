@@ -50,7 +50,7 @@ from beamz.devices.sources.compiler import (
 from beamz.devices.visualization import visual_spec_from_device
 from beamz.simulation.compile import CompiledProgramKey
 from beamz.simulation.execute import _apply_specs
-from beamz.simulation.model import SimulationRequest, SimulationState
+from beamz.simulation.model import ShardingConfig, SimulationRequest, SimulationState
 from beamz.simulation.sharding import sharding_cache_token
 from tests.validation.invariants.test_engine_equivalence import (
     TEST_WAVELENGTH,
@@ -480,7 +480,7 @@ def test_compiled_program_cache_is_bounded_and_uses_lru_order(monkeypatch):
     programs[5] = compile_steps(5)
 
     assert len(compile_module._PROGRAM_CACHE) == 4
-    assert [key.num_steps for key in compile_module._PROGRAM_CACHE] == [3, 4, 1, 5]
+    assert [key.run.num_steps for key in compile_module._PROGRAM_CACHE] == [3, 4, 1, 5]
     assert programs[2] not in compile_module._PROGRAM_CACHE.values()
     assert compile_steps(2) is not programs[2]
     assert len(built) == 6
@@ -761,13 +761,13 @@ def test_compiled_program_key_is_hashable_with_sharding_token():
             sharding=sharding_cache_token({"axis": "x", "num_devices": 2}),
         )
     )
-    assert key.sharding == (True, "x", 2, None)
+    assert key.run.sharding == ShardingConfig(True, "x", 2, None)
     assert isinstance(hash(key), int)
 
     request = sim.to_request(
         num_steps=2, compiler_sharding={"axis": "x", "num_devices": 2}
     )
-    assert request.run.sharding == key.sharding
+    assert request.run.sharding == key.run.sharding
     assert CompiledProgramKey.from_request(request) == key
     assert request != sim.to_request(num_steps=2)
     with pytest.raises(ValueError, match="must agree"):

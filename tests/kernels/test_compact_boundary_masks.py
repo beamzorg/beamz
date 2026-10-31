@@ -91,13 +91,13 @@ def test_execution_preserves_fields_and_canonical_masks(monkeypatch, boundaries)
     traced = jax.make_jaxpr(execute.build_scan(program))(prepared, program.coefficients)
     boolean_bytes = _captured_boolean_bytes(traced)
     assert boolean_bytes < 1000
-    optimized, _ = execute._run_program_state_timed(
-        program, state, monitor_steps=3, donate_state=False
+    optimized, _ = execute._execute_chunk(
+        program, state, monitor_steps=3, donate_state=False, timed=True
     )
     execute.clear_execution_cache()
     monkeypatch.setattr(execute, "compact_boundary_masks", lambda boundary: boundary)
-    reference, _ = execute._run_program_state_timed(
-        program, state, monitor_steps=3, donate_state=False
+    reference, _ = execute._execute_chunk(
+        program, state, monitor_steps=3, donate_state=False, timed=True
     )
     for actual, expected in zip(
         jax.tree.leaves(optimized), jax.tree.leaves(reference), strict=True

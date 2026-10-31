@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, cast
+from typing import Any, Callable
 
 import jax.numpy as jnp
 import numpy as np
@@ -293,32 +293,6 @@ def correct_cpml_term(derivative, psi, term):
     )
 
 
-def fused_update_h_lossy_3d_material(
-    ex, ey, ez, hx, hy, hz, sigma_x, sigma_y, sigma_z, dt, resolution
-):
-    """Advance all magnetic components directly from collocated loss grids."""
-    one = jnp.asarray(1.0, dtype=hx.dtype)
-    dt_over_mu = jnp.asarray(dt, dtype=hx.dtype) / jnp.asarray(MU_0, dtype=hx.dtype)
-    inv_res = one / jnp.asarray(resolution, dtype=hx.dtype)
-    out = []
-    differences = (
-        (ez[:, 1:, :] - ez[:, :-1, :], ey[1:, :, :] - ey[:-1, :, :]),
-        (ex[1:, :, :] - ex[:-1, :, :], ez[:, :, 1:] - ez[:, :, :-1]),
-        (ey[:, :, 1:] - ey[:, :, :-1], ex[:, 1:, :] - ex[:, :-1, :]),
-    )
-    for field, sigma, terms in zip(
-        (hx, hy, hz), (sigma_x, sigma_y, sigma_z), differences, strict=True
-    ):
-        alpha = sigma * (0.5 * dt_over_mu)
-        denom = one + alpha
-        curl = (
-            fit_array_to_shape(terms[0], field.shape)
-            - fit_array_to_shape(terms[1], field.shape)
-        ) * inv_res
-        out.append((one - alpha) / denom * field - (dt_over_mu / denom) * curl)
-    return tuple(out)
-
-
 def fused_update_h_lossy_3d_material_metric(
     ex, ey, ez, hx, hy, hz, sigma_x, sigma_y, sigma_z, dt, metrics
 ):
@@ -504,18 +478,6 @@ def tm_xy_curl_h_to_e_2d_metric(
     if curl.shape != ez_shape:
         raise ValueError(f"curl(H) shape {curl.shape} does not match Ez {ez_shape}")
     return curl
-
-
-def as_array(value) -> jnp.ndarray:
-    # Make dtype conversion explicit to prevent promotion from changing JAX
-    # signatures.
-    return cast(jnp.ndarray, value)
-
-
-def astype_like(value, ref: jnp.ndarray) -> jnp.ndarray:
-    # Make dtype conversion explicit to prevent promotion from changing JAX
-    # signatures.
-    return as_array(value).astype(ref.dtype)
 
 
 def apply_post_source_boundaries(
