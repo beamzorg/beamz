@@ -96,7 +96,8 @@ def _run_sparameters(waves, ports, frequencies, output_ports, monkeypatch, **kwa
         return_power=True,
         mode_strategy="per_frequency",
     ):
-        del sim_arg, ports, min_incident_db, return_power, mode_strategy
+        assert sim_arg["analysis"] is inputs["analysis"]
+        del ports, min_incident_db, return_power, mode_strategy
         return waves
 
     monkeypatch.setattr(sp, "_extract_port_waves_dft", fake_extract)
