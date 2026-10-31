@@ -3,11 +3,11 @@ from itertools import groupby
 from typing import Any, cast
 
 import numpy as np
-from shapely.geometry import Polygon as ShapelyPolygon
 from shapely.ops import unary_union
 
 from beamz._cache_tokens import cache_token
 from beamz.const import µm
+from beamz.design._geometry import planar_geometry
 from beamz.design.materials import Material, MaterialProtocol
 from beamz.design.structures import (
     Polygon,
@@ -36,19 +36,6 @@ def _merge_group_key(structure):
         getattr(structure, "sidewall_angle", None),
         getattr(structure, "width_to_z", None),
     )
-
-
-def _to_shapely(structure):
-    vertices = getattr(structure, "vertices", ())
-    if not vertices:
-        return None
-    holes = [list(path) for path in getattr(structure, "interiors", ()) if path]
-    polygon = (
-        ShapelyPolygon(shell=vertices, holes=holes)
-        if holes
-        else ShapelyPolygon(shell=vertices)
-    )
-    return polygon if polygon.is_valid else None
 
 
 def _polygons_from_shapely(merged, material, first):
@@ -91,8 +78,8 @@ def _union_replacements(structures):
         for index, structure in group:
             if not getattr(structure, "material", None) or isinstance(structure, Ring):
                 continue
-            polygon = _to_shapely(structure)
-            if polygon is not None:
+            polygon = planar_geometry(structure)
+            if polygon is not None and polygon.is_valid:
                 mergeable.append((index, structure, polygon))
         if len(mergeable) <= 1:
             continue

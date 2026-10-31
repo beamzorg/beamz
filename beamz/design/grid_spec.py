@@ -9,6 +9,8 @@ from typing import Any, cast
 import numpy as np
 
 from beamz.const import LIGHT_SPEED
+from beamz.design._geometry import planar_geometry
+from beamz.design._geometry import structure_bounds as _structure_bounds
 from beamz.design.grid import RectilinearGrid
 from beamz.design.mesher import _GradedMesher
 from beamz.design.structures import Polygon
@@ -464,31 +466,6 @@ def _design_coordinate_offset(design: Any) -> AxisValues:
     )
 
 
-def _structure_bounds(
-    structure: Any, *, two_dimensional: bool
-) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
-    if hasattr(structure, "lower") and hasattr(structure, "upper"):
-        return cast(AxisValues, tuple(map(float, structure.lower))), cast(
-            AxisValues, tuple(map(float, structure.upper))
-        )
-    if hasattr(structure, "radius") and not getattr(structure, "vertices", ()):
-        center = tuple(map(float, structure.center))
-        radius = float(structure.radius)
-        return cast(AxisValues, tuple(value - radius for value in center)), cast(
-            AxisValues, tuple(value + radius for value in center)
-        )
-    vertices = np.asarray(getattr(structure, "vertices", ()), dtype=np.float64)
-    if vertices.ndim != 2 or vertices.shape[0] < 3:
-        raise TypeError(f"Cannot derive meshing bounds for {type(structure).__name__}.")
-    lower = [float(np.min(vertices[:, 0])), float(np.min(vertices[:, 1]))]
-    upper = [float(np.max(vertices[:, 0])), float(np.max(vertices[:, 1]))]
-    if two_dimensional:
-        return cast(AxisValues, (*lower, 0.0)), cast(AxisValues, (*upper, 1.0))
-    z = float(getattr(structure, "z", np.min(vertices[:, 2])))
-    depth = float(getattr(structure, "depth", 0.0))
-    return cast(AxisValues, (*lower, z)), cast(AxisValues, (*upper, z + depth))
-
-
 def _polygon_opposing_features(structure: Polygon) -> list[_OpposingFeature]:
     """Return reliable local distances between opposing material faces.
 
@@ -496,15 +473,8 @@ def _polygon_opposing_features(structure: Polygon) -> list[_OpposingFeature]:
     tessellation must not change its physical mesh target.
     """
     from shapely.geometry import LineString
-    from shapely.geometry import Polygon as ShapelyPolygon
-    from shapely.geometry.polygon import orient
-
-    shell = [(float(x), float(y)) for x, y, _z in structure.vertices]
-    holes = [
-        [(float(x), float(y)) for x, y, _z in path] for path in structure.interiors
-    ]
-    geometry = orient(ShapelyPolygon(shell, holes=holes), sign=1.0)
-    if geometry.is_empty or not geometry.is_valid:
+    geometry = planar_geometry(structure)
+    if geometry is None or not geometry.is_valid:
         return []
     if not geometry.interiors and geometry.equals(geometry.convex_hull):
         coordinates = np.asarray(geometry.exterior.coords[:-1], dtype=np.float64)

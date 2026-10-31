@@ -734,6 +734,22 @@ def _curl_h_to_e_3d(
     return curls
 
 
+def electric_update_factors(conductivity, permittivity, dt):
+    """Backend-neutral FP32 coefficient algebra, in the eager evaluation order."""
+    alpha = conductivity * np.float32(dt) / (np.float32(2 * EPS_0) * permittivity)
+    denominator = np.float32(1) + alpha
+    return (
+        (np.float32(1) - alpha) / denominator,
+        (np.float32(dt) / (np.float32(EPS_0) * permittivity)) / denominator,
+    )
+
+
+def magnetic_update_factors(sigma_m, dt):
+    alpha = sigma_m * np.float32(dt) / np.float32(2 * MU_0)
+    denominator = np.float32(1) + alpha
+    return (np.float32(1) - alpha) / denominator, np.float32(dt / MU_0) / denominator
+
+
 def advance_h_field(field, curl, sigma_m, dt):
     """Advance one magnetic Yee component through a source-free half-step."""
     denominator = 1.0 + sigma_m * dt / (2.0 * MU_0)
@@ -795,83 +811,57 @@ def sample_voxel_grid_at_component_3d(
 ):
     """Sample a cell-centered 3D raster on a Yee component lattice."""
 
-    # Electric interfaces need symmetric averaging; magnetic ownership uses one voxel.
-    if component in {"Ex", "Ey", "Ez"}:
-        return sample_voxel_grid_at_e_component_3d_centered(
-            grid,
-            component,
-            stored_shape=stored_shape,
-            region=region,
-        )
+    return _sample_material_3d(jnp.asarray(grid), component, stored_shape, region)
 
-    z_idx, y_idx, x_idx = component_index_arrays_3d(
-        component,
-        tuple(int(v) for v in jnp.asarray(grid).shape),
-        stored_shape=stored_shape,
-        region=region,
-    )
-    sampled = jnp.asarray(grid)
-    sampled = jnp.take(sampled, jnp.asarray(z_idx), axis=0)
-    sampled = jnp.take(sampled, jnp.asarray(y_idx), axis=1)
-    sampled = jnp.take(sampled, jnp.asarray(x_idx), axis=2)
-    return sampled
+
+def _sample_material_3d(grid, component, stored_shape=None, region=None, *, lazy=False):
+    """One axis-ordered interpolation contract for eager and bounded host reads."""
+    from beamz._region_array import RegionArray
+
+    xp = np if lazy else jnp
+    if grid.ndim == 0:
+        return xp.asarray(grid, dtype=np.float32 if lazy else None)
+    shape = stored_shape or component_shape_3d(component, grid.shape)
+    offsets = component_axis_offsets_3d(component)
+
+    def read(region):
+        pairs, bounds = [], []
+        for name, key, dim, n in zip("zyx", region, shape, grid.shape, strict=True):
+            indices = np.arange(*key.indices(dim))
+            hi = np.clip(indices, 0, n - 1)
+            lo = (
+                np.clip(indices - 1, 0, n - 1)
+                if component[0] == "E" and offsets[name] == 0
+                else hi
+            )
+            start = int(min(lo.min(), hi.min())) if hi.size else 0
+            stop = int(max(lo.max(), hi.max())) + 1 if hi.size else 0
+            bounds.append(slice(start, stop))
+            pairs.append((lo - start, hi - start))
+        values = xp.asarray(grid[tuple(bounds)], dtype=np.float32 if lazy else None)
+        for axis, ((lo, hi), name) in enumerate(zip(pairs, "zyx", strict=True)):
+            high = xp.take(values, hi, axis=axis)
+            values = (
+                0.5 * (xp.take(values, lo, axis=axis) + high)
+                if component[0] == "E" and offsets[name] == 0
+                else high
+            )
+        return values
+
+    if lazy:
+        return RegionArray(tuple(shape), np.dtype(np.float32), read)
+    return read(region or (slice(None),) * 3)
 
 
 def sample_voxel_grid_at_e_component_3d_centered(
-    grid,
-    component: str,
-    *,
-    stored_shape: tuple[int, ...] | None = None,
-    region: tuple[slice, slice, slice] | None = None,
+    grid, component: str, *, stored_shape=None, region=None
 ):
-    """Sample a cell-centered 3D raster onto a staggered E site by symmetric averaging."""
-
-    # 1. Reject H components because magnetic material sampling intentionally follows a
-    # different ownership convention from centered electric interpolation.
+    """Sample electric interfaces symmetrically, retaining source dtype and placement."""
     if component not in {"Ex", "Ey", "Ez"}:
         raise ValueError(
             "sample_voxel_grid_at_e_component_3d_centered only supports Ex/Ey/Ez"
         )
-
-    # 2. Resolve the requested stored support, Yee offsets, and optional update region before sampling any axis.
-    grid_shape = tuple(int(v) for v in jnp.asarray(grid).shape)
-    shape = (
-        tuple(int(v) for v in stored_shape)
-        if stored_shape is not None
-        else component_shape_3d(component, grid_shape)
-    )
-    offsets = component_axis_offsets_3d(component)
-    axes = ("z", "y", "x")
-    region = region or (slice(None), slice(None), slice(None))
-
-    sampled = jnp.asarray(grid)
-
-    # 3. Walk axes in storage order, averaging bracketing cell centers only where the E
-    # site lies between them and using direct ownership on center-aligned axes.
-    for axis_index, (axis, dim, grid_dim, axis_region) in enumerate(
-        zip(axes, shape, grid_shape, region, strict=False)
-    ):
-        coord = np.arange(dim, dtype=np.float64) + offsets[axis]
-        if offsets[axis] == 0.0:
-            hi = np.floor(coord).astype(np.int32)
-            lo = hi - 1
-            lo = np.clip(lo, 0, int(grid_dim) - 1)
-            hi = np.clip(hi, 0, int(grid_dim) - 1)
-            lo = lo[axis_region]
-            hi = hi[axis_region]
-            sampled_lo = jnp.take(sampled, jnp.asarray(lo), axis=axis_index)
-            sampled_hi = jnp.take(sampled, jnp.asarray(hi), axis=axis_index)
-            sampled = 0.5 * (sampled_lo + sampled_hi)
-        elif offsets[axis] == 0.5:
-            idx = np.floor(coord).astype(np.int32)
-            idx = np.clip(idx, 0, int(grid_dim) - 1)
-            idx = idx[axis_region]
-            sampled = jnp.take(sampled, jnp.asarray(idx), axis=axis_index)
-        else:
-            raise ValueError(f"Unsupported Yee offset {offsets[axis]!r}")
-
-    # 4. The sequential takes preserve the requested component-region shape while retaining the source array's JAX dtype and placement.
-    return sampled
+    return _sample_material_3d(jnp.asarray(grid), component, stored_shape, region)
 
 
 def component_shape_2d(
@@ -1046,19 +1036,6 @@ def _total_conductivity(fields):
     return jnp.maximum(base_sigma, sigma_pml)
 
 
-def _mu_3d(fields):
-    if fields.permeability.ndim == 0:
-        return (fields.permeability,) * 3
-    return tuple(
-        sample_voxel_grid_at_component_3d(
-            fields.permeability,
-            component,
-            stored_shape=tuple(getattr(fields, component).shape),  # fmt: skip
-        )
-        for component in ("Hx", "Hy", "Hz")
-    )
-
-
 def _base_coefficients(total_sigma, e_terms, sigma_m, mu_terms):
     data = {"total_conductivity": total_sigma}
     for axis, (eps, sig, region) in zip("xyz", e_terms, strict=True):
@@ -1077,44 +1054,6 @@ def _base_coefficients(total_sigma, e_terms, sigma_m, mu_terms):
         mu_hz=mu_terms[2],
     )
     return data
-
-
-def _material_slice_for_e_3d(permittivity, conductivity, orientation):
-    """Collocate material values with one staggered 3D electric component."""
-    component = {"x": "Ex", "y": "Ey", "z": "Ez"}[orientation]
-    region = (slice(None), slice(None), slice(None))
-    eps = sample_voxel_grid_at_e_component_3d_centered(permittivity, component)
-    sig = (
-        jnp.asarray(conductivity)
-        if jnp.asarray(conductivity).ndim == 0
-        else sample_voxel_grid_at_e_component_3d_centered(conductivity, component)
-    )
-    return eps, sig, region
-
-
-def _magnetic_conductivity_terms_3d(
-    conductivity, permeability, hx_shape, hy_shape, hz_shape
-):
-    """Collocate equivalent magnetic conductivity with the three H supports."""
-    conductivity = jnp.asarray(conductivity)
-    if conductivity.ndim == 0 and float(conductivity) == 0.0:
-        zero = jnp.zeros((), dtype=conductivity.dtype)
-        return zero, zero, zero
-    sigma_base = conductivity * permeability * MU_0 / EPS_0
-    if sigma_base.ndim == 0:
-        return sigma_base, sigma_base, sigma_base
-    return tuple(
-        sample_voxel_grid_at_component_3d(
-            sigma_base,
-            component,
-            stored_shape=shape,
-        )
-        for component, shape in zip(
-            ("Hx", "Hy", "Hz"),
-            (hx_shape, hy_shape, hz_shape),
-            strict=True,
-        )
-    )
 
 
 def _material_conductivities(fields):
@@ -1136,24 +1075,39 @@ def _material_conductivities(fields):
     return total_sigma, magnetic_sigma
 
 
-def build_material_coefficients(fields):
+def build_material_coefficients(fields, *, lazy=False):
     """Collocate every material array once before runtime execution."""
 
-    total_sigma, magnetic_sigma = _material_conductivities(fields)
+    if lazy:
+        if fields.has_pml and not fields.has_cpml:
+            raise ValueError("Lazy material preparation requires CPML or no absorber.")
+        total_sigma, magnetic_sigma = fields.conductivity, np.asarray(0, np.float32)
+    else:
+        total_sigma, magnetic_sigma = _material_conductivities(fields)
     if fields.permittivity.ndim == 3:
+
+        def sample_3d(value, component):
+            return _sample_material_3d(
+                value, component, tuple(getattr(fields, component).shape), lazy=lazy
+            )
+
         e_terms = tuple(
-            _material_slice_for_e_3d(fields.permittivity, total_sigma, axis)
-            for axis in "xyz"
+            (
+                sample_3d(fields.permittivity, c),
+                sample_3d(total_sigma, c),
+                (slice(None),) * 3,
+            )
+            for c in ("Ex", "Ey", "Ez")
         )
-        sigma_m = _magnetic_conductivity_terms_3d(
-            magnetic_sigma,
-            fields.permeability,
-            fields.Hx.shape,
-            fields.Hy.shape,
-            fields.Hz.shape,  # fmt: skip
-        )
+        # Physical conductivity is electric-only. The artificial sponge alone
+        # has an impedance-matched magnetic counterpart.
+        sigma_base = magnetic_sigma
+        if not (sigma_base.ndim == 0 and float(sigma_base) == 0):
+            sigma_base = sigma_base * fields.permeability * MU_0 / EPS_0
+        sigma_m = tuple(sample_3d(sigma_base, "H" + axis) for axis in "xyz")
+        mu = tuple(sample_3d(fields.permeability, "H" + axis) for axis in "xyz")
         return MaterialCoefficients(
-            **_base_coefficients(total_sigma, e_terms, sigma_m, _mu_3d(fields))
+            **_base_coefficients(total_sigma, e_terms, sigma_m, mu)
         )
 
     # The runtime schema always contains six components; only one polarization's

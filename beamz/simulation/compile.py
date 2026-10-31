@@ -49,7 +49,6 @@ from beamz.simulation.model import (
 )
 from beamz.simulation.preparation_trace import preparation_phase, trace_preparation
 from beamz.simulation.region_materials import (
-    build_region_materials,
     electric_coefficients,
     magnetic_coefficients,
 )
@@ -563,11 +562,7 @@ def _compile_grid(
         **components,
     }
     assembly = SimpleNamespace(**values)
-    materials = (
-        build_region_materials(assembly)
-        if region_setup
-        else build_material_coefficients(assembly)
-    )
+    materials = build_material_coefficients(assembly, lazy=region_setup)
     direct = (
         dict(boundary_data.yee_materials)
         if material_grid.uses_direct_yee_materials
