@@ -959,6 +959,18 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
                         material_values(epsilon) + 0.5 * dt_eps * sigma_e
                     )
             coeffs = coeffs._replace(**scales)
+
+        def step(carry, step_index):
+            return forward_step(
+                carry,
+                ctx=step_context,
+                coeffs=coeffs,
+                program=runtime_program,
+                update_kernel=update_kernel,
+                observation_time=observation_origin
+                + dt_scalar * (observation_offset + step_index + 1).astype(jnp.float32),
+            ), None
+
         # 4. Run the same transition through scan or fori_loop. The choice changes the
         # lowering strategy, not timestep semantics.
         if cuda_multi_step:
@@ -1055,18 +1067,6 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
                     )
         elif checkpoint_interval is not None:
 
-            def step(carry, step_index):
-                return forward_step(
-                    carry,
-                    ctx=step_context,
-                    coeffs=coeffs,
-                    program=runtime_program,
-                    update_kernel=update_kernel,
-                    observation_time=observation_origin
-                    + dt_scalar
-                    * (observation_offset + step_index + 1).astype(jnp.float32),
-                ), None
-
             def chunk(carry, chunk_index):
                 indices = chunk_index * checkpoint_interval + jnp.arange(
                     checkpoint_interval, dtype=jnp.int32
@@ -1088,25 +1088,8 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
         # Every observation uses the simulation origin and absolute integer
         # step, including continuation calls, as native CUDA does.
         elif cfg.loop_kind == "scan":
-
-            def _scan_body(carry, step_index):
-                # Emit no per-step output because final state and explicit buffers hold results.
-                return (
-                    forward_step(
-                        carry,
-                        ctx=step_context,
-                        coeffs=coeffs,
-                        program=runtime_program,
-                        update_kernel=update_kernel,
-                        observation_time=observation_origin
-                        + dt_scalar
-                        * (observation_offset + step_index + 1).astype(jnp.float32),
-                    ),
-                    None,
-                )
-
             scan_out, _ = jax.lax.scan(
-                _scan_body,
+                step,
                 state,
                 xs=jnp.arange(cfg.num_steps, dtype=jnp.int32),
             )
@@ -1114,15 +1097,7 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
             scan_out = jax.lax.fori_loop(
                 0,
                 cfg.num_steps,
-                lambda _i, c: forward_step(
-                    c,
-                    ctx=step_context,
-                    coeffs=coeffs,
-                    program=runtime_program,
-                    update_kernel=update_kernel,
-                    observation_time=observation_origin
-                    + dt_scalar * (observation_offset + _i + 1).astype(jnp.float32),
-                ),
+                lambda index, carry: step(carry, index)[0],
                 state,
             )
         if local_cuda_cpml or local_jax_cpml:
