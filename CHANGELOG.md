@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 2D mode previews, sources, and monitors now share aperture bounds, explicit
+  solve padding, target indices, and optional confinement selection. Launch no
+  longer selects modes from the full cross-section, and measurement no longer
+  adds an independent six-cell halo. Fixed x-directed 2D previews and aligned
+  transverse Yee sampling without tapering the injected mode.
+
 - Mode previews now show solver fields by default, retaining eigensolver sampling
   and normalization. Use `ModeSource.solve_modes(..., field_representation="launch")`
   to inspect prepared 3D launch fields. Source injection is unchanged.
