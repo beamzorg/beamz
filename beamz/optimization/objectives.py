@@ -16,12 +16,12 @@ from beamz.analysis.modal_projection.geometry import (
 )
 from beamz.analysis.mode_projection import (
     _build_port_projection,
+    _coupled_projection,
+    _monitor_port,
 )
 from beamz.analysis.sparameters import _wave_selectors
 from beamz.devices.monitors import ModeMonitor
 from beamz.simulation.observe import normalization_from_result
-
-from .modes import _coupled_projection, _monitor_port
 
 
 class ModalObjective:

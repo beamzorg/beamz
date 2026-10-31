@@ -327,13 +327,17 @@ _MODE_CACHE: _SolveCache[DiscreteMode] = _SolveCache(
 )
 
 
-def _solve_cached_beamz_mode(spec: ModePlaneSpec) -> DiscreteMode:
+def _solve_cached_beamz_mode(
+    spec: ModePlaneSpec, *, basis_cache: dict | None = None
+) -> DiscreteMode:
     """Cache by all spec inputs, including materials, grid and solver settings."""
     if not isinstance(spec, ModePlaneSpec):
         raise TypeError("spec must be a ModePlaneSpec")
     return _MODE_CACHE.get_or_compute(
         (solve_grid, cache_token(spec)),
-        lambda: _solve_beamz_mode(spec, candidate_cache=_CANDIDATE_CACHE),
+        lambda: _solve_beamz_mode(
+            spec, candidate_cache=_CANDIDATE_CACHE, basis_cache=basis_cache
+        ),
     )
 
 

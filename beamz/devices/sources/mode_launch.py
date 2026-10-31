@@ -18,8 +18,7 @@ from beamz.devices._placement import (
 from beamz.devices.modes.discrete import solve_beamz_mode
 from beamz.devices.modes.fields import _modal_power, _numeric_wave_number
 from beamz.devices.modes.plane import (
-    mode_plane_solve_arguments,
-    solve_mode_plane_3d,
+    bind_material_mode_plane,
     solve_modes,
 )
 from beamz.lattice import (
@@ -462,32 +461,21 @@ def _plan_3d_mode_source(
         raise ValueError("A mode source launch needs a companion Yee plane.")
     omega = 2.0 * np.pi * source.frequency
     solver_direction = "+y" if axis == "y" else source.signed_direction
-    discrete_mode = solve_mode_plane_3d(
-        permittivity,
-        np.asarray(fields.permeability),
-        **mode_plane_solve_arguments(
-            fields.material_grid,
-            spec=source.mode_spec,
-            num_modes=max(source.mode_spec.num_modes, source.mode_spec.mode_index + 1),
-            center=source.center,
-            width=width,
-            height=height,
-            snapped=snapped,
-            direction=source.signed_direction,
-            resolution=resolution,
-            dt=dt,
-            grid=metric_grid,
-        ),
-        yee_materials=(
-            getattr(fields.material_grid, "yee_materials", None)
-            if fields.material_grid.uses_direct_yee_materials
-            else None
-        ),
+    discrete_mode = bind_material_mode_plane(
+        fields.material_grid,
+        spec=source.mode_spec,
+        center=source.center,
+        width=width,
+        height=height,
+        snapped=snapped,
+        direction=source.signed_direction,
+        resolution=resolution,
+        dt=dt,
+        grid=metric_grid,
         frequency=source.frequency,
         solver_direction=solver_direction,
-        mode_index=source.mode_spec.mode_index,
         solver=solve_beamz_mode,
-    )
+    ).solve(source.mode_spec.mode_index)
     profiles = {
         name: np.asarray(value, dtype=np.complex128)
         for name, value in discrete_mode.profiles.items()

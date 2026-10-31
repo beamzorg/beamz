@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal, cast, overload
 
 import numpy as np
@@ -486,50 +486,7 @@ def _local_mode_plane_spec(
     }
 
 
-def mode_plane_solve_arguments(
-    materials,
-    *,
-    spec,
-    center,
-    width,
-    height,
-    snapped,
-    direction,
-    resolution,
-    dt,
-    grid,
-    num_modes,
-) -> dict[str, Any]:
-    """Common launch/preview inputs to the finite-plane solver.
-
-    Callers still choose the numerical solver and its direction; candidate basis
-    caching and calibrated injection remain outside this geometry/material adapter.
-    """
-    return dict(
-        material_tensors=getattr(materials, "tensors", None),
-        yee_tensors=getattr(materials, "yee_tensors", None),
-        resolution=resolution,
-        dt=dt,
-        axis=snapped.normal_axis,
-        direction=direction,
-        grid_shape=materials.shape,
-        center=center,
-        width=width,
-        height=height,
-        plane_index=snapped.plane_index,
-        offset_index=snapped.companion_index,
-        snapped_region=snapped,
-        grid=grid,
-        polarization=spec.polarization,
-        target_neff=spec.target_neff,
-        num_modes=num_modes,
-        force_symmetry=spec.force_symmetry,
-        min_aperture_fraction=spec.min_aperture_fraction,
-        solver_padding_cells=spec.solver_padding_cells,
-    )
-
-
-def solve_mode_plane_3d(
+def bind_mode_plane_3d(
     permittivity,
     permeability,
     *,
@@ -547,7 +504,7 @@ def solve_mode_plane_3d(
     height,
     plane_index,
     offset_index,
-    mode_index,
+    mode_index=0,
     polarization,
     target_neff,
     num_modes,
@@ -559,8 +516,8 @@ def solve_mode_plane_3d(
     force_symmetry=False,
     min_aperture_fraction: float | None = 0.5,
     solver_padding_cells: int | tuple[int, int] | None = None,
-) -> DiscreteMode:
-    """Solve one finite 3D mode plane and return globally indexed fields."""
+) -> BoundModePlane:
+    """Bind constitutive supports and a candidate family before selecting members."""
     axis_index = _AXIS_POS_3D[axis]
     profile_index = int(plane_index) - int(material_origin_zyx[axis_index])
     eps_profile = np.take(permittivity, profile_index, axis=axis_index)
@@ -660,40 +617,38 @@ def solve_mode_plane_3d(
                 cross_profiles[name] = profile[
                     tuple(slice(0, n) for n in local_plane["scalar_permittivity"].shape)
                 ]
-    mode = solver(
-        ModePlaneSpec(
-            scalar_permittivity=np.asarray(
-                local_plane["scalar_permittivity"], dtype=np.complex128
-            ),
-            frequency=float(frequency),
-            resolution=float(resolution),
-            dt=None if dt is None else float(dt),
-            axis=axis,
-            direction=direction,
-            solver_direction=solver_direction or direction,
-            transverse_axes=_TRANSVERSE_AXES_3D[axis],
-            grid_shape=local_plane["grid_shape"],
-            component_permittivity=component_permittivity,
-            component_permeability=component_permeability,
-            diagonal_permittivity=diagonal_permittivity,
-            yee_tensors=local_tensors,
-            offdiagonal_permittivity=cross_profiles,
-            diagonal_permeability=diagonal_permeability,
-            center=local_plane["center"],
-            width=float(width),
-            height=float(height),
-            plane_index=int(local_plane["plane_index"]),
-            offset_index=int(local_plane["offset_index"]),
-            mode_index=int(mode_index),
-            polarization=polarization,
-            target_neff=target,
-            num_modes=int(num_modes),
-            force_symmetry=force_symmetry,
-            min_aperture_fraction=min_aperture_fraction,
-            aperture_pad_cells=MODE_PLANE_APERTURE_PAD_CELLS,
-            aperture_window_alpha=MODE_PLANE_APERTURE_WINDOW_ALPHA,
-            grid=local_plane["grid"],
-        )
+    spec = ModePlaneSpec(
+        scalar_permittivity=np.asarray(
+            local_plane["scalar_permittivity"], dtype=np.complex128
+        ),
+        frequency=float(frequency),
+        resolution=float(resolution),
+        dt=None if dt is None else float(dt),
+        axis=axis,
+        direction=direction,
+        solver_direction=solver_direction or direction,
+        transverse_axes=_TRANSVERSE_AXES_3D[axis],
+        grid_shape=local_plane["grid_shape"],
+        component_permittivity=component_permittivity,
+        component_permeability=component_permeability,
+        diagonal_permittivity=diagonal_permittivity,
+        yee_tensors=local_tensors,
+        offdiagonal_permittivity=cross_profiles,
+        diagonal_permeability=diagonal_permeability,
+        center=local_plane["center"],
+        width=float(width),
+        height=float(height),
+        plane_index=int(local_plane["plane_index"]),
+        offset_index=int(local_plane["offset_index"]),
+        mode_index=int(mode_index),
+        polarization=polarization,
+        target_neff=target,
+        num_modes=int(num_modes),
+        force_symmetry=force_symmetry,
+        min_aperture_fraction=min_aperture_fraction,
+        aperture_pad_cells=MODE_PLANE_APERTURE_PAD_CELLS,
+        aperture_window_alpha=MODE_PLANE_APERTURE_WINDOW_ALPHA,
+        grid=local_plane["grid"],
     )
     bounds = {}
     counts = _axis_counts_from_grid_shape(local_plane["grid_shape"])
@@ -706,20 +661,115 @@ def solve_mode_plane_3d(
             else local_grid.axis_edges(transverse_axis)[-1]
         )
         bounds[transverse_axis] = (float(lower), float(lower + extent))
-    mode = replace(
-        mode,
-        diagnostics={
-            **mode.diagnostics,
-            "solver_padding_cells": solver_padding_cells,
-            "solver_bounds": bounds,
-        },
-    )
-    return _shift_discrete_mode_to_global(
-        mode,
-        origin_zyx=local_plane["origin_zyx"],
-        axis=axis,
+    return BoundModePlane(spec, local_plane, solver_padding_cells, bounds, solver)
+
+
+@dataclass(frozen=True)
+class BoundModePlane:
+    """Validated, local constitutive supports shared by a complete mode family.
+
+    Host-only binding owns candidate selection and global frame restoration.
+    Preparing a member retains the numerical refinement, directional profiles,
+    aperture normalization and diagnostics of the discrete solver.
+    """
+
+    spec: ModePlaneSpec
+    local_plane: dict
+    padding: int | tuple[int, int] | None
+    bounds: dict
+    solver: Any = field(repr=False)
+    candidate_basis: dict = field(default_factory=dict, repr=False)
+
+    def solve(self, mode_index=0):
+        from .discrete import _solve_beamz_mode, _solve_cached_beamz_mode
+
+        spec = replace(
+            self.spec,
+            mode_index=mode_index,
+            num_modes=max(self.spec.num_modes or 1, mode_index + 1),
+        )
+        if self.solver is solve_beamz_mode:
+            mode = _solve_beamz_mode(spec, basis_cache=self.candidate_basis)
+        elif self.solver is _solve_cached_beamz_mode:
+            mode = self.solver(spec, basis_cache=self.candidate_basis)
+        else:
+            mode = self.solver(spec)
+        mode = replace(
+            mode,
+            diagnostics={
+                **mode.diagnostics,
+                "solver_padding_cells": self.padding,
+                "solver_bounds": self.bounds,
+            },
+        )
+        return _shift_discrete_mode_to_global(
+            mode,
+            origin_zyx=self.local_plane["origin_zyx"],
+            axis=spec.axis,
+            resolution=spec.resolution,
+            axis_offset=self.local_plane["axis_origins"][spec.axis],
+        )
+
+
+def solve_mode_plane_3d(permittivity, permeability, *, mode_index, **options):
+    """Compatibility factory for a single globally indexed finite-plane mode."""
+    return bind_mode_plane_3d(
+        permittivity, permeability, mode_index=mode_index, **options
+    ).solve(mode_index)
+
+
+def bind_material_mode_plane(
+    materials,
+    *,
+    spec,
+    center,
+    width,
+    height,
+    snapped,
+    direction,
+    resolution,
+    dt,
+    grid,
+    frequency,
+    solver=solve_beamz_mode,
+    solver_direction=None,
+):
+    """Canonical launch/preview/analysis boundary for retained material supports."""
+    return bind_mode_plane_3d(
+        np.asarray(materials.permittivity),
+        np.asarray(materials.permeability),
+        material_tensors=getattr(materials, "material_tensors", None)
+        or getattr(materials, "tensors", None),
+        yee_tensors=materials.yee_tensors,
+        yee_materials=(
+            materials.yee_materials
+            if getattr(materials, "uses_direct_yee_materials", True)
+            else None
+        ),
+        material_origin_zyx=materials.origin
+        if hasattr(materials, "full_shape")
+        else (0, 0, 0),
+        grid_shape=getattr(materials, "full_shape", materials.permittivity.shape),
+        frequency=frequency,
         resolution=resolution,
-        axis_offset=local_plane["axis_origins"][axis],
+        dt=dt,
+        axis=snapped.normal_axis,
+        direction=direction,
+        solver_direction=solver_direction,
+        center=center,
+        width=width,
+        height=height,
+        plane_index=snapped.plane_index,
+        offset_index=snapped.companion_index,
+        snapped_region=snapped,
+        grid=grid,
+        polarization=spec.polarization,
+        target_neff=spec.target_neff,
+        num_modes=max(spec.num_modes or 1, spec.mode_index + 1),
+        force_symmetry=spec.force_symmetry,
+        min_aperture_fraction=spec.min_aperture_fraction,
+        solver_padding_cells=spec.solver_padding_cells,
+        solver=solver,
     )
 
 
@@ -773,80 +823,57 @@ def _local_component_materials(
     origin = tuple(int(value) for value in local_plane["origin_zyx"])
     grid_shape = tuple(int(value) for value in local_plane["grid_shape"])
     shapes = local_plane["component_shapes"]
+    families = (
+        (
+            "E",
+            ("eps_x", "eps_y", "eps_z"),
+            permittivity,
+            sample_voxel_grid_at_e_component_3d_centered,
+        ),
+        (
+            "H",
+            ("mu_hx", "mu_hy", "mu_hz"),
+            permeability,
+            sample_voxel_grid_at_component_3d,
+        ),
+    )
     if yee_materials:
-
-        def crop(name, component):
-            values = np.asarray(yee_materials[name])
-            selection = tuple(
-                slice(start, start + count)
-                for start, count in zip(origin, shapes[component], strict=True)
-            )
-            result = values[selection]
-            if result.shape != shapes[component]:
-                raise ValueError(
-                    f"Local {name} crop has shape {result.shape}, expected "
-                    f"{shapes[component]}."
-                )
-            return result
-
-        required = {"eps_x", "eps_y", "eps_z", "mu_hx", "mu_hy", "mu_hz"}
+        required = {name for _, names, _, _ in families for name in names}
         missing = required - set(yee_materials)
         if missing:
             raise ValueError(
                 f"Mode plane is missing Yee materials: {', '.join(sorted(missing))}."
             )
-        return (
-            {
-                component: crop(name, component)
-                for component, name in zip(
-                    ("Ex", "Ey", "Ez"),
-                    ("eps_x", "eps_y", "eps_z"),
-                    strict=True,
-                )
-            },
-            {
-                component: crop(name, component)
-                for component, name in zip(
-                    ("Hx", "Hy", "Hz"),
-                    ("mu_hx", "mu_hy", "mu_hz"),
-                    strict=True,
-                )
-            },
-        )
     region = tuple(
         slice(start, start + count)
         for start, count in zip(origin, grid_shape, strict=True)
     )
-
-    eps_grid = np.asarray(permittivity)
-    mu_grid = np.asarray(permeability)
-    if mu_grid.ndim == 0:
-        mu_grid = np.broadcast_to(mu_grid, eps_grid.shape)
-    else:
-        mu_grid = np.broadcast_to(mu_grid, eps_grid.shape)
-    eps_local = eps_grid[region]
-    mu_local = mu_grid[region]
-    component_permittivity = {
-        component: np.asarray(
-            sample_voxel_grid_at_e_component_3d_centered(
-                eps_local,
-                component,
-                stored_shape=shapes[component],
-            )
+    supports = []
+    for prefix, names, values, sample in families:
+        local = (
+            None
+            if yee_materials
+            else np.broadcast_to(np.asarray(values), np.shape(permittivity))[region]
         )
-        for component in ("Ex", "Ey", "Ez")
-    }
-    component_permeability = {
-        component: np.asarray(
-            sample_voxel_grid_at_component_3d(
-                mu_local,
-                component,
-                stored_shape=shapes[component],
-            )
-        )
-        for component in ("Hx", "Hy", "Hz")
-    }
-    return component_permittivity, component_permeability
+        components = {}
+        for axis, name in zip("xyz", names, strict=True):
+            component = prefix + axis
+            shape = shapes[component]
+            if yee_materials:
+                selection = tuple(
+                    slice(start, start + count)
+                    for start, count in zip(origin, shape, strict=True)
+                )
+                result = np.asarray(yee_materials[name])[selection]
+                if result.shape != shape:
+                    raise ValueError(
+                        f"Local {name} crop has shape {result.shape}, expected {shape}."
+                    )
+            else:
+                result = np.asarray(sample(local, component, stored_shape=shape))
+            components[component] = result
+        supports.append(components)
+    return tuple(supports)
 
 
 def _shift_3d_index(index, origin_zyx):

@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -26,8 +26,9 @@ from beamz.devices.modes.discrete import (
     _solve_cached_beamz_mode as solve_beamz_mode,
 )
 from beamz.devices.modes.fields import _modal_overlap, _normalize_profiles
-from beamz.devices.modes.plane import solve_mode_plane_3d, solve_modes
+from beamz.devices.modes.plane import bind_material_mode_plane, solve_modes
 from beamz.devices.monitors.monitors import ModeMonitor
+from beamz.devices.ports import Port
 from beamz.lattice import yee_plane_area_weights
 
 
@@ -155,6 +156,7 @@ def _build_discrete_port_projection_3d(
     direction_sign,
     analysis_coords0,
     analysis_coords1,
+    family_cache=None,
 ):
     if not isinstance(monitor, ModeMonitor):
         raise TypeError("3D modal projection requires a canonical ModeMonitor.")
@@ -180,47 +182,20 @@ def _build_discrete_port_projection_3d(
         )
         plane_index = int(snapped_region.plane_index)
     else:
-        z_idx, y_idx, x_idx = monitor.get_grid_slice_3d(
-            sim.resolution,
-            sim.resolution,
-            sim.resolution,
-            full_shape,
-        )
-        normal_index = {"z": z_idx, "y": y_idx, "x": x_idx}[axis]
-        if isinstance(normal_index, slice):
-            start = 0 if normal_index.start is None else int(normal_index.start)
-            stop = (
-                full_shape[axis_index]
-                if normal_index.stop is None
-                else int(normal_index.stop)
-            )
-            plane_index = int(
-                np.clip(
-                    (start + max(start + 1, stop) - 1) // 2,
-                    0,
-                    full_shape[axis_index] - 1,
-                )
-            )
-        else:
-            plane_index = int(np.clip(int(normal_index), 0, full_shape[axis_index] - 1))
         snapped_region = monitor.get_snapped_region(
             dx=float(sim.resolution),
             dy=float(sim.resolution),
             dz=float(sim.resolution),
             field_shape=full_shape,
         )
+    if snapped_region is None:
+        raise RuntimeError("3D modal projection requires a snapped monitor plane.")
+    plane_index = int(snapped_region.plane_index)
     if direction_sign > 0.0:
         offset_index = max(0, plane_index - 1)
     else:
         offset_index = min(max(full_shape[axis_index] - 2, 0), plane_index + 1)
 
-    mode_spec = monitor.mode_spec
-    num_modes = int(
-        max(
-            int(mode_spec.num_modes or 0),
-            int(spec.mode_index) + 1,
-        )
-    )
     center = tuple(float(value) for value in monitor.center)
     size = tuple(float(value) for value in monitor.size_spec)
     if axis == "x":
@@ -232,39 +207,38 @@ def _build_discrete_port_projection_3d(
 
     # The scalar raster alone cannot reproduce smoothed or anisotropic Yee
     # coefficients. Use the same retained constitutive data as the source solve.
-    discrete_mode = solve_mode_plane_3d(
-        perm,
-        permeability,
-        material_tensors=sim.materials.material_tensors,
-        yee_materials=sim.materials.yee_materials,
-        yee_tensors=sim.materials.yee_tensors,
-        frequency=frequency,
-        resolution=sim.resolution,
-        dt=sim.dt,
-        axis=axis,
-        grid_shape=full_shape,
-        center=center,
-        width=width,
-        height=height,
-        plane_index=plane_index,
-        offset_index=offset_index,
-        direction=spec.projection_direction,
-        mode_index=spec.mode_index,
-        polarization=None
-        if spec.polarization is None
-        else str(spec.polarization).lower(),
-        target_neff=mode_spec.target_neff,
-        force_symmetry=mode_spec.force_symmetry,
-        min_aperture_fraction=mode_spec.min_aperture_fraction,
-        solver_padding_cells=mode_spec.solver_padding_cells,
-        num_modes=num_modes,
-        snapped_region=snapped_region,
-        material_origin_zyx=origin,
-        solver=solve_beamz_mode,
-        grid=grid
-        if grid is not None and grid.metric_kind != "isotropic_uniform"
-        else None,
+    if family_cache is None:
+        family_cache = {}
+    family_key = (
+        "bound_plane",
+        monitor.name,
+        float(frequency),
+        spec.projection_direction,
+        spec.polarization,
+        monitor.mode_spec,
     )
+    if family_key not in family_cache:
+        family_cache[family_key] = bind_material_mode_plane(
+            sim.materials,
+            spec=replace(
+                monitor.mode_spec,
+                polarization=spec.polarization,
+                num_modes=max(monitor.mode_spec.num_modes or 1, spec.mode_index + 1),
+            ),
+            center=center,
+            width=width,
+            height=height,
+            snapped=replace(snapped_region, companion_index=offset_index),
+            direction=spec.projection_direction,
+            resolution=sim.resolution,
+            dt=sim.dt,
+            frequency=frequency,
+            solver=solve_beamz_mode,
+            grid=grid
+            if grid is not None and grid.metric_kind != "isotropic_uniform"
+            else None,
+        )
+    discrete_mode = family_cache[family_key].solve(spec.mode_index)
     proj_components = tuple(parts.get("projection_components_3d", ()))
     if not proj_components:
         raise ValueError(f"Port axis {axis!r} has no 3D projection components.")
@@ -532,6 +506,7 @@ def _build_port_projection(
             direction_sign=1.0,
             analysis_coords0=analysis_coords0,
             analysis_coords1=analysis_coords1,
+            family_cache=cache,
         )
     else:
         projection = _build_port_projection_2d(
@@ -671,3 +646,44 @@ def _project_modal_coefficients_3d_group(field_components, projections):
         plan.condition_number,
         diagnostics,
     )
+
+
+def _monitor_port(monitor, mode_index, polarization=None):
+    """Adapt a monitor without dropping solver, symmetry, or refinement options."""
+    return Port(
+        center=monitor.center,
+        size=monitor.size,
+        name=f"{monitor.name}_mode_{mode_index}",
+        monitor_name=monitor.name,
+        direction="+",
+        mode_spec=replace(
+            monitor.mode_spec,
+            mode_index=mode_index,
+            polarization=monitor.mode_spec.polarization or polarization,
+        ),
+    )
+
+
+def _coupled_projection(data, port, monitor, frequency, cache):
+    """Bind all modes together, preserving the monitor's complete ModeSpec."""
+    key = ("coupled_rows", monitor.name, float(frequency))
+    if key not in cache:
+        mode_cache = cache.setdefault(("mode_projections", monitor.name), {})
+        projections = [
+            _build_port_projection(
+                data,
+                port.updated_copy(
+                    name=f"{monitor.name}_mode_{index}",
+                    mode_spec=replace(port.mode_spec, mode_index=index),
+                ),
+                monitor,
+                float(frequency),
+                mode_cache,
+            )
+            for index in range(monitor.mode_spec.num_modes)
+        ]
+        cache[key] = (
+            projections,
+            build_modal_projection_plan(projections).coefficient_rows,
+        )
+    return cache[key]
