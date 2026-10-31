@@ -454,8 +454,10 @@ def test_sparse_helpers_cover_degenerate_pml_and_eigen_paths():
             dmin_pmc=(False, False),
             scale=1.0,
         )
-    assert _scipy._make_dxf(sparse, np.ones(1), (1, 2), False).shape == (2, 2)
-    assert _scipy._make_dxb(sparse, np.ones(1), (1, 2), False).shape == (2, 2)
+    for forward in (True, False):
+        assert _scipy._make_derivative(
+            sparse, np.ones(1), (1, 2), axis=0, forward=forward, pmc=False
+        ).shape == (2, 2)
 
     empty = sparse.csc_matrix((2, 2), dtype=np.complex128)
     matrix, vector, guess = _scipy._real_arpack_problem_if_close(empty, None, 1.0)
