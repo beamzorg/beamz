@@ -767,30 +767,64 @@ def build_step_context(program, *, donate_state: bool = False):
     )
 
 
-def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None) -> Any:
-    """Build the compiled scan, optionally rematerializing chunks for reverse AD.
+def scan_steps(step, state, num_steps, *, checkpoint_interval=0, remat_steps=False):
+    """Run indexed transitions with one bounded checkpoint/tail lifecycle.
 
-    Checkpointed JAX execution uses the ordinary timestep, source, boundary,
-    dispersion, and absolute observation-clock transition.
+    AD material binding retains each chunk's local trajectory during replay;
+    ordinary checkpointed scans additionally rematerialize individual steps.
+    These policies differ deliberately while sharing chunk indices and tails.
     """
-    if checkpoint_interval is not None:
-        if (
-            isinstance(checkpoint_interval, bool)
-            or int(checkpoint_interval) != checkpoint_interval
-            or checkpoint_interval < 1
-        ):
-            raise ValueError("checkpoint_interval must be a positive integer.")
-        if program.config.backend != "jax":
-            raise ValueError("Checkpointed differentiation requires backend='jax'.")
-        checkpoint_interval = int(checkpoint_interval)
+    transition = jax.checkpoint(step) if remat_steps else step
 
-    # 1. Pull immutable configuration out of the program before tracing. These values
-    # select shapes and kernels, so they should remain static for executable reuse.
-    # Material coefficients remain dynamic inputs across optimization steps.
+    def advance(carry, start, length):
+        indices = start + jnp.arange(length, dtype=jnp.int32)
+        return jax.lax.scan(transition, carry, indices)[0]
+
+    if not checkpoint_interval:
+        return advance(state, 0, num_steps)
+    chunks, tail = divmod(num_steps, checkpoint_interval)
+
+    def chunk(carry, index):
+        return advance(carry, index * checkpoint_interval, checkpoint_interval), None
+
+    out = jax.lax.scan(
+        jax.checkpoint(chunk, prevent_cse=False),
+        state,
+        jnp.arange(chunks, dtype=jnp.int32),
+    )[0]
+    if tail:
+        out = jax.checkpoint(
+            lambda carry: advance(carry, chunks * checkpoint_interval, tail),
+            prevent_cse=False,
+        )(out)
+    return out
+
+
+@dataclass(frozen=True)
+class ExecutionDecision:
+    """One invocation policy, resolved before tracing and owned by its scan cache.
+
+    Context freezes backend, physics, precision, storage, sharding and capacity;
+    the remaining fields bind the selected algorithm and its dynamic ABI layout.
+    Donation participates in construction and in the executable cache key.
+    """
+
+    context: Any
+    kernel: Any
+    source_groups: Any
+    monitors: Any
+    mstep: Any
+    report: Any
+    native_calls: Any
+    native: Any
+    local_cpml: Any
+    local_dft: Any
+
+
+def execution_decision(program, *, donate_state=False):
+    """Resolve kernel, schedule, operands, workspace and diagnostics together."""
     cfg = program.config
     step_context = build_step_context(program, donate_state=donate_state)
-    boundary = step_context.boundary
-    dt_scalar = step_context.dt_scalar
     source_batches = step_context.source_batches
 
     update_kernel = update_runtime.select_update_kernel(step_context)
@@ -882,6 +916,54 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
         native_graph_calls = wrap_native_calls(
             run_steps, run_program_steps, run_source_group_steps, cfg.cuda_storage_axes
         )
+
+    return ExecutionDecision(
+        context=step_context,
+        kernel=update_kernel,
+        source_groups=graph_source_groups,
+        monitors=packed_graph_monitors,
+        mstep=mstep_plan,
+        report=schedule_decision,
+        native_calls=native_graph_calls,
+        native=cuda_multi_step,
+        local_cpml=local_jax_cpml,
+        local_dft=local_dft,
+    )
+
+
+def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None) -> Any:
+    """Build the compiled scan, optionally rematerializing chunks for reverse AD.
+
+    Checkpointed JAX execution uses the ordinary timestep, source, boundary,
+    dispersion, and absolute observation-clock transition.
+    """
+    if checkpoint_interval is not None:
+        if (
+            isinstance(checkpoint_interval, bool)
+            or int(checkpoint_interval) != checkpoint_interval
+            or checkpoint_interval < 1
+        ):
+            raise ValueError("checkpoint_interval must be a positive integer.")
+        if program.config.backend != "jax":
+            raise ValueError("Checkpointed differentiation requires backend='jax'.")
+        checkpoint_interval = int(checkpoint_interval)
+
+    from beamz.simulation import distributed_monitors
+
+    decision = execution_decision(program, donate_state=donate_state)
+    cfg = program.config
+    step_context = decision.context
+    boundary = step_context.boundary
+    dt_scalar = step_context.dt_scalar
+    update_kernel = decision.kernel
+    graph_source_groups = decision.source_groups
+    packed_graph_monitors = decision.monitors
+    mstep_plan = decision.mstep
+    schedule_decision = decision.report
+    native_graph_calls = decision.native_calls
+    cuda_multi_step = decision.native
+    local_jax_cpml = decision.local_cpml
+    local_dft = decision.local_dft
 
     def run_scan(
         state: SimulationState,
@@ -1059,33 +1141,13 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
                         tail_steps,
                         full_chunks * CUDA_GRAPH_MAX_STEPS,
                     )
-        elif checkpoint_interval is not None:
-
-            def chunk(carry, chunk_index):
-                indices = chunk_index * checkpoint_interval + jnp.arange(
-                    checkpoint_interval, dtype=jnp.int32
-                )
-                return jax.lax.scan(jax.checkpoint(step), carry, indices)[0], None
-
-            chunks, tail = divmod(cfg.num_steps, checkpoint_interval)
-            scan_out, _ = jax.lax.scan(
-                jax.checkpoint(chunk), state, jnp.arange(chunks, dtype=jnp.int32)
-            )
-            if tail:
-                scan_out, _ = jax.lax.scan(
-                    jax.checkpoint(step),
-                    scan_out,
-                    jnp.arange(
-                        chunks * checkpoint_interval, cfg.num_steps, dtype=jnp.int32
-                    ),
-                )
-        # Every observation uses the simulation origin and absolute integer
-        # step, including continuation calls, as native CUDA does.
-        elif cfg.loop_kind == "scan":
-            scan_out, _ = jax.lax.scan(
+        elif checkpoint_interval is not None or cfg.loop_kind == "scan":
+            scan_out = scan_steps(
                 step,
                 state,
-                xs=jnp.arange(cfg.num_steps, dtype=jnp.int32),
+                cfg.num_steps,
+                checkpoint_interval=checkpoint_interval or 0,
+                remat_steps=checkpoint_interval is not None,
             )
         else:
             scan_out = jax.lax.fori_loop(

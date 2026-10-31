@@ -23,7 +23,7 @@ from beamz.devices.boundaries import (
     normalize_boundaries,
     periodic_storage_axes,
 )
-from beamz.lattice import component_axis_offsets_3d
+from beamz.lattice import CURL_TERMS, component_axis_offsets_3d
 
 _COMPONENTS = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
 
@@ -45,23 +45,16 @@ class CpmlDerivativeSpec:
     derivative_axis: str
 
 
-CPML_3D_H_DERIVATIVES = (
-    CpmlDerivativeSpec("Hxy", "Hx", "y"),
-    CpmlDerivativeSpec("Hxz", "Hx", "z"),
-    CpmlDerivativeSpec("Hyz", "Hy", "z"),
-    CpmlDerivativeSpec("Hyx", "Hy", "x"),
-    CpmlDerivativeSpec("Hzx", "Hz", "x"),
-    CpmlDerivativeSpec("Hzy", "Hz", "y"),
-)
+def _cpml_derivative_specs(phase):
+    return tuple(
+        CpmlDerivativeSpec(phase + target + "zyx"[axis], phase + target, "zyx"[axis])
+        for target, terms in zip("xyz", CURL_TERMS, strict=True)
+        for _source, axis, _sign in terms
+    )
 
-CPML_3D_E_DERIVATIVES = (
-    CpmlDerivativeSpec("Exy", "Ex", "y"),
-    CpmlDerivativeSpec("Exz", "Ex", "z"),
-    CpmlDerivativeSpec("Eyz", "Ey", "z"),
-    CpmlDerivativeSpec("Eyx", "Ey", "x"),
-    CpmlDerivativeSpec("Ezx", "Ez", "x"),
-    CpmlDerivativeSpec("Ezy", "Ez", "y"),
-)
+
+CPML_3D_H_DERIVATIVES = _cpml_derivative_specs("H")
+CPML_3D_E_DERIVATIVES = _cpml_derivative_specs("E")
 
 
 @dataclass(frozen=True, slots=True)
