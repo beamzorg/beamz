@@ -135,18 +135,13 @@ def _video_data(results, recording, *, field, plane, index):
             )
         from beamz.analysis.plotting import _monitor_plane_display
 
-        if metadata.grid is not None:
-            extent, _, _ = _monitor_plane_display(
-                metadata, region, normal=normal, origin=metadata.coordinate_offset
-            )
-        else:
-            x_extent = _axis_extent(
-                coord1 / _UM - offset_by_axis[horizontal], fallback_step=resolution_um
-            )
-            y_extent = _axis_extent(
-                coord0 / _UM - offset_by_axis[vertical], fallback_step=resolution_um
-            )
-            extent = (*x_extent, *y_extent)
+        extent, _, _ = _monitor_plane_display(
+            metadata,
+            region,
+            normal=normal,
+            origin=metadata.coordinate_offset,
+            coords=(coord0, coord1),
+        )
         plane_position = (
             float(region.plane_coord)
             if region is not None

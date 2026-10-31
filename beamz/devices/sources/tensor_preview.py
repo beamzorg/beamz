@@ -6,7 +6,7 @@ from functools import partial
 
 import numpy as np
 
-from beamz.devices._placement import snap_mode_source_region_grid
+from beamz.devices._placement import mode_source_region
 from beamz.devices.modes.discrete import _solve_beamz_mode
 from beamz.devices.modes.plane import mode_plane_solve_arguments, solve_mode_plane_3d
 from beamz.devices.modes.specs import ModeData
@@ -30,7 +30,7 @@ def solve_tensor_mode_plane(
     transverse = tuple(a for a in ("z", "y", "x") if a != axis)
     sizes: dict[str, float] = dict(zip(("x", "y", "z"), plane.size, strict=True))
     width, height = (sizes[a] for a in transverse[::-1])
-    snapped = snap_mode_source_region_grid(
+    snapped = mode_source_region(
         center=center,
         width=width,
         height=height,
