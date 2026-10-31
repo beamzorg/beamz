@@ -136,12 +136,6 @@ class RunTermination:
                 object.__setattr__(self, name, float(value))
 
 
-def _array_snapshot(value: Any, dtype=None) -> np.ndarray:
-    # Copy only analysis-required data so results remain reproducible without live
-    # simulation ownership.
-    return readonly_array(value, dtype=dtype)
-
-
 def _analysis_function(module: str, name: str):
     """Resolve analysis lazily so result values do not import it eagerly."""
     return getattr(import_module(f"beamz.analysis.{module}"), name)
@@ -183,6 +177,11 @@ def _snapshot_material_region(runtime_fields, crop, origin):
     material_grid = runtime_fields.material_grid
     tensors = {}
     yee = {}
+    # Node-aligned coefficients retain one upper sample beyond the voxel crop.
+    component_crop = tuple(
+        slice(index.start, None if index.stop is None else index.stop + 1)
+        for index in crop
+    )
     if permittivity.ndim in (2, 3):
         tensors = {
             name: np.asarray(values)[(slice(None), *crop)]
@@ -190,21 +189,11 @@ def _snapshot_material_region(runtime_fields, crop, origin):
             if name in {"epsilon", "mu"}
         }
         if material_grid.uses_direct_yee_materials:
-            # Node-aligned components have one more sample than the voxel grid.
-            # Keep that upper sample so local mode crops retain their Yee support.
-            component_crop = tuple(
-                slice(index.start, None if index.stop is None else index.stop + 1)
-                for index in crop
-            )
             yee = {
                 name: np.asarray(values)[component_crop]
                 for name, values in material_grid.yee_materials.items()
                 if name in {"eps_x", "eps_y", "eps_z", "mu_hx", "mu_hy", "mu_hz"}
             }
-    component_crop = tuple(
-        slice(index.start, None if index.stop is None else index.stop + 1)
-        for index in crop
-    )
     support_tensors = {
         name: np.asarray(values)[(slice(None), *component_crop)]
         for name, values in material_grid.yee_tensors.items()
@@ -361,7 +350,7 @@ class SimulationMetadata:
             raise ValueError(
                 "SimulationMetadata.coordinate_offset must have three values."
             )
-        time = _array_snapshot(self.time, dtype=float)
+        time = readonly_array(self.time, dtype=float)
         if time.ndim != 1 or not np.all(np.isfinite(time)):
             raise ValueError("SimulationMetadata.time must be a finite 1D array.")
         plane_2d = str(self.plane_2d).lower()
@@ -620,7 +609,7 @@ class MonitorResults:
             "dft_weight_sum",
             "integration_weights",
         ):
-            object.__setattr__(self, name, _array_snapshot(getattr(self, name)))
+            object.__setattr__(self, name, readonly_array(getattr(self, name)))
         if self.field_times.shape != self.field_steps.shape:
             raise ValueError(
                 "Recorded field times and steps must have matching shapes."
@@ -632,7 +621,7 @@ class MonitorResults:
         object.__setattr__(self, "normal_axis", int(self.normal_axis))
         for name, current, snapshot in (
             ("_raw_dft_fields", self.dft_fields, immutable_snapshot),
-            ("_raw_power_spectrum", self.power_spectrum, _array_snapshot),
+            ("_raw_power_spectrum", self.power_spectrum, readonly_array),
         ):
             raw = getattr(self, name)
             object.__setattr__(self, name, current if raw is None else snapshot(raw))
