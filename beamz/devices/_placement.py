@@ -236,7 +236,7 @@ class _PlacementAxis:
 
     count: int
     step: float
-    edges: object = None
+    edges: np.ndarray | None = None
 
     def center(self, coordinate):
         if self.edges is None:
@@ -504,12 +504,13 @@ def line_region_coordinates(region, *, grid=None, steps=None, normal_coord=None)
     interval = region.axis_interval(tangent)
     if interval is None:
         return None
-    values = (
-        np.asarray(grid.centers(tangent))[interval.start : interval.stop]
-        if grid is not None
-        else (np.arange(interval.start, interval.stop, dtype=float) + 0.5)
-        * steps[tangent]
-    )
+    if grid is None:
+        assert steps is not None
+        values = (np.arange(interval.start, interval.stop, dtype=float) + 0.5) * steps[
+            tangent
+        ]
+    else:
+        values = np.asarray(grid.centers(tangent))[interval.start : interval.stop]
     constant = np.full(
         values.shape, region.plane_coord if normal_coord is None else normal_coord
     )
