@@ -156,21 +156,8 @@ preserves polarization/effective-index candidate ordering.
 
 ## Two-dimensional port lines
 
-2D source previews, launches, and mode-monitor projections share the cell-material
-cross-section, outward-snapped aperture, explicit solve padding, target index,
-and candidate selection in `line.py`. `policy.py` supplies the same clipped-bound
-and polarization/confinement/neff ordering rules used by 3D planes. `None` or
-zero padding solves the requested aperture; a `(width, height)` padding pair uses
-only width for 2D (y for x-normal ports, x for y-normal ports). Measurement no
-longer adds its own six-cell halo, and launch no longer solves the full domain.
-`target_neff`, `num_modes`, and optional `min_aperture_fraction` have the same
-meaning for preview, injection, and measurement. A missing requested mode raises
-an error instead of silently selecting another index.
-
-The public 2D preview returns raw solver fields and physical solve bounds in its
-diagnostics. Injection and projection separately convert those fields onto their
-transverse Yee supports and normalize signed power; their arrays need not equal
-the raw preview arrays. As for 3D ports, no launch taper hides nondecaying fields.
-Choose an aperture large enough to contain decayed modal tails, or explicitly
-increase solve padding and check convergence. A changed material cross-section,
-grid, frequency, or mode specification requires its own solve.
+`line.py` prepares the same aperture, padding, target index and selected modes
+for 2D preview, launch and measurement. `policy.py` shares bounds and candidate
+ranking with 3D. Padding pairs use the width entry for 2D; measurement adds no
+independent halo. Consumers convert raw solver fields to their own Yee supports
+and power normalization, without a launch taper. Check aperture convergence.

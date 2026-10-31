@@ -130,7 +130,7 @@ def _monitor_profile_slice(sim, monitor, axis, mode_spec=None):
         if grid is None or not metric_grid
         else np.asarray(grid.cell_widths(context.transverse_axis))[sample_idx]
     )
-    return context.eps, local_idx, weights, context.edges
+    return context.eps, local_idx, weights, context
 
 
 def _build_discrete_port_projection_3d(
@@ -446,45 +446,21 @@ def _build_port_projection_2d(
         getattr(monitor, "mode_spec", spec.mode_spec), mode_index=spec.mode_index
     )
     profile_slice = _monitor_profile_slice(sim, monitor, parts["axis"], mode_spec)
-    if len(profile_slice) == 3:
+    if len(profile_slice) == 4:
+        eps_profile, local_idx, dl, context = profile_slice
+        grid_edges = context.edges
+    else:
         eps_profile, local_idx, dl = profile_slice
         grid_edges = None
-    else:
-        eps_profile, local_idx, dl, grid_edges = profile_slice
-    eps_profile = np.asarray(eps_profile, dtype=np.complex128)
-    edges = (
-        np.arange(eps_profile.size + 1) * sim.resolution
-        if grid_edges is None
-        else np.asarray(grid_edges)
-    )
-    # The stored profile is already prepared by _monitor_profile_slice. Keep
-    # the declared aperture distinct from explicit surrounding solve padding.
-    if isinstance(sim, AnalysisData):
-        # Retain the declared aperture for candidate confinement, independently
-        # of acquisition's rounded endpoints and staggered sample counts.
-        materials = _material_arrays(sim)
-        assert materials is not None
-        perm, _mu, origin, full_shape = materials
-        context = prepare_mode_line(
-            permittivity=perm,
-            center=monitor.center,
-            size=monitor.size,
-            axis=parts["axis"],
-            spec=mode_spec,
-            resolution=sim.resolution,
-            grid=sim.coordinates.grid,
-            origin=origin,
-            full_shape=full_shape,
-        )
-    else:
         context = ModeLineContext(
-            eps_profile,
-            slice(0, eps_profile.size),
+            np.asarray(eps_profile),
+            slice(0, len(eps_profile)),
             slice(int(np.min(local_idx)), int(np.max(local_idx)) + 1),
-            edges,
+            np.arange(len(eps_profile) + 1) * sim.resolution,
             None,
             "y" if parts["axis"] == "x" else "x",
         )
+    edges = context.edges
     neffs, e_fields, h_fields = solve_mode_line(
         context,
         spec=mode_spec,
@@ -495,12 +471,6 @@ def _build_port_projection_2d(
         solver=solve_modes,
         use_grid_edges=grid_edges is not None,
     )
-    if len(neffs) <= int(spec.mode_index):
-        raise ValueError(
-            f"Mode solver returned {len(neffs)} modes for requested "
-            f"mode_index={spec.mode_index} on port {spec.name!r}."
-        )
-
     mode_index = int(spec.mode_index)
     e_profile = np.asarray(
         np.squeeze(e_fields[mode_index][parts["e_mode_index"]]),
