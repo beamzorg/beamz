@@ -10,7 +10,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
+from beamz.analysis import adapters
 from beamz.analysis._coordinates import recorded_plane
+from beamz.analysis.plotting import _normalize_dft_components
+from beamz.simulation.observe import SourceNormalization
 from tests.integration.test_analysis_video import _results_3d
 
 
@@ -59,3 +62,24 @@ def test_static_recording_without_timestamps_still_renders():
         plt.close(figure)
     with pytest.raises(RuntimeError, match="no complete"):
         recorded_plane(results, recording, field="Ez")
+
+
+def test_unexpected_physical_coordinate_failures_propagate(monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuntimeError("invalid physical coordinates")
+
+    monkeypatch.setattr(adapters, "field_coordinates", broken)
+    with pytest.raises(RuntimeError, match="invalid physical coordinates"):
+        adapters.to_xarray(_results_3d())
+
+
+@pytest.mark.parametrize("normalization", [np.array([2j]), SourceNormalization([2j])])
+def test_source_normalization_preserves_complex_field_phase(normalization):
+    values = _normalize_dft_components([np.array([[2 + 2j, 4]])], normalization, 0, 1)
+    np.testing.assert_array_equal(values, [[[1 - 1j, -2j]]])
+
+
+@pytest.mark.parametrize("normalization", [[], [1, 2], [0], [np.nan], [np.inf]])
+def test_requested_source_normalization_rejects_unusable_amplitudes(normalization):
+    with pytest.raises(ValueError):
+        _normalize_dft_components([np.ones((2, 2))], normalization, 0, 1)

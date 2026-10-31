@@ -8,10 +8,11 @@ from typing import Any
 import numpy as np
 
 from beamz.analysis._coordinates import field_coordinates
-from beamz.analysis.data import analysis_data, analysis_inputs
+from beamz.analysis.data import AnalysisData, analysis_data, analysis_inputs
 from beamz.const import LIGHT_SPEED
 from beamz.devices._immutable import readonly_array
-from beamz.devices.monitors.monitors import ModeMonitor
+from beamz.devices.monitors.monitors import FieldRecorder, ModeMonitor
+from beamz.lattice import plane_axes_3d
 
 
 def mode_data_to_dataframe(modes):
@@ -66,15 +67,11 @@ def _xarray():
 
 
 def _spatial_dims(ndim, plane_2d="xy"):
-    if ndim == 3:
-        return ("z", "y", "x")
-    if ndim == 2:
-        return {"yz": ("z", "y"), "xz": ("z", "x")}.get(
-            str(plane_2d).lower(), ("y", "x")
-        )
-    if ndim == 1:
-        return ("s",)
-    return tuple(f"dim_{idx}" for idx in range(ndim))
+    return (
+        ("z", "y", "x")
+        if ndim == 3
+        else {"xy": ("y", "x"), "xz": ("z", "x"), "yz": ("z", "y")}[plane_2d]
+    )
 
 
 def _time_coords(length, *, times=None, steps=None):
@@ -89,63 +86,71 @@ def _time_coords(length, *, times=None, steps=None):
     return "frame", coords
 
 
-def _axis_coords(dims, shape, resolution=None):
-    coords = {}
-    for dim, length in zip(dims, shape, strict=True):
-        values = np.arange(int(length), dtype=float)
-        attrs = {}
-        if resolution is not None and dim in {"x", "y", "z", "s"}:
-            values *= float(resolution)
-            attrs["units"] = "m"
-        coords[dim] = (dim, values, attrs)
-    return coords
-
-
-def _yee_coords(name, dims, shape, simulation):
-    if len(shape) not in {2, 3}:
-        return None
-    try:
-        coords_m = field_coordinates(simulation, name, shape)
-    except Exception:
-        return None
-    if any(
-        dim not in coords_m or len(coords_m[dim]) != length
-        for dim, length in zip(dims, shape, strict=True)
-    ):
-        return None
-    return {
-        dim: (dim, np.asarray(coords_m[dim], dtype=float), {"units": "m"})
-        for dim in dims
-    }
-
-
-def _field_data_array(values, *, name, simulation, times=None, steps=None):
+def _field_data_array(values, *, name: str, data: AnalysisData):
     arr = np.asarray(values)
-    if arr.ndim < 2:
-        raise ValueError(f"Field {name!r} must be at least 2D, got {arr.shape}.")
-    plane = simulation.plane_2d
-    resolution = simulation.resolution
-    if arr.ndim in {3, 4}:
-        time_dim, coords = _time_coords(arr.shape[0], times=times, steps=steps)
-        spatial_dims = _spatial_dims(arr.ndim - 1, plane)
-        dims = (time_dim, *spatial_dims)
-        shape = arr.shape[1:]
+    metadata = data.coordinates
+    if arr.ndim == 0:
+        raise ValueError(f"Field {name!r} must have at least one dimension.")
+    if data.frequencies.size and name not in {"power", "permittivity"}:
+        dims = ("f", *tuple(f"sample_{i}" for i in range(1, arr.ndim)))
+        coords = {"f": ("f", data.frequencies, {"units": "Hz"})}
+        frame = "sample"
     else:
-        coords = {}
-        spatial_dims = _spatial_dims(arr.ndim, plane)
-        dims, shape = spatial_dims, arr.shape
-    spatial_coords = _yee_coords(str(name), spatial_dims, shape, simulation)
-    coords.update(spatial_coords or _axis_coords(spatial_dims, shape, resolution))
-    attrs: dict[str, object] = {
-        "component": str(name),
-        "coordinate_frame": "public",
-        "units": _FIELD_UNITS.get(str(name), ""),
-        "design_width": simulation.width,
-        "design_height": simulation.height,
-        "design_depth": simulation.depth,
-    }
+        monitor = data.monitor_geometry
+        sliced = isinstance(monitor, FieldRecorder) and monitor.region == "slice"
+        timed = name != "permittivity" and (sliced or arr.ndim in {1, 3, 4})
+        if arr.ndim == 1:
+            arr = arr[:, None]
+        shape = arr.shape[1:] if timed else arr.shape
+        dims, coords = (
+            _time_coords(
+                arr.shape[0], times=metadata.time, steps=data.fields.get("step")
+            )
+            if timed
+            else (None, {})
+        )
+        if isinstance(monitor, FieldRecorder) and sliced and metadata.is_3d:
+            assert data.sample_region is not None
+            axes = plane_axes_3d(monitor.plane_normal)
+            coordinates = {
+                axis: values - metadata.coordinate_offset["xyz".index(axis)]
+                for axis, values in zip(
+                    axes, data.sample_region.sample_coordinates, strict=True
+                )
+            }
+        elif not sliced and name in _FIELD_UNITS:
+            axes = _spatial_dims(len(shape), metadata.plane_2d)
+            coordinates = field_coordinates(metadata, name, shape)
+        else:
+            axes = (
+                ("s",)
+                if len(shape) == 1
+                else tuple(f"sample_{i}" for i in range(len(shape)))
+            )
+            coordinates = None
+        frame = "public" if coordinates is not None else "sample"
+        coords.update(
+            {
+                axis: (axis, coordinates[axis], {"units": "m"})
+                if coordinates is not None
+                else (axis, np.arange(length), {})
+                for axis, length in zip(axes, shape, strict=True)
+            }
+        )
+        dims = (dims, *axes) if timed else axes
     return _xarray().DataArray(
-        arr, dims=dims, coords=coords, name=str(name), attrs=attrs
+        arr,
+        dims=dims,
+        coords=coords,
+        name=name,
+        attrs={
+            "component": str(name),
+            "coordinate_frame": frame,
+            "units": _FIELD_UNITS.get(str(name), ""),
+            "design_width": metadata.width,
+            "design_height": metadata.height,
+            "design_depth": metadata.depth,
+        },
     )
 
 
@@ -165,21 +170,10 @@ def to_xarray(results):
         next(iter(inputs.values())),
     )
     data_vars = {
-        name: _field_data_array(
-            values,
-            name=name,
-            simulation=data.coordinates,
-            times=data.coordinates.time,
-            steps=data.fields.get("step"),
-        )
+        name: _field_data_array(values, name=name, data=data)
         for name, values in data.fields.items()
         if name not in {"power", "flux", "step"}
     }
-    width, height, depth = (
-        data.coordinates.width,
-        data.coordinates.height,
-        data.coordinates.depth,
-    )
     return xr.Dataset(
         data_vars=data_vars,
         attrs={
@@ -187,48 +181,22 @@ def to_xarray(results):
             "coordinate_frame": "public",
             "resolution": data.resolution,
             "plane_2d": data.plane_2d,
-            "design_width": width,
-            "design_height": height,
-            "design_depth": depth,
+            "design_width": data.coordinates.width,
+            "design_height": data.coordinates.height,
+            "design_depth": data.coordinates.depth,
         },
     )
 
 
 def monitor_to_xarray(result):
     """Return one canonical analysis contract as an xarray Dataset."""
-    xr = _xarray()
     data = analysis_data(result)
-    data_vars = {}
-    times = data.coordinates.time
-    for name, values in data.fields.items():
-        if name in {"t", "step"}:
-            continue
-        arr = np.asarray(values)
-        if arr.size == 0:
-            continue
-        if (
-            name != "power"
-            and data.frequencies.size
-            and arr.shape[0] == data.frequencies.size
-        ):
-            dims = ("f", *tuple(f"sample_{idx}" for idx in range(1, arr.ndim)))
-            coords = {"f": ("f", data.frequencies, {"units": "Hz"})}
-            data_vars[name] = xr.DataArray(arr, dims=dims, coords=coords, name=name)
-            continue
-        if arr.ndim == 1:
-            arr = arr[:, None]
-        dim, coords = _time_coords(arr.shape[0], times=times)
-        spatial = _spatial_dims(arr.ndim - 1)
-        coords.update(_axis_coords(spatial, arr.shape[1:]))
-        data_vars[name] = xr.DataArray(
-            arr,
-            dims=(dim, *spatial),
-            coords=coords,
-            name=name,
-            attrs={"units": _FIELD_UNITS.get(str(name), "")},
-        )
-    return xr.Dataset(
-        data_vars=data_vars,
+    return _xarray().Dataset(
+        {
+            name: _field_data_array(values, name=name, data=data)
+            for name, values in data.fields.items()
+            if name not in {"t", "step"} and np.asarray(values).size
+        },
         attrs={"monitor_name": data.name},
     )
 

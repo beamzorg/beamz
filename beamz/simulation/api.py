@@ -1719,17 +1719,11 @@ class Simulation:
             self, **kwargs
         )
 
-    def show(self, *, mode="auto", open_browser=True, **kwargs):
+    def show(self, **kwargs):
         """Display the simulation layout using Matplotlib.
 
         Parameters
         ----------
-        mode : str, default="auto"
-            Compatibility parameter retained for older viewer calls. The static
-            Matplotlib backend ignores it.
-        open_browser : bool, default=True
-            Compatibility parameter retained for older viewer calls. No browser is
-            opened by the current backend.
         **kwargs : object
             Plot options accepted by :meth:`plot`. ``show`` defaults to ``True``.
 
@@ -1739,7 +1733,6 @@ class Simulation:
             Matplotlib ``(figure, axes)`` objects.
         """
         # Route display through the plotting API while changing only the presentation flag.
-        del mode, open_browser
         kwargs.setdefault("show", True)
         return self.plot(**kwargs)
 
