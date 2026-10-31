@@ -2,29 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
 
+from beamz.analysis._coordinates import monitor_plane_coordinates_3d
 from beamz.analysis.data import AnalysisData, static_fields
-from beamz.const import LIGHT_SPEED, µm
+from beamz.const import LIGHT_SPEED
 from beamz.design.grid import Axis
-from beamz.devices._placement import snap_plane_region_grid
-from beamz.lattice import (
-    component_coordinates_3d_um,
-    component_coordinates_rectilinear,
-    yee_plane_coordinates_3d,
-)
-
-
-def _grid_shape(sim):
-    if isinstance(sim, AnalysisData):
-        return sim.coordinates.fields.grid_shape
-    fields = static_fields(sim)
-    shape = getattr(fields, "grid_shape", None)
-    if shape is not None:
-        return tuple(int(v) for v in shape)
-    return tuple(int(v) for v in np.asarray(fields.permittivity).shape)
 
 
 def _analysis_grid(sim):
@@ -163,131 +148,12 @@ def _plane_axes_for_port_axis(axis: str) -> tuple[str, str]:
         raise ValueError(f"Unsupported port axis {axis!r}.") from exc
 
 
-def _clamp_monitor_grid_index(idx, limit):
-    if isinstance(idx, slice):
-        start = 0 if idx.start is None else int(idx.start)
-        stop = limit if idx.stop is None else int(idx.stop)
-        start = max(0, min(start, max(limit - 1, 0)))
-        stop = max(start + 1, min(stop, limit))
-        return slice(start, stop)
-    return max(0, min(int(idx), limit - 1))
-
-
-def _component_shape(sim, component):
-    if isinstance(sim, AnalysisData):
-        return sim.coordinates.fields.component_shapes[component]
-    fields = static_fields(sim)
-    shapes = getattr(fields, "component_shapes", None)
-    if shapes is not None:
-        return tuple(int(v) for v in shapes[component])
-    return tuple(int(v) for v in np.asarray(getattr(fields, component)).shape)
-
-
-def _monitor_common_plane_shape_3d(sim, monitor) -> tuple[int, int]:
-    dims = []
-    for component in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz"):
-        shape = _component_shape(sim, component)
-        indices = monitor.get_grid_slice_3d(
-            sim.resolution, sim.resolution, sim.resolution, shape
-        )
-        indices = tuple(
-            _clamp_monitor_grid_index(index, limit)
-            for index, limit in zip(indices, shape, strict=True)
-        )
-        sample = np.asarray(np.zeros(shape, dtype=np.float32)[indices])
-        dims.append(tuple(int(v) for v in np.atleast_2d(sample).shape[:2]))
-    return int(min(dim[0] for dim in dims)), int(min(dim[1] for dim in dims))
-
-
 def _monitor_analysis_plane_3d(
-    sim,
+    sim: AnalysisData,
     monitor,
     axis: str,
 ) -> tuple[np.ndarray, np.ndarray]:
-    grid = _analysis_grid(sim)
-    if grid is not None and grid.metric_kind != "isotropic_uniform":
-        snapped = snap_plane_region_grid(
-            center=monitor.center,
-            size=monitor.size,
-            plane_normal=axis,
-            grid=grid,
-        )
-        coord0, coord1 = yee_plane_coordinates_3d(
-            monitor.center, monitor.size, axis, snapped, grid=grid
-        )
-        return (
-            np.asarray(coord0, dtype=np.float64),
-            np.asarray(coord1, dtype=np.float64),
-        )
-    coordinate_method = getattr(monitor, "get_analysis_plane_coords_3d", None)
-    if callable(coordinate_method):
-        coord0, coord1 = cast(Any, coordinate_method)(
-            dx=sim.resolution,
-            dy=sim.resolution,
-            dz=sim.resolution,
-            field_shape=_grid_shape(sim),
-        )
-        return np.asarray(coord0, dtype=np.float64), np.asarray(
-            coord1, dtype=np.float64
-        )
-
-    snapped = monitor.get_snapped_region(
-        dx=sim.resolution,
-        dy=sim.resolution,
-        dz=sim.resolution,
-        field_shape=_grid_shape(sim),
-    )
-    if snapped is None:
-        raise ValueError(f"Monitor '{monitor.name}' has no snapped 3D region.")
-    axis0, axis1 = _plane_axes_for_port_axis(axis)
-    interval0, interval1 = snapped.axis_interval(axis0), snapped.axis_interval(axis1)
-    if interval0 is None or interval1 is None:
-        raise ValueError(
-            f"Monitor '{monitor.name}' is missing tangential intervals for axis '{axis}'."
-        )
-    coord0 = (
-        np.arange(int(interval0.start), int(interval0.stop), dtype=np.float64) + 0.5
-    ) * float(sim.resolution)
-    coord1 = (
-        np.arange(int(interval1.start), int(interval1.stop), dtype=np.float64) + 0.5
-    ) * float(sim.resolution)
-    common0, common1 = _monitor_common_plane_shape_3d(sim, monitor)
-    return coord0[:common0], coord1[:common1]
-
-
-def _monitor_component_plane_coords_3d(
-    sim,
-    monitor,
-    component: str,
-    axis: str,
-) -> tuple[np.ndarray, np.ndarray]:
-    grid = _analysis_grid(sim)
-    if grid is not None and grid.metric_kind != "isotropic_uniform":
-        return _monitor_analysis_plane_3d(sim, monitor, axis)
-    coordinate_method = getattr(monitor, "get_analysis_plane_coords_3d", None)
-    if callable(coordinate_method):
-        return _monitor_analysis_plane_3d(sim, monitor, axis)
-
-    field_shape = _component_shape(sim, component)
-    indices = monitor.get_grid_slice_3d(
-        sim.resolution, sim.resolution, sim.resolution, field_shape
-    )
-    indices = tuple(
-        _clamp_monitor_grid_index(index, limit)
-        for index, limit in zip(indices, field_shape, strict=True)
-    )
-    if grid is None:
-        coords = {
-            name: values * float(µm)
-            for name, values in component_coordinates_3d_um(
-                component, _grid_shape(sim), float(sim.resolution / µm)
-            ).items()
-        }
-    else:
-        coords = component_coordinates_rectilinear(component, grid)
-    axis0, axis1 = _plane_axes_for_port_axis(axis)
-    axis_slices: dict[str, Any] = dict(zip(("z", "y", "x"), indices, strict=True))
-    common0, common1 = _monitor_common_plane_shape_3d(sim, monitor)
-    coord0 = np.asarray(coords[axis0][axis_slices[axis0]], dtype=np.float64)
-    coord1 = np.asarray(coords[axis1][axis_slices[axis1]], dtype=np.float64)
-    return coord0[:common0], coord1[:common1]
+    if axis != monitor.plane_normal:
+        raise ValueError("Port axis must match the monitor plane normal.")
+    _, coord0, coord1 = monitor_plane_coordinates_3d(sim.coordinates, monitor)
+    return coord0, coord1

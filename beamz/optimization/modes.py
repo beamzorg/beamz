@@ -6,7 +6,7 @@ import numpy as np
 
 from beamz.analysis.data import analysis_data
 from beamz.analysis.modal_projection.geometry import (
-    _monitor_component_plane_coords_3d,
+    _monitor_analysis_plane_3d,
 )
 from beamz.analysis.mode_projection import _build_port_projection
 from beamz.devices.modes.fields import _modal_overlap
@@ -83,7 +83,7 @@ def build_mode_projector(results, monitor):
         dst0, dst1 = projection["analysis_coords0"], projection["analysis_coords1"]
         plane_shape = (len(dst0), len(dst1))
         for name in projection["components"]:
-            src0, src1 = _monitor_component_plane_coords_3d(data, geometry, name, axis)
+            src0, src1 = _monitor_analysis_plane_3d(data, geometry, axis)
             if len(src0) * len(src1) != points:
                 raise ValueError("Mode projector and DFT sampling geometry disagree")
             # Adjoint of the separable interpolation used by ordinary analysis.
