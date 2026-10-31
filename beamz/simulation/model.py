@@ -11,6 +11,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from beamz._helpers import positive_integer
 from beamz._region_array import RegionArray
 from beamz.design.discretization import MaterialGrid
 from beamz.design.grid import RectilinearGrid
@@ -33,6 +34,20 @@ class ShardingConfig:
     axis: Literal["auto", "z", "y", "x"] = "auto"
     num_devices: int | None = None
     backend: Literal["cpu", "gpu"] | None = None
+
+    def __post_init__(self):
+        if not isinstance(self.enabled, bool):
+            raise TypeError("ShardingConfig.enabled must be a bool.")
+        if self.axis not in {"auto", "x", "y", "z"}:
+            raise ValueError("ShardingConfig.axis must be auto, x, y, or z.")
+        if self.backend not in {None, "cpu", "gpu"}:
+            raise ValueError("ShardingConfig.backend must be cpu, gpu, or None.")
+        if self.num_devices is not None:
+            object.__setattr__(
+                self,
+                "num_devices",
+                positive_integer(self.num_devices, name="num_devices"),
+            )
 
 
 @dataclass(frozen=True, slots=True)

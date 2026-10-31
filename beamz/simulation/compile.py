@@ -137,14 +137,12 @@ _PROGRAM_CACHE: OrderedDict[CompiledProgramKey, CompiledProgram] = OrderedDict()
 
 
 def _resolved_setup_device_context(resolved_device):
-    """Place setup work on CPU only when explicitly requested."""
-    if str(resolved_device).strip().lower() != "cpu":
-        return nullcontext(None)
-    try:
-        devices = jax.devices("cpu")
-        return jax.default_device(devices[0]) if devices else nullcontext(None)
-    except Exception:
-        return nullcontext(None)
+    """Place setup work on CPU only when the resolved policy requests it."""
+    return (
+        jax.default_device(jax.devices("cpu")[0])
+        if resolved_device == "cpu"
+        else nullcontext(None)
+    )
 
 
 def clear_program_cache() -> None:

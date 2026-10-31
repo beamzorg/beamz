@@ -761,14 +761,27 @@ def test_compiled_program_key_is_hashable_with_sharding_token():
     assert key.run.sharding == ShardingConfig(True, "x", 2, None)
     assert isinstance(hash(key), int)
 
-    request = sim.to_request(
-        num_steps=2, compiler_sharding={"axis": "x", "num_devices": 2}
-    )
-    assert request.run.sharding == key.run.sharding
+    request = sim.to_request(num_steps=2, sharding=ShardingConfig(True, "x", 2))
     assert CompiledProgramKey.from_request(request) == key
     assert request != sim.to_request(num_steps=2)
-    with pytest.raises(ValueError, match="must agree"):
-        sim.to_request(sharding=False, compiler_sharding=True)
+    with pytest.raises(TypeError, match="enabled"):
+        sim.to_request(sharding={"enabled": "false"})
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"enabled": "false"},
+        {"axis": "bad"},
+        {"backend": "bad"},
+        {"num_devices": 0},
+        {"num_devices": 1.5},
+        {"num_devices": True},
+    ],
+)
+def test_sharding_config_validates_its_contract(options):
+    with pytest.raises((TypeError, ValueError)):
+        ShardingConfig(**options)
 
 
 def test_compiled_source_spec_matches_canonical_step_update_2d():
