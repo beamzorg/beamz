@@ -19,7 +19,6 @@ from beamz.analysis.modal_projection.geometry import (
 from beamz.devices._placement import (
     line_region_points,
     snap_axis_aligned_line_region_grid,
-    snap_plane_region_grid,
 )
 from beamz.devices.modes.discrete import DISCRETE_MODE_CONTRACT
 from beamz.devices.modes.discrete import (
@@ -146,23 +145,9 @@ def _build_discrete_port_projection_3d(
     axis = parts["axis"]
     axis_index = {"z": 0, "y": 1, "x": 2}[axis]
     grid = sim.coordinates.grid
-    if grid is not None and grid.metric_kind != "isotropic_uniform":
-        snapped_region = snap_plane_region_grid(
-            center=monitor.center,
-            size=monitor.size,
-            plane_normal=axis,
-            grid=grid,
-        )
-        plane_index = int(snapped_region.plane_index)
-    else:
-        snapped_region = monitor.get_snapped_region(
-            dx=float(sim.resolution),
-            dy=float(sim.resolution),
-            dz=float(sim.resolution),
-            field_shape=full_shape,
-        )
-    if snapped_region is None:
-        raise RuntimeError("3D modal projection requires a snapped monitor plane.")
+    if sim.sample_region is None:
+        raise RuntimeError("3D modal projection requires retained sampling geometry.")
+    snapped_region = sim.sample_region
     plane_index = int(snapped_region.plane_index)
     if direction_sign > 0.0:
         offset_index = max(0, plane_index - 1)

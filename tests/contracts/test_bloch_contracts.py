@@ -139,12 +139,9 @@ def test_bloch_rejects_cuda_and_sharding_explicitly():
 
     with pytest.raises(CudaBackendUnavailable, match="periodic"):
         sim.compile(backend="cuda_streamed")
-    from dataclasses import replace
-
     from beamz.simulation.compile import compile_simulation
+    from beamz.simulation.model import ShardingConfig
 
-    request = sim.to_request()
+    request = sim.to_request(sharding=ShardingConfig(enabled=True, num_devices=2))
     with pytest.raises(ValueError, match="single-device JAX"):
-        compile_simulation(
-            replace(request, run=replace(request.run, sharding=(True, "auto", 2, None)))
-        )
+        compile_simulation(request)

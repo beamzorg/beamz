@@ -496,16 +496,9 @@ def test_compiled_3d_field_recorder_uses_logical_component_shape():
     )
     assert frames.fields["Ez"].shape == (2, *_fields_for_sim(sim).Ez.shape)
     assert frames.field_steps.tolist() == [1, 2]
-    plane_shape = sim.monitors[1].get_analysis_plane_coords_3d(
-        dx=dx,
-        dy=dx,
-        dz=dx,
-        field_shape=tuple(
-            max(v)
-            for v in zip(*program.sharding.layout.logical_shapes.values(), strict=True)
-        ),
-    )
-    expected_plane_shape = tuple(np.asarray(axis).size for axis in plane_shape)
+    region = program.monitors[1].sample_region
+    assert region is not None
+    expected_plane_shape = region.sample_shape
     assert plane.fields["Ez"].shape == (2, *expected_plane_shape)
     assert plane.fields["Hx"].shape == (2, *expected_plane_shape)
     assert plane.sample_region == program.monitors[1].sample_region

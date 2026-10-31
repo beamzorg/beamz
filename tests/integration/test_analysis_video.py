@@ -258,7 +258,7 @@ def test_slice_video_uses_exact_rectilinear_extents_and_snapped_position(
     )
     results = bz.SimulationResults(metadata, {"slice": recording})
 
-    data = video_module._video_data(
+    data = video_module.recorded_plane(
         results, recording, field="Ez", plane="z", index=None
     )
 

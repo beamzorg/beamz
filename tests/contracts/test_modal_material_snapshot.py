@@ -1,5 +1,7 @@
 """Modal analysis must retain the constitutive coefficients used by propagation."""
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -58,7 +60,8 @@ def test_detached_projection_receives_actual_materials(axis, full, monkeypatch):
         name="mode",
     )
     sim = Simulation(material_grid=grid, monitors=[monitor], time=[0, 1e-16])
-    runtime = sim.compile().grid
+    program = sim.compile()
+    runtime = program.grid
     monitor = sim.monitors[0]
     metadata = SimulationMetadata.from_simulation(
         sim,
@@ -69,8 +72,10 @@ def test_detached_projection_receives_actual_materials(axis, full, monkeypatch):
         metadata.fields.materials
         if full
         else material_region_for_monitor(
-            sim,
-            monitor,
+            SimpleNamespace(
+                sample_region=program.monitors[0].sample_region,
+                dft_frequencies=monitor.freqs,
+            ),
             runtime_fields=runtime,
         )
     )

@@ -744,7 +744,7 @@ def test_imported_grid_results_keep_local_metadata_and_public_coordinates(
     )
     dataset = bz.analysis.to_xarray(results)
 
-    from beamz.analysis.plotting import _coord_extent_um
+    from beamz.analysis._coordinates import recorded_plane
 
     assert results.metadata.grid == program.grid.geometry
     assert results.metadata.grid.origin == (0.0, 0.0, 0.0)
@@ -762,9 +762,22 @@ def test_imported_grid_results_keep_local_metadata_and_public_coordinates(
     )
     np.testing.assert_allclose(dataset.coords[expected_axes[0]], expected_x)
     np.testing.assert_allclose(dataset.coords[expected_axes[1]], expected_y)
-    assert _coord_extent_um(
-        dataset[component], sim=results.metadata
-    ) == _coord_extent_um(dataset[component], sim=None)
+    prepared = recorded_plane(results, results.monitors["fields"], field=component)
+    assert (prepared.horizontal, prepared.vertical) == expected_axes
+    spans = []
+    for coordinate in (expected_x, expected_y):
+        spacing = (
+            np.median(np.diff(coordinate))
+            if len(coordinate) > 1
+            else results.metadata.resolution
+        )
+        spans.extend(
+            (
+                (coordinate[0] - spacing / 2) / bz.um,
+                (coordinate[-1] + spacing / 2) / bz.um,
+            )
+        )
+    np.testing.assert_allclose(prepared.extent, spans, rtol=1e-14, atol=1e-12)
 
 
 @pytest.mark.parametrize(

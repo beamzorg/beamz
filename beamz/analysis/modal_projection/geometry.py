@@ -6,7 +6,6 @@ from typing import cast
 
 import numpy as np
 
-from beamz.analysis._coordinates import monitor_plane_coordinates_3d
 from beamz.analysis.data import AnalysisData, static_fields
 from beamz.const import LIGHT_SPEED
 from beamz.design.grid import Axis
@@ -142,13 +141,7 @@ def _monitor_analysis_plane_3d(
 ) -> tuple[np.ndarray, np.ndarray]:
     if axis != monitor.plane_normal:
         raise ValueError("Port axis must match the monitor plane normal.")
-    grid = sim.coordinates.grid
-    if grid is None or grid.metric_kind == "isotropic_uniform":
-        return monitor.get_analysis_plane_coords_3d(
-            dx=sim.resolution,
-            dy=sim.resolution,
-            dz=sim.resolution,
-            field_shape=sim.coordinates.fields.grid_shape,
-        )
-    _, coord0, coord1 = monitor_plane_coordinates_3d(sim.coordinates, monitor)
+    if sim.sample_region is None:
+        raise ValueError("A modal acquisition requires retained plane geometry.")
+    coord0, coord1 = sim.sample_region.sample_coordinates
     return coord0, coord1

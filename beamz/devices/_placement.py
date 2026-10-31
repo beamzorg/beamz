@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 
 import numpy as np
 
 from beamz.design.grid import GridAxis, RectilinearGrid
+from beamz.devices._immutable import readonly_array
 
 _AXES = ("x", "y", "z")
 
@@ -77,6 +78,9 @@ class SnappedRegion:
     intervals: Mapping[str, SnappedInterval] = field(default_factory=dict)
     companion_index: int | None = None
     companion_coord: float | None = None
+    sample_coordinates: tuple[np.ndarray, ...] = field(
+        default=(), repr=False, compare=False, metadata={"beamz_cache": False}
+    )
 
     def __post_init__(self) -> None:
         normal_axis = str(self.normal_axis).lower()
@@ -106,6 +110,20 @@ class SnappedRegion:
             object.__setattr__(self, "companion_index", int(self.companion_index))
         if self.companion_coord is not None:
             object.__setattr__(self, "companion_coord", float(self.companion_coord))
+
+        object.__setattr__(
+            self,
+            "sample_coordinates",
+            tuple(readonly_array(a, dtype=float) for a in self.sample_coordinates),
+        )
+
+    def with_samples(self, coordinates):
+        """Retain compiler sampling coordinates separately from aperture bounds."""
+        return replace(self, sample_coordinates=tuple(coordinates))
+
+    @property
+    def sample_shape(self):
+        return tuple(len(a) for a in self.sample_coordinates)
 
     def axis_interval(self, axis: str) -> SnappedInterval | None:
         return self.intervals.get(str(axis).lower())

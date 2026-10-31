@@ -20,7 +20,6 @@ from beamz.devices._placement import (
     snap_plane_region_grid,
 )
 from beamz.devices.modes.specs import ModeSpec
-from beamz.lattice import yee_plane_coordinates_3d
 
 
 def _normalize_center_size(center, size):
@@ -223,30 +222,6 @@ class _Monitor(Replaceable):
             z_start = int(round(self.start[2] / dz))
             z_end = int(round(self.end[2] / dz))
             return slice(z_start, z_end), slice(y_start, y_end), x_idx
-
-    def get_analysis_plane_coords_3d(
-        self,
-        *,
-        dx: float,
-        dy: float,
-        dz: float,
-        field_shape: tuple[int, ...],
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Return canonical tangential analysis coordinates in metres."""
-        snapped = self.get_snapped_region(
-            dx=dx,
-            dy=dy,
-            dz=dz,
-            field_shape=field_shape,
-        )
-        if snapped is None:
-            raise ValueError("3D analysis plane requires a snapped monitor region.")
-        return yee_plane_coordinates_3d(
-            self.center,
-            self.size,
-            self.plane_normal,
-            snapped,
-        )
 
     def get_snapped_region(
         self, *, dx=None, dy=None, dz=None, field_shape=None, grid=None

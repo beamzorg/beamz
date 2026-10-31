@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 from beamz._helpers import get_si_scale_and_label
-from beamz.analysis._coordinates import monitor_plane_coordinates_3d
+from beamz.analysis._coordinates import recorded_plane
 from beamz.analysis.data import AnalysisData, analysis_inputs, static_fields
 from beamz.design._geometry import extrusion_bounds, planar_geometry
 from beamz.devices.visualization import visual_spec_from_device
@@ -1503,35 +1503,6 @@ def view_simulation_3d(sim, *, mode="auto", open_browser=True, show=False, **kwa
     return plot_simulation(sim, show=show, **kwargs)
 
 
-def _coord_extent_um(da, *, sim=None):
-    offset = (
-        (0.0, 0.0, 0.0)
-        if da.attrs.get("coordinate_frame") == "public"
-        else getattr(sim, "coordinate_offset", (0.0, 0.0, 0.0))
-    )
-    offset_by_dim = {"x": offset[0], "y": offset[1], "z": offset[2]}
-    dims = [dim for dim in da.dims if dim in {"x", "y", "z", "s"}]
-    if len(dims) < 2:
-        width = max(int(da.shape[-1]) - 1, 1)
-        height = max(int(da.shape[-2]) - 1, 1) if da.ndim > 1 else 1
-        return (0.0, float(width), 0.0, float(height)), ("sample", "sample")
-    y_dim, x_dim = dims[-2], dims[-1]
-
-    def axis_extent(dim):
-        coord = np.asarray(da.coords[dim], dtype=float)
-        if coord.size == 0:
-            return (0.0, 1.0)
-        values = (coord - float(offset_by_dim.get(dim, 0.0))) / 1e-6
-        if values.size == 1:
-            return (float(values[0] - 0.5), float(values[0] + 0.5))
-        step = float(np.nanmedian(np.diff(values)))
-        return (float(values[0] - 0.5 * step), float(values[-1] + 0.5 * step))
-
-    x0, x1 = axis_extent(x_dim)
-    y0, y1 = axis_extent(y_dim)
-    return (x0, x1, y0, y1), (x_dim, y_dim)
-
-
 def _plot_image(
     values,
     *,
@@ -1575,26 +1546,6 @@ def _plot_image(
     return fig, ax
 
 
-def _select_saved_field(da, *, frame=None, z=None, y=None):
-    selected = da
-    if "t" in selected.dims:
-        selected = selected.isel(t=-1 if frame is None else int(frame))
-    elif "frame" in selected.dims:
-        selected = selected.isel(frame=-1 if frame is None else int(frame))
-    if "z" in selected.dims:
-        if z is None:
-            selected = selected.isel(z=selected.sizes["z"] // 2)
-        else:
-            selected = selected.sel(z=float(z), method="nearest")
-    if selected.ndim > 2 and "y" in selected.dims and y is not None:
-        selected = selected.sel(y=float(y), method="nearest")
-    while selected.ndim > 2:
-        selected = selected.isel(
-            {selected.dims[0]: selected.sizes[selected.dims[0]] // 2}
-        )
-    return selected
-
-
 def _monitor_frequency_index(data, frequency):
     freqs = np.asarray(data.frequencies, dtype=float)
     if freqs.size == 0:
@@ -1633,20 +1584,6 @@ def _monitor_dft_values(data, field_name, *, frequency=None, val="real"):
     if values is None:
         raise ValueError(f"No DFT component found for field {field_name!r}.")
     return _field_view(values[idx], val=val).values, freqs[idx]
-
-
-def _monitor_plane_shape_and_coords(simulation, monitor, *, region=None):
-    plane_shape = getattr(monitor, "_compiled_dft_shape_3d", None)
-    region, coords0, coords1 = monitor_plane_coordinates_3d(
-        simulation, monitor, region=region
-    )
-    if plane_shape is None:
-        plane_shape = (int(coords0.size), int(coords1.size))
-    else:
-        plane_shape = tuple(int(v) for v in plane_shape)
-        coords0 = coords0[: plane_shape[0]]
-        coords1 = coords1[: plane_shape[1]]
-    return plane_shape, coords0, coords1, region
 
 
 def _reshape_dft_plane(values, f_idx, plane_shape):
@@ -1931,7 +1868,6 @@ def plot_dft_field(
     val="real",
     source_normalization=None,
     source_normalize=True,
-    sample_region=None,
     origin=None,
     percentile=99.5,
     vmin=None,
@@ -1978,9 +1914,12 @@ def plot_dft_field(
 
     field_key = str(field)
     coordinate_context = data.coordinates
-    plane_shape, target0, target1, sample_region = _monitor_plane_shape_and_coords(
-        coordinate_context, monitor, region=sample_region
-    )
+    geometry = data.sample_region
+    if geometry is None:
+        raise ValueError("A DFT plane requires retained sampling geometry.")
+    plane_shape = geometry.sample_shape
+    target0, target1 = geometry.sample_coordinates
+    sample_region = geometry
     components, vector = _dft_plane_components(data, field_key, f_idx, plane_shape)
 
     if source_normalize:
@@ -2122,13 +2061,37 @@ def plot_result_field(
     monitor spectrum. Static fields accept ``frame`` and physical ``z``/``y``.
     Rendering options are those of :func:`plot_dft_field` or ``_plot_image``.
     """
-    inputs = analysis_inputs(results)
     style["cmap"] = style.get("cmap") or (
         "magma" if str(val).lower() == "abs^2" else "RdBu"
     )
     style.setdefault("figsize", None)
-    if monitor_name is not None:
-        data = inputs[str(monitor_name)]
+    recordings = [
+        (name, item)
+        for name, item in results.monitors.items()
+        if item.fields and (field is None or field in item.fields)
+    ]
+    if monitor_name is None:
+        if not recordings:
+            raise RuntimeError("No saved fields are available to plot.")
+        monitor_name = recordings[0][0]
+    recording = results.monitors[str(monitor_name)]
+    if recording.fields and (field is None or field in recording.fields):
+        field = field or next(iter(recording.fields))
+        plane = "y" if y is not None and z is None else "z"
+        prepared = recorded_plane(
+            results,
+            recording,
+            field=field,
+            plane=plane,
+            position=y if plane == "y" else z,
+            frame=-1 if frame is None else frame,
+        )
+        values = _field_view(prepared.frames[0], val=val).values
+        extent = prepared.extent
+        x_dim, y_dim = prepared.horizontal, prepared.vertical
+        title = str(field)
+    else:
+        data = analysis_inputs(results)[str(monitor_name)]
         monitor = data.monitor_geometry
         if getattr(monitor, "is_3d", False) and data.frequencies.size:
             return plot_dft_field(
@@ -2137,7 +2100,6 @@ def plot_result_field(
                 frequency=frequency,
                 val=val,
                 source_normalization=None,
-                sample_region=results.monitors[str(monitor_name)].sample_region,
                 **style,
             )
         values, freq = _monitor_dft_values(
@@ -2145,26 +2107,14 @@ def plot_result_field(
         )
         extent, x_dim, y_dim = _monitor_extent_um(monitor, values, sim=data.coordinates)
         title = f"{field or 'field'} at {freq * 1e-12:g} THz"
-    else:
-        from beamz.analysis.adapters import to_xarray
-
-        fields = to_xarray(inputs)
-        if not fields.data_vars:
-            raise RuntimeError("No saved fields are available to plot.")
-        name = field or next(iter(fields.data_vars))
-        selected = _select_saved_field(fields[str(name)], frame=frame, z=z, y=y)
-        values = _field_view(selected, val=val).values
-        data = next(iter(inputs.values()))
-        extent, (x_dim, y_dim) = _coord_extent_um(selected, sim=data.coordinates)
-        title = str(name)
     # Grid glyphs describe 3D DFT apertures, not saved images or 2D line plots.
     for key in ("show_grid", "grid_color", "grid_linewidth", "grid_alpha"):
         style.pop(key, None)
     return _plot_image(
         values,
         extent=extent,
-        xlabel=f"{x_dim} (um)",
-        ylabel=f"{y_dim} (um)",
+        xlabel=f"{x_dim} (um)" if x_dim != "sample" else x_dim,
+        ylabel=f"{y_dim} (um)" if y_dim != "sample" else y_dim,
         title=title,
         **style,
     )

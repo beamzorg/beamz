@@ -23,7 +23,7 @@ def _metadata():
     )
 
 
-def test_analysis_data_is_the_five_part_immutable_contract():
+def test_analysis_data_has_an_immutable_sampling_contract():
     monitor = FieldMonitor(
         center=(0.0, 0.0, 0.0),
         size=(1.0, 0.0, 0.0),
@@ -48,6 +48,7 @@ def test_analysis_data_is_the_five_part_immutable_contract():
         "materials",
         "frequencies",
         "monitor_geometry",
+        "sample_region",
     )
     assert data.name == "field"
     assert data.dt == 0.25

@@ -194,7 +194,7 @@ def test_monitor_results_apply_distinct_flux_and_mode_normalization(monkeypatch)
     def fake_extract(*args, **kwargs):
         assert args[0]["mode"].monitor_geometry == mode_monitor
         return {
-            "mode_m0": {
+            args[1][0].name: {
                 "a_minus": np.array([0.0 + 0.0j]),
                 "a_plus": np.array([6.0 + 0.0j]),
                 "projected_signed_power": np.array([36.0]),
@@ -250,7 +250,7 @@ def test_3d_mode_monitor_labels_positive_axis_power_as_forward(monkeypatch):
     def fake_extract(*args, **kwargs):
         assert args[0]["mode"].monitor_geometry == monitor
         return {
-            "mode_m0": {
+            args[1][0].name: {
                 # The 3D x-normal discrete contract uses the raw minus branch
                 # for physical +x propagation.
                 "a_minus": np.array([2.0 + 0.0j]),
@@ -688,7 +688,7 @@ def test_mode_field_plot_uses_physical_rectilinear_cell_edges():
     plt.close(fig)
 
 
-def test_mode_source_preserves_public_rectilinear_coordinates(monkeypatch):
+def test_mode_source_preserves_public_rectilinear_coordinates():
     coordinate_offset = np.asarray([0.5, 0.4, 0.6]) * bz.um
     grid = bz.RectilinearGrid(
         np.asarray([0.0, 0.2, 1.0]) * bz.um,
@@ -696,18 +696,21 @@ def test_mode_source_preserves_public_rectilinear_coordinates(monkeypatch):
         np.asarray([0.0, 0.2, 0.5, 1.2]) * bz.um,
     )
     eps = np.ones(grid.shape_zyx)
-    fields = SimpleNamespace(
+    from beamz.design.discretization import MaterialGrid
+
+    materials = MaterialGrid(
         permittivity=eps,
         conductivity=np.zeros_like(eps),
         permeability=np.ones_like(eps),
-        geometry=grid,
-        material_grid=None,
+        grid=grid,
+        resolution=0.1 * bz.um,
+        shape=eps.shape,
     )
     simulation = SimpleNamespace(
-        fields=fields,
+        _material_grid=lambda: materials,
+        dt=1e-17,
         resolution=0.1 * bz.um,
         coordinate_offset=tuple(coordinate_offset),
-        design=SimpleNamespace(width=1.0, height=0.8, depth=1.2),
     )
     source = bz.ModeSource(
         center=(0.0, 0.0, 0.0),
@@ -715,25 +718,20 @@ def test_mode_source_preserves_public_rectilinear_coordinates(monkeypatch):
         direction="+",
         source_time=bz.GaussianPulse(freq0=2.0e14, fwidth=2.0e13),
     )
-    captured = {}
-
-    def fake_solve_modes(**kwargs):
-        captured.update(kwargs)
-        profile = np.asarray(kwargs["eps"])
-        mode_fields = np.ones((1, 3, *profile.shape), dtype=np.complex128)
-        return np.asarray([2.0 + 0.0j]), mode_fields, mode_fields, 0
-
-    monkeypatch.setattr("beamz.devices.sources.solve.solve_modes", fake_solve_modes)
-
     modes = source.solve_modes(simulation)
 
     assert modes.transverse_axes == ("z", "y")
-    np.testing.assert_allclose(captured["grid_edges"], (grid.z_edges, grid.y_edges))
+    np.testing.assert_array_equal(modes.eps_profiles, 1.0)
     np.testing.assert_allclose(
         modes.grid_edges,
-        (
-            grid.z_edges - coordinate_offset[2],
-            grid.y_edges - coordinate_offset[1],
+        tuple(
+            edges[crop.start : crop.stop + 1] - offset
+            for edges, crop, offset in zip(
+                (grid.z_edges, grid.y_edges),
+                modes.crop_slices,
+                (coordinate_offset[2], coordinate_offset[1]),
+                strict=True,
+            )
         ),
     )
     np.testing.assert_allclose(modes.center, source.center)
