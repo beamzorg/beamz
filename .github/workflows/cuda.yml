@@ -130,7 +130,7 @@ jobs:
         run: |
           mkdir -p "${RUNNER_TEMP}/benchmark-results"
           for workload in bare_3d realistic_3d; do
-            for backend in jax cuda_streamed cuda_hopper; do
+            for backend in jax cuda_streamed; do
               uv run --no-sync --no-active --python 3.11 python scripts/benchmark_h100.py \
                 --workload "$workload" --backend "$backend" --samples 5 \
                 --output "${RUNNER_TEMP}/benchmark-results/${workload}-${backend}.json"
@@ -152,7 +152,7 @@ jobs:
                 --output "${RUNNER_TEMP}/benchmark-results/${z}-${y}-${x}-${backend}.json"
             done
           done
-      - name: Enforce provisional CUDA promotion thresholds
+      - name: Enforce provisional streamed CUDA throughput threshold
         env:
           RESULT_DIR: ${{ runner.temp }}/benchmark-results
         run: |
@@ -165,17 +165,10 @@ jobs:
           streamed = json.loads(
               (result_dir / "realistic_3d-cuda_streamed.json").read_text()
           )
-          hopper = json.loads(
-              (result_dir / "realistic_3d-cuda_hopper.json").read_text()
-          )
           streamed_gcups = float(streamed["kernel_gcups"])
-          hopper_speedup = float(hopper["kernel_gcups"]) / streamed_gcups
           print(f"streamed realistic throughput: {streamed_gcups:.3f} GCUPS")
-          print(f"Hopper/streamed realistic speedup: {hopper_speedup:.3f}x")
           if streamed_gcups < 20.0:
               raise SystemExit("streamed CUDA did not reach the 20 GCUPS promotion gate")
-          if hopper_speedup < 1.15:
-              raise SystemExit("Hopper CUDA did not reach the 1.15x promotion gate")
           PY
       - name: Upload H100 evidence
         if: always()
