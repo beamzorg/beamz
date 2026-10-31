@@ -75,20 +75,19 @@ def _colocate_monitor_component_matrix_3d(
         raise ValueError(
             f"Component '{component}' has {data.shape[1]} samples but expected {n_src} from monitor geometry."
         )
-    out = np.empty(
-        (data.shape[0], int(len(target0) * len(target1))), dtype=np.complex128
-    )
-    for idx in range(data.shape[0]):
-        plane = data[idx].reshape(src0.size, src1.size)
-        interp = _interpolate_plane_matrix_2d(
-            plane,
-            src0,
-            src1,
-            target0,
-            target1,
-        )
-        out[idx, :] = interp.reshape(-1)
-    return out
+    return _colocate_component_planes(data, src0, src1, target0, target1)
+
+
+def _colocate_component_planes(data, src0, src1, target0, target1):
+    return np.asarray(
+        [
+            _interpolate_plane_matrix_2d(
+                plane.reshape(len(src0), len(src1)), src0, src1, target0, target1
+            ).reshape(-1)
+            for plane in data
+        ],
+        dtype=np.complex128,
+    ).reshape(len(data), len(target0) * len(target1))
 
 
 def _colocate_field_components_to_projection_3d(
@@ -105,21 +104,17 @@ def _colocate_field_components_to_projection_3d(
             name: np.asarray(value, dtype=np.complex128)
             for name, value in field_components.items()
         }
+    src0, src1 = _monitor_analysis_plane_3d(sim, monitor, str(axis))
     colocated = {}
     for name, value in field_components.items():
         arr = np.asarray(value, dtype=np.complex128)
         was_vector = arr.ndim == 1
-        if was_vector:
-            arr = arr[None, :]
-        interp = _colocate_monitor_component_matrix_3d(
-            sim,
-            monitor,
-            name,
-            arr,
-            axis=str(axis),
-            target0=np.asarray(target0, dtype=np.float64),
-            target1=np.asarray(target1, dtype=np.float64),
-        )
+        matrix = arr[None, :] if was_vector else arr
+        if matrix.ndim != 2 or matrix.shape[1] != src0.size * src1.size:
+            raise ValueError(
+                f"Component '{name}' does not match monitor plane geometry."
+            )
+        interp = _colocate_component_planes(matrix, src0, src1, target0, target1)
         colocated[name] = interp[0] if was_vector else interp
     return colocated
 

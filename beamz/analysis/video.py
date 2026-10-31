@@ -133,33 +133,20 @@ def _video_data(results, recording, *, field, plane, index):
                 f"Recorded {field!r} frame shape {frames.shape[1:]} does not match "
                 f"the monitor plane {(coord0.size, coord1.size)}."
             )
-        if region is not None and metadata.grid is not None:
-            horizontal_interval = region.axis_interval(horizontal)
-            vertical_interval = region.axis_interval(vertical)
-            assert horizontal_interval is not None and vertical_interval is not None
-            horizontal_edges = metadata.grid.axis_edges(horizontal)
-            vertical_edges = metadata.grid.axis_edges(vertical)
-            x_extent = (
-                horizontal_edges[int(horizontal_interval.start)] / _UM
-                - offset_by_axis[horizontal],
-                horizontal_edges[int(horizontal_interval.stop)] / _UM
-                - offset_by_axis[horizontal],
-            )
-            y_extent = (
-                vertical_edges[int(vertical_interval.start)] / _UM
-                - offset_by_axis[vertical],
-                vertical_edges[int(vertical_interval.stop)] / _UM
-                - offset_by_axis[vertical],
+        from beamz.analysis.plotting import _monitor_plane_display
+
+        if metadata.grid is not None:
+            extent, _, _ = _monitor_plane_display(
+                metadata, region, normal=normal, origin=metadata.coordinate_offset
             )
         else:
             x_extent = _axis_extent(
-                coord1 / _UM - offset_by_axis[horizontal],
-                fallback_step=resolution_um,
+                coord1 / _UM - offset_by_axis[horizontal], fallback_step=resolution_um
             )
             y_extent = _axis_extent(
-                coord0 / _UM - offset_by_axis[vertical],
-                fallback_step=resolution_um,
+                coord0 / _UM - offset_by_axis[vertical], fallback_step=resolution_um
             )
+            extent = (*x_extent, *y_extent)
         plane_position = (
             float(region.plane_coord)
             if region is not None
@@ -169,12 +156,7 @@ def _video_data(results, recording, *, field, plane, index):
         return _VideoData(
             frames,
             times,
-            (
-                float(x_extent[0]),
-                float(x_extent[1]),
-                float(y_extent[0]),
-                float(y_extent[1]),
-            ),
+            extent,
             horizontal,
             vertical,
             f"{normal}={position_um:.3g} um",
@@ -388,15 +370,18 @@ def save_field_video(
         ax = fig.add_axes([0, 0, 1, 1])
     else:
         fig, ax = plt.subplots(figsize=figsize)
-    image = ax.imshow(
+    from beamz.analysis.plotting import plot_field_view
+
+    image, _ = plot_field_view(
+        ax,
         data.frames[0],
-        origin="lower",
         extent=data.extent,
         cmap=_resolve_cmap(cmap, linear_segmented_colormap),
         interpolation=interpolation,
         vmin=low,
         vmax=high,
         aspect="equal",
+        symmetric_limits=False,
     )
     ax.set_xlim(*data.extent[:2])
     ax.set_ylim(*data.extent[2:])
