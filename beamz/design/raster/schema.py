@@ -12,7 +12,7 @@ import numpy as np
 from beamz.design.grid import RectilinearGrid as Grid
 from beamz.design.materials import Material
 from beamz.design.structures import Polygon as _Polygon
-from beamz.design.structures import Solid
+from beamz.design.structures import Shape
 
 from . import _native  # type: ignore[attr-defined]
 
@@ -37,15 +37,15 @@ def Polygon(exterior, holes=()):
 
 
 def Box(minimum, maximum):
-    return Solid("box", bounds=(minimum, maximum))
+    return Shape("box", bounds=(minimum, maximum))
 
 
 def Sphere(center, radius):
-    return Solid("sphere", position=center, radius=radius)
+    return Shape("sphere", position=center, radius=radius)
 
 
 def Cylinder(center, radius, z_min, z_max):
-    return Solid(
+    return Shape(
         "cylinder",
         position=(*center, z_min),
         z=z_min,
@@ -149,7 +149,7 @@ class Mesh:
         }
 
 
-Geometry = Solid | Mesh
+Geometry = Shape | Mesh
 
 
 @dataclass(frozen=True, slots=True)

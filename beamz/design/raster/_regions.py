@@ -14,7 +14,7 @@ import numpy as np
 
 from beamz.design.dispersion import PoleResidue
 from beamz.design.materials import Material
-from beamz.design.structures import Solid
+from beamz.design.structures import Shape
 
 from .engine import RasterOptions, compile_scene
 from .result import RasterResult
@@ -344,7 +344,7 @@ def rasterize_split_substrate(
         raise ValueError("substrate_object must be an object in the scene.")
     substrate = substrate_object
     if (
-        not isinstance(substrate.geometry, Solid)
+        not isinstance(substrate.geometry, Shape)
         or substrate.geometry.shape_kind != "box"
     ):
         raise ValueError("Split substrate must be a Box.")

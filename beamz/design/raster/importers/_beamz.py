@@ -6,7 +6,7 @@ import numpy as np
 
 from beamz._cache_tokens import cache_token
 from beamz.design._geometry import extrusion_bounds, polygon_rings
-from beamz.design.structures import Polygon, Solid
+from beamz.design.structures import Polygon, Shape
 
 from ..schema import Box, Cylinder, Material, Object, Scene
 
@@ -43,7 +43,7 @@ def _padded_upper(upper, physical_size, padded_size):
     )
 
 
-def _raster_geometry(structure: Solid, design, extrusion_depth, padded_size):
+def _raster_geometry(structure: Shape, design, extrusion_depth, padded_size):
     """Realize domain-dependent extrusion and terminal padding on canonical solids."""
     physical_size = (design.width, design.height, design.depth)
     if structure.shape_kind == "box":

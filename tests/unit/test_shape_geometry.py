@@ -13,7 +13,7 @@ from beamz.design.structures import (
     Polygon,
     Rectangle,
     Ring,
-    Solid,
+    Shape,
     Sphere,
     Taper,
 )
@@ -24,7 +24,7 @@ from beamz.design.structures import (
 )
 def test_named_constructors_return_immutable_canonical_geometry(constructor):
     shape = constructor()
-    assert type(shape) is Solid
+    assert type(shape) is Shape
     with pytest.raises(dataclasses.FrozenInstanceError):
         shape.depth = 2
 
@@ -69,20 +69,20 @@ def test_rotation_uses_right_handed_xyz_axes(axis, expected):
 def test_native_box_uses_literal_bounds_without_center_size_rounding():
     lower, upper = (-0.2, -1, 0.111), (0.2, -0.2, 0.113)
     box = raster.Box(lower, upper)
-    assert type(box) is Solid
+    assert type(box) is Shape
     assert box.to_dict()["bounds"] == {"min": lower, "max": upper}
     shifted = box.shift(1, 0, 0)
     np.testing.assert_allclose(shifted.lower, (0.8, -1, 0.111))
     assert box.lower == lower
 
 
-def test_native_extrusion_uses_the_same_solid_and_preserves_holes_and_taper():
+def test_native_extrusion_uses_the_same_shape_and_preserves_holes_and_taper():
     footprint = raster.Polygon(
         ((0, 0), (2, 0), (2, 2), (0, 2)),
         (((0.5, 0.5), (0.5, 1.5), (1.5, 1.5), (1.5, 0.5)),),
     )
     shape = raster.TaperedExtrudedPolygon(footprint, 0.1, 0.3, 7, 0.25)
-    assert type(shape) is type(footprint) is Solid
+    assert type(shape) is type(footprint) is Shape
     payload = shape.to_dict()
     assert payload["type"] == "tapered_extruded_polygon"
     assert payload["polygon"]["holes"] == footprint.holes
