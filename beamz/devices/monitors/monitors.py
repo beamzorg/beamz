@@ -15,7 +15,9 @@ from beamz.devices._placement import (
     line_region_coordinates,
     plane_region_slices,
     snap_axis_aligned_line_region,
+    snap_axis_aligned_line_region_grid,
     snap_plane_region,
+    snap_plane_region_grid,
 )
 from beamz.devices.modes.specs import ModeSpec
 from beamz.lattice import yee_plane_coordinates_3d
@@ -246,7 +248,9 @@ class _Monitor(Replaceable):
             snapped,
         )
 
-    def get_snapped_region(self, *, dx, dy, dz=None, field_shape=None):
+    def get_snapped_region(
+        self, *, dx=None, dy=None, dz=None, field_shape=None, grid=None
+    ):
         """Return the canonical snapped region for monitor sampling.
 
         Parameters
@@ -258,6 +262,17 @@ class _Monitor(Replaceable):
         field_shape : tuple of int, optional
             Base field shape in ``(z, y, x)`` order; required for 3D monitors.
         """
+        if grid is not None:
+            if field_shape is not None and len(field_shape) == 2:
+                return snap_axis_aligned_line_region_grid(self.start, self.end, grid)
+            return snap_plane_region_grid(
+                center=self.center,
+                size=self.size,
+                plane_normal=self.plane_normal,
+                grid=grid,
+            )
+        if dx is None or dy is None:
+            raise ValueError("Monitor placement requires a grid or x/y spacings.")
         if field_shape is None:
             return None
         shape = tuple(int(value) for value in field_shape)
