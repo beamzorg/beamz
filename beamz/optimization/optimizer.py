@@ -10,7 +10,6 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 
 from beamz._cache_tokens import cache_token
 from beamz.simulation.differentiable import TOPOLOGY_NUMERICS_VERSION
@@ -213,6 +212,8 @@ class AdamOptimizer(Specification):
         callback(result) receives each completed update. The final checkpoint is
         always saved, including when checkpoint_every exceeds the run length.
         """
+        import optax
+
         steps = step_count(steps, "steps")
         fingerprint = self._fingerprint(objective)
         optimizer = optax.adam(self.learning_rate)
@@ -255,6 +256,8 @@ class AdamOptimizer(Specification):
         )
 
     def load_result(self, path, post_process_fn):
+        import optax
+
         return load_result(
             path,
             design=self.design,

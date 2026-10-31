@@ -7,7 +7,6 @@ from scipy.ndimage import map_coordinates
 from shapely.geometry import GeometryCollection, box
 from shapely.geometry import Polygon as ShapelyPolygon
 from shapely.ops import unary_union
-from skimage.measure import find_contours
 
 from beamz.design.structures import Polygon
 
@@ -75,6 +74,8 @@ def _pixel_geometry(mask, *, x0, y0, dx, dy):
 
 
 def _contour_geometry(array, *, level, x0, y0, dx, dy, sample_spacing):
+    from skimage.measure import find_contours
+
     # Repeat boundary samples beyond the cell-edge domain. Contours close outside
     # that domain; clipping below puts solid edges exactly on the physical frame.
     extended = np.pad(array, 1, mode="edge")
