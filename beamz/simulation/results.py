@@ -20,7 +20,6 @@ from beamz.lattice import canonical_component_2d
 
 from .model import CompiledGrid, SimulationState
 from .observe import (
-    dft_buffer_layout,
     monitor_dft_component,
     monitor_dft_flux,
     monitor_flux,
@@ -247,79 +246,25 @@ def _snapshot_material_region(runtime_fields, crop, origin):
     )
 
 
-def material_region_for_monitor(simulation, monitor: _Monitor, *, runtime_fields):
-    """Return a compact material neighborhood around a DFT monitor plane."""
-    if monitor.freqs.size == 0:
+def material_region_for_monitor(result, *, runtime_fields):
+    """Retain the material halo around the compiler's realized sampling plane."""
+    region = result.sample_region
+    if not result.dft_frequencies.size or region is None:
         return None
-    axis = monitor.plane_normal
-    permittivity = np.asarray(runtime_fields.permittivity)
-    full_shape = tuple(int(value) for value in permittivity.shape)
-
-    grid = runtime_fields.geometry
-    if permittivity.ndim == 3:
-        from beamz.devices._placement import snap_plane_region_grid
-
-        snapped_region = snap_plane_region_grid(
-            center=monitor.center,
-            size=monitor.size,
-            plane_normal=monitor.plane_normal,
-            grid=grid,
-        )
-        if snapped_region is None:
-            return None
-
-        def axis_index(axis):
-            if axis == snapped_region.normal_axis:
-                return snapped_region.plane_index
-            interval = snapped_region.axis_interval(axis)
-            if interval is None:
-                raise RuntimeError(f"Monitor region omits transverse axis {axis!r}.")
-            return interval.as_slice()
-
-        indices = tuple(axis_index(axis) for axis in ("z", "y", "x"))
-        dim = {"z": 0, "y": 1, "x": 2}[axis]
-        normal = indices[dim]
-        if isinstance(normal, slice):
-            start = 0 if normal.start is None else int(normal.start)
-            stop = full_shape[dim] if normal.stop is None else int(normal.stop)
-            plane = (start + max(start + 1, stop) - 1) // 2
-        else:
-            plane = int(normal)
-    elif permittivity.ndim == 2:
-        from beamz.devices._placement import (
-            line_region_points,
-            snap_axis_aligned_line_region_grid,
-        )
-
-        snapped_region = snap_axis_aligned_line_region_grid(
-            monitor.start, monitor.end, grid
-        )
-        if snapped_region is None:
-            return None
-        points = line_region_points(snapped_region)
-        if not points:
-            return None
-        if axis not in {"x", "y"}:
-            start, end = np.asarray(monitor.start), np.asarray(monitor.end)
-            axis = (
-                "x"
-                if abs(float(end[0] - start[0])) <= abs(float(end[1] - start[1]))
-                else "y"
-            )
-        dim = 1 if axis == "x" else 0
-        point_axis = 0 if axis == "x" else 1
-        plane = int(round(float(np.mean([point[point_axis] for point in points]))))
-    else:
+    full_shape = runtime_fields.permittivity.shape
+    axes = ("z", "y", "x") if len(full_shape) == 3 else ("y", "x")
+    if region.normal_axis not in axes:
         return None
-
+    dim = axes.index(region.normal_axis)
+    plane = int(region.plane_index)
     plane = int(np.clip(plane, 0, full_shape[dim] - 1))
     from beamz.devices.modes.plane import TENSOR_MODE_NORMAL_HALO
 
     halo = TENSOR_MODE_NORMAL_HALO if runtime_fields.material_grid.yee_tensors else 0
     start, stop = max(0, plane - 2 - halo), min(full_shape[dim], plane + 3 + halo)
-    crop = [slice(None)] * permittivity.ndim
+    crop = [slice(None)] * len(full_shape)
     crop[dim] = slice(start, stop)
-    origin = [0] * permittivity.ndim
+    origin = [0] * len(full_shape)
     origin[dim] = start
     return _snapshot_material_region(runtime_fields, tuple(crop), origin)
 
@@ -895,36 +840,21 @@ class MonitorResults:
             )
         dft_fields: dict[str, np.ndarray] = {}
         if spec.dft_enabled and fc > 0 and pc > 0:
-            from beamz.lattice import public_component_2d
-
-            layout = dft_buffer_layout(spec)
-            packed_re, packed_im = (
-                np.asarray(value[layout.values], dtype=np.float64).reshape(layout.shape)
-                for value in (state.dft_vec_re, state.dft_vec_im)
+            # Host conversion precedes complex construction to retain float64 decode.
+            packed = spec.unpack_dft(
+                np.asarray(state.dft_vec_re, dtype=np.float64),
+                np.asarray(state.dft_vec_im, dtype=np.float64),
             )
-            comp_mask_arr = np.asarray(spec.dft_component_mask, dtype=np.float32)
-            for comp_i, comp_name in enumerate(("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")):
-                if comp_mask_arr[comp_i] <= 0.0:
-                    continue
-                re = packed_re[comp_i]
-                im = packed_im[comp_i]
-                if not bool(config.is_3d) and comp_name in (
-                    {"Ez", "Hx", "Hy"}
-                    if config.polarization_2d == "tm"
-                    else {"Ex", "Ey", "Hz"}
-                ):
-                    public_name, sign = public_component_2d(
-                        comp_name, config.plane_2d, config.polarization_2d
-                    )
-                    dft_fields[public_name] = sign * (re + 1j * im)
-                else:
-                    dft_fields[comp_name] = re + 1j * im
-        power_spectrum = (
-            np.asarray(state.freq_flux_re[i, :fc], dtype=np.float32)
-            + 1j * np.asarray(state.freq_flux_im[i, :fc], dtype=np.float32)
-            if spec.accumulate_frequency and fc > 0
-            else np.zeros((0,), dtype=np.complex64)
-        )
+            ordered = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
+            dft_fields = {
+                public: sign * packed[ordered.index(canonical)]
+                for public, canonical, sign in zip(
+                    spec.components,
+                    spec.canonical_components,
+                    spec.component_signs,
+                    strict=True,
+                )
+            }
         configured_frequencies = np.asarray(monitor.freqs, dtype=float).reshape(-1)
         dft_frequencies = (
             configured_frequencies[:fc]
@@ -936,11 +866,11 @@ class MonitorResults:
             fields={},
             power_history=np.asarray(state.powers[i, :count], dtype=float),
             power_timestamps=np.asarray(state.timestamps[i, :count], dtype=float),
-            power_spectrum=np.asarray(power_spectrum, dtype=np.complex64),
+            power_spectrum=np.empty(0, dtype=np.complex64),
             dft_fields=dft_fields,
             dft_frequencies=dft_frequencies,
             dft_weight_sum=np.asarray(
-                state.dft_weight_sum[dft_buffer_layout(spec).weights],
+                state.dft_weight_sum[spec.dft_slices()[1]],
                 dtype=np.float64,
             ),
             dft_base_dt=float(config.dt),
@@ -1409,7 +1339,7 @@ class SimulationResults:
             name: replace(
                 result,
                 material_region=material_region_for_monitor(
-                    simulation, result.monitor, runtime_fields=runtime_fields
+                    result, runtime_fields=runtime_fields
                 ),
             )
             for name, result in monitor_results.items()

@@ -29,6 +29,7 @@ from beamz.lattice import (
     common_grid_shape_3d,
     compile_yee_plane_quadrature_3d,
     linear_interpolation_plan,
+    sampling_coordinates,
 )
 
 
@@ -69,19 +70,53 @@ def _compact_sample_region(region: SnappedRegion | None) -> SnappedRegion | None
     )
 
 
+@dataclass(frozen=True)
+class SamplingPlan:
+    """Weighted gathers on logical Yee supports, including local shard ownership."""
+
+    indices: tuple = ()
+    weights: tuple = ()
+
+    def sample(
+        self, fields, *, active_mask=None, local_axis=None, shard_index=0, shapes=None
+    ):
+        vectors = []
+        for i, (array, indices, weights) in enumerate(
+            zip(fields, self.indices, self.weights, strict=True)
+        ):
+            if active_mask is not None and active_mask[i] == 0:
+                vectors.append(jnp.zeros(indices.shape[:-1], dtype=array.dtype))
+                continue
+            coordinates = list(
+                sampling_coordinates(
+                    indices, array.shape if shapes is None else shapes[i]
+                )
+            )
+            if local_axis is None:
+                samples = array[tuple(coordinates)]
+            else:
+                coordinate = (
+                    coordinates[local_axis] - shard_index * array.shape[local_axis]
+                )
+                owned = (coordinate >= 0) & (coordinate < array.shape[local_axis])
+                coordinates[local_axis] = jnp.clip(
+                    coordinate, 0, array.shape[local_axis] - 1
+                )
+                samples = jnp.where(owned, array[tuple(coordinates)], 0)
+            vectors.append(jnp.sum(samples * weights, axis=-1))
+        return jnp.stack(vectors)
+
+
 @dataclass(frozen=True, kw_only=True)
-class CompiledMonitorSpec:
+class AcquisitionLayout:
     """Canonical spatial sampling, reduction, and accumulation plan."""
 
     name: str
     monitor_index: int
     record_interval: int
-    accumulate_power: bool
     power_scale: float
     normal_axis: int = -1
     normal_sign: float = 1.0
-    accumulate_frequency: bool = False
-    freq_record_interval: int = 1
     freq_count: int = 0
     freq_hz: jnp.ndarray = field(default_factory=_empty_array)
     dft_enabled: bool = False
@@ -95,10 +130,7 @@ class CompiledMonitorSpec:
     dft_value_offset: int = 0
     dft_weight_offset: int = 0
     dft_component_mask: jnp.ndarray = field(default_factory=_empty_array)
-    sample_flat_idx: tuple[jnp.ndarray | np.ndarray, ...] = ()
-    sample_weights: tuple[jnp.ndarray, ...] = ()
-    dft_flat_idx: tuple[jnp.ndarray | np.ndarray, ...] = ()
-    dft_weights: tuple[jnp.ndarray, ...] = ()
+    dft_sampling: SamplingPlan = field(default_factory=SamplingPlan)
     integration_weights: jnp.ndarray = field(default_factory=_empty_array)
     recorder_index: int = -1
     components: tuple[str, ...] = ()
@@ -109,6 +141,44 @@ class CompiledMonitorSpec:
     field_interp_flat_idx: tuple[jnp.ndarray | np.ndarray, ...] = ()
     field_interp_weights: tuple[jnp.ndarray, ...] = ()
     sample_region: SnappedRegion | None = None
+
+    # Native packing uses these read-only views; there is only one gather plan.
+    dft_flat_idx = property(lambda self: self.dft_sampling.indices)
+    dft_weights = property(lambda self: self.dft_sampling.weights)
+
+    @property
+    def dft_shape(self):
+        return (6, int(self.freq_count), int(self.dft_point_count))
+
+    def dft_slices(self, *, local=False):
+        value = 0 if local else self.dft_value_offset
+        weight = 0 if local else self.dft_weight_offset
+        return (
+            slice(value, value + math.prod(self.dft_shape)),
+            slice(weight, weight + self.freq_count),
+        )
+
+    def unpack_dft(self, real, imag, *, local=False):
+        values, _ = self.dft_slices(local=local)
+        return (real[values] + 1j * imag[values]).reshape(self.dft_shape)
+
+    def normalized_dft(self, state, *, align_h=False, dt=0.0):
+        """Canonical phasors; preserve real-carrier versus complex-envelope scaling."""
+        _, weights = self.dft_slices()
+        scale = 1.0 if jnp.iscomplexobj(state.ex) else 2.0
+        fields = self.unpack_dft(state.dft_vec_re, state.dft_vec_im)
+        fields = (
+            fields
+            * (scale / jnp.maximum(state.dft_weight_sum[weights], 1e-18))[None, :, None]
+        )
+        if align_h:
+            phase = jnp.exp(-1j * jnp.pi * self.freq_hz * dt)
+            fields = fields.at[3:].multiply(phase[None, :, None])
+        return fields
+
+
+# Direct compiler callers retain this import while internal consumers share one layout.
+CompiledMonitorSpec = AcquisitionLayout
 
 
 def _clip_indices(x_idx: np.ndarray, y_idx: np.ndarray, shape: tuple[int, int]):
@@ -259,7 +329,7 @@ def _monitor_plane_quadrature(monitor: _Monitor, fields, resolution: float, grid
     return region, quadrature
 
 
-def _spectral_sampling_spec(common, samples, dft, region, **geometry):
+def _spectral_sampling_spec(common, dft, region, **geometry):
     """Adapt all sampling families to the existing packed acquisition contract."""
     geometry["integration_weights"] = jnp.asarray(
         geometry.get("integration_weights", ()), dtype=jnp.float32
@@ -268,10 +338,9 @@ def _spectral_sampling_spec(common, samples, dft, region, **geometry):
         **common,
         **geometry,
         dft_point_count=int(dft[0][0].shape[0]),
-        sample_flat_idx=tuple(plan[0] for plan in samples),
-        sample_weights=tuple(plan[1] for plan in samples),
-        dft_flat_idx=tuple(plan[0] for plan in dft),
-        dft_weights=tuple(plan[1] for plan in dft),
+        dft_sampling=SamplingPlan(
+            tuple(plan[0] for plan in dft), tuple(plan[1] for plan in dft)
+        ),
         sample_region=_compact_sample_region(region),
     )
 
@@ -414,7 +483,6 @@ def compile_monitor_specs(
                     name=monitor.name or f"monitor_{mon_idx}",
                     monitor_index=mon_idx,
                     record_interval=interval,
-                    accumulate_power=False,
                     power_scale=0.0,
                     recorder_index=recorder_count,
                     components=tuple(public_components),
@@ -462,15 +530,27 @@ def compile_monitor_specs(
             dft_component_mask = np.asarray(
                 [1.0 if c in wanted else 0.0 for c in ordered], dtype=np.float32
             )
+        ordered = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
+        selected = tuple(c for i, c in enumerate(ordered) if dft_component_mask[i])
+        from beamz.lattice import public_component_2d
+
+        public = tuple(
+            public_component_2d(c, plane_2d, polarization_2d)
+            if not is_3d
+            and c
+            in ({"Ez", "Hx", "Hy"} if polarization_2d == "tm" else {"Ex", "Ey", "Hz"})
+            else (c, 1.0)
+            for c in selected
+        )
         common: dict[str, Any] = dict(
             name=monitor.name or f"monitor_{mon_idx}",
             monitor_index=mon_idx,
             record_interval=interval,
-            accumulate_power=False,
-            accumulate_frequency=False,
-            freq_record_interval=freq_interval,
             freq_count=int(freq_points.size),
             freq_hz=jnp.asarray(freq_points, dtype=jnp.float32),
+            components=tuple(c for c, _ in public),
+            canonical_components=selected,
+            component_signs=tuple(sign for _, sign in public),
             dft_enabled=True,
             dft_record_interval=freq_interval,
             dft_t_start=0.0,
@@ -552,7 +632,6 @@ def compile_monitor_specs(
                     _spectral_sampling_spec(
                         common,
                         plans,
-                        plans,
                         region,
                         power_scale=1.0,
                         normal_axis=2,
@@ -627,8 +706,12 @@ def compile_monitor_specs(
                 _spectral_sampling_spec(
                     common,
                     sample_plans,
-                    sample_plans,
-                    region_2d,
+                    region_2d
+                    or monitor.get_snapped_region(
+                        dx=resolution,
+                        dy=resolution,
+                        field_shape=fields.permittivity.shape,
+                    ),
                     power_scale=float(power_scale),
                     normal_axis=normal_axis,
                     normal_sign=normal_sign,
@@ -640,7 +723,6 @@ def compile_monitor_specs(
                 monitor, fields, resolution, active_grid if use_geometry else None
             )
             point_count = quadrature.point_count
-            sample_plans = []
             dft_plans = []
             for component_index, name in enumerate(
                 ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
@@ -651,13 +733,10 @@ def compile_monitor_specs(
                     plan = (_sampling_indices(flat_idx), jnp.asarray(weights))
                 else:
                     plan = _inactive_sampling_plan(point_count)
-                inactive = _inactive_sampling_plan(point_count)
-                sample_plans.append(inactive)
-                dft_plans.append(plan if needs_dft else inactive)
+                dft_plans.append(plan)
             specs.append(
                 _spectral_sampling_spec(
                     common,
-                    sample_plans,
                     dft_plans,
                     region,
                     power_scale=quadrature.sample_area,

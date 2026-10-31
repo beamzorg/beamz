@@ -969,28 +969,21 @@ def pack_dft_monitors(monitors):
             constant_values=fill,
         )
 
-    indices = jnp.stack(
-        tuple(
-            jnp.stack(
-                tuple(
-                    pad_plan(value, max_points, max_neighbors)
-                    for value in monitor.dft_flat_idx
+    def pack_plans(attribute, dtype):
+        return jnp.stack(
+            tuple(
+                jnp.stack(
+                    tuple(
+                        pad_plan(value, max_points, max_neighbors)
+                        for value in getattr(monitor, attribute)
+                    )
                 )
+                for monitor in monitors
             )
-            for monitor in monitors
-        )
-    ).astype(jnp.int32)
-    weights = jnp.stack(
-        tuple(
-            jnp.stack(
-                tuple(
-                    pad_plan(value, max_points, max_neighbors)
-                    for value in monitor.dft_weights
-                )
-            )
-            for monitor in monitors
-        )
-    ).astype(jnp.float32)
+        ).astype(dtype)
+
+    indices = pack_plans("dft_flat_idx", jnp.int32)
+    weights = pack_plans("dft_weights", jnp.float32)
     frequencies = jnp.stack(
         tuple(
             jnp.pad(

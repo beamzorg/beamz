@@ -8,7 +8,6 @@ import jax.numpy as jnp
 import numpy as np
 from jax.sharding import PartitionSpec as P
 
-from beamz.lattice import sampling_coordinates
 from beamz.simulation.distributed import _shard_map
 from beamz.simulation.observe import is_vector_dft_monitor
 
@@ -66,34 +65,20 @@ def accumulate_dft(program, mon, carry, fields, time, dt):
         out_specs=(P(_AXIS), P(_AXIS), P()),
     )
     def local(local_fields, re, im, weight, time, dt):
-        vectors = []
-        for component, (field, shape, indices, weights) in enumerate(
-            zip(
-                local_fields,
-                global_shapes,
-                mon.dft_flat_idx,
-                mon.dft_weights,
-                strict=True,
-            )
-        ):
-            if np.asarray(mon.dft_component_mask)[component] == 0:
-                vectors.append(jnp.zeros(indices.shape[:-1], dtype=field.dtype))
-                continue
-            coordinates = list(sampling_coordinates(indices, shape))
-            local_coordinate = (
-                coordinates[axis] - jax.lax.axis_index(_AXIS) * field.shape[axis]
-            )
-            owned = (local_coordinate >= 0) & (local_coordinate < field.shape[axis])
-            coordinates[axis] = jnp.clip(local_coordinate, 0, field.shape[axis] - 1)
-            samples = jnp.where(owned, field[tuple(coordinates)], 0)
-            vectors.append(jnp.sum(samples * weights, axis=-1))
+        vectors = mon.dft_sampling.sample(
+            local_fields,
+            active_mask=np.asarray(mon.dft_component_mask),
+            local_axis=axis,
+            shard_index=jax.lax.axis_index(_AXIS),
+            shapes=global_shapes,
+        )
         re, im, weight = _accumulate_dft(
             mon,
             (re[0], im[0], weight),
             None,
             time,
             dt,
-            sampled_vectors=jnp.stack(vectors),
+            sampled_vectors=vectors,
         )
         return re[None, :], im[None, :], weight
 

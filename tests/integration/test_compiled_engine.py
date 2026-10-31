@@ -26,7 +26,7 @@ from beamz import (
 )
 from beamz.const import EPS_0, MU_0
 from beamz.devices._boundary_compile import compile_metallic_masks
-from beamz.devices.monitors.compiler import CompiledMonitorSpec
+from beamz.devices.monitors.compiler import CompiledMonitorSpec, SamplingPlan
 from beamz.devices.sources.compiler import (
     _analytic_subband_waveforms,
     _sample_waveform,
@@ -825,8 +825,6 @@ def test_field_recorder_is_the_only_snapshot_source(small_sim_params):
 def test_compiled_static_monitor_physical_dft_uses_centered_tm_xy_sampling():
     point = jnp.asarray([[0]], dtype=jnp.int32)
     zero = jnp.asarray([[0.0]], dtype=jnp.float32)
-    indices = (point,) * 6
-    sample_weights = (zero,) * 6
     ez_center_indices = jnp.asarray([[0, 1, 2, 3]], dtype=jnp.int32)
     ez_center_weights = jnp.full((1, 4), 0.25, dtype=jnp.float32)
     dft_indices = (point, point, ez_center_indices, point, point, point)
@@ -844,10 +842,7 @@ def test_compiled_static_monitor_physical_dft_uses_centered_tm_xy_sampling():
                 name="m_physical",
                 monitor_index=0,
                 record_interval=1,
-                accumulate_power=False,
                 power_scale=1.0,
-                accumulate_frequency=True,
-                freq_record_interval=1,
                 freq_count=1,
                 freq_hz=jnp.asarray([0.0], dtype=jnp.float32),
                 dft_enabled=True,
@@ -859,10 +854,7 @@ def test_compiled_static_monitor_physical_dft_uses_centered_tm_xy_sampling():
                 dft_length_unit=float(LIGHT_SPEED),
                 dft_point_count=1,
                 dft_component_mask=jnp.asarray([0, 0, 1, 0, 0, 0], dtype=jnp.float32),
-                sample_flat_idx=indices,
-                sample_weights=sample_weights,
-                dft_flat_idx=dft_indices,
-                dft_weights=dft_weights,
+                dft_sampling=SamplingPlan(dft_indices, dft_weights),
             ),
         ),
     )
@@ -1296,10 +1288,7 @@ def test_compiled_static_monitor_dft_uses_current_sample_phase(time, expected):
                 name="m",
                 monitor_index=0,
                 record_interval=1,
-                accumulate_power=False,
                 power_scale=1.0,
-                accumulate_frequency=True,
-                freq_record_interval=1,
                 freq_count=1,
                 freq_hz=jnp.asarray([1.0], dtype=jnp.float32),
                 dft_enabled=True,
@@ -1309,10 +1298,7 @@ def test_compiled_static_monitor_dft_uses_current_sample_phase(time, expected):
                 dft_window_code=0,
                 dft_point_count=1,
                 dft_component_mask=jnp.asarray([0, 0, 1, 0, 0, 0], dtype=jnp.float32),
-                sample_flat_idx=indices,
-                sample_weights=weights,
-                dft_flat_idx=indices,
-                dft_weights=weights,
+                dft_sampling=SamplingPlan(indices, weights),
             ),
         ),
     )
