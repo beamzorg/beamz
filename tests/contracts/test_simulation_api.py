@@ -670,7 +670,9 @@ def test_continuation_preserves_state_by_default_and_donation_is_explicit():
     cache = execution_cache(program)
     preserved_scan = cache.compiled_scan
     assert callable(preserved_scan)
-    assert cache.compiled_scan_donating is None
+    donating_cache = execution_cache(program, donate_state=True)
+    assert donating_cache is not cache
+    assert donating_cache.compiled_scan is None
 
     donated = sim.advance(
         num_steps=1,
@@ -680,7 +682,7 @@ def test_continuation_preserves_state_by_default_and_donation_is_explicit():
     )
     assert int(donated.state.current_step) == 2
     assert cache.compiled_scan is preserved_scan
-    assert callable(cache.compiled_scan_donating)
+    assert callable(donating_cache.compiled_scan)
 
 
 def test_advance_rejects_steps_outside_remaining_time_grid():

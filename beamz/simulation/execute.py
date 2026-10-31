@@ -1190,36 +1190,30 @@ class _ExecutionCache:
     # Cache lowered/compiled functions per runtime signature. Keeping it outside immutable
     # plan equality prevents compilation artifacts from changing semantic identity.
     compiled_scan: Callable[..., ScanResult] | None = None
-    compiled_scan_donating: Callable[..., ScanResult] | None = None
     executable_ready: bool = False
-    executable_donating_ready: bool = False
     cuda_schedule_decision: dict | None = None
-    cuda_schedule_decision_donating: dict | None = None
 
 
 _MAX_EXECUTION_CACHES = 8
-_EXECUTION_CACHES: OrderedDict[int, tuple[object, _ExecutionCache]] = OrderedDict()
+_EXECUTION_CACHES: OrderedDict[int, tuple[object, dict[bool, _ExecutionCache]]] = (
+    OrderedDict()
+)
 
 
-def execution_cache(program) -> _ExecutionCache:
-    """Return bounded private executable state for an immutable plan."""
-    # Key cached work by semantic execution inputs so equivalent states reuse
-    # compilation safely.
+def execution_cache(program, *, donate_state=False) -> _ExecutionCache:
+    """Return one ownership variant while bounding the number of retained programs."""
     key = id(program)
     entry = _EXECUTION_CACHES.get(key)
-    if entry is not None and entry[0] is program:
-        _EXECUTION_CACHES.move_to_end(key)
-        return entry[1]
-    cache = _ExecutionCache()
-    _EXECUTION_CACHES[key] = (program, cache)
-    if len(_EXECUTION_CACHES) > _MAX_EXECUTION_CACHES:
-        _EXECUTION_CACHES.popitem(last=False)
-    return cache
+    if entry is None or entry[0] is not program:
+        entry = (program, {})
+        _EXECUTION_CACHES[key] = entry
+        if len(_EXECUTION_CACHES) > _MAX_EXECUTION_CACHES:
+            _EXECUTION_CACHES.popitem(last=False)
+    _EXECUTION_CACHES.move_to_end(key)
+    return entry[1].setdefault(bool(donate_state), _ExecutionCache())
 
 
 def clear_execution_cache() -> None:
-    # Key cached work by semantic execution inputs so equivalent states reuse
-    # compilation safely.
     _EXECUTION_CACHES.clear()
 
 
@@ -1371,16 +1365,11 @@ def initial_program_state(
 
 def build_program_scan(program: CompiledProgram, *, donate_state: bool = False):
     """Build and cache the JIT scan only when execution first needs it."""
-    cache = execution_cache(program)
+    cache = execution_cache(program, donate_state=donate_state)
     scan = build_scan(program, donate_state=bool(donate_state))
-    if donate_state:
-        cache.compiled_scan_donating = scan
-        cache.cuda_schedule_decision_donating = scan.cuda_schedule_decision
-        cache.executable_donating_ready = False
-    else:
-        cache.compiled_scan = scan
-        cache.cuda_schedule_decision = scan.cuda_schedule_decision
-        cache.executable_ready = False
+    cache.compiled_scan = scan
+    cache.cuda_schedule_decision = scan.cuda_schedule_decision
+    cache.executable_ready = False
     return scan
 
 
@@ -1388,10 +1377,8 @@ def program_is_compiled(
     program: CompiledProgram, *, donate_state: bool = False
 ) -> bool:
     """Return whether the requested ownership variant is already cached."""
-    cache = execution_cache(program)
-    return (
-        cache.compiled_scan_donating if donate_state else cache.compiled_scan
-    ) is not None
+    cache = execution_cache(program, donate_state=donate_state)
+    return cache.compiled_scan is not None
 
 
 def run_program(
@@ -1407,10 +1394,10 @@ def run_program(
         replicated_fields=(*monitor_runtime.MONITOR_FIELDS, "t", "current_step"),
     )
     coeffs = sharding_runtime.place_tree(program, program.coefficients)
-    cache = execution_cache(program)
-    compiled_scan = (
-        cache.compiled_scan_donating if donate_state else cache.compiled_scan
-    ) or build_program_scan(program, donate_state=donate_state)
+    cache = execution_cache(program, donate_state=donate_state)
+    compiled_scan = cache.compiled_scan or build_program_scan(
+        program, donate_state=donate_state
+    )
     return compiled_scan(*_execution_arguments(program, state, coeffs))
 
 
@@ -1429,12 +1416,8 @@ def cuda_schedule_report(program, *, donate_state=False):
     """Return the frozen schedule decision without executing a timing trial."""
     from copy import deepcopy
 
-    cache = execution_cache(program)
-    decision = (
-        cache.cuda_schedule_decision_donating
-        if donate_state
-        else cache.cuda_schedule_decision
-    )
+    cache = execution_cache(program, donate_state=donate_state)
+    decision = cache.cuda_schedule_decision
     if decision is None:
         scan = build_program_scan(program, donate_state=donate_state)
         decision = scan.cuda_schedule_decision
@@ -1465,22 +1448,17 @@ def _compiled_program_execution(
     donate_state: bool,
 ):
     """Return an executable after compiling it outside the performance timer."""
-    cache = execution_cache(program)
-    ready = cache.executable_donating_ready if donate_state else cache.executable_ready
-    compiled_scan = (
-        cache.compiled_scan_donating if donate_state else cache.compiled_scan
-    ) or build_program_scan(program, donate_state=donate_state)
-    if ready:
+    cache = execution_cache(program, donate_state=donate_state)
+    compiled_scan = cache.compiled_scan or build_program_scan(
+        program, donate_state=donate_state
+    )
+    if cache.executable_ready:
         return compiled_scan
     compiled = compiled_scan.lower(
         *_execution_arguments(program, state, coeffs)
     ).compile()
-    if donate_state:
-        cache.compiled_scan_donating = compiled
-        cache.executable_donating_ready = True
-    else:
-        cache.compiled_scan = compiled
-        cache.executable_ready = True
+    cache.compiled_scan = compiled
+    cache.executable_ready = True
     return compiled
 
 
