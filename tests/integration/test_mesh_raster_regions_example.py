@@ -237,3 +237,40 @@ def test_region_rejects_dispersive_material():
     grid = Grid.uniform((0, 0, 0), (1, 1, 1), (8, 8, 8))
     with pytest.raises(ValueError, match="nondispersive"):
         rasterize_regions(scene, grid)
+
+
+@pytest.mark.parametrize("tile_cells", [1, 3, 7])
+@pytest.mark.parametrize(
+    "smoothing", ["volume", "farjadpour_diagonal", "farjadpour_full"]
+)
+def test_guarded_strips_preserve_terminal_yee_samples_and_polygon_holes(
+    tile_cells, smoothing
+):
+    from beamz.design.raster import ExtrudedPolygon, Polygon
+
+    scene = Scene(
+        (Material(permittivity=2), Material(permittivity=5)),
+        (
+            Object(
+                ExtrudedPolygon(
+                    Polygon(
+                        ((0, 0), (1, 0), (1, 1), (0, 1)),
+                        (((0.3, 0.3), (0.3, 0.7), (0.7, 0.7), (0.7, 0.3)),),
+                    ),
+                    0,
+                    1,
+                ),
+                1,
+            ),
+        ),
+    )
+    grid = Grid(
+        np.array([0, 0.1, 0.25, 0.4, 0.6, 0.75, 0.9, 1]),
+        np.array([0, 0.2, 0.4, 0.6, 0.8, 1]),
+        np.array([0, 0.3, 0.7, 1]),
+    )
+    options = RasterOptions(smoothing=smoothing)
+    _assert_material_fields_match(
+        full_rasterize(scene, grid, options=options),
+        rasterize_regions(scene, grid, options=options, tile_x_cells=tile_cells),
+    )

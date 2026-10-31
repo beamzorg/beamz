@@ -9,13 +9,12 @@ from beamz._cache_tokens import HashToken, cache_token
 from ..schema import (
     Box,
     Cylinder,
-    ExtrudedPolygon,
     Material,
     Object,
     Polygon,
     Scene,
     Sphere,
-    TaperedExtrudedPolygon,
+    _extrude_polygon,
 )
 
 
@@ -56,6 +55,21 @@ def _extend_clipped_polygon(
             ):
                 result[index][axis] = padded_size[axis]
     return tuple((point[0], point[1]) for point in result)
+
+
+def _z_bounds(structure, design, extrusion_depth, padded_size):
+    if design.depth == 0:
+        return 0.0, float(extrusion_depth)
+    lower = float(getattr(structure, "z", 0.0) or 0.0)
+    upper = lower + float(getattr(structure, "depth", 0.0) or design.depth)
+    return lower, padded_size[2] if _same_coordinate(upper, design.depth) else upper
+
+
+def _padded_upper(upper, physical_size, padded_size):
+    return tuple(
+        padded_size[axis] if _same_coordinate(value, physical_size[axis]) else value
+        for axis, value in enumerate(upper)
+    )
 
 
 def from_beamz(
@@ -114,16 +128,7 @@ def from_beamz(
             elif lower[2] == upper[2]:
                 lower = (lower[0], lower[1], 0.0)
                 upper = (upper[0], upper[1], padded_size[2])
-            adjusted_upper = tuple(
-                padded_size[axis]
-                if _same_coordinate(upper[axis], physical_size[axis])
-                else upper[axis]
-                for axis in range(3)
-            )
-            geometry = Box(
-                lower,
-                (adjusted_upper[0], adjusted_upper[1], adjusted_upper[2]),
-            )
+            geometry = Box(lower, _padded_upper(upper, physical_size, padded_size))
             add(geometry)
             continue
         if isinstance(structure, BeamZSphere):
@@ -153,38 +158,20 @@ def from_beamz(
             continue
 
         sidewall = float(getattr(structure, "sidewall_angle", 0.0) or 0.0)
+        z_min, z_max = _z_bounds(structure, design, two_dimensional_depth, padded_size)
         if isinstance(structure, BeamZRectangle) and sidewall == 0.0:
-            z_min = (
-                0.0
-                if design.depth == 0
-                else float(structure.z if structure.z is not None else 0.0)
-            )
-            depth = (
-                float(two_dimensional_depth)
-                if design.depth == 0
-                else float(structure.depth or design.depth)
-            )
             x_min, y_min, *_ = structure.vertices[0]
-            geometry = Box(
-                (float(x_min), float(y_min), z_min),
-                (
-                    padded_size[0]
-                    if _same_coordinate(
-                        float(x_min + structure.width), physical_size[0]
-                    )
-                    else float(x_min + structure.width),
-                    padded_size[1]
-                    if _same_coordinate(
-                        float(y_min + structure.height), physical_size[1]
-                    )
-                    else float(y_min + structure.height),
-                    padded_size[2]
-                    if design.depth > 0
-                    and _same_coordinate(z_min + depth, physical_size[2])
-                    else z_min + depth,
-                ),
+            upper = (
+                float(x_min + structure.width),
+                float(y_min + structure.height),
+                z_max,
             )
-            add(geometry)
+            add(
+                Box(
+                    (float(x_min), float(y_min), z_min),
+                    _padded_upper(upper, physical_size, padded_size),
+                )
+            )
             continue
 
         vertices = _extend_clipped_polygon(
@@ -198,31 +185,13 @@ def from_beamz(
         )
         if len(vertices) < 3:
             raise TypeError(f"Unsupported BeamZ structure {type(structure).__name__}.")
-        z_min = float(getattr(structure, "z", 0.0))
-        depth = float(getattr(structure, "depth", 0.0))
-        if design.depth == 0:
-            z_min = 0.0
-            depth = float(two_dimensional_depth)
-        elif depth == 0:
-            depth = float(design.depth)
-        z_max = z_min + depth
-        if design.depth > 0 and _same_coordinate(z_max, physical_size[2]):
-            z_max = padded_size[2]
         polygon = Polygon(vertices, holes)
-        geometry = (
-            TaperedExtrudedPolygon(
-                polygon,
-                z_min=z_min,
-                z_max=z_max,
-                sidewall_angle_degrees=sidewall,
-                width_to_z=float(getattr(structure, "width_to_z", 0.0) or 0.0),
-            )
-            if sidewall != 0.0
-            else ExtrudedPolygon(
-                polygon,
-                z_min=z_min,
-                z_max=z_max,
-            )
+        geometry = _extrude_polygon(
+            polygon,
+            z_min,
+            z_max,
+            sidewall,
+            float(getattr(structure, "width_to_z", 0.0) or 0.0),
         )
         add(geometry)
     return Scene(tuple(materials), tuple(objects), background_id)

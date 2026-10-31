@@ -22,6 +22,26 @@ _COMPONENT_AXIS_OFFSETS_3D = {
 }
 
 
+_COMPONENT_AXIS_OFFSETS_2D = {
+    component: (offsets["y"], offsets["x"])
+    for component, offsets in _COMPONENT_AXIS_OFFSETS_3D.items()
+}
+
+
+_PUBLIC_COMPONENTS_2D = {
+    "tm": {
+        "xy": {"Ez": ("Ez", 1.0), "Hx": ("Hx", 1.0), "Hy": ("Hy", 1.0)},
+        "yz": {"Ez": ("Ex", 1.0), "Hx": ("Hy", 1.0), "Hy": ("Hz", 1.0)},
+        "xz": {"Ez": ("Ey", -1.0), "Hx": ("Hx", 1.0), "Hy": ("Hz", 1.0)},
+    },
+    "te": {
+        "xy": {"Ex": ("Ex", 1.0), "Ey": ("Ey", 1.0), "Hz": ("Hz", 1.0)},
+        "yz": {"Ex": ("Ey", 1.0), "Ey": ("Ez", 1.0), "Hz": ("Hx", 1.0)},
+        "xz": {"Ex": ("Ex", 1.0), "Ey": ("Ez", 1.0), "Hz": ("Hy", -1.0)},
+    },
+}
+
+
 def component_axis_offsets_3d(component: str) -> dict[str, float]:
     """Return physical Yee offsets, in grid-cell units, for a 3D component."""
     try:
@@ -84,14 +104,7 @@ def component_coordinates_rectilinear(
     canonical = canonical_component_2d(component, normalized_plane, polarization)
     if canonical is None:
         return {}
-    row_offset, column_offset = {
-        "Ez": (0.0, 0.0),
-        "Hx": (0.5, 0.0),
-        "Hy": (0.0, 0.5),
-        "Ex": (0.0, 0.5),
-        "Ey": (0.5, 0.0),
-        "Hz": (0.5, 0.5),
-    }[canonical]
+    row_offset, column_offset = _COMPONENT_AXIS_OFFSETS_2D[canonical]
     row_axis, column_axis = {
         "xy": ("y", "x"),
         "yz": ("z", "y"),
@@ -339,15 +352,7 @@ def _component_plane_plan_3d(
             ).items()
         }
     else:
-        offsets = component_axis_offsets_3d(component)
-        component_coords = {
-            axis: (
-                np.asarray(grid.axis_edges(axis))
-                if offsets[axis] == 0.0
-                else np.asarray(grid.centers(axis))
-            )
-            for axis in ("x", "y", "z")
-        }
+        component_coords = component_coordinates_rectilinear(component, grid)
     lengths: dict[str, int] = dict(zip(("z", "y", "x"), field_shape, strict=True))
     source0 = np.asarray(component_coords[axis0])[: lengths[axis0]]
     source1 = np.asarray(component_coords[axis1])[: lengths[axis1]]
@@ -663,26 +668,17 @@ def curl_h_to_e_3d(
     boundary_views,
 ):
     """Differentiate H onto E sites using explicit boundary ghost views."""
-    if ex_shape is None:
-        ex_shape = (hz.shape[0], hz.shape[1] + 1, hz.shape[2])
-    if ey_shape is None:
-        ey_shape = (hx.shape[0] + 1, hx.shape[1], hx.shape[2])
-    if ez_shape is None:
-        ez_shape = (hy.shape[0], hy.shape[1], hy.shape[2] + 1)
-    curls = (
-        adjacent_difference(boundary_views["hz_y"], 1, resolution)
-        - adjacent_difference(boundary_views["hy_z"], 0, resolution),
-        adjacent_difference(boundary_views["hx_z"], 0, resolution)
-        - adjacent_difference(boundary_views["hz_x"], 2, resolution),
-        adjacent_difference(boundary_views["hy_x"], 2, resolution)
-        - adjacent_difference(boundary_views["hx_y"], 1, resolution),
+    return _curl_h_to_e_3d(
+        hx,
+        hy,
+        hz,
+        ex_shape,
+        ey_shape,
+        ez_shape,
+        boundary_views,
+        adjacent_difference,
+        (resolution,) * 3,
     )
-    expected = (ex_shape, ey_shape, ez_shape)
-    if any(curl.shape != shape for curl, shape in zip(curls, expected, strict=True)):
-        raise ValueError(
-            f"curl(H) shapes {tuple(curl.shape for curl in curls)} do not match {expected}"
-        )
-    return curls
 
 
 def curl_h_to_e_3d_metric(
@@ -697,24 +693,40 @@ def curl_h_to_e_3d_metric(
     boundary_views,
 ):
     """Differentiate magnetic fields using exact dual-grid distances."""
-    if ex_shape is None:
-        ex_shape = (hz.shape[0], hz.shape[1] + 1, hz.shape[2])
-    if ey_shape is None:
-        ey_shape = (hx.shape[0] + 1, hx.shape[1], hx.shape[2])
-    if ez_shape is None:
-        ez_shape = (hy.shape[0], hy.shape[1], hy.shape[2] + 1)
-    ix = _rectilinear_inverse_distances(grid, "x", backward=True)
-    iy = _rectilinear_inverse_distances(grid, "y", backward=True)
-    iz = _rectilinear_inverse_distances(grid, "z", backward=True)
-    curls = (
-        metric_adjacent_difference(boundary_views["hz_y"], 1, iy)
-        - metric_adjacent_difference(boundary_views["hy_z"], 0, iz),
-        metric_adjacent_difference(boundary_views["hx_z"], 0, iz)
-        - metric_adjacent_difference(boundary_views["hz_x"], 2, ix),
-        metric_adjacent_difference(boundary_views["hy_x"], 2, ix)
-        - metric_adjacent_difference(boundary_views["hx_y"], 1, iy),
+    distances = tuple(
+        _rectilinear_inverse_distances(grid, axis, backward=True) for axis in "zyx"
     )
-    expected = (ex_shape, ey_shape, ez_shape)
+    return _curl_h_to_e_3d(
+        hx,
+        hy,
+        hz,
+        ex_shape,
+        ey_shape,
+        ez_shape,
+        boundary_views,
+        metric_adjacent_difference,
+        distances,
+    )
+
+
+def _curl_h_to_e_3d(
+    hx, hy, hz, ex_shape, ey_shape, ez_shape, boundary_views, difference, distances
+):
+    """Assemble the static Yee curl with uniform or dual-metric differences."""
+    expected = (
+        (hz.shape[0], hz.shape[1] + 1, hz.shape[2]) if ex_shape is None else ex_shape,
+        (hx.shape[0] + 1, hx.shape[1], hx.shape[2]) if ey_shape is None else ey_shape,
+        (hy.shape[0], hy.shape[1], hy.shape[2] + 1) if ez_shape is None else ez_shape,
+    )
+    dz, dy, dx = distances
+    curls = (
+        difference(boundary_views["hz_y"], 1, dy)
+        - difference(boundary_views["hy_z"], 0, dz),
+        difference(boundary_views["hx_z"], 0, dz)
+        - difference(boundary_views["hz_x"], 2, dx),
+        difference(boundary_views["hy_x"], 2, dx)
+        - difference(boundary_views["hx_y"], 1, dy),
+    )
     if any(curl.shape != shape for curl, shape in zip(curls, expected, strict=True)):
         raise ValueError(
             f"curl(H) shapes {tuple(curl.shape for curl in curls)} do not match {expected}"
@@ -871,22 +883,16 @@ def component_shape_2d(
     """Return a public component shape on the selected canonical 2D lattice."""
     if len(grid_shape) != 2:
         raise ValueError(f"A 2D grid shape must have two dimensions: {grid_shape!r}")
-    ny, nx = (int(v) for v in grid_shape)
     canonical = canonical_component_2d(component, plane, polarization)
     if canonical is None:
         return (1, 1)
-    return {
-        "tm": {
-            "Ez": (ny + 1, nx + 1),
-            "Hx": (ny, nx + 1),
-            "Hy": (ny + 1, nx),
-        },
-        "te": {
-            "Ex": (ny + 1, nx),
-            "Ey": (ny, nx + 1),
-            "Hz": (ny, nx),
-        },
-    }[normalize_polarization_2d(polarization)][canonical]
+    shape = tuple(
+        int(size) + int(offset == 0.0)
+        for size, offset in zip(
+            grid_shape, _COMPONENT_AXIS_OFFSETS_2D[canonical], strict=True
+        )
+    )
+    return shape[0], shape[1]
 
 
 def component_shapes(
@@ -918,23 +924,19 @@ def canonical_component_2d(
 ) -> str | None:
     """Map a public plane component to the selected canonical xy lattice."""
     try:
-        mappings = {
-            "tm": {
-                "xy": {"Ez": "Ez", "Hx": "Hx", "Hy": "Hy"},
-                "yz": {"Ex": "Ez", "Hy": "Hx", "Hz": "Hy"},
-                "xz": {"Ey": "Ez", "Hx": "Hx", "Hz": "Hy"},
-            },
-            "te": {
-                "xy": {"Ex": "Ex", "Ey": "Ey", "Hz": "Hz"},
-                "yz": {"Ey": "Ex", "Ez": "Ey", "Hx": "Hz"},
-                "xz": {"Ex": "Ex", "Ez": "Ey", "Hy": "Hz"},
-            },
-        }
-        return mappings[normalize_polarization_2d(polarization)][
+        mapping = _PUBLIC_COMPONENTS_2D[normalize_polarization_2d(polarization)][
             str(plane).lower()
-        ].get(component)
+        ]
     except KeyError as exc:
         raise ValueError(f"Unsupported plane {plane!r}") from exc
+    return next(
+        (
+            canonical
+            for canonical, (public, _) in mapping.items()
+            if public == component
+        ),
+        None,
+    )
 
 
 def public_component_2d(
@@ -942,21 +944,9 @@ def public_component_2d(
 ) -> tuple[str, float]:
     """Map a canonical 2D component back to its public label and orientation."""
     try:
-        mappings = {
-            "tm": {
-                "xy": {"Ez": ("Ez", 1.0), "Hx": ("Hx", 1.0), "Hy": ("Hy", 1.0)},
-                "yz": {"Ez": ("Ex", 1.0), "Hx": ("Hy", 1.0), "Hy": ("Hz", 1.0)},
-                "xz": {"Ez": ("Ey", -1.0), "Hx": ("Hx", 1.0), "Hy": ("Hz", 1.0)},
-            },
-            "te": {
-                "xy": {"Ex": ("Ex", 1.0), "Ey": ("Ey", 1.0), "Hz": ("Hz", 1.0)},
-                "yz": {"Ex": ("Ey", 1.0), "Ey": ("Ez", 1.0), "Hz": ("Hx", 1.0)},
-                "xz": {"Ex": ("Ex", 1.0), "Ey": ("Ez", 1.0), "Hz": ("Hy", -1.0)},
-            },
-        }
-        return mappings[normalize_polarization_2d(polarization)][str(plane).lower()][
-            component
-        ]
+        return _PUBLIC_COMPONENTS_2D[normalize_polarization_2d(polarization)][
+            str(plane).lower()
+        ][component]
     except KeyError as exc:
         raise ValueError(
             f"Component {component!r} is not active in canonical 2D plane {plane!r}"
@@ -974,18 +964,7 @@ def component_coordinates_2d_um(
     shape = component_shape_2d(component, grid_shape, plane, polarization)
     canonical = canonical_component_2d(component, plane, polarization)
     row_axis, col_axis = {"xy": ("y", "x"), "yz": ("z", "y"), "xz": ("z", "x")}[plane]
-    offsets = (
-        (0.0, 0.0)
-        if canonical is None
-        else {
-            "Ez": (0.0, 0.0),
-            "Hx": (0.5, 0.0),
-            "Hy": (0.0, 0.5),
-            "Ex": (0.0, 0.5),
-            "Ey": (0.5, 0.0),
-            "Hz": (0.5, 0.5),
-        }[canonical]
-    )
+    offsets = (0.0, 0.0) if canonical is None else _COMPONENT_AXIS_OFFSETS_2D[canonical]
     return {
         row_axis: (np.arange(shape[0], dtype=np.float64) + offsets[0]) * dx_um,
         col_axis: (np.arange(shape[1], dtype=np.float64) + offsets[1]) * dx_um,
@@ -1017,14 +996,7 @@ def sample_voxel_grid_at_component_2d(
     region = region or (slice(None), slice(None))
     ny, nx = (int(v) for v in grid_values.shape)
     y_len, x_len = shape
-    y_offset, x_offset = {
-        "Ez": (0.0, 0.0),
-        "Hx": (0.5, 0.0),
-        "Hy": (0.0, 0.5),
-        "Ex": (0.0, 0.5),
-        "Ey": (0.5, 0.0),
-        "Hz": (0.5, 0.5),
-    }[canonical]
+    y_offset, x_offset = _COMPONENT_AXIS_OFFSETS_2D[canonical]
     y_idx = np.clip(np.floor(np.arange(y_len) + y_offset).astype(np.int32), 0, ny - 1)
     x_idx = np.clip(np.floor(np.arange(x_len) + x_offset).astype(np.int32), 0, nx - 1)
     sampled = grid_values
@@ -1187,30 +1159,19 @@ def build_material_coefficients(fields):
     # The runtime schema always contains six components; only one polarization's
     # three supports carry full arrays in a 2D program.
     polarization = normalize_polarization_2d(getattr(fields, "polarization_2d", "tm"))
-    inactive_eps = jnp.asarray(fields.permittivity)[:1, :1]
-    inactive_sig = (
-        total_sigma
-        if jnp.asarray(total_sigma).ndim == 0
-        else jnp.asarray(total_sigma)[:1, :1]
-    )
-    region = (slice(None), slice(None))
-    active_e = ("Ez",) if polarization == "tm" else ("Ex", "Ey")
+
+    def sample(value, component):
+        # The sampler owns active/inactive support; scalar coefficients stay scalar.
+        if jnp.asarray(value).ndim == 0:
+            return value
+        return sample_voxel_grid_at_component_2d(value, component, "xy", polarization)
+
     e_terms = tuple(
         (
-            sample_voxel_grid_at_component_2d(
-                fields.permittivity, component, "xy", polarization
-            ),
-            (
-                total_sigma
-                if jnp.asarray(total_sigma).ndim == 0
-                else sample_voxel_grid_at_component_2d(
-                    total_sigma, component, "xy", polarization
-                )
-            ),
-            region,
+            sample(fields.permittivity, component),
+            sample(total_sigma, component),
+            (slice(None), slice(None)),
         )
-        if component in active_e
-        else (inactive_eps, inactive_sig, region)
         for component in ("Ex", "Ey", "Ez")
     )
     if jnp.asarray(magnetic_sigma).ndim == 0 and float(magnetic_sigma) == 0.0:
@@ -1222,27 +1183,9 @@ def build_material_coefficients(fields):
             * MU_0
             / EPS_0
         )
-        active_h = ("Hx", "Hy") if polarization == "tm" else ("Hz",)
-        if base.ndim == 0:
-            sigma_m = (base,) * 3
-        else:
-            sigma_m = tuple(
-                sample_voxel_grid_at_component_2d(base, component, "xy", polarization)
-                if component in active_h
-                else jnp.asarray(base)[:1, :1]
-                for component in ("Hx", "Hy", "Hz")
-            )
-    mu_terms = (
-        (fields.permeability,) * 3
-        if fields.permeability.ndim == 0
-        else tuple(
-            sample_voxel_grid_at_component_2d(
-                fields.permeability, component, "xy", polarization
-            )
-            if component in (("Hx", "Hy") if polarization == "tm" else ("Hz",))
-            else jnp.asarray(fields.permeability)[:1, :1]
-            for component in ("Hx", "Hy", "Hz")
-        )
+        sigma_m = tuple(sample(base, component) for component in ("Hx", "Hy", "Hz"))
+    mu_terms = tuple(
+        sample(fields.permeability, component) for component in ("Hx", "Hy", "Hz")
     )
     return MaterialCoefficients(
         **_base_coefficients(total_sigma, e_terms, sigma_m, mu_terms)

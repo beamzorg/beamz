@@ -5,13 +5,23 @@ from typing import Any, cast
 
 import numpy as np
 
+from beamz.design._gds_decode import (
+    material_lookup as _material_lookup,
+)
+from beamz.design._gds_decode import (
+    polygon_points,
+    vertical_bounds,
+)
+from beamz.design._gds_decode import (
+    polygons_by_layer as _polygons_by_layer,
+)
+
 from ..schema import (
-    ExtrudedPolygon,
     Material,
     Object,
     Polygon,
     Scene,
-    TaperedExtrudedPolygon,
+    _extrude_polygon,
 )
 
 _BUILTIN_MATERIALS_NEAR_1550_NM = {
@@ -23,13 +33,6 @@ _BUILTIN_MATERIALS_NEAR_1550_NM = {
     "sin": Material(2.0**2),
     "si3n4": Material(2.0**2),
 }
-
-
-def _polygons_by_layer(component: Any) -> Mapping[tuple[int, int], Any]:
-    try:
-        return component.get_polygons_points(by="tuple")
-    except TypeError:
-        return component.get_polygons_points(by_spec=True)
 
 
 def _region_polygons(
@@ -72,10 +75,7 @@ def _region_polygons(
         return []
     return [
         Polygon(
-            tuple(
-                (float(x) * unit_scale, float(y) * unit_scale)
-                for x, y in np.asarray(points, dtype=float)[:, :2]
-            )
+            tuple((float(x), float(y)) for x, y in polygon_points(points, unit_scale))
         )
         for points in polygons_by_layer[layer]
     ]
@@ -189,16 +189,8 @@ def from_gdsfactory(
     if not isinstance(use_builtin_materials, (bool, np.bool_)):
         raise TypeError("use_builtin_materials must be a boolean.")
     background = Material() if background is None else background
-    material_lookup = dict(
-        _BUILTIN_MATERIALS_NEAR_1550_NM if use_builtin_materials else {}
-    )
-    material_lookup.update(
-        {
-            str(name).strip().lower(): (
-                value if isinstance(value, Material) else Material(float(value))
-            )
-            for name, value in (material_map or {}).items()
-        }
+    material_lookup = _material_lookup(
+        _BUILTIN_MATERIALS_NEAR_1550_NM if use_builtin_materials else {}, material_map
     )
 
     polygons = _polygons_by_layer(component)
@@ -226,8 +218,7 @@ def from_gdsfactory(
                 "with the intended wavelength-dependent model, or explicitly set "
                 "use_builtin_materials=True for approximate 1.55 µm constants."
             )
-        z_min = float(level.zmin) * unit_scale
-        z_max = z_min + float(level.thickness) * unit_scale
+        z_min, z_max = vertical_bounds(level, unit_scale)
         if z_max <= z_min:
             continue
         material_id = add_material(material_lookup[material_name])
@@ -246,26 +237,22 @@ def from_gdsfactory(
                     )
                     for offset in _offset_polygon(polygon, low_bias):
                         geometries.append(
-                            ExtrudedPolygon(offset, segment_min, segment_max)
-                            if low_bias == high_bias
-                            else TaperedExtrudedPolygon(
+                            _extrude_polygon(
                                 offset,
                                 segment_min,
                                 segment_max,
-                                sidewall_angle_degrees=float(angle),
+                                0.0 if low_bias == high_bias else float(angle),
                             )
                         )
             else:
                 geometries = [
-                    TaperedExtrudedPolygon(
+                    _extrude_polygon(
                         polygon,
                         z_min,
                         z_max,
-                        sidewall_angle_degrees=sidewall,
-                        width_to_z=float(getattr(level, "width_to_z", 0.0) or 0.0),
+                        sidewall,
+                        float(getattr(level, "width_to_z", 0.0) or 0.0),
                     )
-                    if sidewall != 0.0
-                    else ExtrudedPolygon(polygon, z_min, z_max)
                 ]
             for geometry in geometries:
                 objects.append(
