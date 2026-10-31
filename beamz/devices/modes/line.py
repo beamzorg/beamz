@@ -1,8 +1,4 @@
-"""Shared preparation and selection for 2D preview, injection and projection.
-
-The eigensolver sees cell materials, never a consumer's staggered samples.
-Yee conversion and power normalization belong to the individual consumers.
-"""
+"""Shared cell-material preparation and selection for all 2D port consumers."""
 
 from __future__ import annotations
 
@@ -72,19 +68,12 @@ def prepare_mode_line(
         raise ValueError("A 2D mode port requires a transverse aperture")
     normal_dim, transverse_dim = (1, 0) if axis == "x" else (0, 1)
     normal = int(snapped.plane_index) - int(origin[normal_dim])
-    padding = spec.solver_padding_cells
-    pad = (
-        0
-        if padding is None
-        else int(padding[0] if isinstance(padding, tuple) else padding)
-    )
+    pad = (spec.solver_padding_cells or (0, 0))[0]
     lo, hi = solve_interval(interval.start, interval.stop, shape[transverse_dim], pad)
     local_lo, local_hi = lo - origin[transverse_dim], hi - origin[transverse_dim]
-    if (
-        normal < 0
-        or normal >= permittivity.shape[normal_dim]
-        or local_lo < 0
-        or local_hi > permittivity.shape[transverse_dim]
+    if not (
+        0 <= normal < permittivity.shape[normal_dim]
+        and 0 <= local_lo < local_hi <= permittivity.shape[transverse_dim]
     ):
         raise ValueError(
             "Stored modal materials do not contain the requested solve bounds"

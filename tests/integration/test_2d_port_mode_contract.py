@@ -1,7 +1,5 @@
 """The public 2D preview, launch and detached measurement share one eigenproblem."""
 
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 
@@ -11,22 +9,34 @@ from beamz import (
     ModeMonitor,
     ModeSource,
     ModeSpec,
-    Port,
     Simulation,
 )
 from beamz.analysis import mode_projection
-from beamz.analysis.data import AnalysisData
-from beamz.analysis.modal_projection.geometry import _mode_components_for_port
-from beamz.analysis.mode_projection import _build_port_projection_2d
 from beamz.design.discretization import MaterialGrid
 from beamz.design.grid import RectilinearGrid
 from beamz.devices.sources import mode_launch, solve
-from beamz.lattice import component_coordinates_rectilinear
-from beamz.simulation.results import (
-    FieldMetadata,
-    SimulationMetadata,
-    material_region_for_monitor,
-)
+from beamz.lattice import sample_voxel_grid_at_component_2d
+
+
+def _simulation(materials, spec, center, size, direction="+"):
+    frequency = LIGHT_SPEED / 1.55e-6
+    source = ModeSource(
+        center=center,
+        size=size,
+        direction=direction,
+        mode_spec=spec,
+        source_time=GaussianPulse(freq0=frequency, fwidth=frequency / 10),
+    )
+    monitor = ModeMonitor(
+        center=center, size=size, freqs=[frequency], name="port", mode_spec=spec
+    )
+    return Simulation(
+        material_grid=materials,
+        sources=[source],
+        monitors=[monitor],
+        polarization=spec.polarization,
+        run_time=1e-16,
+    )
 
 
 @pytest.mark.parametrize("polarization", ["te", "tm"])
@@ -38,7 +48,7 @@ from beamz.simulation.results import (
 def test_outside_guide_does_not_change_port_mode(
     monkeypatch, polarization, axis, direction, stretched, targeted, padding
 ):
-    dl, frequency = 0.025e-6, LIGHT_SPEED / 1.55e-6
+    dl = 0.025e-6
     transverse_edges = np.arange(241) * dl
     if stretched:
         transverse_edges += 0.002e-6 * np.sin(np.linspace(0, 2 * np.pi, 241))
@@ -69,25 +79,20 @@ def test_outside_guide_does_not_change_port_mode(
             eps[140:172] = 3.476**2
         if axis == "y":
             eps = eps.T.copy()
-        yee = {}
-        if stretched:
-            for component in ["Ez"] if polarization == "tm" else ["Ex", "Ey"]:
-                coords = component_coordinates_rectilinear(component, grid)
-                ix = np.clip(
-                    np.searchsorted(grid.x_edges, coords["x"], side="right") - 1,
-                    0,
-                    eps.shape[1] - 1,
+        yee = (
+            {
+                "eps_" + c[-1].lower(): sample_voxel_grid_at_component_2d(
+                    eps, c, "xy", polarization
                 )
-                iy = np.clip(
-                    np.searchsorted(grid.y_edges, coords["y"], side="right") - 1,
-                    0,
-                    eps.shape[0] - 1,
-                )
-                yee["eps_" + component[-1].lower()] = eps[np.ix_(iy, ix)]
+                for c in (["Ez"] if polarization == "tm" else ["Ex", "Ey"])
+            }
+            if stretched
+            else {}
+        )
         materials = MaterialGrid(
             eps,
-            np.zeros_like(eps),
-            np.ones_like(eps),
+            0.0,
+            1.0,
             dl,
             eps.shape,
             grid=grid,
@@ -99,70 +104,16 @@ def test_outside_guide_does_not_change_port_mode(
             target_neff=reference if targeted else None,
             solver_padding_cells=padding,
         )
-        source = ModeSource(
-            center=center,
-            size=size,
-            direction=direction,
-            source_time=GaussianPulse(freq0=frequency, fwidth=frequency / 10),
-            mode_spec=spec,
-        )
-        monitor = ModeMonitor(
-            center=center, size=size, freqs=[frequency], name="port", mode_spec=spec
-        )
-        simulation = Simulation(
-            material_grid=materials,
-            sources=[source],
-            monitors=[monitor],
-            polarization=polarization,
-            run_time=1e-16,
-        )
+        simulation = _simulation(materials, spec, center, size, direction)
+        source = simulation.sources[0]
         calls.clear()
         preview = source.solve_modes(simulation)
         if reference is None:
             reference = float(preview.neffs[0, 0].real)
         np.testing.assert_allclose(preview.neffs[0, 0].real, reference, rtol=1e-8)
-        # Exercise the real launch planner and detached monitor-material snapshot
-        # without a time-domain simulation: this tests selection, not transmission.
-        fields = SimpleNamespace(
-            permittivity=eps,
-            conductivity=np.zeros_like(eps),
-            permeability=np.ones_like(eps),
-            material_grid=materials,
-            geometry=grid,
-            polarization_2d=polarization,
-        )
-        launch = mode_launch.plan_mode_source_launch(
-            source, fields, resolution=materials.resolution, dt=None, grid=grid
-        )
-        assert all(np.all(np.isfinite(entry.profile)) for entry in launch.entries)
-        region = material_region_for_monitor(simulation, monitor, runtime_fields=fields)
-        metadata = SimulationMetadata(
-            dt=1e-18,
-            resolution=materials.resolution,
-            is_3d=False,
-            plane_2d="xy",
-            coordinate_offset=(0, 0, 0),
-            time=np.array([0.0]),
-            width=grid.x_edges[-1],
-            height=grid.y_edges[-1],
-            depth=0,
-            fields=FieldMetadata(eps.shape, {}),
-            polarization_2d=polarization,
-            grid=grid,
-        )
-        data = AnalysisData(metadata, {}, region, np.array([frequency]), monitor)
-        port = Port(
-            center=center, size=size, name="port", mode_spec=spec, direction=direction
-        )
-        projection = _build_port_projection_2d(
-            data,
-            spec=port,
-            monitor=monitor,
-            frequency=frequency,
-            parts=_mode_components_for_port(port),
-            mode_pad_cells=None,
-        )
-        assert projection["mode_neff"] == pytest.approx(reference, rel=1e-8)
+        # A tiny run exercises acquisition and detached analysis, not transmission.
+        modes = simulation.run(backend="jax", progress=False).mode("port")
+        assert np.all(np.isfinite(modes.amps))
         assert len(calls) == 3
         for kwargs, result in calls:
             np.testing.assert_array_equal(kwargs["eps"], preview.eps_profiles[0])
@@ -267,36 +218,14 @@ def test_public_mode_monitor_projection_matches_off_grid_preview(
     polarization, transverse_center
 ):
     """Check real acquisition shapes and the public detached-result API."""
-    dl, frequency = 0.025e-6, LIGHT_SPEED / 1.55e-6
+    dl = 0.025e-6
     eps = np.full((120, 20), 1.444**2, dtype=np.float32)
     eps[50:70] = 3.476**2
-    materials = MaterialGrid(
-        eps,
-        np.zeros_like(eps),
-        np.ones_like(eps),
-        dl,
-        eps.shape,
-        polarization=polarization,
-    )
+    materials = MaterialGrid(eps, 0.0, 1.0, dl, eps.shape, polarization=polarization)
     spec = ModeSpec(polarization=polarization)
     center, size = (0.2e-6, transverse_center, 0), (0, 1.81e-6, dl)
-    source = ModeSource(
-        center=center,
-        size=size,
-        direction="+",
-        source_time=GaussianPulse(freq0=frequency, fwidth=frequency / 10),
-        mode_spec=spec,
-    )
-    monitor = ModeMonitor(
-        center=center, size=size, freqs=[frequency], name="port", mode_spec=spec
-    )
-    sim = Simulation(
-        material_grid=materials,
-        sources=[source],
-        monitors=[monitor],
-        polarization=polarization,
-        run_time=1e-16,
-    )
+    sim = _simulation(materials, spec, center, size)
+    source = sim.sources[0]
     preview = source.solve_modes(sim)
     result = sim.run(backend="jax", progress=False)
     modes = result.mode("port")
