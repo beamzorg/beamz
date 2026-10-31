@@ -1660,6 +1660,24 @@ def compiled_xla_memory_analysis(
     }
 
 
+def _finish_run(simulation, program, state, store_full_materials, stats, report):
+    """Detach the shared results of a complete or progress-chunked segment."""
+    results = SimulationResults.from_run(
+        simulation,
+        runtime_fields=program.grid,
+        monitor_results=_decode_monitor_results(simulation, program, state),
+        completed_steps=int(state.current_step),
+        store_full_materials=store_full_materials,
+        source_launch_powers=_compiled_source_launch_powers(
+            program, len(simulation.sources)
+        ),
+        performance=stats,
+    )
+    if stats is not None and report:
+        _print_performance(stats)
+    return SimulationRun(results=results, state=state)
+
+
 def run_simulation_program(
     simulation,
     program: CompiledProgram,
@@ -1701,20 +1719,9 @@ def run_simulation_program(
         if runtime_s is not None
         else None
     )
-    results = SimulationResults.from_run(
-        simulation,
-        runtime_fields=program.grid,
-        monitor_results=_decode_monitor_results(simulation, program, state),
-        completed_steps=int(state.current_step),
-        store_full_materials=store_full_materials,
-        source_launch_powers=_compiled_source_launch_powers(
-            program, len(simulation.sources)
-        ),
-        performance=stats,
+    return _finish_run(
+        simulation, program, state, store_full_materials, stats, report_performance
     )
-    if stats is not None and report_performance:
-        _print_performance(stats)
-    return SimulationRun(results=results, state=state)
 
 
 _PROGRESS_CHUNK_COUNT = 20
@@ -1808,20 +1815,9 @@ def run_simulation_with_progress(
         if performance
         else None
     )
-    results = SimulationResults.from_run(
-        simulation,
-        runtime_fields=program.grid,
-        monitor_results=_decode_monitor_results(simulation, program, state),
-        completed_steps=int(state.current_step),
-        store_full_materials=store_full_materials,
-        source_launch_powers=_compiled_source_launch_powers(
-            program, len(simulation.sources)
-        ),
-        performance=stats,
+    return _finish_run(
+        simulation, program, state, store_full_materials, stats, report_performance
     )
-    if stats is not None and report_performance:
-        _print_performance(stats)
-    return SimulationRun(results=results, state=state)
 
 
 def run_until_terminated(
