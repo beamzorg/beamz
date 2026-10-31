@@ -30,6 +30,7 @@ from .discrete import (
     solve_beamz_mode,
     solve_solver_mode,
 )
+from .policy import solve_interval
 from .solver import solve_grid
 
 _AXIS_POS_3D = {"z": 0, "y": 1, "x": 2}
@@ -344,17 +345,7 @@ def _plane_extent_by_axis(axis, width, height):
 
 
 def _ensure_min_interval(start, stop, limit, min_cells=2):
-    start = max(0, min(int(start), int(limit)))
-    stop = max(start, min(int(stop), int(limit)))
-    need = max(1, int(min_cells))
-    while stop - start < need and (start > 0 or stop < int(limit)):
-        if start > 0:
-            start -= 1
-        if stop - start >= need:
-            break
-        if stop < int(limit):
-            stop += 1
-    return start, stop
+    return solve_interval(start, stop, limit, min_cells=min_cells)
 
 
 def _local_mode_plane_spec(

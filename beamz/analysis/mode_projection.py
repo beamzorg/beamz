@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 
 from beamz.analysis.data import AnalysisData
@@ -15,7 +17,6 @@ from beamz.analysis.modal_projection.geometry import (
 )
 from beamz.devices._placement import (
     line_region_points,
-    snap_axis_aligned_line_region_grid,
     snap_plane_region_grid,
 )
 from beamz.devices.modes.discrete import DISCRETE_MODE_CONTRACT
@@ -23,7 +24,9 @@ from beamz.devices.modes.discrete import (
     _solve_cached_beamz_mode as solve_beamz_mode,
 )
 from beamz.devices.modes.fields import _modal_overlap, _normalize_profiles
+from beamz.devices.modes.line import ModeLineContext, prepare_mode_line, solve_mode_line
 from beamz.devices.modes.plane import solve_mode_plane_3d, solve_modes
+from beamz.devices.modes.specs import ModeSpec
 from beamz.devices.monitors.monitors import ModeMonitor
 from beamz.lattice import yee_plane_area_weights
 
@@ -42,7 +45,7 @@ def _material_arrays(sim):
     )
 
 
-def _monitor_profile_slice(sim, monitor, axis, pad_cells):
+def _monitor_profile_slice(sim, monitor, axis, mode_spec=None):
     materials = _material_arrays(sim)
     if materials is None:
         raise RuntimeError(
@@ -94,93 +97,40 @@ def _monitor_profile_slice(sim, monitor, axis, pad_cells):
     if perm.ndim != 2:
         raise NotImplementedError("Modal extraction supports 2D or 3D only.")
     grid = sim.coordinates.grid
-    if grid is not None and grid.metric_kind_for(("x", "y")) != "isotropic_uniform":
-        snapped = snap_axis_aligned_line_region_grid(monitor.start, monitor.end, grid)
-        if snapped is None:
-            raise ValueError(f"Monitor '{monitor.name}' is not axis aligned.")
-        points = line_region_points(snapped)
-        if not points:
-            raise ValueError(f"Monitor '{monitor.name}' contains no sample points.")
-        if axis == "x":
-            plane = int(snapped.plane_index)
-            eps_profile_full = perm[:, plane - origin[1]]
-            sample_idx = np.asarray(
-                [point[1] - origin[0] for point in points], dtype=int
-            )
-            transverse_axis = "y"
-        else:
-            plane = int(snapped.plane_index)
-            eps_profile_full = perm[plane - origin[0], :]
-            sample_idx = np.asarray(
-                [point[0] - origin[1] for point in points], dtype=int
-            )
-            transverse_axis = "x"
-        lo = max(0, int(np.min(sample_idx)) - int(pad_cells))
-        hi = min(len(eps_profile_full), int(np.max(sample_idx)) + int(pad_cells) + 1)
-        local_idx = np.clip(sample_idx - lo, 0, max(hi - lo - 1, 0))
-        edges = np.asarray(grid.axis_edges(transverse_axis))[lo : hi + 1]
-        weights = np.asarray(grid.cell_widths(transverse_axis))[
-            sample_idx + (origin[0] if axis == "x" else origin[1])
-        ]
-        return (
-            np.asarray(eps_profile_full[lo:hi], dtype=np.complex128),
-            local_idx,
-            weights,
-            edges,
-        )
-    points = monitor.get_grid_points_2d(sim.resolution, sim.resolution)
-    if not points:
-        raise ValueError(f"Monitor '{monitor.name}' contains no sample points.")
-    p = np.asarray(points, dtype=float)
-    node_sampled = sim.coordinates.polarization_2d == "tm"
-
-    def transverse_material(profile):
-        if not node_sampled:
-            return profile
-        # Uniform TM monitors acquire Ez and tangential H on transverse nodes.
-        # Solve their basis on that same support, not on cell centers shifted by
-        # half a pixel. Do this before cropping so opposite ports retain exactly
-        # reflected material neighborhoods.
-        extended = np.pad(profile, (1, 1), mode="edge")
-        return 0.5 * (extended[:-1] + extended[1:])
-
-    if axis == "x":
-        x_idx = int(np.clip(round(float(np.mean(p[:, 0]))), 0, full_shape[1] - 1))
-        eps_profile_full = transverse_material(perm[:, x_idx - origin[1]])
-        sample_idx = np.asarray(
-            [
-                int(np.clip(pi[1], 0, full_shape[0] - int(not node_sampled)))
-                - origin[0]
-                for pi in points
-            ],
-            dtype=int,
-        )
-    else:
-        y_idx = int(np.clip(round(float(np.mean(p[:, 1]))), 0, full_shape[0] - 1))
-        eps_profile_full = transverse_material(perm[y_idx - origin[0], :])
-        sample_idx = np.asarray(
-            [
-                int(np.clip(pi[0], 0, full_shape[1] - int(not node_sampled)))
-                - origin[1]
-                for pi in points
-            ],
-            dtype=int,
-        )
-    lo = max(0, int(np.min(sample_idx)) - int(pad_cells))
-    hi = min(len(eps_profile_full), int(np.max(sample_idx)) + int(pad_cells) + 1)
-    local_idx = np.clip(sample_idx - lo, 0, max(hi - lo - 1, 0))
-    if len(points) > 1:
-        step_idx = np.diff(np.asarray(points, dtype=float), axis=0)
-        dl = float(np.mean(np.linalg.norm(step_idx, axis=1))) * float(sim.resolution)
-    else:
-        dl = float(sim.resolution)
-    dl = max(dl, float(sim.resolution) * 1e-9)
-    return (
-        np.asarray(eps_profile_full[lo:hi], dtype=np.complex128),
-        local_idx,
-        dl,
-        None,
+    # Older internal callers passed an integer halo here. The shared ModeSpec
+    # now owns padding, including for a Port backed by a plain FieldMonitor.
+    if not isinstance(mode_spec, ModeSpec):
+        mode_spec = getattr(monitor, "mode_spec", ModeSpec())
+    context = prepare_mode_line(
+        permittivity=perm,
+        center=monitor.center,
+        size=monitor.size,
+        axis=axis,
+        spec=mode_spec,
+        resolution=sim.resolution,
+        grid=grid,
+        origin=origin,
+        full_shape=full_shape,
     )
+    # Acquisition samples retain their own Yee support; they do not redefine
+    # the cell-material eigenproblem or add an independent solve halo.
+    assert context.snapped is not None
+    metric_grid = (
+        grid is not None and grid.metric_kind_for(("x", "y")) != "isotropic_uniform"
+    )
+    points = (
+        line_region_points(context.snapped)
+        if metric_grid
+        else monitor.get_grid_points_2d(sim.resolution, sim.resolution)
+    )
+    sample_idx = np.asarray([p[1 if axis == "x" else 0] for p in points], dtype=int)
+    local_idx = sample_idx - context.crop.start
+    weights = (
+        float(sim.resolution)
+        if grid is None or not metric_grid
+        else np.asarray(grid.cell_widths(context.transverse_axis))[sample_idx]
+    )
+    return context.eps, local_idx, weights, context.edges
 
 
 def _build_discrete_port_projection_3d(
@@ -492,41 +442,59 @@ def _build_port_projection_2d(
             sim.materials.yee_tensors or sim.materials.material_tensors,
             operation="2D modal extraction",
         )
-    mode_spec = getattr(monitor, "mode_spec", spec.mode_spec)
-    profile_slice = _monitor_profile_slice(sim, monitor, parts["axis"], mode_pad_cells)
+    mode_spec = replace(
+        getattr(monitor, "mode_spec", spec.mode_spec), mode_index=spec.mode_index
+    )
+    profile_slice = _monitor_profile_slice(sim, monitor, parts["axis"], mode_spec)
     if len(profile_slice) == 3:
         eps_profile, local_idx, dl = profile_slice
         grid_edges = None
     else:
         eps_profile, local_idx, dl, grid_edges = profile_slice
     eps_profile = np.asarray(eps_profile, dtype=np.complex128)
-    target_neff = 0.98 * np.sqrt(max(float(np.max(np.real(eps_profile))), 1e-12))
-    mode_count = int(spec.mode_index) + 1
-    if grid_edges is None:
-        neffs, e_fields, h_fields, _ = solve_modes(
-            eps=eps_profile,
-            omega=2.0 * np.pi * float(frequency),
-            dL=float(sim.resolution),
-            m=mode_count,
-            direction=spec.projection_direction,
-            filter_pol=spec.polarization,
-            target_neff=target_neff,
-            force_symmetry=mode_spec.force_symmetry,
-            return_fields=True,
+    edges = (
+        np.arange(eps_profile.size + 1) * sim.resolution
+        if grid_edges is None
+        else np.asarray(grid_edges)
+    )
+    # The stored profile is already prepared by _monitor_profile_slice. Keep
+    # the declared aperture distinct from explicit surrounding solve padding.
+    if isinstance(sim, AnalysisData):
+        # Retain the declared aperture for candidate confinement, independently
+        # of acquisition's rounded endpoints and staggered sample counts.
+        materials = _material_arrays(sim)
+        assert materials is not None
+        perm, _mu, origin, full_shape = materials
+        context = prepare_mode_line(
+            permittivity=perm,
+            center=monitor.center,
+            size=monitor.size,
+            axis=parts["axis"],
+            spec=mode_spec,
+            resolution=sim.resolution,
+            grid=sim.coordinates.grid,
+            origin=origin,
+            full_shape=full_shape,
         )
     else:
-        neffs, e_fields, h_fields, _ = solve_modes(
-            eps=eps_profile,
-            omega=2.0 * np.pi * float(frequency),
-            dL=float(sim.resolution),
-            m=mode_count,
-            direction=spec.projection_direction,
-            filter_pol=spec.polarization,
-            target_neff=target_neff,
-            force_symmetry=mode_spec.force_symmetry,
-            return_fields=True,
-            grid_edges=(np.asarray(grid_edges, dtype=np.float64),),
+        context = ModeLineContext(
+            eps_profile,
+            slice(0, eps_profile.size),
+            slice(int(np.min(local_idx)), int(np.max(local_idx)) + 1),
+            edges,
+            None,
+            "y" if parts["axis"] == "x" else "x",
         )
+    neffs, e_fields, h_fields = solve_mode_line(
+        context,
+        spec=mode_spec,
+        frequency=frequency,
+        resolution=float(sim.resolution),
+        direction=spec.projection_direction,
+        polarization=spec.polarization,
+        solver=solve_modes,
+        use_grid_edges=grid_edges is not None,
+    )
     if len(neffs) <= int(spec.mode_index):
         raise ValueError(
             f"Mode solver returned {len(neffs)} modes for requested "
@@ -546,8 +514,34 @@ def _build_port_projection_2d(
         e_profile = e_profile[:, 0]
     if h_profile.ndim > 1:
         h_profile = h_profile[:, 0]
-    e_profile = e_profile[local_idx]
-    h_profile = h_profile[local_idx]
+    if grid_edges is not None:
+        centers = 0.5 * (edges[:-1] + edges[1:])
+        grid = sim.coordinates.grid
+        metric_grid = (
+            grid is not None and grid.metric_kind_for(("x", "y")) != "isotropic_uniform"
+        )
+        global_indices = np.asarray(local_idx) + context.crop.start
+        # Uniform acquisition uses direct Yee indices; rectilinear acquisition
+        # interpolates both polarizations onto transverse cell centres.
+        if metric_grid and grid is not None:
+            targets = np.asarray(grid.centers(1 if parts["axis"] == "x" else 0))[
+                global_indices
+            ]
+            valid = np.ones(global_indices.size, dtype=bool)
+        else:
+            targets = (
+                global_indices + (0.5 if spec.polarization == "te" else 0.0)
+            ) * sim.resolution
+            assert sim.materials is not None
+            count = sim.materials.full_shape[0 if parts["axis"] == "x" else 1]
+            upper = count if spec.polarization == "tm" else count - 1
+            valid = (global_indices >= 0) & (global_indices <= upper)
+        e_profile = np.interp(targets, centers, e_profile) * valid
+        h_profile = np.interp(targets, centers, h_profile) * valid
+
+    else:
+        e_profile = e_profile[local_idx]
+        h_profile = h_profile[local_idx]
 
     measure = np.asarray(dl, dtype=float)
     weights = measure if measure.ndim == 0 else measure.reshape(-1)[: e_profile.size]
@@ -618,7 +612,7 @@ def _build_port_projection(
     monitor,
     frequency,
     cache,
-    mode_pad_cells=6,
+    mode_pad_cells=None,
 ):
     key = (
         spec.name,

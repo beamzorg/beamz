@@ -32,6 +32,7 @@ from .fields import (
     _numeric_wave_number,
     _phase_delay,
 )
+from .policy import candidate_rank
 from .result import Result
 from .solver import solve_grid
 
@@ -1075,11 +1076,14 @@ def _sort_modes(
             or _polarization_fraction(item["fields"], spec.axis, spec.polarization)
             >= 0.5
         )
-        confined = (
-            spec.min_aperture_fraction is None
-            or _aperture_fraction(item, spec) >= spec.min_aperture_fraction
+        return candidate_rank(
+            item["neff"],
+            polarization_matches=polarization,
+            aperture_fraction=_aperture_fraction(item, spec)
+            if spec.min_aperture_fraction is not None
+            else 1.0,
+            minimum=spec.min_aperture_fraction,
         )
-        return polarization, confined, float(np.real(item["neff"]))
 
     return sorted(candidates, key=rank, reverse=True)
 
