@@ -394,6 +394,7 @@ def plot_field_view(
     vmin=None,
     vmax=None,
     percentile=None,
+    symmetric_limits=True,
     aspect=None,
     interpolation="nearest",
     norm=None,
@@ -416,7 +417,7 @@ def plot_field_view(
     if percentile is not None and vmax is None:
         scale = float(np.nanpercentile(np.abs(array), float(percentile)))
         vmax = scale if np.isfinite(scale) and scale > 0.0 else 1.0
-    if vmax is not None and vmin is None:
+    if symmetric_limits and vmax is not None and vmin is None:
         vmin = 0.0 if view.magnitude else -float(vmax)
     if (x_edges is None) != (y_edges is None):
         raise ValueError("x_edges and y_edges must be provided together.")
@@ -1145,81 +1146,105 @@ def _plot_simulation_slices(
     xlim=None,
     ylim=None,
     zlim=None,
+    geometry=False,
 ):
     """Compose two simulation cross sections from the generic slice primitives."""
-    fields = static_fields(sim)
-    eps = np.asarray(fields.permittivity)
-    if eps.ndim != 3:
-        return plot_design(
-            sim.design,
-            sources=sim.sources,
-            monitors=sim.monitors,
-            figsize=figsize,
-            show=show,
-            title="Simulation Layout",
-        )
-    lengths = {
-        axis: float(getattr(sim.design, attr)) for axis, attr in _DESIGN_EXTENT.items()
-    }
-    resolution = float(getattr(sim, "resolution", 1.0))
-    steps = {
-        "z": float(getattr(fields, "dz", resolution)),
-        "y": float(getattr(fields, "dy", resolution)),
-    }
-    unit = _UM if categorical else 1.0
-    slices = [
-        extract_axis_aligned_slice(
-            eps,
-            axis=axis,
-            step=steps[axis],
-            position=position,
-            origin=origin,
-            display_position=display_position,
-            lengths=lengths,
-            unit=unit,
-        )
-        for axis, position in (("z", z), ("y", y))
-    ]
-    if categorical:
-        core_eps, substrate_eps = _material_levels(sim)
-        xy, xz = (
-            _material_category_array(
-                item.values,
-                core_permittivity=core_eps,
-                substrate_permittivity=substrate_eps,
-            )
-            for item in slices
-        )
-        if abs(float(z)) <= 0.5 * resolution:
-            xy = np.where(xy >= 2, xy, 1)
-        z_coords = np.arange(eps.shape[0], dtype=float) * resolution
-        substrate_height = float(origin[2])
-        xz = np.where((z_coords > substrate_height)[:, None] & (xz == 1), 0, xz)
-        xz = np.where((z_coords <= substrate_height)[:, None] & (xz == 0), 1, xz)
-        values = (xy, xz)
-        cmap, norm = _material_cmap()
+    if geometry:
+        slices = [
+            _layout_slice(axis, position, design=sim.design, origin=origin)
+            for axis, position in (("z", z), ("y", y))
+        ]
+        colors = _layout_material_colors(sim.design)
     else:
-        values, norm = (item.values for item in slices), None
+        fields = static_fields(sim)
+        eps = np.asarray(fields.permittivity)
+        if eps.ndim != 3:
+            return plot_design(
+                sim.design,
+                sources=sim.sources,
+                monitors=sim.monitors,
+                figsize=figsize,
+                show=show,
+                title="Simulation Layout",
+            )
+        lengths = {
+            axis: float(getattr(sim.design, attr))
+            for axis, attr in _DESIGN_EXTENT.items()
+        }
+        resolution = float(getattr(sim, "resolution", 1.0))
+        steps = {
+            "z": float(getattr(fields, "dz", resolution)),
+            "y": float(getattr(fields, "dy", resolution)),
+        }
+        unit = _UM if categorical else 1.0
+        slices = [
+            extract_axis_aligned_slice(
+                eps,
+                axis=axis,
+                step=steps[axis],
+                position=position,
+                origin=origin,
+                display_position=display_position,
+                lengths=lengths,
+                unit=unit,
+            )
+            for axis, position in (("z", z), ("y", y))
+        ]
+        if categorical:
+            core_eps, substrate_eps = _material_levels(sim)
+            xy, xz = (
+                _material_category_array(
+                    item.values,
+                    core_permittivity=core_eps,
+                    substrate_permittivity=substrate_eps,
+                )
+                for item in slices
+            )
+            if abs(float(z)) <= 0.5 * resolution:
+                xy = np.where(xy >= 2, xy, 1)
+            z_coords = np.arange(eps.shape[0], dtype=float) * resolution
+            substrate_height = float(origin[2])
+            xz = np.where((z_coords > substrate_height)[:, None] & (xz == 1), 0, xz)
+            xz = np.where((z_coords <= substrate_height)[:, None] & (xz == 0), 1, xz)
+            values = (xy, xz)
+            cmap, norm = _material_cmap()
+        else:
+            values, norm = (item.values for item in slices), None
 
     fig, axes = _pyplot().subplots(
         1,
         2,
         figsize=figsize,
         gridspec_kw={"width_ratios": width_ratios} if width_ratios else None,
+        constrained_layout=True if geometry else None,
     )
     axes = list(np.ravel(axes))
-    images = [
-        plot_field_view(
-            ax,
-            value,
-            extent=item.extent,
-            cmap=cmap,
-            norm=norm,
-            aspect="equal" if categorical or item.normal == "z" else "auto",
-        )[0]
-        for ax, value, item in zip(axes, values, slices, strict=True)
-    ]
+    if geometry:
+        for ax, item in zip(axes, slices, strict=True):
+            _draw_geometry_cross_section(
+                ax,
+                sim,
+                normal=item.normal,
+                position=item.position + origin["xyz".index(item.normal)],
+                origin=origin,
+                colors=colors,
+            )
+    else:
+        images = [
+            plot_field_view(
+                ax,
+                value,
+                extent=item.extent,
+                cmap=cmap,
+                norm=norm,
+                aspect="equal" if categorical or item.normal == "z" else "auto",
+            )[0]
+            for ax, value, item in zip(axes, values, slices, strict=True)
+        ]
     if overlays:
+        if geometry:
+            for ax, item in zip(axes, slices, strict=True):
+                _overlay_layout_pml(ax, sim, normal=item.normal, extent=item.extent)
         overlay_simulation_devices(
             axes,
             sim,
@@ -1227,22 +1252,23 @@ def _plot_simulation_slices(
             source_markers=source_markers,
             monitor_markers=monitor_markers,
         )
-        style = dict(
-            facecolor="#9a9a9a",
-            alpha=0.35,
-            hatch="xx",
-            edgecolor="#777777",
-            linewidth=0.0,
-        )
-        for ax, item in zip(axes, slices, strict=True):
-            for thickness, edges in _pml_section_layers(sim, item.normal):
-                overlay_boundaries(
-                    ax,
-                    item.extent,
-                    thickness / _UM,
-                    edges=edges,
-                    **style,
-                )
+        if not geometry:
+            style = dict(
+                facecolor="#9a9a9a",
+                alpha=0.35,
+                hatch="xx",
+                edgecolor="#777777",
+                linewidth=0.0,
+            )
+            for ax, item in zip(axes, slices, strict=True):
+                for thickness, edges in _pml_section_layers(sim, item.normal):
+                    overlay_boundaries(
+                        ax,
+                        item.extent,
+                        thickness / _UM,
+                        edges=edges,
+                        **style,
+                    )
 
     if categorical:
         for ax, item in zip(axes, slices, strict=True):
@@ -1251,6 +1277,12 @@ def _plot_simulation_slices(
                 xlabel=f"{item.horizontal} (um)",
                 ylabel=f"{item.vertical} (um)",
             )
+        if geometry:
+            for ax, item in zip(axes, slices, strict=True):
+                ax.set_ylim(item.extent[2:])
+                ax.grid(False)
+            axes[0].set_aspect("equal", adjustable="box")
+            axes[1].set_aspect("auto")
         axes[0].set_xlim(slices[0].extent[:2])
         axes[1].set_xlim(slices[1].extent[:2])
     else:
@@ -1270,7 +1302,8 @@ def _plot_simulation_slices(
         axes[0].set_ylim(*ylim)
     if zlim is not None:
         axes[1].set_ylim(*zlim)
-    fig.tight_layout()
+    if not geometry:
+        fig.tight_layout()
     _maybe_show(fig, show=show)
     return fig, axes
 
@@ -1368,63 +1401,25 @@ def _plot_3d_geometry_cross_sections(
     slices are valuable for inspecting discretization, but a setup plot should
     preserve the exact polygon edges supplied by the user.
     """
-    design = sim.design
-    slices = (
-        _layout_slice("z", z, design=design, origin=origin),
-        _layout_slice("y", y, design=design, origin=origin),
-    )
-    fig, axes = _pyplot().subplots(
-        1,
-        2,
-        figsize=figsize,
-        gridspec_kw={"width_ratios": width_ratios} if width_ratios else None,
-        constrained_layout=True,
-    )
-    axes = list(np.ravel(axes))
-    colors = _layout_material_colors(design)
-    for ax, item in zip(axes, slices, strict=True):
-        physical_position = item.position + float(
-            origin[{"x": 0, "y": 1, "z": 2}[item.normal]]
-        )
-        _draw_geometry_cross_section(
-            ax,
-            sim,
-            normal=item.normal,
-            position=physical_position,
-            origin=origin,
-            colors=colors,
-        )
-
-    for ax, item in zip(axes, slices, strict=True):
-        _overlay_layout_pml(ax, sim, normal=item.normal, extent=item.extent)
-
-    overlay_simulation_devices(
-        axes,
+    return _plot_simulation_slices(
         sim,
-        origin,
+        z=z,
+        y=y,
+        origin=origin,
+        display_position=True,
         source_markers=source_markers,
         monitor_markers=monitor_markers,
+        width_ratios=width_ratios,
+        figsize=figsize,
+        show=show,
+        xlim=xlim,
+        ylim=ylim,
+        zlim=zlim,
+        categorical=True,
+        overlays=True,
+        cmap=None,
+        geometry=True,
     )
-    for ax, item in zip(axes, slices, strict=True):
-        ax.set(
-            title=f"cross section at {item.normal}={item.position / _UM:.2f} (um)",
-            xlabel=f"{item.horizontal} (um)",
-            ylabel=f"{item.vertical} (um)",
-            xlim=item.extent[:2],
-            ylim=item.extent[2:],
-        )
-        ax.grid(False)
-    axes[0].set_aspect("equal", adjustable="box")
-    axes[1].set_aspect("auto")
-    if xlim is not None:
-        axes[0].set_xlim(*xlim)
-        axes[1].set_xlim(*xlim)
-    if ylim is not None:
-        axes[0].set_ylim(*ylim)
-    if zlim is not None:
-        axes[1].set_ylim(*zlim)
-    _maybe_show(fig, show=show)
-    return fig, axes
 
 
 def _plot_3d_cross_sections(
@@ -1936,6 +1931,44 @@ def _coordinate_extent(coords0, coords1, *, origin0, origin1, fallback_step):
     return x0, x1, y0, y1
 
 
+def _monitor_plane_display(metadata, region, *, normal, origin, coords=None):
+    """One physical aperture for DFT images, recordings and material overlays.
+
+    Edges remain available for grid lines on uniform meshes; callers select
+    pcolormesh only when physical cell widths require it.
+    """
+    vertical, horizontal = plane_axes_3d(normal)
+    offsets = dict(zip("xyz", origin, strict=True))
+    grid = metadata.grid
+    if grid is None:
+        extent = _coordinate_extent(
+            *coords,
+            origin0=offsets[vertical],
+            origin1=offsets[horizontal],
+            fallback_step=metadata.resolution,
+        )
+        return extent, None, None
+    edges = []
+    for axis in (horizontal, vertical):
+        interval = region.axis_interval(axis)
+        if interval is None:
+            raise ValueError("A 3D monitor is missing a tangential grid interval.")
+        edges.append(
+            (grid.axis_edges(axis)[interval.start : interval.stop + 1] - offsets[axis])
+            / _UM
+        )
+    x_edges, y_edges = edges
+    return (x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]), x_edges, y_edges
+
+
+def _nonuniform_plot_edges(x_edges, y_edges):
+    if x_edges is not None and (
+        not _edges_are_uniform(x_edges) or not _edges_are_uniform(y_edges)
+    ):
+        return x_edges, y_edges
+    return None, None
+
+
 def _edges_are_uniform(edges) -> bool:
     edges = np.asarray(edges, dtype=float)
     widths = np.diff(edges)
@@ -2050,25 +2083,14 @@ def _overlay_material_slice(
             eps_slice = eps[tuple(selectors)]
         else:
             eps_slice = None
-        vertical_interval = sample_region.axis_interval(vertical)
-        horizontal_interval = sample_region.axis_interval(horizontal)
-        if vertical_interval is None or horizontal_interval is None:
+        if any(
+            sample_region.axis_interval(axis) is None for axis in (horizontal, vertical)
+        ):
             return None
-        x_edges = (
-            grid.axis_edges(horizontal)[
-                horizontal_interval.start : horizontal_interval.stop + 1
-            ]
-            - origin_by_axis[horizontal]
-        ) / _UM
-        y_edges = (
-            grid.axis_edges(vertical)[
-                vertical_interval.start : vertical_interval.stop + 1
-            ]
-            - origin_by_axis[vertical]
-        ) / _UM
-        extent = (x_edges[0], x_edges[-1], y_edges[0], y_edges[-1])
-        if not _edges_are_uniform(x_edges) or not _edges_are_uniform(y_edges):
-            plot_x_edges, plot_y_edges = x_edges, y_edges
+        extent, x_edges, y_edges = _monitor_plane_display(
+            simulation.coordinates, sample_region, normal=normal, origin=origin
+        )
+        plot_x_edges, plot_y_edges = _nonuniform_plot_edges(x_edges, y_edges)
     else:
         eps_slice = _field_eps_slice(
             simulation, plane=normal, plane_position=float(position)
@@ -2190,36 +2212,14 @@ def plot_dft_field(
         origin = _simulation_origin(coordinate_context)
     ox, oy, oz = (float(v) for v in origin)
     origin_by_axis = {"x": ox, "y": oy, "z": oz}
-    grid = getattr(coordinate_context, "grid", None)
-    plot_x_edges = None
-    plot_y_edges = None
-    grid_x_edges = None
-    grid_y_edges = None
-    if grid is not None:
-        interval0 = sample_region.axis_interval(axis0)
-        interval1 = sample_region.axis_interval(axis1)
-        if interval0 is None or interval1 is None:
-            raise ValueError("A 3D DFT monitor is missing a tangential grid interval.")
-        edges0 = grid.axis_edges(axis0)
-        edges1 = grid.axis_edges(axis1)
-        x_edges = (
-            edges1[interval1.start : interval1.stop + 1] - origin_by_axis[axis1]
-        ) / _UM
-        y_edges = (
-            edges0[interval0.start : interval0.stop + 1] - origin_by_axis[axis0]
-        ) / _UM
-        grid_x_edges, grid_y_edges = x_edges, y_edges
-        extent = (x_edges[0], x_edges[-1], y_edges[0], y_edges[-1])
-        if not _edges_are_uniform(x_edges) or not _edges_are_uniform(y_edges):
-            plot_x_edges, plot_y_edges = x_edges, y_edges
-    else:
-        extent = _coordinate_extent(
-            target0,
-            target1,
-            origin0=origin_by_axis[axis0],
-            origin1=origin_by_axis[axis1],
-            fallback_step=simulation.resolution,
-        )
+    extent, grid_x_edges, grid_y_edges = _monitor_plane_display(
+        coordinate_context,
+        sample_region,
+        normal=axis,
+        origin=origin,
+        coords=(target0, target1),
+    )
+    plot_x_edges, plot_y_edges = _nonuniform_plot_edges(grid_x_edges, grid_y_edges)
     fig, ax = _figure_axes(ax, figsize=figsize)
     im, _ = plot_field_view(
         ax,
