@@ -85,12 +85,14 @@ class Settings:
             "core_thickness",
             "clad_below",
             "clad_above",
-            "xy_padding",
-            "z_padding",
             "pml_thickness",
             "run_time",
         ):
             _positive(getattr(self, name), name=name)
+        for name in ("xy_padding", "z_padding"):
+            value = float(getattr(self, name))
+            if not np.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and non-negative.")
         if float(self.port_overlap) < 0.0 or not np.isfinite(float(self.port_overlap)):
             raise ValueError("port_overlap must be finite and non-negative.")
         if self.grid_spec is not None and not isinstance(self.grid_spec, GridSpec):
@@ -360,6 +362,8 @@ def _provenance(
             ),
             "wavelengths_m": setup.settings.wavelengths,
             "layer": setup.settings.layer,
+            "source_origin_m": setup.imported.source_origin,
+            "import_levels": tuple(dict(entry) for entry in setup.imported.report),
             "pml_thickness_m": setup.settings.pml_thickness,
             "run_time_s": setup.settings.run_time,
             "normalization": "S[out, in] = outgoing/outgoing modal amplitude at port datums",
@@ -454,6 +458,9 @@ def prepare(
     settings: Settings | None = None,
     material_map: Mapping[str, Material | float] | None = None,
     component_settings: Mapping[str, Any] | None = None,
+    bounds: tuple[Sequence[float], Sequence[float]] | None = None,
+    fill_levels: Sequence[str] = (),
+    port_levels: Mapping[str, str] | None = None,
 ) -> PreparedComponent:
     """Prepare a GDSFactory component for explicit, local BeamZ simulation.
 
@@ -461,38 +468,66 @@ def prepare(
     boundary, and returns native BeamZ geometry and ports.  It does not compile or
     execute a simulation.  Pass an explicit ``layer_stack`` and ``material_map``
     for PDK-aware vertical geometry; otherwise the settings' simple core/cladding
-    model is used.
+    model is used. bounds, fill_levels and port_levels are forwarded to the
+    canonical importer. Both raw and imported components receive padding and
+    port extensions here. Imported masks and process values are cached: changing
+    numerical settings derives a new Design without modifying the physical import
+    or reading the layout again. Explicit bounds require zero padding.
     """
     resolved = Settings() if settings is None else settings
     if not isinstance(resolved, Settings):
         raise TypeError("settings must be beamz.design.gdsfactory.Settings or None.")
-    imported = import_component(
-        component,
-        layer=resolved.layer,
-        n_core=resolved.n_core,
-        n_clad=resolved.n_clad,
-        core_thickness=resolved.core_thickness,
-        clad_below=resolved.clad_below,
-        clad_above=resolved.clad_above,
+    if bounds is not None and (resolved.xy_padding or resolved.z_padding):
+        raise ValueError(
+            "Choose bounds or padding, not both; use zero padding with explicit bounds."
+        )
+    if isinstance(component, ImportedComponent):
+        if (
+            layer_stack is not None
+            or material_map is not None
+            or component_settings is not None
+            or fill_levels
+            or port_levels
+        ):
+            raise ValueError(
+                "ImportedComponent already resolves geometry; do not pass import options to prepare."
+            )
+        imported = component
+    else:
+        imported = import_component(
+            component,
+            layer=resolved.layer,
+            n_core=resolved.n_core,
+            n_clad=resolved.n_clad,
+            core_thickness=resolved.core_thickness,
+            clad_below=resolved.clad_below,
+            clad_above=resolved.clad_above,
+            settings=component_settings,
+            layer_stack=layer_stack,
+            material_map=material_map,
+            bounds=bounds,
+            fill_levels=fill_levels,
+            port_levels=port_levels,
+        )
+    if imported._prepare is None:
+        raise ValueError(
+            "This ImportedComponent has no reusable import geometry; recreate it with import_component()."
+        )
+    options: dict[str, Any] = dict(
+        design=imported.design,
         xy_padding=resolved.xy_padding,
         z_padding=resolved.z_padding,
-        extend_ports=True,
-        port_overlap=resolved.port_overlap,
-        settings=component_settings,
-        layer_stack=layer_stack,
-        material_map=material_map,
+        overlap=resolved.port_overlap,
     )
+    if bounds is not None:
+        options["bounds"] = bounds
+    imported = imported._prepare(**options)
     if not imported.ports:
         raise ValueError("GDSFactory component has no optical ports to simulate.")
     ports = tuple(
         port.updated_copy(mode_spec=resolved.mode_spec) for port in imported.ports
     )
-    imported = ImportedComponent(
-        design=imported.design,
-        ports=ports,
-        component_name=imported.component_name,
-        world_origin=imported.world_origin,
-    )
+    imported = replace(imported, ports=ports)
     return PreparedComponent(
         imported=imported,
         settings=resolved,
