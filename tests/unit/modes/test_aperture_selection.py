@@ -69,7 +69,7 @@ def test_selection_options_reject_invalid_values(options):
 
 
 def test_selection_options_change_cache_identity():
-    assert cache_token(ModeSpec()) != cache_token(ModeSpec(min_aperture_fraction=None))
+    assert cache_token(ModeSpec()) != cache_token(ModeSpec(min_aperture_fraction=0.5))
 
 
 @pytest.mark.parametrize("find_wire", [False, True])

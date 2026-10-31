@@ -81,6 +81,8 @@ def rectilinear_mode(axis="x", direction="+", cells=20, axis_uniform=False):
         target_neff=2.0,
         num_modes=2,
         snapped_region=None,
+        # Keep the full reference supercell independent of the launch aperture.
+        solver_padding_cells=cells,
         grid=material.grid,
     )
 

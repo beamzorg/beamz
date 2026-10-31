@@ -8,24 +8,15 @@ from beamz.analysis.modal_projection.geometry import _mode_components_for_port
 from beamz.devices.modes.plane import (
     MODE_PLANE_APERTURE_PAD_CELLS,
     MODE_PLANE_APERTURE_WINDOW_ALPHA,
-    mode_plane_outer_pad_cells,
 )
 from beamz.lattice import component_shape_3d
 from beamz.simulation.results import FieldMetadata, MaterialRegion, SimulationMetadata
 
 
 @pytest.mark.unit
-def test_mode_plane_outer_padding_scales_with_aperture():
-    resolution = 0.045e-6
-
-    assert mode_plane_outer_pad_cells(3.0e-6, 2.0e-6, resolution) == 34
-    assert mode_plane_outer_pad_cells(0.1e-6, 0.1e-6, resolution) == 8
-
-
-@pytest.mark.unit
 @pytest.mark.parametrize("force_symmetry", [False, True])
 @pytest.mark.parametrize(
-    "padding, expected_shape", [(None, (24, 26)), (0, (8, 10)), ((2, 4), (16, 14))]
+    "padding, expected_shape", [(None, (8, 10)), (0, (8, 10)), ((2, 4), (16, 14))]
 )
 def test_mode_monitor_uses_shared_finite_aperture_policy(
     monkeypatch, force_symmetry, padding, expected_shape

@@ -1,4 +1,4 @@
-"""Public 3D previews of the same discrete modes used by port launches."""
+"""Solver and prepared-launch views of the shared 3D mode family."""
 
 from __future__ import annotations
 
@@ -7,14 +7,25 @@ from functools import partial
 import numpy as np
 
 from beamz.devices._placement import snap_mode_source_region_grid
-from beamz.devices.modes.discrete import _solve_beamz_mode
-from beamz.devices.modes.plane import solve_mode_plane_3d
+from beamz.devices.modes.discrete import (
+    _solve_beamz_mode,
+    _SolverMode,
+    solve_solver_mode,
+)
+from beamz.devices.modes.plane import solve_mode_plane_3d, solve_solver_plane_3d
 from beamz.devices.modes.specs import ModeData
 from beamz.lattice import component_axis_offsets_3d
 
 
 def solve_tensor_mode_plane(
-    *, simulation, materials, plane, spec, frequencies, direction
+    *,
+    simulation,
+    materials,
+    plane,
+    spec,
+    frequencies,
+    direction,
+    field_representation="solver",
 ):
     from .solve import _resolve_solver_direction
     from .specs import plane_axis_and_spans
@@ -42,10 +53,19 @@ def solve_tensor_mode_plane(
     solved = []
     for frequency in frequencies:
         # Share the finalized candidate basis, but prepare each mode separately.
-        solver = partial(_solve_beamz_mode, basis_cache={})
+        if field_representation == "solver":
+            solve_plane = partial(
+                solve_solver_plane_3d,
+                solver=partial(solve_solver_mode, basis_cache={}),
+            )
+        else:
+            solve_plane = partial(
+                solve_mode_plane_3d,
+                solver=partial(_solve_beamz_mode, basis_cache={}),
+            )
         solved.append(
             [
-                solve_mode_plane_3d(
+                solve_plane(
                     np.asarray(materials.permittivity),
                     np.asarray(materials.permeability),
                     material_tensors=materials.tensors,
@@ -68,7 +88,6 @@ def solve_tensor_mode_plane(
                     num_modes=spec.num_modes,
                     snapped_region=snapped,
                     grid=grid,
-                    solver=solver,
                     force_symmetry=spec.force_symmetry,
                     min_aperture_fraction=spec.min_aperture_fraction,
                     solver_padding_cells=spec.solver_padding_cells,
@@ -78,6 +97,8 @@ def solve_tensor_mode_plane(
         )
 
     def collocated(mode, prefix):
+        if isinstance(mode, _SolverMode):
+            return np.stack([mode.fields[prefix + a] for a in "xyz"])
         fields = []
         for component in (prefix + a for a in "xyz"):
             values = np.asarray(mode.profiles[component])
@@ -91,15 +112,23 @@ def solve_tensor_mode_plane(
         return np.stack(fields)
 
     first = solved[0][0]
-    normal_component = "E" + axis
-    index = first.component_indices[normal_component]
-    crop = tuple(
-        slice(
-            index[{"z": 0, "y": 1, "x": 2}[a]].start,
-            index[{"z": 0, "y": 1, "x": 2}[a]].stop - 1,
+    if isinstance(first, _SolverMode):
+        crop = tuple(
+            slice(
+                int(np.argmin(abs(grid.axis_edges(a) - edges[0]))),
+                int(np.argmin(abs(grid.axis_edges(a) - edges[-1]))),
+            )
+            for a, edges in zip(transverse, first.grid_edges, strict=True)
         )
-        for a in transverse
-    )
+    else:
+        index = first.component_indices["E" + axis]
+        crop = tuple(
+            slice(
+                index[{"z": 0, "y": 1, "x": 2}[a]].start,
+                index[{"z": 0, "y": 1, "x": 2}[a]].stop - 1,
+            )
+            for a in transverse
+        )
     profile = np.take(
         np.asarray(materials.permittivity),
         snapped.plane_index,
@@ -129,7 +158,9 @@ def solve_tensor_mode_plane(
         diagnostics=tuple(
             {
                 **modes[0].diagnostics,
-                "contract": "discrete_tensor_preview"
+                "contract": "solver_preview"
+                if field_representation == "solver"
+                else "discrete_tensor_preview"
                 if materials.uses_full_permittivity
                 else "discrete_preview",
                 "modes": tuple(m.diagnostics for m in modes),
