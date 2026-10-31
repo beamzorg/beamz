@@ -426,11 +426,17 @@ def _create_derivative_matrices(
     """Assemble scaled Yee derivative matrices with optional PML stretching."""
     # Build raw finite-difference stencils first; optional PML scaling is a
     # diagonal pre-multiplication applied afterward.
-    matrices = (
-        _make_dxf(sparse, np.asarray(dlf[0], dtype=float), shape, dmin_pmc[0]),
-        _make_dxb(sparse, np.asarray(dlb[0], dtype=float), shape, dmin_pmc[0]),
-        _make_dyf(sparse, np.asarray(dlf[1], dtype=float), shape, dmin_pmc[1]),
-        _make_dyb(sparse, np.asarray(dlb[1], dtype=float), shape, dmin_pmc[1]),
+    matrices = tuple(
+        _make_derivative(
+            sparse,
+            np.asarray(steps[axis], dtype=float),
+            shape,
+            axis=axis,
+            forward=forward,
+            pmc=dmin_pmc[axis],
+        )
+        for axis in (0, 1)
+        for forward, steps in ((True, dlf), (False, dlb))
     )
     if num_pml[0] > 0 or num_pml[1] > 0:
         # Complex stretch factors require angular frequency to scale sigma.
@@ -456,130 +462,28 @@ def _create_derivative_matrices(
     return tuple(matrix * complex(scale, 0.0) for matrix in matrices)
 
 
-def _make_dxf(sparse, dls: np.ndarray, shape: tuple[int, int], pmc: bool):
-    """Build the forward x derivative on the local Yee grid."""
-    nx, ny = shape
-    if nx == 1:
-        return sparse.csc_matrix((ny, ny), dtype=np.complex128)
-
-    # Assemble in coordinate-list form, then convert to CSC for sparse algebra.
-    rows: list[int] = []
-    cols: list[int] = []
-    data: list[complex] = []
-    for ix in range(nx):
-        for iy in range(ny):
-            row = ix * ny + iy
-            value = 1.0 / dls[ix]
-
-            # At the low edge, PEC-style symmetry drops the diagonal term while
-            # PMC keeps the one-sided stencil.
-            diagonal = 0.0 if ix == 0 and not pmc else -value
-            if diagonal != 0.0:
-                rows.append(row)
-                cols.append(row)
-                data.append(diagonal)
-            if ix + 1 < nx:
-                # Interior forward difference points to the next x cell.
-                rows.append(row)
-                cols.append((ix + 1) * ny + iy)
-                data.append(value)
-    return sparse.csc_matrix(
-        (data, (rows, cols)), shape=(nx * ny, nx * ny), dtype=np.complex128
+def _make_derivative(sparse, dls, shape, *, axis: int, forward: bool, pmc: bool):
+    """Expand a one-dimensional PEC/PMC Yee stencil in Cartesian storage order."""
+    count = shape[axis]
+    if count == 1:
+        size = int(np.prod(shape))
+        return sparse.csc_matrix((size, size), dtype=np.complex128)
+    values = 1.0 / dls
+    diagonal = -values if forward else values.copy()
+    # PEC drops the low diagonal; PMC keeps forward or doubles backward.
+    boundary_factor = -1.0 if forward else 2.0
+    diagonal[0] = boundary_factor * values[0] if pmc else 0.0
+    neighbor = values[:-1] if forward else -values[1:]
+    stencil = sparse.diags(
+        (diagonal, neighbor),
+        (0, 1 if forward else -1),
+        shape=(count, count),
+        dtype=np.complex128,
+        format="csc",
     )
-
-
-def _make_dxb(sparse, dls: np.ndarray, shape: tuple[int, int], pmc: bool):
-    """Build the backward x derivative on the local Yee grid."""
-    nx, ny = shape
-    if nx == 1:
-        return sparse.csc_matrix((ny, ny), dtype=np.complex128)
-
-    # Backward stencils share the same flattened row order as forward stencils.
-    rows: list[int] = []
-    cols: list[int] = []
-    data: list[complex] = []
-    for ix in range(nx):
-        for iy in range(ny):
-            row = ix * ny + iy
-            value = 1.0 / dls[ix]
-
-            # PMC at the low boundary mirrors the field and doubles the diagonal
-            # contribution; otherwise the first row has no backward neighbor.
-            diagonal = 2.0 * value if ix == 0 and pmc else (0.0 if ix == 0 else value)
-            if diagonal != 0.0:
-                rows.append(row)
-                cols.append(row)
-                data.append(diagonal)
-            if ix > 0:
-                # Interior backward difference points to the previous x cell.
-                rows.append(row)
-                cols.append((ix - 1) * ny + iy)
-                data.append(-value)
-    return sparse.csc_matrix(
-        (data, (rows, cols)), shape=(nx * ny, nx * ny), dtype=np.complex128
-    )
-
-
-def _make_dyf(sparse, dls: np.ndarray, shape: tuple[int, int], pmc: bool):
-    """Build the forward y derivative on the local Yee grid."""
-    nx, ny = shape
-    if ny == 1:
-        return sparse.csc_matrix((nx, nx), dtype=np.complex128)
-
-    # y derivatives use the same flat index but move along the inner y axis.
-    rows: list[int] = []
-    cols: list[int] = []
-    data: list[complex] = []
-    for ix in range(nx):
-        for iy in range(ny):
-            row = ix * ny + iy
-            value = 1.0 / dls[iy]
-
-            # Low-edge y boundary uses the same PEC/PMC convention as x.
-            diagonal = 0.0 if iy == 0 and not pmc else -value
-            if diagonal != 0.0:
-                rows.append(row)
-                cols.append(row)
-                data.append(diagonal)
-            if iy + 1 < ny:
-                # Interior forward y difference points to the next y cell.
-                rows.append(row)
-                cols.append(ix * ny + iy + 1)
-                data.append(value)
-    return sparse.csc_matrix(
-        (data, (rows, cols)), shape=(nx * ny, nx * ny), dtype=np.complex128
-    )
-
-
-def _make_dyb(sparse, dls: np.ndarray, shape: tuple[int, int], pmc: bool):
-    """Build the backward y derivative on the local Yee grid."""
-    nx, ny = shape
-    if ny == 1:
-        return sparse.csc_matrix((nx, nx), dtype=np.complex128)
-
-    # Backward y differences mirror _make_dxb on the inner axis.
-    rows: list[int] = []
-    cols: list[int] = []
-    data: list[complex] = []
-    for ix in range(nx):
-        for iy in range(ny):
-            row = ix * ny + iy
-            value = 1.0 / dls[iy]
-
-            # A PMC low edge doubles the reflected diagonal contribution.
-            diagonal = 2.0 * value if iy == 0 and pmc else (0.0 if iy == 0 else value)
-            if diagonal != 0.0:
-                rows.append(row)
-                cols.append(row)
-                data.append(diagonal)
-            if iy > 0:
-                # Interior backward y difference points to the previous y cell.
-                rows.append(row)
-                cols.append(ix * ny + iy - 1)
-                data.append(-value)
-    return sparse.csc_matrix(
-        (data, (rows, cols)), shape=(nx * ny, nx * ny), dtype=np.complex128
-    )
+    identity = sparse.eye(shape[1 - axis], format="csc")
+    left, right = (stencil, identity) if axis == 0 else (identity, stencil)
+    return sparse.kron(left, right, format="csc")
 
 
 def _assemble_diagonal_operators(
