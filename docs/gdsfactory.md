@@ -61,46 +61,31 @@ mode 1, and local 3D FDTD. Use `setup.simulation_for(...)` plus
 
 ## Physical stack import
 
-Pass explicit process geometry and materials to the same preparation API:
+Use the same preparation API with explicit process geometry and materials:
 
 ```pycon
 >>> setup = prepare(component, layer_stack=stack, material_map=materials,
 ...                 settings=Settings(xy_padding=2e-6, z_padding=1e-6))
 ```
 
-For inspection or repeated simulations, import first:
-
-```pycon
->>> from beamz.design import import_component
->>> geometry = import_component(component, layer_stack=stack, material_map=materials)
->>> setup = prepare(geometry, settings=settings)
-```
-
-Both forms apply padding and port extensions in `prepare()`. Resolved masks and
-process values are cached; the physical import stays unchanged, and repeated
-preparation does not accumulate padding. Reimport to use edits to the source
-layout. Use native Simulation directly for a manually edited Design.
+To inspect or reuse physical geometry, call `import_component(component,
+layer_stack=stack, material_map=materials)` first, then `prepare(geometry,
+settings=settings)`. Both forms apply padding and port extensions in prepare.
+Cached masks and process values remain unchanged; repeated preparation does not
+accumulate padding. Reimport to use layout edits; use native Simulation for an
+edited Design. `geometry.report` describes levels and port associations, and
+`geometry.source_origin` translates local coordinates to the original stack.
 
 Optional `fill_levels=("box", "clad")` supports older PDK background definitions;
-newer background metadata and exclusions are honored. Use `port_levels={"o1":
-"upper"}` when a mask supports several physical port heights. Explicit metre-valued
-`bounds=((xmin, ymin, zmin), (xmax, ymax, zmax))` are an alternative to padding:
-use `Settings(xy_padding=0, z_padding=0)` with them. Cropping preserves the original
-sidewall reference. `geometry.report` records included/skipped levels and port
-associations; `geometry.source_origin` translates local coordinates to the stack.
+newer background metadata/exclusions work automatically. Use `port_levels={"o1":
+"upper"}` for ambiguous vertical ports. Explicit metre-valued bounds are an
+alternative to padding and require `Settings(xy_padding=0, z_padding=0)`.
 
-Stacks require material_map, including supported tensor and dispersive models.
-Sidewalls support continuous width_to_z, scalar bias and tabulated/callable height
-profiles, including downward extrusion. Tuple bias and conflicting nonzero
-sidewall/profile inputs raise errors. Callable sampling uses a 1 nm error estimate
-at the default scale, not a universal bound. Process values are nominal.
-
-The simple no-stack defaults now match between entry points: n_core=3.47 and
-1 µm cladding above/below. Simple-extrusion Settings fields apply only to a raw
-no-stack component; an imported physical geometry remains authoritative.
-
-See the [five runnable examples](https://github.com/beamzorg/beamz/tree/main/examples/gdsfactory_imports)
-for derived etches, stacked materials, sidewalls, bias, hierarchy and holes.
+Stacks require material_map. Continuous sidewall reference heights, scalar bias,
+height profiles and downward extrusion are supported. Tuple bias and conflicting
+nonzero sidewall/profile inputs fail explicitly. Callable profiles use a sampled
+1 nm error estimate at the default scale. Process values are nominal. No-stack
+defaults match between entry points: n_core=3.47 and 1 µm cladding above/below.
 
 ## Export geometry
 
