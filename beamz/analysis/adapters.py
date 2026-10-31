@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+from beamz.analysis._coordinates import field_coordinates
 from beamz.analysis.data import analysis_data, analysis_inputs
 from beamz.const import LIGHT_SPEED
 from beamz.devices._immutable import readonly_array
@@ -103,49 +104,8 @@ def _axis_coords(dims, shape, resolution=None):
 def _yee_coords(name, dims, shape, simulation):
     if len(shape) not in {2, 3}:
         return None
-    resolution = simulation.resolution
-    raw_shape = simulation.fields.grid_shape
     try:
-        grid = getattr(simulation, "grid", None)
-        if grid is not None:
-            from beamz.lattice import component_coordinates_rectilinear
-
-            coords_m = component_coordinates_rectilinear(
-                name,
-                grid,
-                plane=None if len(shape) == 3 else simulation.plane_2d,
-                polarization=getattr(simulation, "polarization_2d", "tm"),
-            )
-        elif len(shape) == 3:
-            from beamz.lattice import component_coordinates_3d_um
-
-            coords_um = component_coordinates_3d_um(
-                name, raw_shape if len(raw_shape) == 3 else shape, resolution * 1e6
-            )
-            coords_m = {
-                dim: np.asarray(values, dtype=float) * 1e-6
-                for dim, values in coords_um.items()
-            }
-        else:
-            from beamz.lattice import component_coordinates_2d_um
-
-            coords_um = component_coordinates_2d_um(
-                name,
-                raw_shape,
-                resolution * 1e6,
-                simulation.plane_2d,
-                getattr(simulation, "polarization_2d", "tm"),
-            )
-            coords_m = {
-                dim: np.asarray(values, dtype=float) * 1e-6
-                for dim, values in coords_um.items()
-            }
-        from beamz.lattice import coordinates_in_public_frame
-
-        coords_m = coordinates_in_public_frame(
-            coords_m,
-            getattr(simulation, "coordinate_offset", (0.0, 0.0, 0.0)),
-        )
+        coords_m = field_coordinates(simulation, name, shape)
     except Exception:
         return None
     if any(
