@@ -297,3 +297,26 @@ The script writes GDS masks, boundary zooms, an interpolation comparison, and
 measured transmission to the ignored `results/gds-export/` directory. Revalidate
 geometry changes and GDS quantization separately from mesh convergence; smoother
 contours alone do not establish better performance.
+
+### Shared internal density and modal contracts
+
+The masked topology and design-region conic filters share radial kernel and
+convolution mechanics. Their boundary contracts remain distinct: `TopologySpec`
+rounds physical radius to integer cells and uses edge padding with fixed-structure
+context; `FilterProject` rounds up and uses its configured reflect/edge padding.
+Host kernel construction and the volumetric FFT specialization are retained.
+
+Both optimization facades now use one density export overlay, with exact mask
+clipping and fixed footprints, planar extrusion, and independent volumetric
+layers. Contour holes and nested islands use explicit pairwise even/odd geometry
+composition rather than a separate containment tree. The frozen notebook
+projector and modal objectives share complete `ModeSpec` adapters, coupled bases,
+and analysis coefficient rows; interpolation remains a frozen linear map for AD.
+
+Deferred integration: source-normalized DFT acquisition in optimization still
+needs a common binding contract with general differentiable simulation. That
+requires coordinated simulation/analysis changes, including real/complex scaling
+and temporal/spatial phase conventions. General material binding also remains
+separate because topology painting and fully dynamic material/source inputs have
+different contracts. The public disk-backed `adjoint_memmap` API remains supported;
+retirement would require a separate compatibility decision.

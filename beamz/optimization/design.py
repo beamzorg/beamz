@@ -130,14 +130,9 @@ class InverseDesign(Specification):
         ``mode`` is "contour" or "pixel_exact"; ``sample_spacing`` optionally
         refines bilinear contour sampling in metres. Fixed cells remain exact.
         """
-        from beamz.design.materials import Material
-        from beamz.design.structures import Polygon, Rectangle
-
-        from .polygonize import density_to_polygons
+        from .polygonize import _export_density
 
         self.design_region.check_params(params)
-        if not 0 < threshold < 1:
-            raise ValueError("threshold must lie strictly between zero and one.")
         region = self.design_region
         center = np.asarray(region.center) + np.asarray(
             self.simulation.coordinate_offset
@@ -151,49 +146,23 @@ class InverseDesign(Specification):
         ]
         is_3d = self._problem.program.config.is_3d
         z, depth = (float(low[2]), region.size[2]) if is_3d else (0.0, 0.0)
-        design = self.simulation.design
-        design += Rectangle(
-            position=(low[0], low[1], z),
-            width=region.size[0],
-            height=region.size[1],
+        return _export_density(
+            self.simulation.design,
+            np.asarray(region.material_density(params, beta=beta)),
+            eps_bounds=region.eps_bounds,
+            origin=(low[0], low[1], z),
+            dx=region.pixel_size,
             depth=depth,
-            material=Material(region.eps_bounds[0]),
+            layer_depth=(
+                region.pixel_size if region.parameterization == "volumetric" else depth
+            ),
+            background=np.ones(region.params_shape[-2:]),
+            fixed_solid=region.fixed_solid,
+            fixed_void=region.fixed_void,
+            threshold=threshold,
+            mode=mode,
+            sample_spacing=sample_spacing,
         )
-        density = np.asarray(region.material_density(params, beta=beta))
-        layers = density if region.parameterization == "volumetric" else density[None]
-        layer_depth = (
-            region.pixel_size if region.parameterization == "volumetric" else depth
-        )
-        for index, layer in enumerate(layers):
-            layer_z = z + index * layer_depth
-            solid = region.fixed_solid
-            void = region.fixed_void
-            if region.parameterization == "volumetric":
-                solid = None if solid is None else solid[index]
-                void = None if void is None else void[index]
-            for polygon in density_to_polygons(
-                layer,
-                level=threshold,
-                x0=low[0],
-                y0=low[1],
-                dx=region.pixel_size,
-                material=Material(region.eps_bounds[1]),
-                mode=mode,
-                sample_spacing=sample_spacing,
-                fixed_solid=solid,
-                fixed_void=void,
-            ):
-                design += Polygon(
-                    vertices=[(x, y, layer_z) for x, y, _ in polygon.vertices],
-                    interiors=[
-                        [(x, y, layer_z) for x, y, _ in ring]
-                        for ring in polygon.interiors
-                    ],
-                    material=polygon.material,
-                    depth=layer_depth,
-                    z=layer_z,
-                )
-        return design
 
     def to_simulation_data(self, params, *, beta=None):
         """Run either backend and return trace-preserving modal amplitudes."""

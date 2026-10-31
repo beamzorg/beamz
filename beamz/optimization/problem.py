@@ -30,7 +30,7 @@ from beamz.simulation.results import SimulationResults
 from ._validation import check_density, step_count
 from .autodiff import transform_density
 from .objectives import ModePower, WeightedObjective
-from .polygonize import density_to_polygons
+from .polygonize import _export_density
 from .result import TopologyResult, load_result
 from .topology import TopologySpec, TopologyState, _readonly_array
 
@@ -598,32 +598,22 @@ class TopologyProblem:
             raise ValueError(
                 "3D polygon export is not supported by TopologyProblem; use the extruded design-region export workflow."
             )
-        if not 0 < threshold < 1:
-            raise ValueError("threshold must lie strictly between zero and one.")
-        physical = self.physical_density(result)
         spec = self.topology
-        origin = self.program.grid.material_grid.origin
-        dx = float(self.simulation.resolution)
-        kwargs = {"dx": dx, "x0": origin[0], "y0": origin[1]}
-        design = spec.design
-        for polygon in density_to_polygons(
-            spec.region_mask.astype(float),
-            level=0.5,
-            material=Material(permittivity=spec.eps_min),
-            mode="pixel_exact",
-            **kwargs,
-        ):
-            design += polygon
-        for polygon in density_to_polygons(
-            np.where(spec.region_mask, physical, spec.fixed_structure_mask),
-            level=threshold,
-            material=Material(permittivity=spec.eps_max),
-            mode=mode,
-            sample_spacing=sample_spacing,
+        return _export_density(
+            spec.design,
+            np.where(
+                spec.region_mask,
+                self.physical_density(result),
+                spec.fixed_structure_mask,
+            ),
+            eps_bounds=(spec.eps_min, spec.eps_max),
+            origin=self.program.grid.material_grid.origin,
+            dx=float(self.simulation.resolution),
+            background=spec.region_mask.astype(float),
             region_mask=spec.region_mask,
             fixed_solid=spec.fixed_solid,
             fixed_void=spec.fixed_void,
-            **kwargs,
-        ):
-            design += polygon
-        return design
+            threshold=threshold,
+            mode=mode,
+            sample_spacing=sample_spacing,
+        )

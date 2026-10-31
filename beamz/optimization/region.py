@@ -5,12 +5,11 @@ from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
-from jax.scipy.signal import convolve
 
 from beamz.devices._immutable import Replaceable
 
 from ._validation import check_density, fixed_density_masks
-from .autodiff import apply_fixed_density
+from .autodiff import _conic_filter, _conic_kernel, apply_fixed_density
 from .projections import smoothed_heaviside
 
 
@@ -85,17 +84,11 @@ class FilterProject(Specification):
             pad = int(np.ceil(radius))
             if spatial_data.ndim not in (2, 3):
                 raise ValueError("FilterProject requires a 2D or 3D density array.")
-            coordinates = np.meshgrid(
-                *([np.arange(-pad, pad + 1)] * spatial_data.ndim), indexing="ij"
-            )
-            distance = np.sqrt(sum(axis**2 for axis in coordinates))
-            kernel = np.maximum(0, 1 - distance / pad)
-            kernel /= kernel.sum()
-            spatial_data = convolve(
-                jnp.pad(spatial_data, pad, mode=self.padding),
-                jnp.asarray(kernel),
-                mode="valid",
-                method="fft" if spatial_data.ndim == 3 else "direct",
+            spatial_data = _conic_filter(
+                spatial_data,
+                pad,
+                self.padding,
+                jnp.asarray(_conic_kernel(pad, spatial_data.ndim, np)),
             )
         # Convolution/projection can overshoot by one float32 ulp at a constant
         # zero/one region. Preserve the transformation's declared density range.

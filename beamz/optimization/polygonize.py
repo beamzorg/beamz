@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
 import numpy as np
 from scipy.ndimage import map_coordinates
 from shapely.geometry import GeometryCollection, box
@@ -13,12 +11,6 @@ from beamz.design.structures import Polygon
 from ._validation import fixed_density_masks
 
 
-@dataclass
-class _ContourNode:
-    polygon: ShapelyPolygon
-    children: list[int] = field(default_factory=list)
-
-
 def _iter_shapely_polygons(geometry):
     if geometry.is_empty:
         return
@@ -28,37 +20,6 @@ def _iter_shapely_polygons(geometry):
     if hasattr(geometry, "geoms"):
         for part in geometry.geoms:
             yield from _iter_shapely_polygons(part)
-
-
-def _build_parent_map(polygons):
-    parents: list[int | None] = [None] * len(polygons)
-    for idx, polygon in enumerate(polygons):
-        point = polygon.representative_point()
-        best_parent = None
-        best_area = None
-        for parent_idx in range(idx + 1, len(polygons)):
-            candidate = polygons[parent_idx]
-            if not candidate.covers(point):
-                continue
-            area = candidate.area
-            if best_area is None or area < best_area:
-                best_parent = parent_idx
-                best_area = area
-        parents[idx] = best_parent
-    return parents
-
-
-def _build_occupied_geometry(nodes, node_idx):
-    geometry = nodes[node_idx].polygon
-    if not nodes[node_idx].children:
-        return geometry
-    child_geometry = unary_union(
-        [
-            _build_occupied_geometry(nodes, child_idx)
-            for child_idx in nodes[node_idx].children
-        ]
-    )
-    return geometry.difference(child_geometry).buffer(0)
 
 
 def _pixel_geometry(mask, *, x0, y0, dx, dy):
@@ -104,18 +65,11 @@ def _contour_geometry(array, *, level, x0, y0, dx, dy, sample_spacing):
         polygons.extend(_iter_shapely_polygons(ShapelyPolygon(coords).buffer(0)))
     if not polygons:
         return GeometryCollection()
-    polygons.sort(key=lambda polygon: polygon.area)
-    parents = _build_parent_map(polygons)
-    nodes = [_ContourNode(polygon=polygon) for polygon in polygons]
-    roots = []
-    for idx, parent_idx in enumerate(parents):
-        if parent_idx is None:
-            roots.append(idx)
-        else:
-            nodes[parent_idx].children.append(idx)
-    geometry = unary_union(
-        [_build_occupied_geometry(nodes, root_idx) for root_idx in roots]
-    )
+    # Contour loops are disjoint or nested. Even/odd fill directly preserves
+    # islands, holes, and islands inside holes without a separate containment tree.
+    geometry = GeometryCollection()
+    for polygon in polygons:
+        geometry = geometry.symmetric_difference(polygon)
     ny, nx = array.shape
     return geometry.intersection(box(x0, y0, x0 + nx * dx, y0 + ny * dy))
 
@@ -285,3 +239,63 @@ def density_to_polygons(
         fixed_void=fixed_void,
     )
     return shapely_geometry_to_polygons(geometry, material=material)
+
+
+def _export_density(
+    design,
+    density,
+    *,
+    eps_bounds,
+    origin,
+    dx,
+    depth=0.0,
+    layer_depth=None,
+    region_mask=None,
+    background=None,
+    fixed_solid=None,
+    fixed_void=None,
+    threshold=0.5,
+    mode="contour",
+    sample_spacing=None,
+):
+    """Overlay background and solid density using one planar/layered export path.
+
+    Background is a 2D mask on the same grid. The physical density may include
+    outside-mask context; only the resulting solid geometry is clipped.
+    """
+    from beamz.design.materials import Material
+
+    if not 0 < threshold < 1:
+        raise ValueError("threshold must lie strictly between zero and one.")
+    grid = dict(x0=origin[0], y0=origin[1], dx=dx)
+    if background is not None:
+        for polygon in density_to_polygons(
+            background,
+            level=0.5,
+            material=Material(eps_bounds[0]),
+            mode="pixel_exact",
+            **grid,
+        ):
+            design += polygon.updated_copy(depth=depth).shift(0, 0, origin[2])
+    volumetric = density.ndim == 3
+    layers = density if volumetric else density[None]
+    layer_depth = depth if layer_depth is None else layer_depth
+    for index, layer in enumerate(layers):
+        z = origin[2] + index * layer_depth
+
+        def mask_layer(mask, index=index):
+            return mask[index] if volumetric and mask is not None else mask
+
+        for polygon in density_to_polygons(
+            layer,
+            level=threshold,
+            material=Material(eps_bounds[1]),
+            mode=mode,
+            sample_spacing=sample_spacing,
+            region_mask=mask_layer(region_mask),
+            fixed_solid=mask_layer(fixed_solid),
+            fixed_void=mask_layer(fixed_void),
+            **grid,
+        ):
+            design += polygon.updated_copy(depth=layer_depth).shift(0, 0, z)
+    return design

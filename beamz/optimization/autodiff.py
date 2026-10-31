@@ -4,7 +4,7 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.signal import convolve2d
+from jax.scipy.signal import convolve
 
 from .projections import project_density, smoothed_heaviside  # noqa: F401
 
@@ -17,16 +17,31 @@ _TRANSFORM_STATIC_ARGS = (
 )
 
 
+def _conic_kernel(radius, ndim, xp):
+    """Normalized radial weights; callers choose host or traced construction."""
+    coordinates = xp.meshgrid(*([xp.arange(-radius, radius + 1)] * ndim), indexing="ij")
+    distance = xp.sqrt(sum(axis**2 for axis in coordinates))
+    weights = xp.maximum(0.0, 1.0 - distance / radius)
+    return weights / weights.sum()
+
+
+def _conic_filter(values, radius, padding, kernel):
+    """Convolve a region-local halo, keeping the 3D FFT specialization."""
+    return convolve(
+        jnp.pad(values, radius, mode=padding),
+        kernel,
+        mode="valid",
+        method="fft" if values.ndim == 3 else "direct",
+    )
+
+
 @partial(jax.jit, static_argnames=["radius"])
 def generate_conic_kernel(radius: int):
     """
     Generate a 2D conic kernel (linear decay).
     w(r) = max(0, 1 - r/R)
     """
-    radius = int(max(1, radius))
-    y, x = jnp.ogrid[-radius : radius + 1, -radius : radius + 1]
-    weights = jnp.maximum(0.0, 1.0 - jnp.sqrt(x**2 + y**2) / radius)
-    return weights / jnp.sum(weights)
+    return _conic_kernel(int(max(1, radius)), 2, jnp)
 
 
 @partial(jax.jit, static_argnames=["radius"])
@@ -50,8 +65,9 @@ def masked_conic_filter(values, mask, radius: int, fixed_structure_mask=None):
         if fixed_structure_mask is None
         else jnp.where(fixed_structure_mask, 1.0, values)
     )
-    padded = jnp.pad(jnp.asarray(filter_input), radius, mode="edge")
-    filtered = convolve2d(padded, generate_conic_kernel(radius), mode="valid")
+    filtered = _conic_filter(
+        jnp.asarray(filter_input), radius, "edge", generate_conic_kernel(radius)
+    )
     return jnp.where(mask, filtered, 0.0), jnp.ones_like(mask)
 
 
