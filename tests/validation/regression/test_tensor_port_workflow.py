@@ -96,7 +96,11 @@ def run(
     f = bz.LIGHT_SPEED / 1.55e-6
     sign = 1 if direction == "+" else -1
     source_x = 2.0 if sign == 1 else 4.4
-    spec = bz.ModeSpec(num_modes=2, target_neff=2.0, polarization=None)
+    # These accuracy checks need decayed solver boundaries beyond the measured
+    # aperture. Padding is explicit now; the public default adds no halo.
+    spec = bz.ModeSpec(
+        num_modes=2, target_neff=2.0, polarization=None, solver_padding_cells=12
+    )
     size = point((0, aperture_um, aperture_um))
     source = bz.ModeSource(
         center=point((source_x, 1.8, 1.8)),
@@ -154,7 +158,11 @@ def run(
         run_time=200e-15,
         setup_device="cpu",
     )
-    preview = source.solve_modes(sim, freqs=[f]) if rectilinear else None
+    preview = (
+        source.solve_modes(sim, freqs=[f], field_representation="launch")
+        if rectilinear
+        else None
+    )
     result = sim.run(backend=backend, progress=False)
     secondary = [
         replace(
