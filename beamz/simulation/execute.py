@@ -1394,6 +1394,17 @@ def program_is_compiled(
     ) is not None
 
 
+def _place_program_inputs(program, state):
+    """Place fields, monitor state, and coefficients before execution or inspection."""
+    state = sharding_runtime.prepare_state(
+        program,
+        state,
+        replicated_fields=(*monitor_runtime.MONITOR_FIELDS, "t", "current_step"),
+    )
+    coeffs = sharding_runtime.place_tree(program, program.coefficients)
+    return state, coeffs
+
+
 def run_program(
     program: CompiledProgram,
     state: SimulationState,
@@ -1401,12 +1412,7 @@ def run_program(
     donate_state: bool = False,
 ) -> SimulationState:
     """Place state and coefficients, then execute the program's cached scan."""
-    state = sharding_runtime.prepare_state(
-        program,
-        state,
-        replicated_fields=(*monitor_runtime.MONITOR_FIELDS, "t", "current_step"),
-    )
-    coeffs = sharding_runtime.place_tree(program, program.coefficients)
+    state, coeffs = _place_program_inputs(program, state)
     cache = execution_cache(program)
     compiled_scan = (
         cache.compiled_scan_donating if donate_state else cache.compiled_scan
@@ -1448,12 +1454,7 @@ def compile_program_execution(
     donate_state: bool = False,
 ) -> None:
     """Compile and cache a program executable without advancing its state."""
-    state = sharding_runtime.prepare_state(
-        program,
-        state,
-        replicated_fields=(*monitor_runtime.MONITOR_FIELDS, "t", "current_step"),
-    )
-    coeffs = sharding_runtime.place_tree(program, program.coefficients)
+    state, coeffs = _place_program_inputs(program, state)
     _compiled_program_execution(program, state, coeffs, donate_state=donate_state)
 
 
@@ -1587,12 +1588,7 @@ def _run_program_state_timed(
 ) -> tuple[SimulationState, float]:
     """Run a ready executable and measure only its device-complete execution."""
     state = runtime_inputs(program, state, monitor_steps=monitor_steps)
-    state = sharding_runtime.prepare_state(
-        program,
-        state,
-        replicated_fields=(*monitor_runtime.MONITOR_FIELDS, "t", "current_step"),
-    )
-    coeffs = sharding_runtime.place_tree(program, program.coefficients)
+    state, coeffs = _place_program_inputs(program, state)
     executable = _compiled_program_execution(
         program, state, coeffs, donate_state=donate_state
     )
@@ -1626,12 +1622,9 @@ def compiled_xla_memory_analysis(
     monitor_steps: int,
 ) -> dict:
     """Return backend memory data for the exact placed program and state."""
-    state = sharding_runtime.prepare_state(
-        program,
-        runtime_inputs(program, state, monitor_steps=monitor_steps),
-        replicated_fields=(*monitor_runtime.MONITOR_FIELDS, "t", "current_step"),
+    state, coeffs = _place_program_inputs(
+        program, runtime_inputs(program, state, monitor_steps=monitor_steps)
     )
-    coeffs = sharding_runtime.place_tree(program, program.coefficients)
     cache = execution_cache(program)
     compiled_scan = cache.compiled_scan or build_program_scan(program)
     compiled = compiled_scan.lower(
