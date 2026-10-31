@@ -1,6 +1,7 @@
 """Acquisition coordinates survive detachment and archives without re-snapping."""
 
 import json
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -81,6 +82,24 @@ def test_shifted_uniform_plane_retains_actual_sample_coordinates(
             np.testing.assert_array_equal(actual, expected_coord)
             assert not actual.flags.writeable
         assert data.sample_region.sample_shape == compiled.sample_shape
+        recording = replace(
+            data,
+            frequencies=np.empty(0),
+            monitor_geometry=bz.FieldRecorder(
+                ("Ez",),
+                center=data.monitor_geometry.center,
+                size=data.monitor_geometry.size,
+            ),
+            fields={"Ez": np.zeros((1, *compiled.sample_shape))},
+        )
+        view = bz.analysis.monitor_to_xarray(recording)["Ez"]
+        for axis, coordinates in zip(
+            view.dims[1:], compiled.sample_coordinates, strict=True
+        ):
+            np.testing.assert_array_equal(
+                view[axis],
+                coordinates - data.coordinates.coordinate_offset["xyz".index(axis)],
+            )
 
     # Old archives have no geometry member. Normalize them at the result boundary.
     with np.load(path, allow_pickle=False) as saved:

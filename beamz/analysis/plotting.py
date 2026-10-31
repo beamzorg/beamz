@@ -1439,7 +1439,6 @@ def plot_simulation(
     figsize=None,
     show=True,
     title="Simulation Layout",
-    **_kwargs,
 ):
     """Plot styled 2D layouts or 3D cross sections, with axes in micrometres."""
     if not sim.is_3d:
@@ -1489,9 +1488,8 @@ def plot_simulation(
     return fig, ax
 
 
-def view_simulation_3d(sim, *, mode="auto", open_browser=True, show=False, **kwargs):
+def view_simulation_3d(sim, *, show=False, **kwargs):
     """Return a static view for notebooks without restoring the old viewer stack."""
-    del mode, open_browser
     if bool(getattr(sim, "is_3d", False)):
         origin = _simulation_origin(sim)
         if any(abs(value) > 0.0 for value in origin):
@@ -1556,10 +1554,8 @@ def _monitor_frequency_index(data, frequency):
 
 
 def _available_dft_component(data, component):
-    try:
-        return np.asarray(data.field(component), dtype=np.complex128)
-    except ValueError:
-        return None
+    values = data.fields.get(component)
+    return None if values is None else np.asarray(values, dtype=np.complex128)
 
 
 def _monitor_dft_values(data, field_name, *, frequency=None, val="real"):
@@ -1621,16 +1617,16 @@ def _dft_plane_components(data, field, frequency_index, plane_shape):
 def _normalize_dft_components(components, normalization, frequency_index, count):
     if normalization is None:
         return components
-    try:
-        normalization = source_field_amplitude_normalization(normalization)
-    except Exception:
-        normalization = np.asarray(normalization, dtype=np.complex128).reshape(-1)
+    normalization = source_field_amplitude_normalization(normalization)
+    assert normalization is not None
     if (
-        normalization is None
-        or normalization.size != count
+        normalization.size != count
+        or not np.isfinite(normalization[frequency_index])
         or abs(normalization[frequency_index]) <= 1e-12
     ):
-        return components
+        raise ValueError(
+            "Normalization requires one amplitude per frequency and a finite nonzero selected amplitude."
+        )
     return [value / normalization[frequency_index] for value in components]
 
 
@@ -1858,8 +1854,7 @@ def _overlay_material_slice(
 
 
 def plot_dft_field(
-    simulation,
-    monitor=None,
+    data,
     *,
     field="Ey",
     display_field=None,
@@ -1867,7 +1862,6 @@ def plot_dft_field(
     frequency_index=0,
     val="real",
     source_normalization=None,
-    source_normalize=True,
     origin=None,
     percentile=99.5,
     vmin=None,
@@ -1893,15 +1887,14 @@ def plot_dft_field(
     Pass ``show_grid=True`` to draw the physical cell edges; grid lines are
     hidden by default.
     """
-    if not isinstance(simulation, AnalysisData):
+    if not isinstance(data, AnalysisData):
         raise TypeError("plot_dft_field requires AnalysisData.")
-    data = simulation
     monitor = data.monitor_geometry
     if monitor is None:
         raise ValueError("A monitor geometry is required to plot a DFT field.")
     if not getattr(monitor, "is_3d", False):
         raise ValueError("plot_dft_field expects a 3D plane monitor.")
-    axis = str(getattr(monitor, "plane_normal", "z")).lower()
+    axis = monitor.plane_normal
     axis0, axis1 = plane_axes_3d(axis)
 
     freqs = np.asarray(data.frequencies, dtype=float)
@@ -1922,10 +1915,9 @@ def plot_dft_field(
     sample_region = geometry
     components, vector = _dft_plane_components(data, field_key, f_idx, plane_shape)
 
-    if source_normalize:
-        components = _normalize_dft_components(
-            components, source_normalization, f_idx, freqs.size
-        )
+    components = _normalize_dft_components(
+        components, source_normalization, f_idx, freqs.size
+    )
 
     field_scale, field_units = _field_display_scale_and_units(field_key)
     components = [component * field_scale for component in components]
@@ -1960,7 +1952,7 @@ def plot_dft_field(
     if overlay_core:
         _overlay_material_slice(
             ax,
-            simulation,
+            data,
             normal=axis,
             position=float(getattr(monitor, "plane_position", 0.0)),
             origin=origin,
@@ -2014,33 +2006,6 @@ def plot_dft_field(
     fig.tight_layout(pad=0.5)
     _maybe_show(fig, show=show)
     return fig, ax
-
-
-def _monitor_extent_um(monitor, values, *, sim=None):
-    arr = np.asarray(values)
-    if arr.ndim == 1:
-        length = max(arr.size - 1, 1)
-        return (0.0, float(length), 0.0, 1.0), "sample", "sample"
-    start = getattr(monitor, "start", None)
-    size = getattr(monitor, "size", None)
-    if start is not None and size is not None:
-        start = np.asarray(start, dtype=float).reshape(-1)
-        size = np.asarray(size, dtype=float).reshape(-1)
-        offset = np.asarray(
-            getattr(sim, "coordinate_offset", (0.0, 0.0, 0.0)), dtype=float
-        ).reshape(-1)
-        if start.size >= 2 and size.size >= 2:
-            return (
-                (
-                    float((start[0] - offset[0]) / 1e-6),
-                    float((start[0] + size[0] - offset[0]) / 1e-6),
-                    float((start[1] - offset[1]) / 1e-6),
-                    float((start[1] + size[1] - offset[1]) / 1e-6),
-                ),
-                "x",
-                "y",
-            )
-    return (0.0, float(arr.shape[-1]), 0.0, float(arr.shape[-2])), "sample", "sample"
 
 
 def plot_result_field(
@@ -2099,13 +2064,15 @@ def plot_result_field(
                 field=field or "Ez",
                 frequency=frequency,
                 val=val,
-                source_normalization=None,
                 **style,
             )
         values, freq = _monitor_dft_values(
             data, field or "Ez", frequency=frequency, val=val
         )
-        extent, x_dim, y_dim = _monitor_extent_um(monitor, values, sim=data.coordinates)
+        if values.ndim != 1:
+            raise ValueError("A 2D DFT monitor must contain a sampled line.")
+        extent = (0.0, float(max(values.size - 1, 1)), 0.0, 1.0)
+        x_dim = y_dim = "sample"
         title = f"{field or 'field'} at {freq * 1e-12:g} THz"
     # Grid glyphs describe 3D DFT apertures, not saved images or 2D line plots.
     for key in ("show_grid", "grid_color", "grid_linewidth", "grid_alpha"):

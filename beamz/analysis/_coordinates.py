@@ -23,11 +23,18 @@ def field_coordinates(metadata, component, shape):
         grid = RectilinearGrid.from_spacing(
             counts if len(counts) == 3 else (*counts, 1), metadata.resolution
         )
-    coordinates = component_coordinates_rectilinear(
-        component,
-        grid,
-        plane=None if len(shape) == 3 else metadata.plane_2d,
-        polarization=metadata.polarization_2d,
+    coordinates = (
+        {
+            axis: grid.centers(i)
+            for i, axis in enumerate("xyz" if len(shape) == 3 else metadata.plane_2d)
+        }
+        if component == "permittivity"
+        else component_coordinates_rectilinear(
+            component,
+            grid,
+            plane=None if len(shape) == 3 else metadata.plane_2d,
+            polarization=metadata.polarization_2d,
+        )
     )
     return coordinates_in_public_frame(coordinates, metadata.coordinate_offset)
 

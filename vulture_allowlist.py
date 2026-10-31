@@ -176,3 +176,4 @@ _.e_inverse_diagonal_z
 # Public inspection and custom-loop helpers, exercised by numerical tests.
 _.physical_density
 fold_high_side_yee_padding_to_shape
+_.attrs
