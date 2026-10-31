@@ -187,6 +187,7 @@ def test_component_import_uses_an_explicit_pdk_layer_stack():
         xy_padding=1.50 * µm,
         z_padding=0.50 * µm,
         layer_stack=gf.get_active_pdk().layer_stack,
+        material_map={"si": 3.47**2, "sio2": 1.44**2},
     )
 
     assert np.isclose(imported.design.background.permittivity, 1.0)
