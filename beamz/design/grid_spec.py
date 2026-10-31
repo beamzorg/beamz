@@ -837,6 +837,26 @@ def _overlap(first: _Region, second: _Region, transverse_axes: tuple[int, ...]) 
     )
 
 
+def _clip_region_bounds(lower, upper, offset, extents) -> tuple[AxisValues, AxisValues]:
+    """Apply the design coordinate frame consistently to all meshing regions."""
+    return (
+        cast(
+            AxisValues,
+            tuple(
+                max(0.0, value + delta)
+                for value, delta in zip(lower, offset, strict=True)
+            ),
+        ),
+        cast(
+            AxisValues,
+            tuple(
+                min(extent, value + delta)
+                for value, delta, extent in zip(upper, offset, extents, strict=True)
+            ),
+        ),
+    )
+
+
 def _geometry_regions(
     design: Any, spec: GridSpec, coordinate_offset: AxisValues
 ) -> list[_Region]:
@@ -851,18 +871,8 @@ def _geometry_regions(
         raw_lower, raw_upper = _structure_bounds(
             structure, two_dimensional=two_dimensional
         )
-        lower = cast(
-            AxisValues,
-            tuple(
-                max(0.0, raw_lower[axis] + coordinate_offset[axis]) for axis in range(3)
-            ),
-        )
-        upper = cast(
-            AxisValues,
-            tuple(
-                min(extents[axis], raw_upper[axis] + coordinate_offset[axis])
-                for axis in range(3)
-            ),
+        lower, upper = _clip_region_bounds(
+            raw_lower, raw_upper, coordinate_offset, extents
         )
         if any(
             upper[axis] <= lower[axis] for axis in range(2 if two_dimensional else 3)
@@ -891,25 +901,11 @@ def _geometry_regions(
                 material_spacing=material_spacing,
                 spec=spec,
             ):
-                feature_lower = cast(
-                    AxisValues,
-                    tuple(
-                        max(
-                            0.0,
-                            feature_region.lower[axis] + coordinate_offset[axis],
-                        )
-                        for axis in range(3)
-                    ),
-                )
-                feature_upper = cast(
-                    AxisValues,
-                    tuple(
-                        min(
-                            extents[axis],
-                            feature_region.upper[axis] + coordinate_offset[axis],
-                        )
-                        for axis in range(3)
-                    ),
+                feature_lower, feature_upper = _clip_region_bounds(
+                    feature_region.lower,
+                    feature_region.upper,
+                    coordinate_offset,
+                    extents,
                 )
                 snapped_lower = list(feature_lower)
                 snapped_upper = list(feature_upper)
@@ -971,18 +967,8 @@ def _geometry_regions(
 
     for override in spec.overrides:
         raw_lower, raw_upper = override.bounds
-        lower = cast(
-            AxisValues,
-            tuple(
-                max(0.0, raw_lower[axis] + coordinate_offset[axis]) for axis in range(3)
-            ),
-        )
-        upper = cast(
-            AxisValues,
-            tuple(
-                min(extents[axis], raw_upper[axis] + coordinate_offset[axis])
-                for axis in range(3)
-            ),
+        lower, upper = _clip_region_bounds(
+            raw_lower, raw_upper, coordinate_offset, extents
         )
         if any(upper[axis] <= lower[axis] for axis in range(active_count)):
             continue

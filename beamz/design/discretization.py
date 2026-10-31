@@ -9,6 +9,7 @@ import numpy as np
 import numpy.typing as npt
 
 from beamz._cache_tokens import cache_token
+from beamz.design._material_layout import SUPPORTS, active_supports, supports_by_cell
 from beamz.design.grid import RectilinearGrid
 from beamz.devices._immutable import readonly_array
 from beamz.lattice import component_shapes, normalize_polarization_2d
@@ -177,17 +178,7 @@ class MaterialGrid:
             # differencing may differ from it by a few floating-point ulps.
             realized_resolution = resolution
         object.__setattr__(self, "resolution", realized_resolution)
-        allowed_yee = {
-            "eps_x": "Ex",
-            "eps_y": "Ey",
-            "eps_z": "Ez",
-            "sig_x": "Ex",
-            "sig_y": "Ey",
-            "sig_z": "Ez",
-            "mu_hx": "Hx",
-            "mu_hy": "Hy",
-            "mu_hz": "Hz",
-        }
+        allowed_yee = {target: component for target, _, component, _, _ in SUPPORTS}
         unknown_yee = set(self.yee_materials) - set(allowed_yee)
         if unknown_yee:
             raise ValueError(
@@ -201,36 +192,17 @@ class MaterialGrid:
                         f"{name} has shape {np.asarray(values).shape}, expected {expected}."
                     )
         if grid.metric_kind_for(active_axes) != "isotropic_uniform":
-            active_supports = (
-                {
-                    "permittivity": {"eps_x", "eps_y", "eps_z"},
-                    "conductivity": {"sig_x", "sig_y", "sig_z"},
-                    "permeability": {"mu_hx", "mu_hy", "mu_hz"},
-                }
-                if len(shape) == 3
-                else (
-                    {
-                        "permittivity": {"eps_z"},
-                        "conductivity": {"sig_z"},
-                        "permeability": {"mu_hx", "mu_hy"},
-                    }
-                    if polarization == "tm"
-                    else {
-                        "permittivity": {"eps_x", "eps_y"},
-                        "conductivity": {"sig_x", "sig_y"},
-                        "permeability": {"mu_hz"},
-                    }
-                )
-            )
             required = set()
-            for cell_name, support_names in active_supports.items():
+            for cell_name, supports in supports_by_cell(
+                len(shape), polarization
+            ).items():
                 values = np.asarray(getattr(self, cell_name))
                 if (
                     values.ndim
                     and values.size > 1
                     and not np.all(values == values.flat[0])
                 ):
-                    required.update(support_names)
+                    required.update(supports)
             missing = required - set(self.yee_materials)
             if missing:
                 raise ValueError(
@@ -339,25 +311,10 @@ class MaterialGrid:
             raise ValueError("RasterResult must retain x, y, and z grid edges.")
         if dimensions is None:
             available = set(support_tensors)
-            full_output = {
-                "epsilon_ex",
-                "epsilon_ey",
-                "epsilon_ez",
-                "conductivity_ex",
-                "conductivity_ey",
-                "conductivity_ez",
-                "mu_hx",
-                "mu_hy",
-                "mu_hz",
-            }
-            tm_output = {"epsilon_ez", "conductivity_ez", "mu_hx", "mu_hy"}
-            te_output = {
-                "epsilon_ex",
-                "epsilon_ey",
-                "conductivity_ex",
-                "conductivity_ey",
-                "mu_hz",
-            }
+            full_output, tm_output, te_output = (
+                {source for _, source, _, _, _ in active_supports(dims, pol)}
+                for dims, pol in ((3, "tm"), (2, "tm"), (2, "te"))
+            )
             if full_output <= available:
                 dimensions = 3
             elif (tm_output <= available and not (te_output & available)) or (
@@ -372,35 +329,9 @@ class MaterialGrid:
         if dimensions not in (2, 3):
             raise ValueError("dimensions must be 2 or 3.")
         polarization = normalize_polarization_2d(polarization)
-        component_specs = (
-            (
-                ("eps_x", "epsilon_ex", 0),
-                ("eps_y", "epsilon_ey", 1),
-                ("eps_z", "epsilon_ez", 2),
-                ("sig_x", "conductivity_ex", 0),
-                ("sig_y", "conductivity_ey", 1),
-                ("sig_z", "conductivity_ez", 2),
-                ("mu_hx", "mu_hx", 0),
-                ("mu_hy", "mu_hy", 1),
-                ("mu_hz", "mu_hz", 2),
-            )
-            if dimensions == 3
-            else (
-                (
-                    ("eps_z", "epsilon_ez", 2),
-                    ("sig_z", "conductivity_ez", 2),
-                    ("mu_hx", "mu_hx", 0),
-                    ("mu_hy", "mu_hy", 1),
-                )
-                if polarization == "tm"
-                else (
-                    ("eps_x", "epsilon_ex", 0),
-                    ("eps_y", "epsilon_ey", 1),
-                    ("sig_x", "conductivity_ex", 0),
-                    ("sig_y", "conductivity_ey", 1),
-                    ("mu_hz", "mu_hz", 2),
-                )
-            )
+        component_specs = tuple(
+            (target, source, axis)
+            for target, source, _, axis, _ in active_supports(dimensions, polarization)
         )
         required = {source for _target, source, _axis in component_specs}
         missing = required - set(support_tensors)
