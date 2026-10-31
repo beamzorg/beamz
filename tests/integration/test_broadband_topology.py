@@ -5,8 +5,8 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from beamz.optimization import TopologyProblem, WeightedObjective
-from tests.topology_case import make_wdm_problem
+from beamz.optimization import InverseDesign, WeightedObjective
+from tests.topology_case import make_optimizer, make_wdm_problem
 
 pytestmark = pytest.mark.optimization
 
@@ -17,15 +17,23 @@ def problem():
 
 
 def test_multiport_optimization_resume_and_spectra(problem, tmp_path):
-    density = problem.topology.initial_state().density.copy()
-    mask = problem.topology.region_mask
+    density = problem.design_region.initial_parameters.copy()
+    mask = problem.design_region.region_mask
     density[mask] += 0.05 * np.random.default_rng(4).normal(size=mask.sum())
-    full = problem.run(5, initial_density=density)
-    partial = problem.run(
-        5, initial_density=density, stop_after=2, checkpoint=tmp_path / "wdm.npz"
+    full = make_optimizer(problem, 5, preset="wdm").run(steps=5, initial_params=density)
+    partial = make_optimizer(problem, 5, preset="wdm").run(
+        steps=5, initial_params=density, stop_after=2, checkpoint=tmp_path / "wdm.npz"
     )
-    fresh = TopologyProblem(problem.simulation, problem.topology, problem.objective)
-    resumed = fresh.run(5, resume=fresh.load(tmp_path / "wdm.npz"))
+    fresh = InverseDesign(
+        problem.simulation,
+        problem.design_region,
+        problem.objective,
+        gradient_backend="autodiff",
+    )
+    resumed = make_optimizer(fresh, 5, preset="wdm").run(
+        steps=5,
+        resume=make_optimizer(fresh, 5, preset="wdm").load_result(tmp_path / "wdm.npz"),
+    )
     assert partial.completed_steps == 2
     np.testing.assert_array_equal(resumed.final_params, full.final_params)
     np.testing.assert_array_equal(
@@ -48,7 +56,9 @@ def test_multiport_optimization_resume_and_spectra(problem, tmp_path):
 def test_checkpoint_records_weights_frequency_selection_and_reference(
     problem, tmp_path
 ):
-    problem.run(5, stop_after=0, checkpoint=tmp_path / "identity.npz")
+    make_optimizer(problem, 5, preset="wdm").run(
+        steps=5, stop_after=0, checkpoint=tmp_path / "identity.npz"
+    )
     variants = [
         problem.objective * 0.5,
         WeightedObjective(
@@ -70,21 +80,34 @@ def test_checkpoint_records_weights_frequency_selection_and_reference(
         ),
     ]
     for objective in variants:
-        other = TopologyProblem(problem.simulation, problem.topology, objective)
+        other = InverseDesign(
+            problem.simulation,
+            problem.design_region,
+            objective,
+            gradient_backend="autodiff",
+        )
         with pytest.raises(ValueError, match="different optimization problem"):
-            other.load(tmp_path / "identity.npz")
+            make_optimizer(other, 5, preset="wdm").load_result(
+                tmp_path / "identity.npz"
+            )
 
 
 def test_frequency_matching_rejects_missing_target_or_reference(problem):
     terms = problem.objective.terms
     missing = replace(terms[0], frequencies=[1e14])
     with pytest.raises(ValueError, match="record frequency"):
-        TopologyProblem(problem.simulation, problem.topology, missing)
+        InverseDesign(
+            problem.simulation,
+            problem.design_region,
+            missing,
+            gradient_backend="autodiff",
+        )
     monitors = list(problem.simulation.monitors)
     monitors[0] = monitors[0].updated_copy(freqs=monitors[0].freqs[1:])
     with pytest.raises(ValueError, match="input.*record frequency"):
-        TopologyProblem(
+        InverseDesign(
             problem.simulation.updated_copy(monitors=monitors),
-            problem.topology,
+            problem.design_region,
             terms[0],
+            gradient_backend="autodiff",
         )

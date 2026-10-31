@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import beamz.optimization as bi
-from tests.topology_case import make_problem
+from tests.topology_case import make_optimizer, make_problem
 
 pytestmark = pytest.mark.optimization
 
@@ -94,7 +94,7 @@ def test_optimizer_history_resume_and_checkpoint_identity(
     design, tmp_path, store_full_results
 ):
     path = tmp_path / "history.npz"
-    optimizer = bi.AdamOptimizer(
+    optimizer = bi.Optimizer(
         design,
         learning_rate=0.02,
         store_full_results=store_full_results,
@@ -144,7 +144,7 @@ def test_optimizer_history_resume_and_checkpoint_identity(
 
 
 def test_checkpoint_rejects_old_schema_and_wrong_identity(design, tmp_path):
-    optimizer = bi.AdamOptimizer(design, learning_rate=0.02)
+    optimizer = bi.Optimizer(design, learning_rate=0.02)
     result = optimizer.run(transmission, steps=1)
     path = tmp_path / "old.npz"
     result.save(path)
@@ -171,7 +171,7 @@ def test_checkpoint_rejects_pre_merge_solver_numerics(
     if interface == "optimizer":
         import beamz.optimization.optimizer as module
 
-        optimizer = bi.AdamOptimizer(design, learning_rate=0.02)
+        optimizer = bi.Optimizer(design, learning_rate=0.02)
         current = optimizer._fingerprint(transmission)
         with monkeypatch.context() as previous:
             previous.setattr(module, "TOPOLOGY_NUMERICS_VERSION", previous_version)
@@ -180,14 +180,14 @@ def test_checkpoint_rejects_pre_merge_solver_numerics(
         def load(path):
             return optimizer.load_result(path, transmission)
     else:
-        import beamz.optimization.problem as module
+        import beamz.optimization.optimizer as module
 
-        problem = make_problem()
-        current = problem.fingerprint
+        optimizer = make_optimizer(make_problem(), 3)
+        current = optimizer._fingerprint(optimizer.design.objective)
         with monkeypatch.context() as previous:
             previous.setattr(module, "TOPOLOGY_NUMERICS_VERSION", previous_version)
-            old = make_problem().fingerprint
-        load = problem.load
+            old = optimizer._fingerprint(optimizer.design.objective)
+        load = optimizer.load_result
     assert old != current
     # Identity is checked before loading optimizer arrays or scalar history.
     path = tmp_path / "previous-solver.npz"
@@ -207,8 +207,8 @@ def test_workflow_rejects_bad_parameters_and_objectives(design):
         design_region=design.design_region.updated_copy(pixel_size=50e-9)
     )
     np.testing.assert_allclose(
-        fine._density(np.full(fine.design_region.params_shape, 0.5)),
-        design._density(np.full(design.design_region.params_shape, 0.5)),
+        fine.physical_density(np.full(fine.design_region.params_shape, 0.5)),
+        design.physical_density(np.full(design.design_region.params_shape, 0.5)),
         atol=1e-6,
     )
     with pytest.raises(ValueError, match="Parameters"):
@@ -219,7 +219,7 @@ def test_workflow_rejects_bad_parameters_and_objectives(design):
 
 
 def test_checkpoint_rejects_vector_valued_scalar_history(design, tmp_path):
-    optimizer = bi.AdamOptimizer(design, learning_rate=0.02)
+    optimizer = bi.Optimizer(design, learning_rate=0.02)
     path = tmp_path / "history.npz"
     optimizer.run(transmission, steps=1).save(path)
     with np.load(path, allow_pickle=False) as saved:
@@ -247,7 +247,7 @@ def test_scheduled_resume_and_material_history(
     def objective(data, weight):
         return weight * transmission(data)
 
-    optimizer = bi.AdamOptimizer(
+    optimizer = bi.Optimizer(
         design,
         learning_rate=0.02,
         schedule=schedule,
@@ -309,7 +309,7 @@ def test_builtin_objectives_share_callback_api_and_gradient(design, backend):
         )
         assert np.isfinite(value) and np.isfinite(gradient).all()
         assert np.linalg.norm(gradient) > 1e-3
-        optimizer = bi.AdamOptimizer(design, learning_rate=0.02)
+        optimizer = bi.Optimizer(design, learning_rate=0.02)
         result = optimizer.run(objective, steps=1)
         assert result.completed_steps == 1 and len(result.params) == 1
         assert result.history[0].objective is None
@@ -317,7 +317,7 @@ def test_builtin_objectives_share_callback_api_and_gradient(design, backend):
 
 
 def test_target_steps_checkpoint_interval_and_snapshot_policy(design, tmp_path):
-    optimizer = bi.AdamOptimizer(design, learning_rate=0.02)
+    optimizer = bi.Optimizer(design, learning_rate=0.02)
     path = tmp_path / "compact.npz"
     zero = optimizer.run(transmission, steps=0, checkpoint=path)
     assert optimizer.load_result(path, transmission).completed_steps == 0

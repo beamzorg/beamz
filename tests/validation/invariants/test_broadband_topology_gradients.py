@@ -6,15 +6,15 @@ import numpy as np
 import pytest
 
 from beamz import LIGHT_SPEED, FieldMonitor
-from beamz.optimization import ModePower, TopologyProblem, WeightedObjective
+from beamz.optimization import InverseDesign, ModePower, WeightedObjective
 from tests.topology_case import make_wdm_problem
 
 pytestmark = pytest.mark.optimization
 
 
 def _density(problem):
-    values = problem.topology.initial_state().density.copy()
-    mask = problem.topology.region_mask
+    values = problem.design_region.initial_parameters.copy()
+    mask = problem.design_region.region_mask
     values[mask] += 0.05 * np.random.default_rng(4).normal(size=mask.sum())
     return values
 
@@ -62,15 +62,16 @@ def test_broadband_multiport_gradients_and_ordinary_analysis(
             tuple(replace(t, reference_monitor=None) for t in objective.terms),
             objective.weights,
         )
-    problem = TopologyProblem(
+    problem = InverseDesign(
         base.simulation.updated_copy(monitors=[auxiliary, *monitors]),
-        base.topology,
+        base.design_region,
         objective,
+        gradient_backend="autodiff",
     )
     density = _density(problem)
     value, gradient = problem.value_and_grad(density, beta=2)
     spectra = problem.spectra(density, beta=2)
-    ordinary = problem.material_simulation(density, beta=2).run(
+    ordinary = problem.to_simulation(density, beta=2).run(
         backend="jax", performance=False
     )
     for spectrum, term in zip(spectra, objective.terms, strict=True):
@@ -81,10 +82,10 @@ def test_broadband_multiport_gradients_and_ordinary_analysis(
         w * np.mean(s) for w, s in zip(objective.weights, spectra, strict=True)
     )
     np.testing.assert_allclose(value, expected, rtol=2e-5, atol=1e-7)
-    np.testing.assert_array_equal(gradient[~problem.topology.region_mask], 0)
+    np.testing.assert_array_equal(gradient[~problem.design_region.region_mask], 0)
     direction = (
         np.random.default_rng(7).normal(size=density.shape)
-        * problem.topology.region_mask
+        * problem.design_region.region_mask
     )
     direction /= np.linalg.norm(direction)
     adjoint = float(np.sum(gradient * direction))
@@ -109,9 +110,11 @@ def test_default_broadband_mean_and_reference_mode_selection():
     # A reflected-reference diagnostic is unusual physically, but verifies the
     # explicit reference direction rather than silently selecting the + mode.
     term = ModePower("upper", reference_monitor="input", reference_direction="-")
-    problem = TopologyProblem(base.simulation, base.topology, term)
+    problem = InverseDesign(
+        base.simulation, base.design_region, term, gradient_backend="autodiff"
+    )
     density = _density(problem)
-    ordinary = problem.material_simulation(density, beta=2).run(
+    ordinary = problem.to_simulation(density, beta=2).run(
         backend="jax", performance=False
     )
     expected = _ordinary_spectrum(ordinary, term)

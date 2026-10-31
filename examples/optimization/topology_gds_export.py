@@ -39,11 +39,11 @@ from beamz import (
 )
 from beamz.design import export_gds
 from beamz.optimization import (
-    AdamOptimizer,
     FilterProject,
     InverseDesign,
     LinearSchedule,
     OptimizationSchedule,
+    Optimizer,
     RandomInitializationSpec,
     TopologyDesignRegion,
     density_to_shapely_geometry,
@@ -313,7 +313,7 @@ def main():
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     design = make_design()
-    optimizer = AdamOptimizer(
+    optimizer = Optimizer(
         design,
         learning_rate=0.04,
         schedule=OptimizationSchedule(beta=LinearSchedule(1, 12, args.steps)),

@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from beamz import PML, Bloch, Periodic
-from beamz.optimization import TopologyProblem
-from tests.topology_case import make_problem
+from beamz.optimization import InverseDesign
+from tests.topology_case import make_optimizer, make_problem
 
 pytestmark = pytest.mark.optimization
 
@@ -16,39 +16,46 @@ def base():
 
 
 def test_adjoint_optimizer_resume_and_backend_identity(base, tmp_path):
-    adjoint = TopologyProblem(
-        base.simulation, base.topology, base.objective, gradient_backend="adjoint"
+    adjoint = InverseDesign(
+        base.simulation, base.design_region, base.objective, gradient_backend="adjoint"
     )
-    density = base.topology.initial_state().density
-    full = adjoint.run(3, initial_density=density)
+    density = base.design_region.initial_parameters
+    full = make_optimizer(adjoint, 3).run(steps=3, initial_params=density)
     path = tmp_path / "adjoint.npz"
-    partial = adjoint.run(3, initial_density=density, stop_after=1, checkpoint=path)
-    fresh = TopologyProblem(
-        base.simulation, base.topology, base.objective, gradient_backend="adjoint"
+    partial = make_optimizer(adjoint, 3).run(
+        steps=3, initial_params=density, stop_after=1, checkpoint=path
     )
-    resumed = fresh.run(3, resume=fresh.load(path))
+    fresh = InverseDesign(
+        base.simulation, base.design_region, base.objective, gradient_backend="adjoint"
+    )
+    resumed = make_optimizer(fresh, 3).run(
+        steps=3, resume=make_optimizer(fresh, 3).load_result(path)
+    )
     assert partial.completed_steps == 1
     np.testing.assert_array_equal(full.final_params, resumed.final_params)
     assert full.objective > full.initial_objective
     with pytest.raises(ValueError, match="different optimization problem"):
-        base.load(path)
-    tighter = TopologyProblem(
+        make_optimizer(base, 3).load_result(path)
+    tighter = InverseDesign(
         base.simulation,
-        base.topology,
+        base.design_region,
         base.objective,
         gradient_backend="adjoint",
         adjoint_decay_tolerance=1e-5,
     )
     with pytest.raises(ValueError, match="different optimization problem"):
-        tighter.load(path)
+        make_optimizer(tighter, 3).load_result(path)
     assert base.gradient_diagnostics is None
 
 
 def test_zero_objective_skips_adjoint_runs(base):
-    adjoint = TopologyProblem(
-        base.simulation, base.topology, 0 * base.objective, gradient_backend="adjoint"
+    adjoint = InverseDesign(
+        base.simulation,
+        base.design_region,
+        0 * base.objective,
+        gradient_backend="adjoint",
     )
-    value, gradient = adjoint.value_and_grad(base.topology.initial_state().density)
+    value, gradient = adjoint.value_and_grad(base.design_region.initial_parameters)
     assert value == 0
     np.testing.assert_array_equal(gradient, 0)
     assert adjoint.gradient_diagnostics["adjoint_solves"] == 0
@@ -56,22 +63,22 @@ def test_zero_objective_skips_adjoint_runs(base):
 
 def test_rejects_undecayed_forward_and_adjoint(base):
     short = base.simulation.updated_copy(run_time=80e-15)
-    adjoint = TopologyProblem(
-        short, base.topology, base.objective, gradient_backend="adjoint"
+    adjoint = InverseDesign(
+        short, base.design_region, base.objective, gradient_backend="adjoint"
     )
     with pytest.raises(ValueError, match="forward pulse has not decayed"):
-        adjoint.value_and_grad(base.topology.initial_state().density)
+        adjoint.value_and_grad(base.design_region.initial_parameters)
     # Here the forward fields decay farther than the adjoint dual fields. Verify
     # that the backward run has an independent convergence guard.
-    strict = TopologyProblem(
+    strict = InverseDesign(
         base.simulation,
-        base.topology,
+        base.design_region,
         base.objective,
         gradient_backend="adjoint",
         adjoint_decay_tolerance=1e-6,
     )
     with pytest.raises(ValueError, match="adjoint pulse has not decayed"):
-        strict.value_and_grad(base.topology.initial_state().density)
+        strict.value_and_grad(base.design_region.initial_parameters)
 
 
 def test_rejects_downsampled_monitors(base):
@@ -79,8 +86,8 @@ def test_rejects_downsampled_monitors(base):
         monitors=[m.updated_copy(interval=2) for m in base.simulation.monitors]
     )
     with pytest.raises(ValueError, match="rectangular DFT"):
-        TopologyProblem(
-            simulation, base.topology, base.objective, gradient_backend="adjoint"
+        InverseDesign(
+            simulation, base.design_region, base.objective, gradient_backend="adjoint"
         )
 
 
@@ -93,19 +100,24 @@ def test_spectral_adjoint_rejects_periodic_seams(base, boundary):
         ]
     )
     with pytest.raises(ValueError, match="adjoint.*periodic"):
-        TopologyProblem(
-            simulation, base.topology, base.objective, gradient_backend="adjoint"
+        InverseDesign(
+            simulation, base.design_region, base.objective, gradient_backend="adjoint"
         )
     # The discrete autodiff path differentiates the ordinary seam update.
-    problem = TopologyProblem(simulation, base.topology, base.objective)
+    problem = InverseDesign(
+        simulation, base.design_region, base.objective, gradient_backend="autodiff"
+    )
     assert problem.program.boundary.periodic_axes
 
 
 @pytest.mark.parametrize("backend", ["unknown", "spectral_adjoint", None])
 def test_rejects_unknown_backend(base, backend):
     with pytest.raises(ValueError, match="gradient_backend"):
-        TopologyProblem(
-            base.simulation, base.topology, base.objective, gradient_backend=backend
+        InverseDesign(
+            base.simulation,
+            base.design_region,
+            base.objective,
+            gradient_backend=backend,
         )
 
 
@@ -114,9 +126,10 @@ def test_rejects_unknown_backend(base, backend):
 )
 def test_rejects_invalid_decay_tolerance(base, tolerance):
     with pytest.raises(ValueError, match="adjoint_decay_tolerance"):
-        TopologyProblem(
+        InverseDesign(
             base.simulation,
-            base.topology,
+            base.design_region,
             base.objective,
             adjoint_decay_tolerance=tolerance,
+            gradient_backend="autodiff",
         )

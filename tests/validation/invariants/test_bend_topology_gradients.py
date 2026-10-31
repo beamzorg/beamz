@@ -15,7 +15,7 @@ from beamz import (
     Rectangle,
     Simulation,
 )
-from beamz.optimization import ModePower, TopologyProblem, TopologySpec
+from beamz.optimization import InverseDesign, MaskedDesignRegion, ModePower
 
 
 @pytest.mark.optimization
@@ -62,15 +62,10 @@ def test_bend_output_direction_and_external_density_gradient(
     )
     mask = np.zeros(simulation.compile(backend="jax").grid.material_grid.shape, bool)
     mask[20:40, 20:40] = True
-    topology = TopologySpec(
-        design=design,
-        region_mask=mask,
-        resolution=dx,
-        eps_min=1,
-        eps_max=5,
-        projection_type="identity",
+    topology = MaskedDesignRegion(
+        region_mask=mask, projection_type="identity", pixel_size=dx, eps_bounds=(1, 5)
     )
-    problem = TopologyProblem(
+    problem = InverseDesign(
         simulation,
         topology,
         ModePower("top", reference_monitor="input"),
@@ -83,7 +78,7 @@ def test_bend_output_direction_and_external_density_gradient(
     density[26:34, 20:34] = 0.9
     density[26:40, 26:34] = 0.9
     value, gradient = problem.value_and_grad(density)
-    data = problem.material_simulation(density).run(backend="jax", performance=False)
+    data = problem.to_simulation(density).run(backend="jax", performance=False)
     input_power = abs(data.mode("input").amps.sel(direction="+").item()) ** 2
     forward = abs(data.mode("top").amps.sel(direction="+").item()) ** 2
     backward = abs(data.mode("top").amps.sel(direction="-").item()) ** 2

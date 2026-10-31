@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 
 from beamz import Design, Material, Rectangle
+from beamz.optimization import MaskedDesignRegion
 from beamz.optimization.autodiff import (
     compute_parameter_gradient_vjp,
     generate_conic_kernel,
@@ -28,8 +29,6 @@ from beamz.optimization.autodiff import (
     transform_density,
 )
 from beamz.optimization.topology import (
-    TopologySpec,
-    TopologyState,
     compute_overlap_gradient,
     create_optimization_mask,
     fold_high_side_yee_padding_to_shape,
@@ -589,104 +588,61 @@ class TestMaskHandling:
 
 
 @pytest.mark.optimization
-class TestTopologySpec:
-    """Resolution handling should be explicit and deterministic."""
+class TestMaskedDesignRegion:
+    """Region construction never mutates designs or evolving parameters."""
 
-    def test_requires_explicit_resolution_without_cached_grid(self):
-        design = Design(
-            width=2.0e-6, height=2.0e-6, material=Material(permittivity=1.0)
-        )
-        mask = np.ones((2, 2), dtype=bool)
-
-        with pytest.raises(ValueError, match="requires explicit `resolution`"):
-            TopologySpec(design=design, region_mask=mask)
+    def test_requires_explicit_pixel_size(self):
+        with pytest.raises(TypeError, match="pixel_size"):
+            MaskedDesignRegion(region_mask=np.ones((2, 2), dtype=bool))
 
     def test_rasterization_does_not_attach_resolution_state_to_design(self):
-        design = Design(
-            width=2.0e-6, height=2.0e-6, material=Material(permittivity=1.0)
+        design = Design(width=2e-6, height=2e-6, material=Material(1))
+        grid = design.rasterize(1e-6)
+        spec = MaskedDesignRegion(
+            region_mask=np.ones_like(grid.permittivity, dtype=bool), pixel_size=1e-6
         )
-        grid = design.rasterize(resolution=1.0e-6)
-        mask = np.ones_like(np.asarray(grid.permittivity), dtype=bool)
-
         assert not hasattr(design, "_grid")
         assert not hasattr(design, "_grid_resolution")
-        with pytest.raises(ValueError, match="requires explicit `resolution`"):
-            TopologySpec(design=design, region_mask=mask, resolution=None)
+        np.testing.assert_array_equal(spec.initial_parameters, 0.5)
 
-    def test_configuration_and_state_are_immutable(self):
-        design = Design(
-            width=2.0e-6, height=2.0e-6, material=Material(permittivity=1.0)
-        )
-        spec = TopologySpec(
-            design=design,
-            region_mask=np.ones((2, 2), dtype=bool),
-            resolution=1.0e-6,
-        )
-        state = spec.initial_state()
-        advanced = state.with_objective(0.75)
-        stepped, max_update = spec.apply_gradient(
-            state, np.ones((2, 2), dtype=float), spec.beta(0, 2)
-        )
-
+    def test_configuration_and_initialization_are_independent(self):
+        source = np.ones((2, 2), dtype=bool)
+        spec = MaskedDesignRegion(region_mask=source, pixel_size=1e-6)
+        source[0, 0] = False
         with pytest.raises(FrozenInstanceError):
-            spec.learning_rate = 1.0
-        with pytest.raises(FrozenInstanceError):
-            state.objective_history = (1.0,)
+            spec.pixel_size = 2e-6
         with pytest.raises(ValueError):
-            state.density[0, 0] = 0.0
-        assert state.objective_history == ()
-        assert advanced.objective_history == (0.75,)
-        np.testing.assert_allclose(state.density, 0.5)
-        assert max_update > 0.0
-        assert not np.allclose(stepped.density, state.density)
-
-    def test_state_has_array_aware_value_equality(self):
-        first = TopologyState(np.full((2, 2), 0.5), objective_history=[1.0])
-        equivalent = TopologyState(np.full((2, 2), 0.5), objective_history=(1.0,))
-        changed = TopologyState(np.full((2, 2), 0.75), objective_history=(1.0,))
-
-        assert first == equivalent
-        assert hash(first) == hash(equivalent)
-        assert first != changed
-
-
-@pytest.mark.optimization
-class TestTopologySpecProjection:
-    """Projection settings should be explicit and consistently threaded."""
+            spec.region_mask[0, 0] = False
+        first = spec.initial_parameters
+        first[0, 0] = 0
+        np.testing.assert_array_equal(spec.initial_parameters, 0.5)
+        assert spec.region_mask[0, 0]
 
     def test_rejects_unknown_projection_type_at_construction(self):
-        design = Design(
-            width=2.0e-6, height=2.0e-6, material=Material(permittivity=1.0)
-        )
-        mask = np.ones((2, 2), dtype=bool)
-
         with pytest.raises(ValueError, match="Unknown projection_type"):
-            TopologySpec(
-                design=design,
-                region_mask=mask,
-                resolution=1.0e-6,
+            MaskedDesignRegion(
+                region_mask=np.ones((2, 2), dtype=bool),
+                pixel_size=1e-6,
                 projection_type="tanh",
             )
 
     def test_ssp_projection_settings_are_used_for_density(self):
-        design = Design(
-            width=4.0e-6, height=4.0e-6, material=Material(permittivity=1.0)
-        )
-        mask = np.ones((4, 4), dtype=bool)
-        spec = TopologySpec(
-            design=design,
-            region_mask=mask,
-            resolution=1.0e-6,
-            filter_radius=1.0e-6,
+        design = Design(width=4e-6, height=4e-6, material=Material(1))
+        grid = design.rasterize(1e-6)
+        spec = MaskedDesignRegion(
+            region_mask=np.ones((4, 4), dtype=bool),
+            pixel_size=1e-6,
+            filter_radius=1e-6,
             projection_type="ssp",
             ssp_smoothing_radius=0.55,
         )
-        state = spec.initial_state(np.tile(np.linspace(0.0, 1.0, 4), (4, 1)))
-
-        physical = spec.physical_density(state, beta=np.inf)
-
+        values = np.tile(np.linspace(0, 1, 4), (4, 1))
+        mapping = spec.bind(
+            SimpleNamespace(resolution=1e-6), SimpleNamespace(material_grid=grid)
+        )
+        physical = mapping.density(jnp.asarray(values), beta=np.inf)
         assert spec.projection_type == "ssp"
         assert np.all(np.isfinite(physical))
-        assert physical.shape == state.density.shape
+        assert physical.shape == values.shape
         assert np.min(physical) >= -1e-6
-        assert np.max(physical) <= 1.0 + 1e-6
+        assert np.max(physical) <= 1 + 1e-6

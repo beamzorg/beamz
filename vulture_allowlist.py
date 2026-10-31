@@ -20,10 +20,7 @@ attach_material_coefficients
 ForwardFieldChunkWriter
 _.finalize
 compute_overlap_gradient_memmap
-_.with_objective
 _.initial_state
-_.density_for_step
-_.apply_gradient
 compute_overlap_gradient
 create_optimization_mask
 _.clear_compiled_cache
@@ -175,3 +172,7 @@ _.e_permittivity_z
 _.e_inverse_diagonal_x
 _.e_inverse_diagonal_y
 _.e_inverse_diagonal_z
+
+# Public inspection and custom-loop helpers, exercised by numerical tests.
+_.physical_density
+fold_high_side_yee_padding_to_shape

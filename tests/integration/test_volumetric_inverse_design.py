@@ -65,7 +65,7 @@ def test_beam_voxel_gradients_and_ordinary_modal_parity(pol_angle):
         atol=1e-7,
     )
     patch = np.asarray(design.to_simulation(params)._material_grid().permittivity)[
-        design._slices
+        design._problem._density_map.slices
     ]
     assert np.linalg.norm(patch[0] - patch[-1]) > 0.01
 
@@ -104,7 +104,7 @@ def test_volumetric_export_preserves_different_layers_and_fixed_voxels():
     design = design.updated_copy(design_region=region)
     exported = design.export_design(params, mode="pixel_exact")
     patch = np.asarray(exported.rasterize(design.simulation.resolution).permittivity)[
-        design._slices
+        design._problem._density_map.slices
     ]
     np.testing.assert_allclose(
         patch, 1 + 3 * region.material_density(params), atol=1e-5

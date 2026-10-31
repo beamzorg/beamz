@@ -27,13 +27,12 @@ from beamz.simulation.execute import (
 )
 from beamz.simulation.results import SimulationResults
 
-from ._validation import check_density, step_count
-from .objectives import ModePower, WeightedObjective
-from .result import TopologyResult, load_result
-from .topology import TopologySpec, TopologyState, _readonly_array
+from ._validation import check_density
+from .objectives import ModalObjective, ModePower, WeightedObjective
+from .region import DensityParameterization
 
 
-class TopologyProblem:
+class CompiledDesignProblem:
     """Optimize a topology region against a scalar modal objective.
 
     Both backends support uniform 2D xy or 3D grids, scalar lossless dielectrics,
@@ -45,8 +44,8 @@ class TopologyProblem:
     ----------
     simulation : Simulation
         Base simulation containing the fixed geometry, source, and monitors.
-    topology : TopologySpec
-        Existing density transform, design mask, and optimizer configuration.
+    density_map : DensityParameterization
+        Validated latent-to-material map bound once by the design region.
     objective : ModePower, SoftMinModePower, or WeightedObjective
         Modal power averaged across selected frequencies, or a weighted combination
         rewarding transmission and penalizing reflection/unwanted-port power.
@@ -66,15 +65,15 @@ class TopologyProblem:
     def __init__(
         self,
         simulation,
-        topology: TopologySpec,
-        objective: ModePower | WeightedObjective | None = None,
+        density_map: DensityParameterization,
+        objective: ModalObjective | None = None,
         *,
+        program,
         checkpoint_interval: int | None = 32,
         gradient_backend="autodiff",
         adjoint_decay_tolerance=1e-4,
         adjoint_source_grouping="frequency",
         output_monitor_names=None,
-        _density_map=None,
     ):
         if gradient_backend not in ("autodiff", "adjoint"):
             raise ValueError("gradient_backend must be 'autodiff' or 'adjoint'.")
@@ -93,16 +92,13 @@ class TopologyProblem:
         self.gradient_backend = gradient_backend
         self.adjoint_decay_tolerance = float(adjoint_decay_tolerance)
         self.simulation = simulation
-        self.topology = topology
-        self._density_map = (
-            topology._density_map if _density_map is None else _density_map
-        )
+        self._density_map = density_map
         self.objective = objective
         if objective is not None and not isinstance(
             objective, (ModePower, WeightedObjective)
         ):
             raise TypeError(
-                "TopologyProblem supports ModePower and weighted modal objectives."
+                "CompiledDesignProblem supports ModePower and weighted modal objectives."
             )
         if objective is None and not output_monitor_names:
             raise ValueError("Supply an objective or output_monitor_names.")
@@ -112,9 +108,9 @@ class TopologyProblem:
             else tuple((name, None) for name in output_monitor_names or ())
         )
         self.checkpoint_interval = checkpoint_interval
-        self.program = simulation.compile(backend="jax")
+        self.program = program
         self._validate()
-        self._mask = jnp.asarray(topology.region_mask)
+        self._mask = jnp.asarray(density_map.mask)
         self._base_eps = jnp.asarray(self.program.grid.material_grid.permittivity)
         self._initial = initial_program_state(
             self.program, t=float(simulation.time[0]), current_step=0
@@ -159,6 +155,7 @@ class TopologyProblem:
         self._simulate = jax.jit(simulate)
         self._modal_data_bindings = {}
         self._binding_results = empty_results
+        self._projection_cache = cache
         self._spectral_adjoint = None
         if gradient_backend == "adjoint":
             from beamz.simulation.spectral_adjoint import SpectralAdjoint
@@ -171,7 +168,7 @@ class TopologyProblem:
             (
                 TOPOLOGY_NUMERICS_VERSION,
                 simulation,
-                topology,
+                density_map,
                 objective or self.frequency_requests,
                 gradient_backend,
                 self.adjoint_decay_tolerance,
@@ -201,7 +198,7 @@ class TopologyProblem:
             raise ValueError("monitor_names must be nonempty and unique.")
         if names not in self._modal_data_bindings:
             self._modal_data_bindings[names] = bind_modal_data(
-                self._binding_results, self.program, names
+                self._binding_results, self.program, names, self._projection_cache
             )
         values = jnp.asarray(density, dtype=jnp.float32)
         if values.shape != self._density_map.shape:
@@ -231,10 +228,10 @@ class TopologyProblem:
         return self._modal_data_bindings[names](state)
 
     def _validate(self):
-        sim, spec, program = self.simulation, self.topology, self.program
+        sim, density_map, program = self.simulation, self._density_map, self.program
         grid = program.grid
         if not program.config.is_3d and sim.plane_2d != "xy":
-            raise ValueError("TopologyProblem supports 2D xy or 3D simulations.")
+            raise ValueError("CompiledDesignProblem supports 2D xy or 3D simulations.")
         if (
             grid.geometry.metric_kind_for(
                 tuple("xyz" if program.config.is_3d else "xy")
@@ -242,14 +239,12 @@ class TopologyProblem:
             != "isotropic_uniform"
             or program.sharding.layout.enabled
         ):
-            raise ValueError("TopologyProblem requires an unsharded uniform grid.")
-        if sim.design != spec.design:
             raise ValueError(
-                "TopologySpec.design must match the base simulation design."
+                "CompiledDesignProblem requires an unsharded uniform grid."
             )
         if sim.material_grid is not None:
             raise ValueError(
-                "TopologyProblem currently requires design-rasterized materials."
+                "CompiledDesignProblem currently requires design-rasterized materials."
             )
         materials = [
             sim.design.background,
@@ -259,60 +254,31 @@ class TopologyProblem:
             not isinstance(m, Material) or np.ndim(m.permittivity) != 0
             for m in materials
         ):
-            raise ValueError("TopologyProblem requires scalar Material permittivity.")
-        if spec.region_mask.shape != grid.material_grid.shape or not np.any(
-            spec.region_mask
-        ):
             raise ValueError(
-                "Topology mask must be nonempty and match the simulation material grid."
+                "CompiledDesignProblem requires scalar Material permittivity."
             )
-        if spec.resolution is None or not np.isclose(
-            spec.resolution, sim.resolution, rtol=1e-10, atol=0
-        ):
-            raise ValueError("Topology and simulation resolution must agree.")
-        if (
-            not np.isfinite([spec.eps_min, spec.eps_max]).all()
-            or not 0 < spec.eps_min < spec.eps_max
-        ):
-            raise ValueError("Require finite 0 < eps_min < eps_max.")
-        if not np.isfinite(spec.beta_schedule).all() or min(spec.beta_schedule) <= 0:
-            raise ValueError(
-                "The optimization beta schedule must be finite and positive."
-            )
-        if not np.isfinite(spec.learning_rate) or spec.learning_rate <= 0:
-            raise ValueError(
-                "The optimization learning rate must be finite and positive."
-            )
-        if program.config.is_3d and (
-            spec.filter_radius != 0 or spec.projection_type == "ssp"
-        ):
-            raise ValueError(
-                "3D low-level topology requires zero filter radius and no SSP; apply density transforms through TopologyDesignRegion."
-            )
-        if not np.isfinite(spec.filter_radius) or spec.filter_radius < 0:
-            raise ValueError("filter_radius must be finite and nonnegative.")
-        if not 0 < spec.projection_eta < 1:
-            raise ValueError("projection_eta must lie strictly between zero and one.")
         if grid.material_grid.uses_full_permittivity:
-            raise ValueError("TopologyProblem requires scalar permittivity.")
+            raise ValueError("CompiledDesignProblem requires scalar permittivity.")
         for axis in "xyz":
             if np.any(np.asarray(getattr(grid, f"sig_{axis}")) != 0):
                 raise ValueError(
-                    "TopologyProblem requires lossless materials; use CPML instead of sponge PML."
+                    "CompiledDesignProblem requires lossless materials; use CPML instead of sponge PML."
                 )
             if not np.allclose(getattr(grid, f"mu_h{axis}"), 1):
-                raise ValueError("TopologyProblem requires relative permeability one.")
+                raise ValueError(
+                    "CompiledDesignProblem requires relative permeability one."
+                )
         if len(sim.sources) != 1 or not isinstance(
             sim.sources[0], (ModeSource, GaussianBeamSource)
         ):
             raise ValueError(
-                "TopologyProblem requires exactly one fixed ModeSource or GaussianBeamSource."
+                "CompiledDesignProblem requires exactly one fixed ModeSource or GaussianBeamSource."
             )
         if not all(
             isinstance(monitor, (ModeMonitor, FieldMonitor)) for monitor in sim.monitors
         ):
             raise ValueError(
-                "TopologyProblem accepts frequency-domain ModeMonitor/FieldMonitor only."
+                "CompiledDesignProblem accepts frequency-domain ModeMonitor/FieldMonitor only."
             )
         if not program.config.is_3d and any(
             np.argmin(m.size) == 2 for m in sim.monitors
@@ -327,7 +293,7 @@ class TopologyProblem:
                 and term.reference_monitor not in monitor_names
             ):
                 raise ValueError("Reference monitor is not present in the simulation.")
-        min_eps = min(spec.eps_min, float(np.min(grid.permittivity)))
+        min_eps = min(density_map.eps_bounds[0], float(np.min(grid.permittivity)))
         cfl = (
             sim.resolution
             * np.sqrt(min_eps / (3 if program.config.is_3d else 2))
@@ -339,10 +305,10 @@ class TopologyProblem:
             )
         # A fixed source or modal basis is valid only if its entire transverse
         # material slice is outside the design, with a two-cell sampling margin.
-        coordinates = np.nonzero(spec.region_mask)[::-1]
+        coordinates = np.nonzero(density_map.mask)[::-1]
         if any(
-            np.any(np.take(spec.region_mask, [0, -1], axis=a))
-            for a in range(spec.region_mask.ndim)
+            np.any(np.take(density_map.mask, [0, -1], axis=a))
+            for a in range(density_map.mask.ndim)
         ):
             raise ValueError("The design region must stay inside the domain boundary.")
         for device in (
@@ -390,9 +356,9 @@ class TopologyProblem:
                 | (np.asarray(grid.pml_data["sigma_y"]) > 0)
                 | (np.asarray(grid.pml_data["sigma_z"]) > 0)
             )
-            if pml_mask.shape != spec.region_mask.shape:
+            if pml_mask.shape != density_map.mask.shape:
                 raise ValueError("Unsupported absorber mask for topology optimization.")
-            if np.any(pml_mask & spec.region_mask):
+            if np.any(pml_mask & density_map.mask):
                 raise ValueError("The design region must not overlap the absorber.")
 
     def _physical_density(self, density, beta):
@@ -406,7 +372,7 @@ class TopologyProblem:
         check_density(density, self._density_map.shape)
         return jnp.asarray(density)
 
-    def value(self, density, *, beta=1.0):
+    def value(self, density, *, beta: float | None = 1.0):
         """Evaluate the reduced scalar objective for latent design parameters."""
         value = float(self._evaluate(self._density(density), self._beta(beta)))
         if not np.isfinite(value):
@@ -417,6 +383,8 @@ class TopologyProblem:
 
     @staticmethod
     def _beta(beta: float | None):
+        if beta is None:
+            return None
         if (
             not isinstance(beta, (int, float, np.integer, np.floating))
             or not np.isfinite(beta)
@@ -425,7 +393,7 @@ class TopologyProblem:
             raise ValueError("beta must be a finite positive scalar.")
         return jnp.asarray(beta, dtype=jnp.float32)
 
-    def value_and_grad(self, density, *, beta=1.0):
+    def value_and_grad(self, density, *, beta: float | None = 1.0):
         """Return the scalar objective and the selected backend's density gradient."""
         value, gradient = self._value_and_grad(self._density(density), self._beta(beta))
         value, gradient = float(value), np.asarray(gradient)
@@ -445,7 +413,7 @@ class TopologyProblem:
             return None
         return dict(self._spectral_adjoint.last_diagnostics)
 
-    def spectra(self, density, *, beta=1.0):
+    def spectra(self, density, *, beta: float | None = 1.0):
         """Return unweighted per-frequency powers for each objective term.
 
         The tuple follows ``objective.terms``; each array follows that term's
@@ -464,108 +432,6 @@ class TopologyProblem:
             )
         return values
 
-    def physical_density(self, result: TopologyResult):
-        """Return final physical density at the recorded projection strength."""
-        self._check_result(result)
-        return np.asarray(
-            self._physical_density(
-                self._density(result.final_params), self._beta(result.beta)
-            )
-        )
-
-    def _check_result(self, result):
-        if result.fingerprint != self.fingerprint:
-            raise ValueError("Result belongs to a different optimization problem.")
-
-    def run(
-        self,
-        num_steps=None,
-        *,
-        steps=None,
-        initial_density=None,
-        resume=None,
-        stop_after=None,
-        checkpoint=None,
-        checkpoint_every=1,
-        callback=None,
-    ):
-        """Optimize an arbitrary mask using the shared result/checkpoint API.
-
-        steps defines the fixed beta horizon; stop_after pauses at an absolute
-        completed-step limit. Retain that horizon when resuming. num_steps is
-        accepted for existing callers. Rectangular regions can instead use
-        InverseDesign and AdamOptimizer with an independent projection schedule.
-        """
-        from .optimizer import _optimize
-
-        if steps is not None and num_steps is not None:
-            raise ValueError("Supply steps or num_steps, not both.")
-        num_steps = step_count(
-            num_steps if steps is None else steps, "num_steps", minimum=1
-        )
-        limit = (
-            num_steps if stop_after is None else step_count(stop_after, "stop_after")
-        )
-        if limit > num_steps:
-            raise ValueError(
-                "stop_after must be an integer between zero and num_steps."
-            )
-        if resume is not None:
-            if initial_density is not None:
-                raise ValueError("Use initial_density or resume, not both.")
-            result = resume if isinstance(resume, TopologyResult) else self.load(resume)
-            self._check_result(result)
-            if result.total_steps != num_steps or limit < result.completed_steps:
-                raise ValueError(
-                    "Resume must preserve the total beta schedule and completed steps."
-                )
-        else:
-            density = self._density(
-                self.topology.initial_state(initial_density).density
-            )
-            beta = self.topology.beta(0, num_steps)
-            result = TopologyResult(
-                self,
-                (_readonly_array(density, float),),
-                self.topology._optimizer().init(density),
-                initial_objective=self.value(density, beta=beta),
-                fingerprint=self.fingerprint,
-                total_steps=num_steps,
-                _initial_beta=beta,
-            )
-
-        def evaluate(params, settings):
-            value, gradient = self.value_and_grad(params, **settings)
-            return (value, (value, 0.0)), gradient
-
-        def update(params, state, gradient):
-            state, change = self.topology.apply_parameter_gradient(
-                TopologyState(params, state), gradient
-            )
-            return state.density, state.optimizer_state, change
-
-        return _optimize(
-            result,
-            limit,
-            evaluate=evaluate,
-            optimizer=self.topology._optimizer(),
-            settings=lambda i: dict(beta=self.topology.beta(i, num_steps)),
-            update=update,
-            evaluate_after=lambda params, settings: self.value(params, **settings),
-            checkpoint=checkpoint,
-            checkpoint_every=checkpoint_every,
-            callback=callback,
-        )
-
-    def load(self, path):
-        return load_result(
-            path,
-            design=self,
-            fingerprint=self.fingerprint,
-            optimizer=self.topology._optimizer(),
-            shape=self.topology.region_mask.shape,
-        )
-
     def material_simulation(self, density, *, beta: float | None = 1.0):
         """Create an ordinary simulation with the identical density material map."""
         eps = self._permittivity(
@@ -573,38 +439,3 @@ class TopologyProblem:
         )
         materials = topology_material_grid(self.program, eps, self._mask)
         return self.simulation.updated_copy(material_grid=materials)
-
-    to_simulation = material_simulation
-    to_simulation_data = simulation_data
-
-    def export_design(
-        self, result, *, threshold=0.5, mode="contour", sample_spacing=None
-    ):
-        """Return fixed geometry plus thresholded topology polygons, for re-solving.
-
-        ``mode`` is "contour" or "pixel_exact". ``sample_spacing`` optionally
-        refines bilinear contour sampling in metres. Outside fixed structures
-        supply contour context; the region itself is clipped to exact cell edges.
-
-        The base design must contain only fixed structures in the design region's
-        background. A low-index region polygon overwrites any initial geometry in
-        that region before adding solid topology contours.
-        """
-        if self.program.config.is_3d:
-            raise ValueError(
-                "3D polygon export is not supported by TopologyProblem; use the extruded design-region export workflow."
-            )
-        spec = self.topology
-        self._check_result(result)
-        return self._density_map.export(
-            spec.design,
-            result.final_params,
-            beta=result.beta,
-            context=spec.fixed_structure_mask,
-            origin=self.program.grid.material_grid.origin,
-            background=spec.region_mask.astype(float),
-            region_mask=spec.region_mask,
-            threshold=threshold,
-            mode=mode,
-            sample_spacing=sample_spacing,
-        )

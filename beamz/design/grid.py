@@ -383,13 +383,6 @@ class RectilinearGrid:
             *(edges + shift[index] for index, edges in enumerate(self.edges))
         )
 
-    def axis_extent(
-        self, axis: Axis | int, bounds: tuple[int, int] | None = None
-    ) -> float:
-        edges = self.axis_edges(axis)
-        lower, upper = (0, edges.size - 1) if bounds is None else bounds
-        return float(edges[int(upper)] - edges[int(lower)])
-
     def coord_to_edge_index(
         self,
         axis: Axis | int,

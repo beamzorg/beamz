@@ -3,15 +3,15 @@
 import numpy as np
 import pytest
 
-from beamz.optimization import TopologyProblem
+from beamz.optimization import InverseDesign
 from tests.topology_case import make_problem
 
 pytestmark = pytest.mark.optimization
 
 
 def initial_density(problem):
-    density = problem.topology.initial_state().density.copy()
-    mask = problem.topology.region_mask
+    density = problem.design_region.initial_parameters.copy()
+    mask = problem.design_region.region_mask
     density[mask] += 0.05 * np.random.default_rng(10).normal(size=mask.sum())
     # Explicitly excite the odd target mode. Symmetry-preserving discretization
     # correctly suppresses it for a uniform design; small filtered noise alone
@@ -29,10 +29,10 @@ def test_full_solver_gradient_matches_finite_difference(
     density = initial_density(problem)
     value, gradient = problem.value_and_grad(density, beta=2)
     assert value > 1e-4  # A nontrivial signal, not a vanishing-pulse false positive.
-    np.testing.assert_array_equal(gradient[~problem.topology.region_mask], 0)
+    np.testing.assert_array_equal(gradient[~problem.design_region.region_mask], 0)
     for seed in (1, 7):
         direction = np.random.default_rng(seed).normal(size=density.shape)
-        direction *= problem.topology.region_mask
+        direction *= problem.design_region.region_mask
         direction /= np.linalg.norm(direction)
         # Keep a random component, but avoid nearly cancelling projections whose
         # small objective differences are dominated by float32 roundoff at h=.003.
@@ -56,7 +56,7 @@ def test_full_solver_gradient_matches_finite_difference(
             # These centered differences are above cancellation noise. A 1% gate
             # accommodates float32 roundoff across supported JAX CPU/GPU targets.
             np.testing.assert_allclose(difference, adjoint, rtol=0.01, atol=3e-6)
-    ordinary = problem.material_simulation(density, beta=2).run(
+    ordinary = problem.to_simulation(density, beta=2).run(
         backend="jax", performance=False
     )
     expected = (
@@ -73,11 +73,12 @@ def test_full_solver_gradient_matches_finite_difference(
 @pytest.mark.parametrize("interval", [1, 32, 1000])
 def test_checkpointed_adjoint_matches_uncheckpointed_scan(interval):
     reference = make_problem(checkpoint_interval=None)
-    checkpointed = TopologyProblem(
+    checkpointed = InverseDesign(
         reference.simulation,
-        reference.topology,
+        reference.design_region,
         reference.objective,
         checkpoint_interval=interval,
+        gradient_backend="autodiff",
     )
     density = initial_density(reference)
     reference_value, reference_gradient = reference.value_and_grad(density, beta=2)
@@ -91,22 +92,23 @@ def test_projection_full_solver_gradient_matches_finite_difference(projection):
     from dataclasses import replace
 
     base = make_problem()
-    problem = TopologyProblem(
+    problem = InverseDesign(
         base.simulation,
         replace(
-            base.topology,
+            base.design_region,
             projection_type=projection,
             filter_radius=0
             if projection == "identity"
-            else base.topology.filter_radius,
+            else base.design_region.filter_radius,
         ),
         base.objective,
+        gradient_backend="autodiff",
     )
     density = initial_density(problem)
     value, gradient = problem.value_and_grad(density, beta=2)
     direction = (
         np.random.default_rng(1).normal(size=density.shape)
-        * problem.topology.region_mask
+        * problem.design_region.region_mask
     )
     direction /= np.linalg.norm(direction)
     h = 0.01

@@ -3,15 +3,15 @@
 import numpy as np
 import pytest
 
-from beamz.optimization import SoftMinModePower, TopologyProblem
+from beamz.optimization import InverseDesign, SoftMinModePower
 from tests.topology_case import make_problem, make_wdm_problem
 
 pytestmark = pytest.mark.optimization
 
 
 def perturbed_density(problem):
-    mask = problem.topology.region_mask
-    density = problem.topology.initial_state().density.copy()
+    mask = problem.design_region.region_mask
+    density = problem.design_region.initial_parameters.copy()
     density[mask] += 0.04 * np.random.default_rng(10).normal(size=mask.sum())
     return density
 
@@ -22,15 +22,15 @@ def test_adjoint_full_gradient_and_finite_difference(polarization, reference):
     ad = make_problem(
         polarization=polarization, reference=reference, target_mode=0, run_time=320e-15
     )
-    adjoint = TopologyProblem(
-        ad.simulation, ad.topology, ad.objective, gradient_backend="adjoint"
+    adjoint = InverseDesign(
+        ad.simulation, ad.design_region, ad.objective, gradient_backend="adjoint"
     )
     density = perturbed_density(ad)
     value, expected = ad.value_and_grad(density, beta=2)
     actual_value, actual = adjoint.value_and_grad(density, beta=2)
     np.testing.assert_allclose(actual_value, value, rtol=2e-6)
     assert np.linalg.norm(actual - expected) / np.linalg.norm(expected) < 0.003
-    np.testing.assert_array_equal(actual[~ad.topology.region_mask], 0)
+    np.testing.assert_array_equal(actual[~ad.design_region.region_mask], 0)
     # A gradient-aligned direction avoids a nearly cancelling random projection.
     direction = expected / np.linalg.norm(expected)
     for h in (0.02, 0.01):
@@ -53,9 +53,11 @@ def test_adjoint_broadband_weighted_softmin_and_reference_sources(polarization):
     objective = base.objective + 0.3 * SoftMinModePower(
         "upper", reference_monitor="input", temperature=0.05
     )
-    ad = TopologyProblem(base.simulation, base.topology, objective)
-    adjoint = TopologyProblem(
-        base.simulation, base.topology, objective, gradient_backend="adjoint"
+    ad = InverseDesign(
+        base.simulation, base.design_region, objective, gradient_backend="autodiff"
+    )
+    adjoint = InverseDesign(
+        base.simulation, base.design_region, objective, gradient_backend="adjoint"
     )
     density = perturbed_density(ad)
     value, expected = ad.value_and_grad(density, beta=2)
@@ -78,8 +80,11 @@ def test_adjoint_run_duration_convergence_and_fixed_dft_storage():
     gradients, stored = [], []
     for duration in (320e-15, 480e-15):
         base = make_problem(target_mode=0, run_time=duration)
-        adjoint = TopologyProblem(
-            base.simulation, base.topology, base.objective, gradient_backend="adjoint"
+        adjoint = InverseDesign(
+            base.simulation,
+            base.design_region,
+            base.objective,
+            gradient_backend="adjoint",
         )
         _, gradient = adjoint.value_and_grad(perturbed_density(base))
         gradients.append(gradient)

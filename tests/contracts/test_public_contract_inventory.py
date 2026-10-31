@@ -58,7 +58,7 @@ def test_registry_categories_match_runtime_kinds():
 
 @pytest.mark.parametrize("case", CONFIGURATION_CASES, ids=lambda case: case.name)
 def test_public_configuration_is_frozen_and_canonically_immutable(case):
-    public_type = getattr(bz, case.name)
+    public_type = case.configuration_type or getattr(bz, case.name)
     instance = case.factory()
 
     assert type(instance) is public_type

@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from scipy.special import logsumexp
 
-from beamz.optimization import ModePower, SoftMinModePower, TopologyProblem
-from tests.topology_case import make_wdm_problem
+from beamz.optimization import InverseDesign, ModePower, SoftMinModePower
+from tests.topology_case import make_optimizer, make_wdm_problem
 
 
 @pytest.mark.optimization
@@ -15,9 +15,11 @@ from tests.topology_case import make_wdm_problem
 def test_softmin_full_solver_derivative_and_checkpoint(polarization, tmp_path):
     base = make_wdm_problem(polarization=polarization)
     objective = SoftMinModePower("upper", reference_monitor="input", temperature=0.04)
-    problem = TopologyProblem(base.simulation, base.topology, objective)
-    mask = problem.topology.region_mask
-    density = problem.topology.initial_state().density.copy()
+    problem = InverseDesign(
+        base.simulation, base.design_region, objective, gradient_backend="autodiff"
+    )
+    mask = problem.design_region.region_mask
+    density = problem.design_region.initial_parameters.copy()
     density[mask] += 0.04 * np.random.default_rng(10).normal(size=mask.sum())
     value, gradient = problem.value_and_grad(density, beta=2)
     spectrum = problem.spectra(density, beta=2)[0]
@@ -36,12 +38,18 @@ def test_softmin_full_solver_derivative_and_checkpoint(polarization, tmp_path):
         )
 
     path = tmp_path / "worst-frequency.npz"
-    problem.run(5, stop_after=0, checkpoint=path)
-    assert problem.load(path).fingerprint == problem.fingerprint
+    make_optimizer(problem, 5, preset="wdm").run(steps=5, stop_after=0, checkpoint=path)
+    assert make_optimizer(problem, 5, preset="wdm").load_result(
+        path
+    ).fingerprint == make_optimizer(problem, 5, preset="wdm")._fingerprint(
+        problem.objective
+    )
     for changed in (
         replace(objective, temperature=0.08),
         ModePower("upper", reference_monitor="input"),
     ):
-        other = TopologyProblem(base.simulation, base.topology, changed)
+        other = InverseDesign(
+            base.simulation, base.design_region, changed, gradient_backend="autodiff"
+        )
         with pytest.raises(ValueError, match="different optimization problem"):
-            other.load(path)
+            make_optimizer(other, 5, preset="wdm").load_result(path)
