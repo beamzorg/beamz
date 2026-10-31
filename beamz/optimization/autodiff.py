@@ -234,45 +234,13 @@ def transform_density(
     return apply_fixed_density(physical, fixed_solid, fixed_void)
 
 
-@partial(jax.jit, static_argnames=_TRANSFORM_STATIC_ARGS)
-def compute_parameter_gradient_vjp(
-    density,
-    grad_physical,
-    mask,
-    beta,
-    eta,
-    radius,
-    filter_type="conic",
-    morphology_operation="openclose",
-    morphology_tau=0.05,
-    fixed_structure_mask=None,
-    projection_type="heaviside",
-    ssp_smoothing_radius=0.55,
-    fixed_solid=None,
-    fixed_void=None,
-):
-    """
-    Compute gradient w.r.t. design density using VJP.
-    Supports both morphological and conic filters with hard boundary masking (literature-standard).
-    """
+def compute_parameter_gradient_vjp(density, grad_physical, *args, **options):
+    """Compatibility VJP of the authoritative density transform.
 
-    # Define a wrapper for the transform to differentiate
-    def transform_wrapper(d):
-        return transform_density(
-            d,
-            mask,
-            beta,
-            eta,
-            radius,
-            filter_type,
-            morphology_operation,
-            morphology_tau,
-            fixed_structure_mask,
-            projection_type,
-            ssp_smoothing_radius,
-            fixed_solid,
-            fixed_void,
-        )
-
-    _, pullback = jax.vjp(transform_wrapper, density)
+    Positional and keyword transform options retain their original ordering;
+    JIT specialization belongs to transform_density, not a second signature.
+    """
+    _, pullback = jax.vjp(
+        lambda values: transform_density(values, *args, **options), density
+    )
     return pullback(grad_physical)[0]
