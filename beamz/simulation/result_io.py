@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-FORMAT = "beamz.simulation.results/1"
+FORMAT = "beamz.simulation.results/2"
 
 
 def _classes():
@@ -127,7 +127,7 @@ def load_results(path):
     registry = _classes()
     with np.load(path, allow_pickle=False) as archive:
         manifest = json.loads(str(archive["manifest"]))
-        if manifest.get("format") != FORMAT:
+        if manifest.get("format") not in {"beamz.simulation.results/1", FORMAT}:
             raise ValueError("Unsupported BeamZ result archive version")
 
         def decode(value: Any) -> Any:

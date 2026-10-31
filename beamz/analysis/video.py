@@ -2,28 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from beamz.analysis._coordinates import field_coordinates, monitor_plane_coordinates_3d
-from beamz.lattice import plane_axes_3d
+from beamz.analysis._coordinates import recorded_plane
 from beamz.simulation.results import MonitorResults, SimulationResults
 
 _UM = 1e-6
-_AXIS_INDEX = {"z": 0, "y": 1, "x": 2}
-
-
-@dataclass(frozen=True, slots=True)
-class _VideoData:
-    frames: np.ndarray
-    times: np.ndarray
-    extent: tuple[float, float, float, float]
-    horizontal: str
-    vertical: str
-    slice_label: str | None = None
 
 
 def _mpl_types():
@@ -84,122 +71,6 @@ def _select_recording(results, *, monitor_name, field) -> MonitorResults:
             f"Multiple recorders contain {field!r}: {names}; pass monitor_name."
         )
     return matches[0]
-
-
-def _axis_extent(values, *, fallback_step):
-    coordinates = np.asarray(values, dtype=float)
-    if coordinates.size == 0:
-        raise ValueError("Recorded field coordinates are empty.")
-    step = (
-        float(np.nanmedian(np.diff(coordinates)))
-        if coordinates.size > 1
-        else float(fallback_step)
-    )
-    return (
-        float(coordinates[0] - 0.5 * step),
-        float(coordinates[-1] + 0.5 * step),
-    )
-
-
-def _video_data(results, recording, *, field, plane, index):
-    metadata = results.metadata
-    frames = np.asarray(recording.fields[field])
-    times = np.asarray(recording.field_times, dtype=float)
-    if frames.shape[0] != times.size or times.size == 0:
-        raise RuntimeError(
-            f"Recorder {recording.monitor.name!r} has no complete {field!r} frames."
-        )
-
-    offsets_um = tuple(value / _UM for value in metadata.coordinate_offset)
-    offset_by_axis = dict(zip("xyz", offsets_um, strict=True))
-    resolution_um = metadata.resolution / _UM
-    monitor = recording.monitor
-
-    if getattr(monitor, "region", "domain") == "slice":
-        if not metadata.is_3d or frames.ndim != 3:
-            raise ValueError(
-                "save_field_video requires two-dimensional image frames; "
-                "a 2D line recorder cannot be exported as a field video."
-            )
-        normal = monitor.plane_normal
-        vertical, horizontal = plane_axes_3d(normal)
-        region, coord0, coord1 = monitor_plane_coordinates_3d(
-            metadata,
-            monitor,
-            region=recording.sample_region,
-        )
-        if frames.shape[1:] != (coord0.size, coord1.size):
-            raise ValueError(
-                f"Recorded {field!r} frame shape {frames.shape[1:]} does not match "
-                f"the monitor plane {(coord0.size, coord1.size)}."
-            )
-        from beamz.analysis.plotting import _monitor_plane_display
-
-        extent, _, _ = _monitor_plane_display(
-            metadata,
-            region,
-            normal=normal,
-            origin=metadata.coordinate_offset,
-            coords=(coord0, coord1),
-        )
-        plane_position = (
-            float(region.plane_coord)
-            if region is not None
-            else float(monitor.plane_position)
-        )
-        position_um = plane_position / _UM - offset_by_axis[normal]
-        return _VideoData(
-            frames,
-            times,
-            extent,
-            horizontal,
-            vertical,
-            f"{normal}={position_um:.3g} um",
-        )
-
-    spatial_shape = frames.shape[1:]
-    if metadata.is_3d:
-        if frames.ndim != 4:
-            raise ValueError(
-                f"Full-domain 3D frames must have rank 4, got {frames.shape}."
-            )
-        normal = str(plane).lower()
-        if normal not in _AXIS_INDEX:
-            raise ValueError("plane must be 'x', 'y', or 'z'.")
-        frame_axis = _AXIS_INDEX[normal] + 1
-        selected_index = frames.shape[frame_axis] // 2 if index is None else int(index)
-        if not -frames.shape[frame_axis] <= selected_index < frames.shape[frame_axis]:
-            raise IndexError(
-                f"index {selected_index} is outside the {normal} axis with "
-                f"length {frames.shape[frame_axis]}."
-            )
-        selected_index %= frames.shape[frame_axis]
-        frames = np.take(frames, selected_index, axis=frame_axis)
-        vertical, horizontal = plane_axes_3d(normal)
-    else:
-        if frames.ndim != 3:
-            raise ValueError(
-                f"Full-domain 2D frames must have rank 3, got {frames.shape}."
-            )
-        vertical, horizontal = {
-            "xy": ("y", "x"),
-            "xz": ("z", "x"),
-            "yz": ("z", "y"),
-        }[metadata.plane_2d]
-    coordinates = {
-        axis: values / _UM
-        for axis, values in field_coordinates(metadata, field, spatial_shape).items()
-    }
-    x_extent = _axis_extent(coordinates[horizontal], fallback_step=resolution_um)
-    y_extent = _axis_extent(coordinates[vertical], fallback_step=resolution_um)
-    slice_label = (
-        f"{normal}={coordinates[normal][selected_index]:.3g} um"
-        if metadata.is_3d
-        else None
-    )
-    return _VideoData(
-        frames, times, (*x_extent, *y_extent), horizontal, vertical, slice_label
-    )
 
 
 def _color_limits(frames, cmap_limits, *, vmin, vmax):
@@ -337,7 +208,7 @@ def save_field_video(
         monitor_name=monitor_name,
         field=field,
     )
-    data = _video_data(
+    data = recorded_plane(
         results,
         recording,
         field=field,

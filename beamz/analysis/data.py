@@ -10,6 +10,8 @@ from typing import Any, cast
 import numpy as np
 
 from beamz.devices._immutable import immutable_snapshot, readonly_array
+from beamz.devices._placement import SnappedRegion
+from beamz.devices.monitors.geometry import retained_sample_region
 from beamz.devices.monitors.monitors import FluxMonitor, ModeMonitor, _Monitor
 from beamz.simulation.results import (
     MaterialRegion,
@@ -39,6 +41,7 @@ class AnalysisData:
     materials: MaterialRegion | None
     frequencies: np.ndarray
     monitor_geometry: _Monitor | None
+    sample_region: SnappedRegion | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.coordinates, SimulationMetadata):
@@ -53,6 +56,13 @@ class AnalysisData:
             raise TypeError(
                 "AnalysisData.monitor_geometry must be a canonical monitor."
             )
+        object.__setattr__(
+            self,
+            "sample_region",
+            retained_sample_region(
+                self.coordinates, self.monitor_geometry, self.sample_region
+            ),
+        )
         object.__setattr__(self, "fields", immutable_snapshot(dict(self.fields)))
         object.__setattr__(self, "materials", immutable_snapshot(self.materials))
         object.__setattr__(
@@ -106,7 +116,14 @@ def _lower_monitor(
     if result.field_steps.size:
         fields["step"] = result.field_steps
     materials = result.material_region or metadata.fields.materials
-    return AnalysisData(coordinates, fields, materials, frequencies, result.monitor)
+    return AnalysisData(
+        coordinates,
+        fields,
+        materials,
+        frequencies,
+        result.monitor,
+        result.sample_region,
+    )
 
 
 def analysis_inputs(value) -> Mapping[str, AnalysisData]:

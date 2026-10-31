@@ -419,20 +419,11 @@ def test_monitor_dft_field_plot_restores_tidy_plane_view():
         time=np.array([0.0, 1e-15]),
     )
     monitor = sim.monitors[0]
-    fields = sim.compile().grid
-    component_shapes = tuple(
-        tuple(int(v) for v in getattr(fields, name).shape)
-        for name in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
-    )
-    monitor_base_shape = tuple(
-        max(shape[axis] for shape in component_shapes) for axis in range(3)
-    )
-    coords0, coords1 = monitor.get_analysis_plane_coords_3d(
-        dx=sim.resolution,
-        dy=sim.resolution,
-        dz=sim.resolution,
-        field_shape=monitor_base_shape,
-    )
+    program = sim.compile()
+    fields = program.grid
+    region = program.monitors[0].sample_region
+    assert region is not None
+    coords0, coords1 = region.sample_coordinates
     npoints = int(coords0.size * coords1.size)
     monitor_result = bz.MonitorResults(
         monitor=monitor,

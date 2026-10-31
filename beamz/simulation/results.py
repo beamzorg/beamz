@@ -15,6 +15,7 @@ from beamz.design.grid import RectilinearGrid
 from beamz.devices._immutable import immutable_snapshot, readonly_array
 from beamz.devices._placement import SnappedRegion
 from beamz.devices.monitors.compiler import CompiledMonitorSpec
+from beamz.devices.monitors.geometry import retained_sample_region
 from beamz.devices.monitors.monitors import _Monitor
 from beamz.lattice import canonical_component_2d
 
@@ -930,7 +931,17 @@ class SimulationResults:
                     "SimulationResults.monitors values must be "
                     f"MonitorResults; got {type(result).__name__}."
                 )
-        object.__setattr__(self, "monitors", MappingProxyType(dict(self.monitors)))
+        monitors = {}
+        for name, result in self.monitors.items():
+            region = retained_sample_region(
+                self.metadata, result.monitor, result.sample_region
+            )
+            monitors[name] = (
+                result
+                if region is result.sample_region
+                else replace(result, sample_region=region)
+            )
+        object.__setattr__(self, "monitors", MappingProxyType(monitors))
         object.__setattr__(self, "sources", immutable_snapshot(tuple(self.sources)))
         launch_powers = tuple(self.source_launch_powers)
         if not launch_powers:

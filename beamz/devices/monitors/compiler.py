@@ -275,6 +275,10 @@ def _monitor_plane_quadrature(monitor: _Monitor, fields, resolution: float, grid
     region = monitor.get_snapped_region(
         grid=grid, dx=resolution, dy=resolution, dz=resolution, field_shape=base_shape
     )
+    if region is None:
+        raise ValueError(
+            "A three-dimensional monitor requires a snapped sampling plane."
+        )
     quadrature = compile_yee_plane_quadrature_3d(
         center=monitor.center,
         size=monitor.size,
@@ -288,7 +292,7 @@ def _monitor_plane_quadrature(monitor: _Monitor, fields, resolution: float, grid
         },
         grid=grid,
     )
-    return region, quadrature
+    return region.with_samples(quadrature.coordinates), quadrature
 
 
 def _spectral_sampling_spec(common, dft, region, **geometry):
