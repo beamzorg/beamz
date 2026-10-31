@@ -89,24 +89,38 @@ def test_incomplete_context_does_not_wrap_negative_indices():
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
-def test_monitor_snapshot_retains_shared_node_tensors(ndim):
+@pytest.mark.parametrize("direct_yee", [False, True])
+@pytest.mark.parametrize("stop", [5, None])
+def test_monitor_snapshot_retains_shared_node_tensors(ndim, direct_yee, stop):
     shape = (8,) * ndim
     node_shape = (9,) * ndim
     tensor = np.arange(6 * np.prod(node_shape)).reshape(6, *node_shape)
+    yee = np.arange(np.prod(node_shape)).reshape(node_shape)
     materials = SimpleNamespace(
-        tensors={}, uses_direct_yee_materials=False, yee_tensors={"eps_node": tensor}
+        tensors={},
+        uses_direct_yee_materials=direct_yee,
+        yee_materials={"eps_x": yee},
+        yee_tensors={"eps_node": tensor},
     )
     fields = SimpleNamespace(
         permittivity=np.ones(shape),
         permeability=np.ones(shape),
         material_grid=materials,
     )
-    crop = (slice(2, 5),) * ndim
+    crop = (slice(2, stop),) * ndim
     result = _snapshot_material_region(fields, crop, (2,) * ndim)
+    expected_crop = (slice(2, 6 if stop == 5 else None),) * ndim
     np.testing.assert_array_equal(
-        result.yee_tensors["eps_node"], tensor[(slice(None), *(slice(2, 6),) * ndim)]
+        result.yee_tensors["eps_node"], tensor[(slice(None), *expected_crop)]
     )
     assert not result.yee_tensors["eps_node"].flags.writeable
+    assert not np.shares_memory(result.yee_tensors["eps_node"], tensor)
+    if direct_yee:
+        np.testing.assert_array_equal(result.yee_materials["eps_x"], yee[expected_crop])
+        assert not result.yee_materials["eps_x"].flags.writeable
+        assert not np.shares_memory(result.yee_materials["eps_x"], yee)
+    else:
+        assert not result.yee_materials
 
 
 def test_port_preserves_explicit_mixed_polarization_selection():
