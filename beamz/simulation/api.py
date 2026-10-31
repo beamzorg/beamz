@@ -1411,7 +1411,7 @@ class Simulation:
         )
 
     def differentiable(
-        self, *, num_steps=None, backend="jax", checkpoint_interval=None
+        self, *, num_steps=None, backend="jax", checkpoint_interval=None, sharding=None
     ):
         """Build a reusable solver for ``jax.grad`` and inverse design.
 
@@ -1431,6 +1431,9 @@ class Simulation:
         checkpoint_interval : int or None, optional
             Steps per retained checkpoint. None selects sqrt(T); zero stores
             the complete trajectory instead of rematerializing chunks.
+        sharding : ShardingConfig or compatible value, optional
+            Single-host spatial partitioning for FP32, lossless scalar 3D grids.
+            Place spatial inputs with ``solver.prepare_permittivity`` before AD.
 
         Returns
         -------
@@ -1440,7 +1443,7 @@ class Simulation:
         """
         from beamz.simulation.differentiation import DifferentiableSimulation
 
-        program = self.compile(num_steps=num_steps, backend=backend)
+        program = self.compile(num_steps=num_steps, backend=backend, sharding=sharding)
         return DifferentiableSimulation(
             program, t0=float(self.time[0]), checkpoint_interval=checkpoint_interval
         )

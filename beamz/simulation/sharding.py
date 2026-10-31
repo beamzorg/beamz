@@ -11,6 +11,7 @@ from functools import lru_cache
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax.core import Tracer
 
 from beamz._region_array import RegionArray, place_region_array
 from beamz.simulation.model import (
@@ -558,6 +559,7 @@ def _device_reshard(sharding):
 def _is_host_array(value):
     return isinstance(value, np.ndarray) or (
         isinstance(value, jax.Array)
+        and not isinstance(value, Tracer)
         and value.is_fully_addressable
         and len(value.devices()) == 1
         and all(device.platform == "cpu" for device in value.devices())
@@ -565,6 +567,10 @@ def _is_host_array(value):
 
 
 def _place_array(value, target):
+    if isinstance(value, Tracer):
+        # Device metadata is unavailable while tracing checkpointed gradients.
+        # Express placement in the compiled graph, preserving its transpose.
+        return jax.lax.with_sharding_constraint(value, target)
     if isinstance(value, RegionArray):
         return place_region_array(value, target)
     if (

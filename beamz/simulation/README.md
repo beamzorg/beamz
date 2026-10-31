@@ -210,6 +210,39 @@ inside `jax.grad` or `jax.value_and_grad`. It returns a JAX-native
 `solver.monitor_fields(state, name)` and `solver.monitor_flux(state, name)` for
 frequency-domain objectives. The [optimization guide](../optimization/README.md)
 covers checkpointing, native CUDA reverse mode, and parameter restrictions.
+
+Spatial gradients use the existing partition plan:
+
+```python
+solver = simulation.differentiable(
+    sharding=dict(axis="x", num_devices=2, backend="gpu"),
+    checkpoint_interval=32,
+)
+eps = solver.prepare_permittivity(host_cell_permittivity)
+value, gradient = jax.value_and_grad(objective)(eps)
+```
+
+Build the objective from `solver(eps)` and its DFT fields/flux. Prepare spatial
+inputs **before** `grad`/`jit`; their padded cells and returned gradients remain
+partitioned. Scalars stay compact and shared. Yee tuples use the plan's padded
+component shapes. Returned fields retain storage padding for continuation;
+`program.sharding.layout.logical_shapes` describes their physical supports.
+Checkpoints retain distributed fields, owner-local CPML, and partial DFTs;
+only packed CPML faces and monitor integrals are reduced at scan boundaries.
+
+| Distributed gradient capability | Support |
+| --- | --- |
+| JAX forward/replay/backward | Single host, FP32, uniform 3D, x/y/z partitions |
+| Materials/boundaries | Lossless scalar dielectric, unit permeability, PEC/CPML |
+| Sources/observations | Fixed source profiles with dynamic amplitudes; planar vector DFT, mode/flux objectives |
+| `cuda_streamed` | Native forward/replay; distributed JAX phase transpose |
+| `TopologyProblem` | `sharding=...`, `gradient_backend="autodiff"`; partitioned density/Adam state |
+| Unsupported | Dispersive/tensor/Bloch/rectilinear physics, trainable conductivity, time recorders, spectral adjoint, multi-host, disabled checkpointing |
+
+`examples/optimization/multi_gpu_gradients.py` runs one optimization step.
+Distributed regression tests are in `tests/hardware/test_sharded_differentiation.py`.
+Numerical parity, real-GPU capacity beyond one GPU, peak backward memory, and
+timing/scaling require separate numerical and hardware validation.
 ## Broadband dispersive materials
 
 `bz.PoleResidue(epsilon_inf, poles, frequency_range=(fmin, fmax))` describes
