@@ -26,7 +26,7 @@ from beamz.analysis.modal_projection.colocation import (
 )
 from beamz.analysis.modal_projection.geometry import (
     _modal_projection_spatial_phase,
-    _monitor_component_plane_coords_3d,
+    _monitor_analysis_plane_3d,
     _monitor_projection_phase,
 )
 from beamz.design.gds import (
@@ -272,31 +272,19 @@ def test_interpolate_plane_matrix_2d_preserves_complex_affine_plane():
     np.testing.assert_allclose(actual, expected, rtol=1e-13, atol=1e-13)
 
 
-def test_colocate_field_components_to_projection_3d_respects_yee_offsets():
-    sim = SimpleNamespace()
-    sim.is_3d = True
-    sim.resolution = 1.0
-    grid_shape = (5, 5, 5)
-    field_arrays = {
-        comp: np.zeros(component_shape_3d(comp, grid_shape), dtype=np.float32)
-        for comp in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
-    }
-    field_arrays["permittivity"] = np.ones(grid_shape, dtype=np.float32)
-    sim.fields = type("F", (), field_arrays)()
-
-    class DummyXMonitor:
-        name = "yee_x"
-
-        @staticmethod
-        def get_grid_slice_3d(dx, dy, dz, field_shape):
-            del dx, dy, dz
-            normal_index = min(1, int(field_shape[2]) - 1)
-            return slice(1, 4), slice(1, 4), normal_index
+def test_colocate_field_components_to_projection_3d_on_canonical_monitor():
+    monitor = FieldMonitor(
+        center=(1.0, 2.5, 2.5),
+        size=(0.0, 3.0, 3.0),
+        name="yee_x",
+        freqs=(1.0,),
+        fields=("Ey", "Ez", "Hy", "Hz"),
+    )
+    sim = _analysis_contract(monitor=monitor, frequencies=(1.0,), shape=(5, 5, 5))
 
     def plane(c0, c1):
         return 0.25 + 0.75 * c0 - 0.4 * c1 + 1j * (1.5 - 0.2 * c0 + 0.6 * c1)
 
-    monitor = DummyXMonitor()
     target0 = np.array([1.5, 2.0, 2.5], dtype=float)
     target1 = np.array([1.5, 2.0, 2.5], dtype=float)
     projection = {
@@ -306,7 +294,7 @@ def test_colocate_field_components_to_projection_3d_respects_yee_offsets():
     }
     field_components = {}
     for comp in ("Ey", "Ez", "Hy", "Hz"):
-        src0, src1 = _monitor_component_plane_coords_3d(sim, monitor, comp, "x")
+        src0, src1 = _monitor_analysis_plane_3d(sim, monitor, "x")
         field_components[comp] = plane(src0[:, None], src1[None, :]).reshape(-1)
 
     colocated = _colocate_field_components_to_projection_3d(
@@ -726,23 +714,6 @@ def test_s_parameters_keys_shapes_and_valid_mask(monkeypatch):
 
 
 def test_colocate_monitor_component_matrix_3d_interpolates_to_canonical_plane():
-    sim = SimpleNamespace()
-    sim.is_3d = True
-    sim.resolution = 1.0
-    sim.fields = type(
-        "F",
-        (),
-        {
-            "permittivity": np.ones((5, 6, 7), dtype=float),
-            "Ex": np.zeros((5, 6, 6), dtype=float),
-            "Ey": np.zeros((5, 5, 7), dtype=float),
-            "Ez": np.zeros((4, 6, 7), dtype=float),
-            "Hx": np.zeros((4, 5, 7), dtype=float),
-            "Hy": np.zeros((4, 6, 6), dtype=float),
-            "Hz": np.zeros((5, 5, 6), dtype=float),
-        },
-    )()
-
     monitor = FieldMonitor(
         center=(3.5, 2.8, 2.75),
         size=(4.6, 0.0, 3.3),
@@ -751,7 +722,8 @@ def test_colocate_monitor_component_matrix_3d_interpolates_to_canonical_plane():
         fields=("Ex",),
     )
 
-    src0, src1 = _monitor_component_plane_coords_3d(sim, monitor, "Ex", axis="y")
+    sim = _analysis_contract(monitor=monitor, frequencies=(1.0,), shape=(5, 6, 7))
+    src0, src1 = _monitor_analysis_plane_3d(sim, monitor, axis="y")
     dst0, dst1 = mp._monitor_analysis_plane_3d(sim, monitor, axis="y")
     expected0 = 1.1 + (np.arange(dst0.size, dtype=float) + 0.5) * (
         (4.4 - 1.1) / float(dst0.size)

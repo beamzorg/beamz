@@ -16,7 +16,7 @@ from beamz.lattice import (
     normal_plane_wave_transfer,
 )
 
-from .geometry import _monitor_component_plane_coords_3d, _plane_axes_for_port_axis
+from .geometry import _monitor_analysis_plane_3d, _plane_axes_for_port_axis
 
 
 def _interpolate_plane_matrix_2d(
@@ -57,10 +57,9 @@ def _colocate_monitor_component_matrix_3d(
     target0: np.ndarray,
     target1: np.ndarray,
 ) -> np.ndarray:
-    src0, src1 = _monitor_component_plane_coords_3d(
+    src0, src1 = _monitor_analysis_plane_3d(
         sim,
         monitor,
-        component,
         axis,
     )
     data = np.asarray(values, dtype=np.complex128)
