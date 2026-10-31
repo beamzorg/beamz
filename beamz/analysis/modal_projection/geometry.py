@@ -135,19 +135,6 @@ def _mode_components_for_port(spec):
     }
 
 
-def _plane_axes_for_port_axis(axis: str) -> tuple[str, str]:
-    axis = str(axis).lower()
-    mapping = {
-        "x": ("z", "y"),
-        "y": ("z", "x"),
-        "z": ("y", "x"),
-    }
-    try:
-        return mapping[axis]
-    except KeyError as exc:
-        raise ValueError(f"Unsupported port axis {axis!r}.") from exc
-
-
 def _monitor_analysis_plane_3d(
     sim: AnalysisData,
     monitor,

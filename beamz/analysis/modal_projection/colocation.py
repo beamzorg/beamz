@@ -14,9 +14,10 @@ from beamz.lattice import (
     component_coordinates_3d_um,
     component_coordinates_rectilinear,
     normal_plane_wave_transfer,
+    plane_axes_3d,
 )
 
-from .geometry import _monitor_analysis_plane_3d, _plane_axes_for_port_axis
+from .geometry import _monitor_analysis_plane_3d
 
 
 def _interpolate_plane_matrix_2d(
@@ -144,7 +145,7 @@ def _component_index_plane_coords_3d(sim, component, index, axis):
         }
     else:
         coords = component_coordinates_rectilinear(component, grid)
-    axis0, axis1 = _plane_axes_for_port_axis(axis)
+    axis0, axis1 = plane_axes_3d(axis)
     axis_indices = {"z": index[0], "y": index[1], "x": index[2]}
     coord0 = np.asarray(coords[axis0][axis_indices[axis0]], dtype=np.float64)
     coord1 = np.asarray(coords[axis1][axis_indices[axis1]], dtype=np.float64)

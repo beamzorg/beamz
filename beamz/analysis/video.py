@@ -8,14 +8,8 @@ from typing import Any
 
 import numpy as np
 
-from beamz.analysis._coordinates import monitor_plane_coordinates_3d
-from beamz.lattice import (
-    component_coordinates_2d_um,
-    component_coordinates_3d_um,
-    component_coordinates_rectilinear,
-    coordinates_in_public_frame,
-    plane_axes_3d,
-)
+from beamz.analysis._coordinates import field_coordinates, monitor_plane_coordinates_3d
+from beamz.lattice import plane_axes_3d
 from beamz.simulation.results import MonitorResults, SimulationResults
 
 _UM = 1e-6
@@ -186,6 +180,7 @@ def _video_data(results, recording, *, field, plane, index):
             f"{normal}={position_um:.3g} um",
         )
 
+    spatial_shape = frames.shape[1:]
     if metadata.is_3d:
         if frames.ndim != 4:
             raise ValueError(
@@ -203,81 +198,30 @@ def _video_data(results, recording, *, field, plane, index):
             )
         selected_index %= frames.shape[frame_axis]
         frames = np.take(frames, selected_index, axis=frame_axis)
-        local_coordinates = (
-            {
-                axis: values / _UM
-                for axis, values in component_coordinates_rectilinear(
-                    field, metadata.grid
-                ).items()
-            }
-            if metadata.grid is not None
-            else component_coordinates_3d_um(
-                field,
-                metadata.fields.grid_shape,
-                resolution_um,
-            )
-        )
-        coordinates = coordinates_in_public_frame(local_coordinates, offsets_um)
         vertical, horizontal = plane_axes_3d(normal)
-        x_extent = _axis_extent(
-            coordinates[horizontal],
-            fallback_step=resolution_um,
-        )
-        y_extent = _axis_extent(
-            coordinates[vertical],
-            fallback_step=resolution_um,
-        )
-        position_um = coordinates[normal][selected_index]
-        return _VideoData(
-            frames,
-            times,
-            (*x_extent, *y_extent),
-            horizontal,
-            vertical,
-            f"{normal}={position_um:.3g} um",
-        )
-
-    if frames.ndim != 3:
-        raise ValueError(f"Full-domain 2D frames must have rank 3, got {frames.shape}.")
-    vertical, horizontal = {
-        "xy": ("y", "x"),
-        "xz": ("z", "x"),
-        "yz": ("z", "y"),
-    }[metadata.plane_2d]
-    local_coordinates = (
-        {
-            axis: values / _UM
-            for axis, values in component_coordinates_rectilinear(
-                field,
-                metadata.grid,
-                plane=metadata.plane_2d,
-                polarization=metadata.polarization_2d,
-            ).items()
-        }
-        if metadata.grid is not None
-        else component_coordinates_2d_um(
-            field,
-            metadata.fields.grid_shape,
-            resolution_um,
-            metadata.plane_2d,
-            metadata.polarization_2d,
-        )
-    )
-    coordinates = coordinates_in_public_frame(local_coordinates, offsets_um)
-    x_extent = _axis_extent(
-        coordinates[horizontal],
-        fallback_step=resolution_um,
-    )
-    y_extent = _axis_extent(
-        coordinates[vertical],
-        fallback_step=resolution_um,
+    else:
+        if frames.ndim != 3:
+            raise ValueError(
+                f"Full-domain 2D frames must have rank 3, got {frames.shape}."
+            )
+        vertical, horizontal = {
+            "xy": ("y", "x"),
+            "xz": ("z", "x"),
+            "yz": ("z", "y"),
+        }[metadata.plane_2d]
+    coordinates = {
+        axis: values / _UM
+        for axis, values in field_coordinates(metadata, field, spatial_shape).items()
+    }
+    x_extent = _axis_extent(coordinates[horizontal], fallback_step=resolution_um)
+    y_extent = _axis_extent(coordinates[vertical], fallback_step=resolution_um)
+    slice_label = (
+        f"{normal}={coordinates[normal][selected_index]:.3g} um"
+        if metadata.is_3d
+        else None
     )
     return _VideoData(
-        frames,
-        times,
-        (*x_extent, *y_extent),
-        horizontal,
-        vertical,
+        frames, times, (*x_extent, *y_extent), horizontal, vertical, slice_label
     )
 
 

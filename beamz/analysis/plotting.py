@@ -13,15 +13,11 @@ from beamz._helpers import get_si_scale_and_label
 from beamz.analysis._coordinates import monitor_plane_coordinates_3d
 from beamz.analysis.data import AnalysisData, analysis_inputs, static_fields
 from beamz.devices.visualization import visual_spec_from_device
+from beamz.lattice import plane_axes_3d
 from beamz.simulation.observe import source_field_amplitude_normalization
 
 _UM = 1e-6
 _AXIS_INDEX: dict[str, int] = {"z": 0, "y": 1, "x": 2}
-_PLANE_AXES: dict[str, tuple[str, str]] = {
-    "x": ("z", "y"),
-    "y": ("z", "x"),
-    "z": ("y", "x"),
-}
 _DESIGN_EXTENT: dict[str, str] = {
     "x": "width",
     "y": "height",
@@ -309,7 +305,7 @@ def extract_axis_aligned_slice(
     """Extract a 3D array plane and attach consistent display coordinates."""
     array = np.asarray(values)
     normal = str(axis).lower()
-    if array.ndim != 3 or normal not in _PLANE_AXES:
+    if array.ndim != 3 or normal not in _AXIS_INDEX:
         raise ValueError("Axis-aligned slices require a 3D array and x, y, or z axis.")
     axis_index = _AXIS_INDEX[normal]
     origin_by_axis: dict[str, float] = dict(
@@ -326,7 +322,7 @@ def extract_axis_aligned_slice(
             default=array.shape[axis_index] // 2,
         )
     index = int(np.clip(index, 0, array.shape[axis_index] - 1))
-    vertical, horizontal = _PLANE_AXES[normal]
+    vertical, horizontal = plane_axes_3d(normal)
     if lengths is None:
         lengths = {
             name: array.shape[_AXIS_INDEX[name]] * float(step)
@@ -698,7 +694,7 @@ def _device_geometry(device):
         return None
     center, size = np.asarray(spec.center), np.asarray(spec.size)
     direction = str(spec.direction or "").lower()
-    axis = next((name for name in _PLANE_AXES if direction.endswith(name)), None)
+    axis = next((name for name in "xyz" if direction.endswith(name)), None)
     if axis is None and size.size == 3 and np.any(np.isclose(size, 0.0)):
         axis = ("x", "y", "z")[int(np.argmin(np.abs(size)))]
     if axis is None:
@@ -715,7 +711,7 @@ def _draw_device_slice_overlay(ax, device, *, normal, origin, color, source):
     if spec is not None and (spec.style or {}).get("shape") == "circle":
         from matplotlib.patches import Circle
 
-        vertical, horizontal = _PLANE_AXES[normal]
+        vertical, horizontal = plane_axes_3d(normal)
         indices = tuple("xyz".index(axis) for axis in (horizontal, vertical))
         center = (
             spec.center
@@ -738,7 +734,7 @@ def _draw_device_slice_overlay(ax, device, *, normal, origin, color, source):
     if geometry is None:
         return
     axis, center, size, direction = geometry
-    vertical, horizontal = _PLANE_AXES[normal]
+    vertical, horizontal = plane_axes_3d(normal)
     if axis == normal:
         # A source or monitor whose plane is parallel to the displayed cross
         # section is best represented by its full footprint, rather than the
@@ -842,7 +838,7 @@ def overlay_boundaries(ax, extent, thickness, *, edges=None, **style):
 
 def _layout_slice(normal, position, *, design, origin) -> AxisSlice:
     """Describe a displayed design plane without quantizing it to the grid."""
-    vertical, horizontal = _PLANE_AXES[normal]
+    vertical, horizontal = plane_axes_3d(normal)
     extents: dict[str, float] = {
         "x": float(design.width),
         "y": float(design.height),
@@ -926,7 +922,7 @@ def _path_patch(ax, geometry, *, normal, origin, facecolor):
     from matplotlib.patches import PathPatch
     from matplotlib.path import Path
 
-    vertical, horizontal = _PLANE_AXES[normal]
+    vertical, horizontal = plane_axes_3d(normal)
     origin_by_axis: dict[str, float] = dict(zip(("x", "y", "z"), origin, strict=True))
     axis_index: dict[str, int] = {"x": 0, "y": 1, "z": 2}
     h_index = axis_index[horizontal]
@@ -1538,7 +1534,7 @@ def plot_simulation_permittivity(
         eps = np.take(eps, int(index), axis=_AXIS_INDEX[normal])
     elif sim.plane_2d != "xy" or normal != "z":
         raise ValueError("2D permittivity plotting currently supports the xy plane.")
-    vertical, horizontal = _PLANE_AXES[normal]
+    vertical, horizontal = plane_axes_3d(normal)
     x_edges, y_edges = edges[horizontal] / _UM, edges[vertical] / _UM
     fig, ax = _figure_axes(ax, figsize=figsize or (7.0, 4.5))
     image, _ = plot_field_view(
@@ -2015,7 +2011,7 @@ def _overlay_material_slice(
     core_permittivity,
     sample_region=None,
 ):
-    vertical, horizontal = _PLANE_AXES[normal]
+    vertical, horizontal = plane_axes_3d(normal)
     origin_by_axis: dict[str, float] = dict(
         zip(("x", "y", "z"), map(float, origin), strict=True)
     )
@@ -2164,10 +2160,7 @@ def plot_dft_field(
     if not getattr(monitor, "is_3d", False):
         raise ValueError("plot_dft_field expects a 3D plane monitor.")
     axis = str(getattr(monitor, "plane_normal", "z")).lower()
-    plane_axes = {"x": ("z", "y"), "y": ("z", "x"), "z": ("y", "x")}
-    if axis not in plane_axes:
-        raise ValueError("DFT field monitor plane_normal must be one of x, y, or z.")
-    axis0, axis1 = plane_axes[axis]
+    axis0, axis1 = plane_axes_3d(axis)
 
     freqs = np.asarray(data.frequencies, dtype=float)
     selected_frequency = (
