@@ -192,6 +192,7 @@ def test_monitor_results_apply_distinct_flux_and_mode_normalization(monkeypatch)
     )
 
     def fake_extract(*args, **kwargs):
+        assert args[0]["mode"].monitor_geometry == mode_monitor
         return {
             "mode_m0": {
                 "a_minus": np.array([0.0 + 0.0j]),
@@ -247,6 +248,7 @@ def test_3d_mode_monitor_labels_positive_axis_power_as_forward(monkeypatch):
     )
 
     def fake_extract(*args, **kwargs):
+        assert args[0]["mode"].monitor_geometry == monitor
         return {
             "mode_m0": {
                 # The 3D x-normal discrete contract uses the raw minus branch

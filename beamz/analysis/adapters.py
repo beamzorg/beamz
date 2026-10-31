@@ -204,11 +204,6 @@ def to_xarray(results):
         ),
         next(iter(inputs.values())),
     )
-    fields = {
-        name: values
-        for name, values in data.fields.items()
-        if name not in {"power", "flux", "step"}
-    }
     data_vars = {
         name: _field_data_array(
             values,
@@ -217,7 +212,8 @@ def to_xarray(results):
             times=data.coordinates.time,
             steps=data.fields.get("step"),
         )
-        for name, values in fields.items()
+        for name, values in data.fields.items()
+        if name not in {"power", "flux", "step"}
     }
     width, height, depth = (
         data.coordinates.width,
@@ -454,7 +450,7 @@ def mode_data(results, name):
         )
         for idx in range(num_modes)
     ]
-    waves = _sp._extract_port_waves_dft(results, ports=ports, frequencies=freqs)
+    waves = _sp._extract_port_waves_dft({monitor_name: data}, ports, freqs)
     amps = np.zeros((freqs.size, 2, num_modes), dtype=np.complex128)
     for idx, port in enumerate(ports):
         wave = waves[port.name]

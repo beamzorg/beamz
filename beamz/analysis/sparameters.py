@@ -151,7 +151,6 @@ def _sample_monitor_component_dft(data, monitor, component, frequencies):
     values_src = np.asarray(data.field(component), dtype=np.complex128)
     if freq_src.size == 0:
         raise ValueError(f"Monitor '{monitor.name}' has no configured DFT frequencies.")
-    values_src = _resample_complex_matrix(freq_src, values_src, freq_src)
     freq_dst = np.atleast_1d(np.asarray(frequencies, dtype=float))
     sampled = _resample_complex_matrix(freq_src, values_src, freq_dst)
     phase = _monitor_projection_phase(component, freq_dst, data.dt)
@@ -421,7 +420,7 @@ def s_parameters(
     frequencies = np.atleast_1d(np.asarray(frequencies, dtype=float))
 
     waves = _extract_port_waves_dft(
-        results_or_sim,
+        inputs,
         ports=port_map.values(),
         frequencies=frequencies,
         min_incident_db=min_incident_db,
