@@ -764,6 +764,15 @@ def test_compiled_program_key_is_hashable_with_sharding_token():
     assert key.sharding == (True, "x", 2, None)
     assert isinstance(hash(key), int)
 
+    request = sim.to_request(
+        num_steps=2, compiler_sharding={"axis": "x", "num_devices": 2}
+    )
+    assert request.run.sharding == key.sharding
+    assert CompiledProgramKey.from_request(request) == key
+    assert request != sim.to_request(num_steps=2)
+    with pytest.raises(ValueError, match="must agree"):
+        sim.to_request(sharding=False, compiler_sharding=True)
+
 
 def test_compiled_source_spec_matches_canonical_step_update_2d():
     reference, _ = _make_2d_sim(plane_2d="xy", steps=3)

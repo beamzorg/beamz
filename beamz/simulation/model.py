@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal, NamedTuple, TypeAlias
 
@@ -14,7 +14,6 @@ import numpy as np
 from beamz._region_array import RegionArray
 from beamz.design.discretization import MaterialGrid
 from beamz.design.grid import RectilinearGrid
-from beamz.devices._immutable import immutable_snapshot
 from beamz.devices.monitors.compiler import CompiledMonitorSpec
 from beamz.devices.monitors.monitors import _Monitor
 from beamz.devices.sources.compiler import CompiledSourceSpec
@@ -23,7 +22,9 @@ from beamz.simulation.tensor_regions import TensorRegion
 
 # Requests are detached, hashable compiler inputs. They prevent later mutation of a
 # public Simulation or device object from changing a cached program's meaning.
-ShardingToken: TypeAlias = tuple[bool, str, int | None, str | None]
+ShardingToken: TypeAlias = tuple[
+    bool, Literal["auto", "z", "y", "x"], int | None, Literal["cpu", "gpu"] | None
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,18 +68,6 @@ class SimulationRequest:
     sources: tuple[object, ...]
     monitors: tuple[_Monitor, ...]
     boundaries: tuple[object, ...]
-    compiler_sharding: Any = field(
-        default=None,
-        compare=False,
-        hash=False,
-        repr=False,
-    )
-
-    def __post_init__(self) -> None:
-        # Snapshot the only request member that may arrive as a mutable backend object.
-        object.__setattr__(
-            self, "compiler_sharding", immutable_snapshot(self.compiler_sharding)
-        )
 
 
 # ``CompiledGrid`` owns setup-time layout and material metadata only. The runtime has

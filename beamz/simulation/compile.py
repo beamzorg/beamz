@@ -398,34 +398,23 @@ class _CompileSetup:
 
 @trace_preparation("sources_monitors_and_layout")
 def _prepare_compilation(
-    request: SimulationRequest, logical_fields: CompiledGrid
+    request: SimulationRequest, logical_fields: CompiledGrid, sharding: ShardingPlan
 ) -> _CompileSetup:
     """Resolve shapes, devices, sources, monitors, and scalar run configuration."""
     resolution = float(request.materials.resolution)
     dt = float(request.run.dt)
     num_steps = int(request.run.num_steps)
-    sharding_cfg = normalize_sharding_config(request.compiler_sharding)
-    sharding = build_sharding_plan(
-        logical_fields,
-        sharding_cfg,
-        is_3d=bool(request.domain.is_3d),
-        aligned_components=True,
-    )
+    sharding_cfg = ShardingConfig(*request.run.sharding)
     sharding_layout = sharding.layout
     effective_sharding = (
-        ShardingConfig(
+        replace(
+            sharding_cfg,
             enabled=True,
             axis=cast(Literal["auto", "z", "y", "x"], sharding_layout.axis_name),
             num_devices=sharding_layout.num_devices,
-            backend=sharding_cfg.backend,
         )
         if sharding_layout.enabled
-        else ShardingConfig(
-            enabled=False,
-            axis=sharding_cfg.axis,
-            num_devices=sharding_cfg.num_devices,
-            backend=sharding_cfg.backend,
-        )
+        else replace(sharding_cfg, enabled=False)
     )
     from beamz.devices.sources.specs import PlaneWaveSource
 
@@ -748,7 +737,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     )
     early_sharding = build_sharding_plan(
         metadata,
-        normalize_sharding_config(request.compiler_sharding),
+        ShardingConfig(*request.run.sharding),
         is_3d=request.domain.is_3d,
         aligned_components=True,
     )
@@ -772,7 +761,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             plane_2d=request.domain.plane_2d,
         )
     logical_grid = _compile_grid(request, boundary_data, region_setup=region_setup)
-    setup = _prepare_compilation(request, logical_grid)
+    setup = _prepare_compilation(request, logical_grid, early_sharding)
     fields = logical_grid
     dt = setup.dt
     sharding = setup.sharding
@@ -1170,7 +1159,6 @@ def compile_program(
         source_single_slab_dense=dense,
         backend=resolved_backend,
         sharding=sharding_token,
-        compiler_sharding=sharding,
         progress=progress,
     )
     request = replace(
@@ -1224,7 +1212,7 @@ def compile_program(
             # Reuse existing ownership; changing a continuation segment's length
             # must not allocate a second near-capacity coefficient bank.
             with preparation_phase("reuse_material_preparation"):
-                setup = _prepare_compilation(request, reusable.grid)
+                setup = _prepare_compilation(request, reusable.grid, reusable.sharding)
                 program = replace(
                     reusable,
                     config=setup.config,
