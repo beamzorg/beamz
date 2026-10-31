@@ -130,6 +130,12 @@ class TaperedExtrudedPolygon:
         }
 
 
+def _extrude_polygon(polygon, z_min, z_max, sidewall=0.0, width_to_z=0.0):
+    if sidewall != 0.0:
+        return TaperedExtrudedPolygon(polygon, z_min, z_max, sidewall, width_to_z)
+    return ExtrudedPolygon(polygon, z_min, z_max)
+
+
 def _mesh_arrays(vertices: Any, triangles: Any) -> tuple[np.ndarray, np.ndarray]:
     vertices = np.asarray(vertices, dtype=np.float64)
     triangles = np.asarray(triangles)

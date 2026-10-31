@@ -95,3 +95,103 @@ def test_projection_diagnostics_handle_tiny_targets_and_missing_components(magni
     )
     for key, value in result.items():
         assert np.isnan(value), key
+
+
+@pytest.mark.parametrize(
+    "axis,components",
+    [
+        ("x", ("Ey", "Ez", "Hy", "Hz")),
+        ("y", ("Ex", "Ez", "Hx", "Hz")),
+        ("z", ("Ex", "Ey", "Hx", "Hy")),
+    ],
+)
+@pytest.mark.parametrize("ill_conditioned", [False, True])
+def test_coupled_plan_matches_lorentz_overlaps_and_reconstruction(
+    axis, components, ill_conditioned
+):
+    from beamz.analysis.mode_projection import (
+        _modal_coefficient_rows_3d,
+        _project_modal_coefficients_3d_group,
+        build_modal_projection_plan,
+    )
+    from beamz.devices.modes.fields import _modal_overlap
+
+    rng = np.random.default_rng(841)
+    basis = [
+        {name: rng.normal(size=7) + 1j * rng.normal(size=7) for name in components}
+        for _ in range(4)
+    ]
+    if ill_conditioned:
+        basis[-1] = {
+            name: basis[0][name] + 1e-10 * basis[-1][name] for name in components
+        }
+    weights = {name: np.linspace(0.1, 0.8, 7) for name in components}
+    projections = [
+        dict(
+            components=components,
+            axis=axis,
+            integration_weights=weights,
+            direction_sign=-1.0,
+            d_area=1.0,
+            mode_components=basis[index],
+            mode_components_bwd=basis[index + 1],
+        )
+        for index in (0, 2)
+    ]
+    field = {name: rng.normal(size=7) + 1j * rng.normal(size=7) for name in components}
+    overlap = np.array(
+        [[_modal_overlap(a, b, axis, weights, -1.0) for b in basis] for a in basis]
+    )
+    rhs = np.array([_modal_overlap(field, mode, axis, weights, -1.0) for mode in basis])
+    system = overlap.T
+    expected = (
+        np.linalg.solve(system, rhs)
+        if np.linalg.cond(system) < 1e8
+        else np.linalg.pinv(system) @ rhs
+    )
+    plan = build_modal_projection_plan(projections)
+    actual, diagnostics = plan.project(field)
+    np.testing.assert_allclose(actual, expected, rtol=2e-6, atol=2e-6)
+    vector = np.concatenate([field[name] for name in components])
+    np.testing.assert_allclose(
+        _modal_coefficient_rows_3d(projections) @ vector, actual, rtol=2e-6, atol=2e-6
+    )
+    grouped, residual, condition, legacy_diag = _project_modal_coefficients_3d_group(
+        field, projections
+    )
+    np.testing.assert_allclose(np.ravel(grouped), actual)
+    assert condition == plan.condition_number
+    assert residual == diagnostics["residual"]
+    expected_power = np.real(expected @ overlap @ expected.conj())
+    assert legacy_diag["projected_signed_power"] == pytest.approx(
+        expected_power, rel=2e-6
+    )
+
+
+def test_group_colocation_reuses_geometry_and_preserves_batch_shape(monkeypatch):
+    from beamz.analysis.modal_projection import colocation
+
+    src0, src1 = np.array([0.0, 1.0]), np.array([0.0, 0.5, 2.0])
+    dst0, dst1 = np.array([0.3]), np.array([0.2, 0.8])
+    calls = []
+
+    def coordinates(*args):
+        calls.append(args)
+        return src0, src1
+
+    monkeypatch.setattr(colocation, "_monitor_analysis_plane_3d", coordinates)
+    plane = (1 + 2j) * src0[:, None] + (3 - 4j) * src1[None, :]
+    components = {
+        "Ey": plane.ravel(),
+        "Hz": np.array([plane.ravel(), 2 * plane.ravel()]),
+    }
+    actual = colocation._colocate_field_components_to_projection_3d(
+        None,
+        None,
+        components,
+        {"axis": "x", "analysis_coords0": dst0, "analysis_coords1": dst1},
+    )
+    expected = ((1 + 2j) * dst0[:, None] + (3 - 4j) * dst1[None, :]).ravel()
+    np.testing.assert_allclose(actual["Ey"], expected)
+    np.testing.assert_allclose(actual["Hz"], [expected, 2 * expected])
+    assert len(calls) == 1

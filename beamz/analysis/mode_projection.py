@@ -1,3 +1,6 @@
+from collections.abc import Mapping
+from dataclasses import dataclass
+
 import numpy as np
 
 from beamz.analysis.data import AnalysisData
@@ -544,15 +547,71 @@ def _build_port_projection(
     return projection
 
 
-def _modal_coefficient_rows_3d(projections):
-    """Linear rows for the ordinary coupled forward/backward overlap system.
+@dataclass(frozen=True, slots=True)
+class ModalProjectionPlan:
+    """Coupled linear measurement on colocated tangential samples.
 
-    Rows multiply concatenated, colocated tangential E/H samples. Keeping this
-    reduction explicit lets optimization differentiate the same modal measurement.
+    The component order and reconstruction matrix are shared by ordinary
+    analysis and fixed differentiable coefficient rows. Temporal/spatial phase
+    and acquisition colocation remain boundary operations, before applying rows.
     """
+
+    components: tuple[str, ...]
+    mode_matrix: np.ndarray
+    rhs_rows: np.ndarray
+    system: np.ndarray
+    condition_number: float
+
+    def solve(self, rhs):
+        if self.condition_number < 1e8:
+            return np.linalg.solve(self.system, rhs)
+        return np.linalg.pinv(self.system) @ rhs
+
+    @property
+    def coefficient_rows(self):
+        return self.solve(self.rhs_rows)
+
+    def project(self, field_components):
+        parts = [
+            np.asarray(field_components[name], dtype=np.complex128).reshape(-1)
+            for name in self.components
+        ]
+        field = np.concatenate(parts)
+        rhs = self.rhs_rows @ field
+        if not np.isfinite(rhs).all() or not np.isfinite(self.condition_number):
+            raise ValueError("Invalid grouped 3D modal overlap system.")
+        coeff = self.solve(rhs)
+        offsets = np.cumsum([0, *(part.size for part in parts)])
+        slices = [
+            (name, int(start), int(stop))
+            for name, start, stop in zip(
+                self.components, offsets[:-1], offsets[1:], strict=True
+            )
+        ]
+        diagnostics = _modal_projection_reconstruction_diagnostics_from_matrix(
+            field, self.mode_matrix, coeff, component_slices=slices
+        )
+        diagnostics["projected_signed_power"] = float(
+            np.real(np.dot(coeff, self.system.T @ np.conjugate(coeff)))
+        )
+        return coeff, diagnostics
+
+
+def build_modal_projection_plan(projections):
+    """Build a reusable host-side coupled projection without changing legacy APIs."""
+    projections = tuple(projections)
+    if not projections:
+        raise ValueError("A modal projection plan requires at least one mode.")
     first = projections[0]
     components = first["components"]
     axis = first["axis"]
+    if not components or axis not in {"x", "y", "z"}:
+        raise ValueError("3D modal group projection is missing components or axis.")
+    for projection in projections:
+        if tuple(projection["components"]) != tuple(components):
+            raise ValueError("Grouped 3D modal projections must share components.")
+        if projection["axis"] != axis:
+            raise ValueError("Grouped 3D modal projections must share an axis.")
     pairs = {
         "x": (("Ey", "Hz"), ("Ez", "Hy")),
         "y": (("Ez", "Hx"), ("Ex", "Hz")),
@@ -569,7 +628,7 @@ def _modal_coefficient_rows_3d(projections):
         row = {}
         for (e, h), sign in zip(pairs, (1, -1), strict=True):
             weights = np.asarray(
-                measure[e] if isinstance(measure, dict) else measure
+                measure[e] if isinstance(measure, Mapping) else measure
             ).reshape(-1)
             scale = 0.25 * first["direction_sign"] * sign * weights
             row[e] = scale * np.conj(np.asarray(mode[h]).ravel())
@@ -585,9 +644,15 @@ def _modal_coefficient_rows_3d(projections):
     system = rhs_rows @ mode_matrix
     if not np.isfinite(system).all():
         raise ValueError("Invalid 3D modal overlap system.")
-    if np.linalg.cond(system) < 1e8:
-        return np.linalg.solve(system, rhs_rows)
-    return np.linalg.pinv(system) @ rhs_rows
+    condition = float(np.linalg.cond(system))
+    return ModalProjectionPlan(
+        tuple(components), mode_matrix, rhs_rows, system, condition
+    )
+
+
+def _modal_coefficient_rows_3d(projections):
+    """Linear rows for the ordinary coupled forward/backward overlap system."""
+    return build_modal_projection_plan(projections).coefficient_rows
 
 
 def _project_modal_coefficients_3d_group(field_components, projections):
@@ -595,120 +660,14 @@ def _project_modal_coefficients_3d_group(field_components, projections):
     projections = tuple(projections)
     if not projections:
         return [], np.nan, np.nan, {}
-
-    first = projections[0]
-    components = tuple(first.get("components", ()))
-    axis = str(first.get("axis", "")).lower()
-    d_area = first.get("integration_weights", first.get("d_area", 1.0))
-    direction_sign = float(first.get("direction_sign", 1.0))
-    if len(components) == 0 or axis not in {"x", "y", "z"}:
-        raise ValueError("3D modal group projection is missing components or axis.")
-
-    basis = []
-    for proj in projections:
-        if tuple(proj.get("components", ())) != components:
-            raise ValueError("Grouped 3D modal projections must share components.")
-        if str(proj.get("axis", "")).lower() != axis:
-            raise ValueError("Grouped 3D modal projections must share an axis.")
-        basis.append(
-            {
-                name: np.asarray(
-                    proj.get("mode_components", {}).get(name, []),
-                    dtype=np.complex128,
-                ).reshape(-1)
-                for name in components
-            }
-        )
-        basis.append(
-            {
-                name: np.asarray(
-                    proj.get("mode_components_bwd", {}).get(name, []),
-                    dtype=np.complex128,
-                ).reshape(-1)
-                for name in components
-            }
-        )
-
-    rhs = np.asarray(
-        [
-            _modal_overlap(
-                field_components,
-                mode,
-                axis,
-                d_area,
-                direction_sign=direction_sign,
-            )
-            for mode in basis
-        ],
-        dtype=np.complex128,
-    )
-    overlap = np.asarray(
-        [
-            [
-                _modal_overlap(
-                    basis_i,
-                    basis_j,
-                    axis,
-                    d_area,
-                    direction_sign=direction_sign,
-                )
-                for basis_j in basis
-            ]
-            for basis_i in basis
-        ],
-        dtype=np.complex128,
-    )
-    system = overlap.T
-    cond = float(np.linalg.cond(system))
-    if (
-        not np.all(np.isfinite(system))
-        or not np.all(np.isfinite(rhs))
-        or not np.isfinite(cond)
-    ):
-        raise ValueError("Invalid grouped 3D modal overlap system.")
-    if cond < 1e8:
-        coeff = np.linalg.solve(system, rhs)
-    else:
-        coeff = np.linalg.pinv(system) @ rhs
-
-    field_parts = [
-        np.asarray(field_components[name], dtype=np.complex128).reshape(-1)
-        for name in components
-    ]
-    component_slices = []
-    offset = 0
-    for name, part in zip(components, field_parts, strict=True):
-        next_offset = offset + int(part.size)
-        component_slices.append((name, offset, next_offset))
-        offset = next_offset
-    field_vec = np.concatenate(field_parts)
-    mode_matrix = np.column_stack(
-        [
-            np.concatenate(
-                [
-                    np.asarray(mode[name], dtype=np.complex128).reshape(-1)
-                    for name in components
-                ]
-            )
-            for mode in basis
-        ]
-    )
-    diagnostics = _modal_projection_reconstruction_diagnostics_from_matrix(
-        field_vec,
-        mode_matrix,
-        coeff,
-        component_slices=component_slices,
-    )
-    diagnostics["projected_signed_power"] = float(
-        np.real(np.dot(coeff, overlap @ np.conjugate(coeff)))
-    )
-    residual = diagnostics["residual"]
+    plan = build_modal_projection_plan(projections)
+    coeff, diagnostics = plan.project(field_components)
     return (
         [
-            (np.complex128(coeff[2 * idx]), np.complex128(coeff[2 * idx + 1]))
-            for idx in range(len(projections))
+            tuple(np.complex128(value) for value in pair)
+            for pair in coeff.reshape(-1, 2)
         ],
-        residual,
-        cond,
+        diagnostics["residual"],
+        plan.condition_number,
         diagnostics,
     )
