@@ -8,9 +8,11 @@ from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence
 import numpy as np
 
 from beamz.devices._immutable import (
+    Replaceable,
     finite_tuple,
     immutable_snapshot,
     nonnegative_finite_extents,
+    shifted_coordinates,
 )
 from beamz.devices.modes.specs import ModeSpec
 
@@ -22,7 +24,7 @@ PortDirection = Literal["+", "-"]
 
 
 @dataclass(frozen=True)
-class Port:
+class Port(Replaceable):
     """Define a modal S-parameter port on a finite plane.
 
     A port owns geometry and mode-solver settings, then creates matching
@@ -166,26 +168,6 @@ class Port:
         """
         return f"+{self.axis}"
 
-    def updated_copy(self, **changes: Any) -> Port:
-        """Return a validated port with selected fields replaced.
-
-        Parameters
-        ----------
-        **changes : object
-            Dataclass fields to replace.
-
-        Returns
-        -------
-        Port
-            New immutable port; the original is unchanged.
-
-        Raises
-        ------
-        TypeError or ValueError
-            If a field is unknown or the new geometry is invalid.
-        """
-        return replace(self, **changes)
-
     def shifted(self, offset: Iterable[float]) -> Port:
         """Return a translated copy of this port.
 
@@ -204,14 +186,10 @@ class Port:
         ValueError
             If ``offset`` does not contain exactly three values.
         """
-        delta = tuple(float(value) for value in offset)
-        if len(delta) != 3:
-            raise ValueError("Port offsets must contain three values.")
-        return replace(
-            self,
-            center=tuple(
-                value + shift for value, shift in zip(self.center, delta, strict=True)
-            ),
+        return self.updated_copy(
+            center=shifted_coordinates(
+                self.center, offset, mismatch="Port offsets must contain three values."
+            )
         )
 
     def to_monitor(self, freqs: Sequence[float] | np.ndarray) -> ModeMonitor:

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import fields, is_dataclass, replace
 from types import MappingProxyType
-from typing import Any, cast
+from typing import Any, Self, TypeVar, cast
 
 import numpy as np
 
@@ -93,3 +93,34 @@ def normalize_source_signal(signal: Any, *, name: str = "signal") -> Any:
     if arr.dtype == object:
         return signal
     return readonly_array(arr)
+
+
+_Coords = TypeVar("_Coords", bound=tuple[float, ...])
+
+
+def shifted_coordinates(
+    origin: _Coords, offset: Iterable[float], *, mismatch: str
+) -> _Coords:
+    """Translate coordinates, preserving their dimensionality."""
+    delta = tuple(float(value) for value in offset)
+    if len(delta) != len(origin):
+        raise ValueError(mismatch)
+    return cast(
+        _Coords,
+        tuple(value + shift for value, shift in zip(origin, delta, strict=True)),
+    )
+
+
+class Replaceable:
+    """Validated copying for frozen configuration dataclasses."""
+
+    __slots__ = ()
+
+    def updated_copy(self, **changes: Any) -> Self:
+        """Return a new configuration with selected fields replaced.
+
+        Unspecified fields retain their values. The concrete subclass and its
+        constructor validation are preserved. Unknown fields raise TypeError;
+        invalid replacement values raise the constructor's validation error.
+        """
+        return replace(cast(Any, self), **changes)

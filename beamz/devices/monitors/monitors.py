@@ -1,13 +1,15 @@
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 import numpy as np
 
 from beamz._helpers import positive_integer
 from beamz.devices._immutable import (
+    Replaceable,
     finite_tuple,
     immutable_snapshot,
     nonnegative_finite_extents,
     readonly_1d_array,
+    shifted_coordinates,
 )
 from beamz.devices._placement import (
     plane_region_slices,
@@ -68,7 +70,7 @@ def _line_integral_scale_2d(normal_axis: str, dx: float, dy: float) -> float:
 
 
 @dataclass(frozen=True, kw_only=True, eq=False)
-class _Monitor:
+class _Monitor(Replaceable):
     """Shared immutable geometry and frequency configuration for monitors."""
 
     center: tuple[float, float, float]
@@ -117,9 +119,6 @@ class _Monitor:
     @property
     def is_3d(self):
         return int(np.count_nonzero(np.asarray(self.size) > 0.0)) >= 2
-
-    def updated_copy(self, **changes):
-        return replace(self, **changes)
 
     def _comparison_key(self):
         return (
@@ -302,14 +301,12 @@ class _Monitor:
 
     def shifted(self, offset):
         """Return a translated monitor."""
-        delta = tuple(float(value) for value in offset)
-        if len(delta) != 3:
-            raise ValueError("Monitor offsets must contain three values.")
-        return replace(
-            self,
-            center=tuple(
-                value + shift for value, shift in zip(self.center, delta, strict=True)
-            ),
+        return self.updated_copy(
+            center=shifted_coordinates(
+                self.center,
+                offset,
+                mismatch="Monitor offsets must contain three values.",
+            )
         )
 
 
@@ -382,24 +379,14 @@ class FieldRecorder(_Monitor):
     def dft_components(self):
         return None
 
-    def updated_copy(self, **changes):
-        values = {
-            "components": self.components,
-            "interval": self.interval,
-            "name": self.name,
-            "center": None if self.region == "domain" else self.center,
-            "size": None if self.region == "domain" else self.size,
-        }
-        values.update(changes)
-        return type(self)(**values)
-
     def shifted(self, offset):
         if self.region == "domain":
             return self
-        delta = tuple(float(value) for value in offset)
         return self.updated_copy(
-            center=tuple(
-                value + shift for value, shift in zip(self.center, delta, strict=True)
+            center=shifted_coordinates(
+                self.center,
+                offset,
+                mismatch="Monitor offsets must contain three values.",
             )
         )
 

@@ -1,11 +1,13 @@
 """Topology design regions, initialization, and transforms in metre units."""
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
 from jax.scipy.signal import convolve
+
+from beamz.devices._immutable import Replaceable
 
 from ._validation import check_density, fixed_density_masks
 from .autodiff import apply_fixed_density
@@ -13,9 +15,8 @@ from .projections import smoothed_heaviside
 
 
 @dataclass(frozen=True)
-class Specification:
-    def updated_copy(self, **changes):
-        return replace(self, **changes)
+class Specification(Replaceable):
+    """Frozen optimization configuration with validated copying."""
 
 
 @dataclass(frozen=True)
