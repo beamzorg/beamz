@@ -30,6 +30,7 @@ from beamz.simulation._cuda_abi import (
     CUDA_FIELD_PAD_Y8,
     CUDA_TEMPORAL_PAIR,
 )
+from beamz.simulation.differentiable import bind_electric_coefficients
 from beamz.simulation.execute import (
     compiled_source_batches,
     forward_step,
@@ -332,37 +333,25 @@ class DifferentiableSimulation:
             if grid.has_pml and not grid.has_cpml:
                 sigma_m = sponge_sigma * grid.permeability * (MU_0 / EPS_0)
                 h_sigma = self._sample(sigma_m, ("Hx", "Hy", "Hz"))
+        electric = bind_electric_coefficients(
+            program,
+            eps,
+            sig,
+            fixed_lossless=self._fixed_lossless_e if conductivity is None else None,
+        )
         updates = {}
-        for axis, epsilon, sigma, magnetic_sigma, fixed_lossless in zip(
-            "xyz", eps, sig, h_sigma, self._fixed_lossless_e, strict=True
-        ):
-            e_decay, e_source = kernels.precompute_e_update_coefficients(
-                shape=getattr(grid, f"E{axis}").shape,
-                conductivity=sigma,
-                permittivity=epsilon,
-                dt=dt,
-                region=getattr(grid, f"region_{axis}"),
-            )
-            if conductivity is None and fixed_lossless:
-                # With fixed zero conductivity the decay is identically one.
-                # Express that independence explicitly so AD does not retain
-                # old E fields to form a coefficient VJP that is later zeroed.
-                e_decay = jnp.float32(1.0)
+        for axis, magnetic_sigma in zip("xyz", h_sigma, strict=True):
             h_decay, h_source = kernels.precompute_h_update_coefficients(
                 magnetic_sigma, dt
             )
             updates.update(
                 {
-                    f"e_decay_{axis}": e_decay,
-                    f"e_source_{axis}": e_source,
-                    f"e_conductivity_{axis}": sigma,
-                    f"e_permittivity_{axis}": epsilon,
                     f"h_decay_{axis}": h_decay,
                     f"h_source_{axis}": h_source,
                     f"h_sigma_m_{axis}": magnetic_sigma,
                 }
             )
-        return base._replace(**updates)
+        return electric._replace(**updates)
 
     def _advance(self, permittivity, conductivity, state, source_amplitudes):
         coefficients = self.coefficients(permittivity, conductivity=conductivity)

@@ -16,8 +16,8 @@ from beamz.design.materials import Material
 from beamz.design.structures import Structure
 
 from ._validation import fixed_density_masks
-from .autodiff import compute_parameter_gradient_vjp, transform_density
 from .projections import validate_projection_options
+from .region import DensityParameterization
 
 
 def _readonly_array(value, dtype=None):
@@ -223,30 +223,39 @@ class TopologySpec:
         beta : float
             Projection strength.
         """
-        import jax.numpy as jnp
 
-        density = transform_density(
-            jnp.asarray(state.density), beta=beta, **self._transform_options
+        return _readonly_array(
+            self._density_map.density(state.density, beta=beta), float
         )
-        return _readonly_array(density, float)
 
     @property
-    def _transform_options(self):
-        """Use identical filter/projection settings for forward maps and VJPs."""
-        import jax.numpy as jnp
+    def _density_map(self):
+        from functools import partial
 
-        return dict(
-            mask=jnp.asarray(self.region_mask),
+        from .autodiff import transform_density
+
+        transform = partial(
+            transform_density,
+            mask=self.region_mask,
             eta=self.projection_eta,
             radius=self.filter_radius_cells,
             filter_type=self.filter_type,
             morphology_operation=self.morphology_operation,
             morphology_tau=self.morphology_smooth_tau,
-            fixed_structure_mask=jnp.asarray(self.fixed_structure_mask),
+            fixed_structure_mask=self.fixed_structure_mask,
             projection_type=self.projection_type,
             ssp_smoothing_radius=self.ssp_smoothing_radius,
             fixed_solid=self.fixed_solid,
             fixed_void=self.fixed_void,
+        )
+        return DensityParameterization(
+            self.region_mask.shape,
+            self.resolution,
+            (self.eps_min, self.eps_max),
+            transform,
+            self.fixed_solid,
+            self.fixed_void,
+            self.region_mask,
         )
 
     def density_for_step(
@@ -284,12 +293,13 @@ class TopologySpec:
 
         grad_eps = self.gradient_to_design_grid(grad_eps)
         grad_physical = grad_eps * (self.eps_max - self.eps_min)
-        grad_param = compute_parameter_gradient_vjp(
+        import jax
+
+        _, pullback = jax.vjp(
+            lambda density: self._density_map.density(density, beta=beta),
             jnp.asarray(state.density),
-            jnp.asarray(grad_physical),
-            beta=beta,
-            **self._transform_options,
         )
+        grad_param = pullback(jnp.asarray(grad_physical))[0]
         return self.apply_parameter_gradient(state, grad_param)
 
     def apply_parameter_gradient(self, state: TopologyState, gradient):

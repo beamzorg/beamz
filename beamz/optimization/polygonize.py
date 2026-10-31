@@ -204,40 +204,13 @@ def shapely_geometry_to_polygons(geometry, *, material, min_area=0.0):
     return polygons
 
 
-def density_to_polygons(
-    density,
-    *,
-    material,
-    level=0.5,
-    x0=0.0,
-    y0=0.0,
-    dx=1.0,
-    dy=None,
-    min_area=0.0,
-    mode="contour",
-    sample_spacing=None,
-    region_mask=None,
-    fixed_solid=None,
-    fixed_void=None,
-):
+def density_to_polygons(density, *, material, **options):
     """Return BeamZ polygons; see :func:`density_to_shapely_geometry` for options.
 
     Coordinates and spacings are in metres. Interior rings remain holes.
+    All geometry options are forwarded to the authoritative conversion API.
     """
-    geometry = density_to_shapely_geometry(
-        density,
-        level=level,
-        x0=x0,
-        y0=y0,
-        dx=dx,
-        dy=dy,
-        min_area=min_area,
-        mode=mode,
-        sample_spacing=sample_spacing,
-        region_mask=region_mask,
-        fixed_solid=fixed_solid,
-        fixed_void=fixed_void,
-    )
+    geometry = density_to_shapely_geometry(density, **options)
     return shapely_geometry_to_polygons(geometry, material=material)
 
 

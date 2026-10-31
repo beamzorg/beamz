@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 from jax.core import Tracer
@@ -11,7 +10,7 @@ from beamz.devices.monitors import ModeMonitor
 from beamz.simulation.api import Simulation
 
 from .problem import TopologyProblem
-from .region import Specification, TopologyDesignRegion
+from .region import DensityParameterization, Specification, TopologyDesignRegion
 from .topology import TopologySpec
 
 
@@ -91,6 +90,16 @@ class InverseDesign(Specification):
             adjoint_decay_tolerance=self.adjoint_decay_tolerance,
             checkpoint_interval=self.checkpoint_interval,
             adjoint_source_grouping=self.adjoint_source_grouping,
+            _density_map=DensityParameterization(
+                region.params_shape,
+                region.pixel_size,
+                region.eps_bounds,
+                region.material_density,
+                region.fixed_solid,
+                region.fixed_void,
+                mask,
+                slices,
+            ),
         )
         object.__setattr__(self, "output_monitor_names", names)
         object.__setattr__(self, "_problem", problem)
@@ -99,19 +108,7 @@ class InverseDesign(Specification):
     def _density(self, params, *, beta=None):
         if not isinstance(params, Tracer):
             self.design_region.check_params(np.asarray(params))
-        physical = self.design_region.material_density(params, beta=beta)
-        target_shape = tuple(s.stop - s.start for s in self._slices)
-        if self.design_region.parameterization == "planar":
-            target_shape = target_shape[-2:]
-        if physical.shape != target_shape:
-            physical = jax.image.resize(
-                physical, target_shape, method="linear", antialias=False
-            )
-        return (
-            jnp.zeros(self._problem.topology.region_mask.shape, dtype=physical.dtype)
-            .at[self._slices]
-            .set(physical)
-        )
+        return jnp.asarray(params)
 
     @property
     def initial_simulation(self):
@@ -119,7 +116,7 @@ class InverseDesign(Specification):
 
     def to_simulation(self, params, *, beta=None):
         """Return an ordinary BeamZ simulation for inspection or verification."""
-        return self._problem.material_simulation(self._density(params, beta=beta))
+        return self._problem.material_simulation(self._density(params), beta=beta)
 
     def export_design(
         self, params, *, threshold=0.5, beta=None, mode="contour", sample_spacing=None
@@ -130,8 +127,6 @@ class InverseDesign(Specification):
         ``mode`` is "contour" or "pixel_exact"; ``sample_spacing`` optionally
         refines bilinear contour sampling in metres. Fixed cells remain exact.
         """
-        from .polygonize import _export_density
-
         self.design_region.check_params(params)
         region = self.design_region
         center = np.asarray(region.center) + np.asarray(
@@ -146,19 +141,16 @@ class InverseDesign(Specification):
         ]
         is_3d = self._problem.program.config.is_3d
         z, depth = (float(low[2]), region.size[2]) if is_3d else (0.0, 0.0)
-        return _export_density(
+        return self._problem._density_map.export(
             self.simulation.design,
-            np.asarray(region.material_density(params, beta=beta)),
-            eps_bounds=region.eps_bounds,
+            params,
+            beta=beta,
             origin=(low[0], low[1], z),
-            dx=region.pixel_size,
             depth=depth,
             layer_depth=(
                 region.pixel_size if region.parameterization == "volumetric" else depth
             ),
             background=np.ones(region.params_shape[-2:]),
-            fixed_solid=region.fixed_solid,
-            fixed_void=region.fixed_void,
             threshold=threshold,
             mode=mode,
             sample_spacing=sample_spacing,
@@ -167,7 +159,7 @@ class InverseDesign(Specification):
     def to_simulation_data(self, params, *, beta=None):
         """Run either backend and return trace-preserving modal amplitudes."""
         return self._problem.simulation_data(
-            self._density(params, beta=beta), monitor_names=self.output_monitor_names
+            self._density(params), beta=beta, monitor_names=self.output_monitor_names
         )
 
     def _evaluate(
