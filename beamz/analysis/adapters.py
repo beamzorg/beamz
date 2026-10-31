@@ -381,7 +381,7 @@ def mode_data(results, name):
         If no monitor result exists under ``name``.
     """
     from beamz.analysis import sparameters as _sp
-    from beamz.devices.ports import Port
+    from beamz.analysis.mode_projection import _monitor_port
 
     data = analysis_data(results, name)
     monitor = data.monitor_geometry
@@ -391,22 +391,8 @@ def mode_data(results, name):
     num_modes = int(monitor.mode_spec.num_modes or 1)
     monitor_name = str(monitor.name or name)
     ports = [
-        Port(
-            center=monitor.center,
-            size=monitor.size,
-            name=f"{monitor_name}_m{idx}",
-            monitor_name=monitor_name,
-            direction="+",
-            mode_spec=replace(
-                monitor.mode_spec,
-                mode_index=idx,
-                polarization=(
-                    monitor.mode_spec.polarization
-                    if data.is_3d
-                    else monitor.mode_spec.polarization
-                    or data.coordinates.polarization_2d
-                ),
-            ),
+        _monitor_port(
+            monitor, idx, None if data.is_3d else data.coordinates.polarization_2d
         )
         for idx in range(num_modes)
     ]

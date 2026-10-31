@@ -1,11 +1,10 @@
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 import xarray as xr
 
 from beamz import LIGHT_SPEED
 from beamz.devices.modes.plane import solve_modes
+from tests.mode_family_fixture import mode_family
 
 
 def test_solve_modes_uses_one_native_solve_and_forwards_pml(monkeypatch):
@@ -13,7 +12,7 @@ def test_solve_modes_uses_one_native_solve_and_forwards_pml(monkeypatch):
     mode_count = 11
     dims = ("y", "z", "x", "f", "mode_index")
     values = np.ones((3, 4, 1, 1, mode_count), dtype=np.complex128)
-    result = SimpleNamespace(
+    result = mode_family(
         n_complex=xr.DataArray(
             np.linspace(3.0, 1.0, mode_count)[None, :],
             dims=("f", "mode_index"),
@@ -36,13 +35,14 @@ def test_solve_modes_uses_one_native_solve_and_forwards_pml(monkeypatch):
         dL=1e-7,
         npml=2,
         m=3,
-        return_fields=True,
     )
 
     assert len(calls) == 1
     assert calls[0]["num_modes"] == 11
     assert calls[0]["pml"] == (2, 2)
-    np.testing.assert_array_equal(calls[0]["eps_xx"], np.ones((4, 3)).T)
+    np.testing.assert_array_equal(
+        calls[0]["material_grid"].eps_tensor[0, 0], np.ones((4, 3)).T
+    )
     assert neffs.shape == (3,)
     assert electric.shape == magnetic.shape == (3, 3, 4, 3)
     assert axis == 0
@@ -52,7 +52,7 @@ def test_solve_modes_uses_one_signed_axis_for_normal_and_direction(monkeypatch):
     calls = []
     dims = ("x", "z", "y", "f", "mode_index")
     values = np.ones((4, 1, 1, 1, 7), dtype=np.complex128)
-    result = SimpleNamespace(
+    result = mode_family(
         n_complex=xr.DataArray(
             np.linspace(3.0, 1.0, 7)[None, :],
             dims=("f", "mode_index"),
@@ -74,10 +74,9 @@ def test_solve_modes_uses_one_signed_axis_for_normal_and_direction(monkeypatch):
         omega=2 * np.pi,
         dL=1e-7,
         direction="-y",
-        return_fields=True,
     )
 
-    assert calls[0]["normal_axis"] == axis == 1
+    assert calls[0]["material_grid"].grid.normal_axis == axis == 1
     assert calls[0]["direction"] == "-"
 
 
@@ -85,7 +84,7 @@ def test_solve_modes_projects_fields_to_symmetric_material_parity(monkeypatch):
     dims = ("y", "z", "x", "f", "mode_index")
     y, z = np.meshgrid(np.arange(5.0), np.arange(4.0), indexing="ij")
     skewed = (1.0 + y + 2.0 * z)[..., None, None, None].astype(np.complex128)
-    result = SimpleNamespace(
+    result = mode_family(
         n_complex=xr.DataArray([[2.0]], dims=("f", "mode_index")),
         field_components={
             name: xr.DataArray(
@@ -106,7 +105,6 @@ def test_solve_modes_projects_fields_to_symmetric_material_parity(monkeypatch):
         omega=2 * np.pi,
         dL=1e-7,
         m=1,
-        return_fields=True,
         force_symmetry=True,
     )
 
@@ -126,7 +124,7 @@ def test_solve_modes_leaves_2d_launch_line_profiles_unprojected(
 ):
     dims = ("y", "z", "x", "f", "mode_index")
     profile = (1.0 + np.arange(5.0))[:, None, None, None, None]
-    result = SimpleNamespace(
+    result = mode_family(
         n_complex=xr.DataArray([[2.0]], dims=("f", "mode_index")),
         field_components={
             name: xr.DataArray(profile * (index + 1), dims=dims)
@@ -140,7 +138,6 @@ def test_solve_modes_leaves_2d_launch_line_profiles_unprojected(
         omega=2 * np.pi,
         dL=1e-7,
         m=1,
-        return_fields=True,
         force_symmetry=force_symmetry,
     )
 
@@ -181,7 +178,6 @@ def test_solve_modes_preserves_beamz_plane_axes_for_polarization(axis):
         m=1,
         direction=f"+{axis}",
         filter_pol="te",
-        return_fields=True,
         target_neff=2.1,
     )
 

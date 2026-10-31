@@ -287,13 +287,15 @@ def test_preview_and_launch_share_material_window_and_select_wire(
     sim = sim.updated_copy(material_grid=replace(material, permittivity=eps))
     with patch.object(discrete, "solve_grid", wraps=discrete.solve_grid) as solve:
         preview = source.solve_modes(sim)
-    preview_material = solve.call_args.kwargs["eps_xx"]
+    preview_material = solve.call_args.kwargs["material_grid"].eps_tensor[0, 0]
     source = source.updated_copy(
         mode_spec=replace(source.mode_spec, target_neff=float(preview.neffs[0, 0].real))
     )
     with patch.object(discrete, "solve_grid", wraps=discrete.solve_grid) as solve:
         program = sim.updated_copy(sources=[source]).compile(backend="jax")
-    np.testing.assert_array_equal(preview_material, solve.call_args.kwargs["eps_xx"])
+    np.testing.assert_array_equal(
+        preview_material, solve.call_args.kwargs["material_grid"].eps_tensor[0, 0]
+    )
     assert label(preview_material > 5)[1] == (2 if padding is None else 1)
     assert label(preview.eps_profiles[0] > 5)[1] == 1
     peaks = [

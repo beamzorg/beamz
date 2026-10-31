@@ -130,15 +130,6 @@ class CompiledSourceSpec:
 
 
 @dataclass(frozen=True, slots=True)
-class SpatialFieldProfile:
-    """One component of a lowered source, in field-update units."""
-
-    component: str
-    timing: str
-    values: np.ndarray
-
-
-@dataclass(frozen=True, slots=True)
 class TemporalWaveform:
     """Sampled real drive and its optional analytic quadrature."""
 
@@ -147,28 +138,26 @@ class TemporalWaveform:
 
 
 @dataclass(frozen=True, slots=True)
-class SourceSupport:
-    """Target cells for a spatial field profile."""
-
-    index: tuple[Any, ...]
-    target_shape: tuple[int, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class InjectionPlanEntry:
-    """Normalized profile, waveform, and support for one field component."""
+    """One normalized component drive and its complete target support.
 
-    profile: SpatialFieldProfile
+    Values use field-update units. A real drive plus optional analytic
+    quadrature is scheduled once by the source-independent runtime emitter.
+    """
+
+    component: str
+    timing: str
+    index: tuple[Any, ...]
+    values: np.ndarray
     waveform: TemporalWaveform
-    support: SourceSupport
+    target_shape: tuple[int, ...]
     launched_power: float | None = None
 
+    def __post_init__(self):
+        object.__setattr__(self, "values", np.asarray(self.values))
 
-@dataclass(frozen=True, slots=True)
-class CompiledInjectionPlan:
-    """Source-independent injection plan produced by every source lowerer."""
 
-    entries: tuple[InjectionPlanEntry, ...]
+InjectionPlan = tuple[InjectionPlanEntry, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,7 +176,7 @@ class SourceLoweringContext:
 def lower_source(
     source: object,
     ctx: SourceLoweringContext,
-) -> CompiledInjectionPlan:
+) -> InjectionPlan:
     del ctx
     raise TypeError(
         f"Unsupported source object {type(source).__name__!s}. "
@@ -199,7 +188,7 @@ def lower_source(
 def _lower_custom_source(
     source: CustomSource,
     ctx: SourceLoweringContext,
-) -> CompiledInjectionPlan:
+) -> InjectionPlan:
     component = source.component
     coeff = source.coeff
     target_shape = source.target_shape
@@ -215,24 +204,22 @@ def _lower_custom_source(
         component = canonical
         coeff = sign * np.asarray(coeff)
         target_shape = tuple(getattr(ctx.fields, canonical).shape)
-    return CompiledInjectionPlan(
-        (
-            _injection_entry(
-                component=component,
-                timing=source.timing,
-                index=source.index,
-                values=coeff,
-                waveform=TemporalWaveform(
-                    jnp.asarray(
-                        source.waveform,
-                        dtype=jnp.complex64
-                        if np.iscomplexobj(source.waveform)
-                        else jnp.float32,
-                    )
-                ),
-                target_shape=target_shape,
+    return (
+        InjectionPlanEntry(
+            component=component,
+            timing=source.timing,
+            index=source.index,
+            values=coeff,
+            waveform=TemporalWaveform(
+                jnp.asarray(
+                    source.waveform,
+                    dtype=jnp.complex64
+                    if np.iscomplexobj(source.waveform)
+                    else jnp.float32,
+                )
             ),
-        )
+            target_shape=target_shape,
+        ),
     )
 
 
@@ -296,30 +283,8 @@ def _as_slab_spec(
     )
 
 
-def _injection_entry(
-    *,
-    component: str,
-    timing: str,
-    index: tuple[Any, ...],
-    values,
-    waveform: TemporalWaveform,
-    target_shape: tuple[int, ...],
-    launched_power: float | None = None,
-) -> InjectionPlanEntry:
-    return InjectionPlanEntry(
-        profile=SpatialFieldProfile(
-            component=component,
-            timing=timing,
-            values=np.asarray(values),
-        ),
-        waveform=waveform,
-        support=SourceSupport(index=index, target_shape=target_shape),
-        launched_power=launched_power,
-    )
-
-
 def _compile_injection_plan(
-    plan: CompiledInjectionPlan,
+    plan: InjectionPlan,
     *,
     source_index: int = -1,
     imag_tol: float = 1e-30,
@@ -327,10 +292,8 @@ def _compile_injection_plan(
 ) -> tuple[CompiledSourceSpec, ...]:
     """Emit runtime specs through the single source scheduling path."""
     specs: list[CompiledSourceSpec] = []
-    for entry in plan.entries:
-        profile = entry.profile
-        support = entry.support
-        values = np.asarray(profile.values, dtype=np.complex128)
+    for entry in plan:
+        values = np.asarray(entry.values, dtype=np.complex128)
         parts: list[tuple[Any, jnp.ndarray]] = [
             (np.real(values), entry.waveform.values)
         ]
@@ -349,12 +312,12 @@ def _compile_injection_plan(
 
         for coeff, waveform in parts:
             spec = _as_slab_spec(
-                component=profile.component,
-                timing=profile.timing,
-                index=support.index,
+                component=entry.component,
+                timing=entry.timing,
+                index=entry.index,
                 coeff=coeff,
                 waveform=waveform,
-                target_shape=support.target_shape,
+                target_shape=entry.target_shape,
             )
             specs.append(
                 replace(
@@ -492,13 +455,13 @@ def _lower_plane_wave_source(source: PlaneWaveSource, ctx: SourceLoweringContext
         return lower_bloch_plane_wave(source, ctx)
     if not _source_requires_rectilinear_operator(ctx):
         plan = _lower_gaussian_beam_source(source, ctx)
-        for entry in plan.entries:
+        for entry in plan:
             _validate_plane_wave_background(
                 source,
                 ctx,
-                entry.profile.component,
-                entry.support.index,
-                active=np.abs(entry.profile.values) > 1e-30,
+                entry.component,
+                entry.index,
+                active=np.abs(entry.values) > 1e-30,
             )
         return plan
     grid = ctx.grid
@@ -572,7 +535,7 @@ def _lower_plane_wave_source(source: PlaneWaveSource, ctx: SourceLoweringContext
                 else amplitude * ctx.dt / (impedance * EPS_0 * material * spacing)
             )
             entries.append(
-                _injection_entry(
+                InjectionPlanEntry(
                     component=component,
                     timing=kind.lower(),
                     index=index,
@@ -582,14 +545,14 @@ def _lower_plane_wave_source(source: PlaneWaveSource, ctx: SourceLoweringContext
                     launched_power=float(source.power),
                 )
             )
-    return CompiledInjectionPlan(tuple(entries))
+    return tuple(entries)
 
 
 @lower_source.register
 def _lower_gaussian_beam_source(
     source: GaussianBeamSource,
     ctx: SourceLoweringContext,
-) -> CompiledInjectionPlan:
+) -> InjectionPlan:
     if _source_requires_rectilinear_operator(ctx):
         raise NotImplementedError(
             "GaussianBeamSource on a rectilinear grid requires a metric-aware "
@@ -609,7 +572,7 @@ def _lower_gaussian_beam_source(
 def _lower_gaussian_source(
     source: GaussianSource,
     ctx: SourceLoweringContext,
-) -> CompiledInjectionPlan:
+) -> InjectionPlan:
     is_3d = np.asarray(ctx.fields.permittivity).ndim == 3
     is_te = not is_3d and ctx.domain is not None and ctx.domain.polarization_2d == "te"
     component = "Hz" if is_te else "Ez"
@@ -636,17 +599,15 @@ def _lower_gaussian_source(
             total_steps=ctx.total_steps,
         )
     )
-    return CompiledInjectionPlan(
-        (
-            _injection_entry(
-                component=component,
-                timing="h" if is_te else "pre_e",
-                index=index,
-                values=values,
-                waveform=waveform,
-                target_shape=tuple(target.shape),
-            ),
-        )
+    return (
+        InjectionPlanEntry(
+            component=component,
+            timing="h" if is_te else "pre_e",
+            index=index,
+            values=values,
+            waveform=waveform,
+            target_shape=tuple(target.shape),
+        ),
     )
 
 
@@ -654,7 +615,7 @@ def _lower_gaussian_source(
 def _lower_mode_source(
     source: ModeSource,
     ctx: SourceLoweringContext,
-) -> CompiledInjectionPlan:
+) -> InjectionPlan:
     if (
         np.asarray(ctx.fields.permittivity).ndim == 3
         and source.profile_frequencies().size > 1
@@ -714,7 +675,7 @@ def _sample_temporal_waveform(
 def _lower_broadband_mode_source(
     src: ModeSource,
     ctx: SourceLoweringContext,
-) -> CompiledInjectionPlan:
+) -> InjectionPlan:
     """Lower a broadband mode into frequency-partitioned injection entries."""
     sampled = _sample_temporal_waveform(src.source_time, ctx)
     analytic = np.asarray(sampled.values, dtype=np.float64) + 1j * np.asarray(
@@ -755,8 +716,8 @@ def _lower_broadband_mode_source(
             values=jnp.asarray(np.real(waveform), dtype=jnp.float32),
             quadrature=jnp.asarray(np.imag(waveform), dtype=jnp.float32),
         )
-        entries.extend(_mode_launch_injection_plan(plan, temporal, ctx).entries)
-    return CompiledInjectionPlan(tuple(entries))
+        entries.extend(_mode_launch_injection_plan(plan, temporal, ctx))
+    return tuple(entries)
 
 
 def _broadband_launch_amplitude_scales(nodes, plans) -> np.ndarray:
@@ -783,7 +744,7 @@ def _mode_launch_injection_plan(
     plan: ModeLaunchPlan,
     waveform: TemporalWaveform,
     ctx: SourceLoweringContext,
-) -> CompiledInjectionPlan:
+) -> InjectionPlan:
     if isinstance(plan, Mode2DLaunchPlan):
         entries = []
         normal_spacing = float(plan.normal_spacing or ctx.resolution)
@@ -802,7 +763,7 @@ def _mode_launch_injection_plan(
                 / denominator
             )
             entries.append(
-                _injection_entry(
+                InjectionPlanEntry(
                     component=component,
                     timing=entry.timing,
                     index=entry.index,
@@ -811,28 +772,23 @@ def _mode_launch_injection_plan(
                     target_shape=tuple(getattr(ctx.fields, component).shape),
                 )
             )
-        return CompiledInjectionPlan(tuple(entries))
+        return tuple(entries)
 
     if not (isinstance(plan, Mode3DLaunchPlan) or hasattr(plan, "residuals")):
         raise TypeError(f"Unsupported mode launch plan {type(plan).__name__}.")
     launch_scale = float(getattr(plan, "launch_amplitude_scale", 1.0) or 1.0)
     launched_power = getattr(plan, "launched_power", None)
-    return CompiledInjectionPlan(
-        tuple(
-            _injection_entry(
-                component=residual.component,
-                timing=residual.timing,
-                index=residual.index,
-                values=np.asarray(residual.residual, dtype=np.complex128)
-                * launch_scale,
-                waveform=waveform,
-                target_shape=tuple(getattr(ctx.fields, residual.component).shape),
-                launched_power=(
-                    None if launched_power is None else float(launched_power)
-                ),
-            )
-            for residual in plan.residuals
+    return tuple(
+        InjectionPlanEntry(
+            component=residual.component,
+            timing=residual.timing,
+            index=residual.index,
+            values=np.asarray(residual.residual, dtype=np.complex128) * launch_scale,
+            waveform=waveform,
+            target_shape=tuple(getattr(ctx.fields, residual.component).shape),
+            launched_power=(None if launched_power is None else float(launched_power)),
         )
+        for residual in plan.residuals
     )
 
 
@@ -1449,25 +1405,23 @@ def _field_profile_injection_plan(
     max_shift: int = 1,
     power: float = 1.0,
     launched_power: float | None = None,
-) -> CompiledInjectionPlan:
+) -> InjectionPlan:
     profile = scale_field_profile(profile, power)
-    return CompiledInjectionPlan(
-        tuple(
-            _injection_entry(
-                component=residual.component,
-                timing=residual.timing,
-                index=residual.index,
-                values=np.asarray(residual.residual, dtype=np.complex128),
-                waveform=waveform,
-                target_shape=tuple(getattr(ctx.fields, residual.component).shape),
-                launched_power=launched_power,
-            )
-            for residual in field_profile_phasor_residuals(
-                profile,
-                ctx.fields,
-                dt=ctx.dt,
-                resolution=ctx.resolution,
-                max_shift=max_shift,
-            )
+    return tuple(
+        InjectionPlanEntry(
+            component=residual.component,
+            timing=residual.timing,
+            index=residual.index,
+            values=np.asarray(residual.residual, dtype=np.complex128),
+            waveform=waveform,
+            target_shape=tuple(getattr(ctx.fields, residual.component).shape),
+            launched_power=launched_power,
+        )
+        for residual in field_profile_phasor_residuals(
+            profile,
+            ctx.fields,
+            dt=ctx.dt,
+            resolution=ctx.resolution,
+            max_shift=max_shift,
         )
     )

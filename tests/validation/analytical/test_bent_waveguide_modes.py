@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from beamz.devices.modes import solve_grid
+from tests.mode_family_fixture import mode_grid_inputs
 
 
 def _published_slab(radius, spacing=0.025, outer=20.0, pml_width=4.0):
@@ -15,14 +16,16 @@ def _published_slab(radius, spacing=0.025, outer=20.0, pml_width=4.0):
     centers = (edges[:-1] + edges[1:]) / 2
     eps = np.where(np.abs(centers) < 0.5, 1.7**2, 1.6**2)[:, None]
     modes = solve_grid(
-        eps_xx=eps,
-        x_edges=edges,
-        y_edges=[0.0, 1.0],  # Singleton transverse direction: invariant slab.
-        wavelength=1.3,
-        num_modes=2,
-        target_neff=1.66,
-        pml=(round(pml_width / spacing), 0),
-        bend_radius=radius,
+        **mode_grid_inputs(
+            eps_xx=eps,
+            x_edges=edges,
+            y_edges=[0.0, 1.0],  # Singleton transverse direction: invariant slab.
+            wavelength=1.3,
+            num_modes=2,
+            target_neff=1.66,
+            pml=(round(pml_width / spacing), 0),
+            bend_radius=radius,
+        )
     )
     # TE has E along the invariant axis; avoid depending on eigenvalue ordering.
     ey = np.sum(np.abs(modes.field_components["Ey"].values), axis=(0, 1, 2, 3))

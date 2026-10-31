@@ -57,93 +57,66 @@ def _monitor_profile_slice(sim, monitor, axis, pad_cells):
     if perm.ndim != 2:
         raise ValueError("Line modal profiles require 2D materials.")
     grid = sim.coordinates.grid
-    if grid is not None and grid.metric_kind_for(("x", "y")) != "isotropic_uniform":
+    nonuniform = (
+        grid is not None and grid.metric_kind_for(("x", "y")) != "isotropic_uniform"
+    )
+    # Material storage is(y,x); monitor point coordinates are(x,y).
+    normal = 1 if axis == "x" else 0
+    transverse = 1 - normal
+    if grid is not None and nonuniform:
         snapped = snap_axis_aligned_line_region_grid(monitor.start, monitor.end, grid)
         if snapped is None:
             raise ValueError(f"Monitor '{monitor.name}' is not axis aligned.")
         points = line_region_points(snapped)
-        if not points:
-            raise ValueError(f"Monitor '{monitor.name}' contains no sample points.")
-        if axis == "x":
-            plane = int(snapped.plane_index)
-            eps_profile_full = perm[:, plane - origin[1]]
-            sample_idx = np.asarray(
-                [point[1] - origin[0] for point in points], dtype=int
+        plane = int(snapped.plane_index)
+    else:
+        points = monitor.get_grid_points_2d(sim.resolution, sim.resolution)
+        plane = (
+            int(
+                np.clip(
+                    round(float(np.mean(np.asarray(points)[:, 1 - normal]))),
+                    0,
+                    full_shape[normal] - 1,
+                )
             )
-            transverse_axis = "y"
-        else:
-            plane = int(snapped.plane_index)
-            eps_profile_full = perm[plane - origin[0], :]
-            sample_idx = np.asarray(
-                [point[0] - origin[1] for point in points], dtype=int
-            )
-            transverse_axis = "x"
-        lo = max(0, int(np.min(sample_idx)) - int(pad_cells))
-        hi = min(len(eps_profile_full), int(np.max(sample_idx)) + int(pad_cells) + 1)
-        local_idx = np.clip(sample_idx - lo, 0, max(hi - lo - 1, 0))
-        edges = np.asarray(grid.axis_edges(transverse_axis))[lo : hi + 1]
-        weights = np.asarray(grid.cell_widths(transverse_axis))[
-            sample_idx + (origin[0] if axis == "x" else origin[1])
-        ]
-        return (
-            np.asarray(eps_profile_full[lo:hi], dtype=np.complex128),
-            local_idx,
-            weights,
-            edges,
+            if points
+            else 0
         )
-    points = monitor.get_grid_points_2d(sim.resolution, sim.resolution)
     if not points:
         raise ValueError(f"Monitor '{monitor.name}' contains no sample points.")
-    p = np.asarray(points, dtype=float)
-    node_sampled = sim.coordinates.polarization_2d == "tm"
-
-    def transverse_material(profile):
-        if not node_sampled:
-            return profile
+    profile = np.take(perm, plane - origin[normal], axis=normal)
+    node_sampled = not nonuniform and sim.coordinates.polarization_2d == "tm"
+    if node_sampled:
         # Uniform TM monitors acquire Ez and tangential H on transverse nodes.
-        # Solve their basis on that same support, not on cell centers shifted by
-        # half a pixel. Do this before cropping so opposite ports retain exactly
-        # reflected material neighborhoods.
+        # Average before cropping to preserve reflected material neighborhoods.
         extended = np.pad(profile, (1, 1), mode="edge")
-        return 0.5 * (extended[:-1] + extended[1:])
-
-    if axis == "x":
-        x_idx = int(np.clip(round(float(np.mean(p[:, 0]))), 0, full_shape[1] - 1))
-        eps_profile_full = transverse_material(perm[:, x_idx - origin[1]])
-        sample_idx = np.asarray(
-            [
-                int(np.clip(pi[1], 0, full_shape[0] - int(not node_sampled)))
-                - origin[0]
-                for pi in points
-            ],
-            dtype=int,
+        profile = 0.5 * (extended[:-1] + extended[1:])
+    sample_idx = np.asarray(points, dtype=int)[:, 1 - transverse]
+    if not nonuniform:
+        sample_idx = np.clip(
+            sample_idx, 0, full_shape[transverse] - int(not node_sampled)
         )
-    else:
-        y_idx = int(np.clip(round(float(np.mean(p[:, 1]))), 0, full_shape[0] - 1))
-        eps_profile_full = transverse_material(perm[y_idx - origin[0], :])
-        sample_idx = np.asarray(
-            [
-                int(np.clip(pi[0], 0, full_shape[1] - int(not node_sampled)))
-                - origin[1]
-                for pi in points
-            ],
-            dtype=int,
-        )
+    sample_idx = sample_idx - origin[transverse]
     lo = max(0, int(np.min(sample_idx)) - int(pad_cells))
-    hi = min(len(eps_profile_full), int(np.max(sample_idx)) + int(pad_cells) + 1)
+    hi = min(len(profile), int(np.max(sample_idx)) + int(pad_cells) + 1)
     local_idx = np.clip(sample_idx - lo, 0, max(hi - lo - 1, 0))
-    if len(points) > 1:
-        step_idx = np.diff(np.asarray(points, dtype=float), axis=0)
-        dl = float(np.mean(np.linalg.norm(step_idx, axis=1))) * float(sim.resolution)
+    if grid is not None and nonuniform:
+        transverse_axis = "y" if axis == "x" else "x"
+        edges = np.asarray(grid.axis_edges(transverse_axis))[lo : hi + 1]
+        measure = np.asarray(grid.cell_widths(transverse_axis))[
+            sample_idx + origin[transverse]
+        ]
     else:
-        dl = float(sim.resolution)
-    dl = max(dl, float(sim.resolution) * 1e-9)
-    return (
-        np.asarray(eps_profile_full[lo:hi], dtype=np.complex128),
-        local_idx,
-        dl,
-        None,
-    )
+        if len(points) > 1:
+            step_idx = np.diff(np.asarray(points, dtype=float), axis=0)
+            measure = float(np.mean(np.linalg.norm(step_idx, axis=1))) * float(
+                sim.resolution
+            )
+        else:
+            measure = float(sim.resolution)
+        measure = max(measure, float(sim.resolution) * 1e-9)
+        edges = None
+    return np.asarray(profile[lo:hi], dtype=np.complex128), local_idx, measure, edges
 
 
 def _build_discrete_port_projection_3d(
@@ -384,7 +357,6 @@ def _build_port_projection_2d(
         filter_pol=spec.polarization,
         target_neff=target_neff,
         force_symmetry=mode_spec.force_symmetry,
-        return_fields=True,
         grid_edges=None
         if grid_edges is None
         else (np.asarray(grid_edges, dtype=np.float64),),
@@ -623,11 +595,6 @@ def build_modal_projection_plan(projections):
     return ModalProjectionPlan(
         tuple(components), mode_matrix, rhs_rows, system, condition
     )
-
-
-def _modal_coefficient_rows_3d(projections):
-    """Linear rows for the ordinary coupled forward/backward overlap system."""
-    return build_modal_projection_plan(projections).coefficient_rows
 
 
 def _project_modal_coefficients_3d_group(field_components, projections):

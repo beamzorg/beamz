@@ -21,7 +21,6 @@ from beamz.analysis import sparameters as sp
 from beamz.analysis.data import AnalysisData
 from beamz.analysis.modal_projection.colocation import (
     _colocate_field_components_to_projection_3d,
-    _colocate_monitor_component_matrix_3d,
     _interpolate_plane_matrix_2d,
 )
 from beamz.analysis.modal_projection.geometry import (
@@ -567,12 +566,11 @@ def test_build_port_projection_2d_preserves_requested_mode_index_without_seed(
         direction,
         filter_pol,
         target_neff,
-        return_fields,
         grid_edges=None,
         force_symmetry=False,
     ):
         requested.append(force_symmetry)
-        del eps, omega, dL, m, direction, filter_pol, target_neff, return_fields
+        del eps, omega, dL, m, direction, filter_pol, target_neff
         return (
             np.array([2.3, 1.8], dtype=float),
             [e0, e1],
@@ -772,7 +770,7 @@ def test_s_parameters_keys_shapes_and_valid_mask(monkeypatch):
     assert np.isnan(diag["power_sum"][1])
 
 
-def test_colocate_monitor_component_matrix_3d_interpolates_to_canonical_plane():
+def test_colocate_field_components_interpolates_to_canonical_plane():
     monitor = FieldMonitor(
         center=(3.5, 2.8, 2.75),
         size=(4.6, 0.0, 3.3),
@@ -793,15 +791,12 @@ def test_colocate_monitor_component_matrix_3d_interpolates_to_canonical_plane():
     np.testing.assert_allclose(dst0, expected0, atol=1e-12, rtol=0.0)
     np.testing.assert_allclose(dst1, expected1, atol=1e-12, rtol=0.0)
     src_plane = src0[:, None] + src1[None, :]
-    colocated = _colocate_monitor_component_matrix_3d(
+    colocated = _colocate_field_components_to_projection_3d(
         sim,
         monitor,
-        "Ex",
-        src_plane.reshape(1, -1),
-        axis="y",
-        target0=dst0,
-        target1=dst1,
-    )
+        {"Ex": src_plane.reshape(1, -1)},
+        {"axis": "y", "analysis_coords0": dst0, "analysis_coords1": dst1},
+    )["Ex"]
     dst0_eff = np.clip(dst0, np.min(src0), np.max(src0))
     dst1_eff = np.clip(dst1, np.min(src1), np.max(src1))
     expected = (dst0_eff[:, None] + dst1_eff[None, :]).reshape(1, -1)

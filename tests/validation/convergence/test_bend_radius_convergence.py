@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from beamz.devices.modes import solve_grid
+from tests.mode_family_fixture import mode_grid_inputs
 from tests.unit.modes.test_api import _strip
 from tests.utils import slab_waveguide_neff_te
 
@@ -26,10 +27,11 @@ def test_bend_radius_recovers_existing_straight_case(case, validation_metrics):
         target_neff=target,
         num_modes=count,
     )
-    straight = float(solve_grid(**args).n_eff.values[0, 0])
+    straight = float(solve_grid(**mode_grid_inputs(**args)).n_eff.values[0, 0])
     radii = [100, 200, 400]
     indices = [
-        float(solve_grid(**args, bend_radius=r).n_eff.values[0, 0]) for r in radii
+        float(solve_grid(**mode_grid_inputs(**args, bend_radius=r)).n_eff.values[0, 0])
+        for r in radii
     ]
     errors = np.abs(np.asarray(indices) - straight)
     assert np.all(np.diff(errors) < 0)
@@ -40,7 +42,9 @@ def test_bend_radius_recovers_existing_straight_case(case, validation_metrics):
         0.8,
         metadata={"radii_um": radii, "indices": indices, "straight": straight},
     )
-    near_straight = float(solve_grid(**args, bend_radius=1e8).n_eff.values[0, 0])
+    near_straight = float(
+        solve_grid(**mode_grid_inputs(**args, bend_radius=1e8)).n_eff.values[0, 0]
+    )
     validation_metrics.check_upper(
         "large-radius index error", abs(near_straight - straight), 1e-8
     )

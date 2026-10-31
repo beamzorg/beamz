@@ -169,7 +169,6 @@ def solve_mode_plane(
             direction=cast(SignedAxis, solver_direction),
             filter_pol=cast(Literal["te", "tm"] | None, spec.polarization),
             target_neff=spec.target_neff,
-            return_fields=True,
             eps_yy=cropped(context.diagonal_permittivity, "yy"),
             eps_zz=cropped(context.diagonal_permittivity, "zz"),
             mu_xx=cropped(context.diagonal_permeability, "xx"),

@@ -1,4 +1,4 @@
-"""Internal validated inputs for the native mode solver."""
+"""Validated material grids and boundary inputs for the native mode solver."""
 
 from __future__ import annotations
 

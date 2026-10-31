@@ -450,58 +450,72 @@ class _AbsorberCompiler:
 
         return sigma
 
-    def _compute_1d_cpml_profile(self, coords, length, low_active, high_active):
-        """Compute 1D CPML sigma/kappa/alpha profiles."""
+    def _cpml_polynomial(
+        self,
+        depth,
+        *,
+        sigma_order=None,
+        kappa_order=None,
+        alpha_order=None,
+        staggered=False,
+    ):
+        """Polynomial grading shared by logical and physical staggered samples."""
+        if self.spec.sigma_max is None or self.spec.alpha_max is None:
+            raise ValueError(
+                "CPML profile parameters must be resolved before sampling."
+            )
+        u = jnp.clip(depth, 0.0, 1.0)
+        sigma_order = self.spec.m if sigma_order is None else sigma_order
+        kappa_order = self.spec.m if kappa_order is None else kappa_order
+        alpha_order = 1.0 if alpha_order is None else alpha_order
+        # Staggered profiles cast constants before subtraction; cell profiles
+        # preserve their Python-scalar subtraction before device placement.
+        span = (
+            jnp.asarray(self.spec.kappa_max, dtype=u.dtype) - 1.0
+            if staggered
+            else self.spec.kappa_max - 1.0
+        )
+        return (
+            self.spec.sigma_max * u**sigma_order,
+            1.0 + span * u**kappa_order,
+            self.spec.alpha_max * (1.0 - u) ** alpha_order,
+        )
 
-        # Build this profile on its exact staggered support to avoid interpolation
-        # inside timestep kernels.
+    def _compute_1d_cpml_profile(self, coords, length, low_active, high_active):
+        """Compute cell-centered CPML; overlapping sigma adds, kappa/alpha overwrite."""
+        if self.spec.sigma_max is None or self.spec.alpha_max is None:
+            raise ValueError(
+                "CPML profile parameters must be resolved before sampling."
+            )
+        # Cell-count defaults retain the same layers on uniform and graded grids.
         if self.cell_thickness is not None:
-            # A cell-count default must retain exactly the same number of layers on
-            # uniform, axis-uniform, and fully rectilinear grids. Grade in logical
-            # cell coordinates; explicit physical thicknesses continue to use the
-            # realized metric coordinates supplied by the caller.
-            cells = int(coords.shape[0])
-            coords = jnp.arange(cells, dtype=jnp.float32) + 0.5
-            length = float(cells)
-        sigma = jnp.zeros_like(coords)
-        kappa = jnp.ones_like(coords)
-        alpha = jnp.zeros_like(coords)
+            length = float(coords.shape[0])
+            coords = jnp.arange(coords.shape[0], dtype=jnp.float32) + 0.5
         thickness = max(
             float(self.cell_thickness)
             if self.cell_thickness is not None
             else self._physical_thickness(),
             1e-30,
         )
-        if self.spec.sigma_max is None or self.spec.alpha_max is None:
-            raise ValueError(
-                "CPML profile parameters must be resolved before sampling."
-            )
-        sigma_max = self.spec.sigma_max
-        alpha_max = self.spec.alpha_max
-
-        def apply_side(dist):
-            # Grade sigma/kappa inward while alpha decreases toward the interior interface.
-            graded = jnp.clip(dist / thickness, 0.0, 1.0)
-            side_sigma = sigma_max * graded**self.spec.m
-            side_kappa = 1.0 + (self.spec.kappa_max - 1.0) * graded**self.spec.m
-            side_alpha = alpha_max * (1.0 - graded)
-            mask = dist > 0
-            return mask, side_sigma, side_kappa, side_alpha
-
-        if low_active:
-            dist = jnp.clip(thickness - coords, 0.0, None)
-            mask, side_sigma, side_kappa, side_alpha = apply_side(dist)
-            sigma = sigma + side_sigma
-            kappa = jnp.where(mask, side_kappa, kappa)
-            alpha = jnp.where(mask, side_alpha, alpha)
-
-        if high_active:
-            dist = jnp.clip(coords - (length - thickness), 0.0, None)
-            mask, side_sigma, side_kappa, side_alpha = apply_side(dist)
-            sigma = sigma + side_sigma
-            kappa = jnp.where(mask, side_kappa, kappa)
-            alpha = jnp.where(mask, side_alpha, alpha)
-
+        sigma, kappa, alpha = (
+            jnp.zeros_like(coords),
+            jnp.ones_like(coords),
+            jnp.zeros_like(coords),
+        )
+        for active, distance in (
+            (low_active, thickness - coords),
+            (high_active, coords - (length - thickness)),
+        ):
+            if active:
+                mask = distance > 0
+                ss, sk, sa = self._cpml_polynomial(
+                    jnp.maximum(distance, 0.0) / thickness
+                )
+                sigma, kappa, alpha = (
+                    sigma + ss,
+                    jnp.where(mask, sk, kappa),
+                    jnp.where(mask, sa, alpha),
+                )
         return sigma, kappa, alpha
 
     def _compute_fdtdx_staggered_profile_1d(
@@ -519,127 +533,68 @@ class _AbsorberCompiler:
         sample_coordinates=None,
         domain_bounds=None,
     ):
-        """Compute a 1D CPML profile using FDTDX-style discrete Yee offsets."""
+        """FDTDX-style CPML on E wall nodes or H cell centers.
 
-        # 1. Start from vacuum CPML values and convert the physical thickness to an integer
-        # cell count used by FDTDX's discrete grading convention.
-        sigma = jnp.zeros((int(total_samples),), dtype=jnp.float32)
-        kappa = jnp.ones((int(total_samples),), dtype=jnp.float32)
-        alpha = jnp.zeros((int(total_samples),), dtype=jnp.float32)
-
-        pml_cells = max(
-            int(self.cell_thickness)
-            if self.cell_thickness is not None
-            else int(round(self._physical_thickness() / max(float(spacing), 1e-30))),
-            1,
-        )
-        sigma_order = float(self.spec.m if sigma_order is None else sigma_order)
-        kappa_order = float(self.spec.m if kappa_order is None else kappa_order)
-        alpha_order = float(1.0 if alpha_order is None else alpha_order)
-
-        def apply_u(u):
-            # Evaluate normalized polynomial profiles once for either low or high side distance.
-            dtype = sigma.dtype
-            u = jnp.clip(jnp.asarray(u, dtype=dtype), 0.0, 1.0)
-            side_sigma = jnp.asarray(self.spec.sigma_max, dtype=dtype) * jnp.power(
-                u, sigma_order
-            )
-            side_kappa = jnp.asarray(1.0, dtype=dtype) + (
-                jnp.asarray(self.spec.kappa_max, dtype=dtype)
-                - jnp.asarray(1.0, dtype=dtype)
-            ) * jnp.power(u, kappa_order)
-            side_alpha = jnp.asarray(self.spec.alpha_max, dtype=dtype) * jnp.power(
-                jnp.asarray(1.0, dtype=dtype) - u, alpha_order
-            )
-            return side_sigma, side_kappa, side_alpha
-
-        # 2. Place the profile on physical Yee coordinates. Complete E supports have
-        # wall-aligned samples at i*dx for i=0..N, while H supports have one sample per
-        # material cell at (i+1/2)*dx for i=0..N-1. Deriving both absorber sides from
-        # these coordinates avoids separate low/high recipes drifting by half a cell.
-        if sample_kind == "E":
-            offset = 0.0
-            inferred_domain_cells = int(total_samples) - 1
-        elif sample_kind == "H":
-            offset = 0.5
-            inferred_domain_cells = int(total_samples)
-        else:
+        An interface sample is an identity update. Explicit physical thickness
+        uses realized coordinates; the default cell count uses logical Yee
+        coordinates on every mesh. Overlapping layers combine by maximum.
+        """
+        if sample_kind not in {"E", "H"}:
             raise ValueError(f"Unsupported CPML sample kind {sample_kind!r}")
         domain_cells = (
-            inferred_domain_cells if domain_cells is None else int(domain_cells)
+            int(total_samples) - int(sample_kind == "E")
+            if domain_cells is None
+            else int(domain_cells)
         )
         if domain_cells <= 0:
             raise ValueError("CPML domain_cells must be positive.")
-        coords = jnp.arange(int(total_samples), dtype=jnp.float32) + jnp.asarray(
-            offset, dtype=jnp.float32
-        )
-
-        physical_coordinates = (
-            None
-            if sample_coordinates is None or self.cell_thickness is not None
-            else jnp.asarray(sample_coordinates, dtype=jnp.float32)
-        )
-        physical_thickness = (
-            0.0 if physical_coordinates is None else self._physical_thickness()
-        )
-        distance_scale = (
-            max(float(pml_cells), 1e-30)
-            if physical_coordinates is None
-            else max(physical_thickness, 1e-30)
-        )
-
-        def apply_side(dist):
-            mask = dist > 0.0
-            side_sigma, side_kappa, side_alpha = apply_u(dist / distance_scale)
-            return mask, side_sigma, side_kappa, side_alpha
-
-        # 3. Evaluate each active side from the same domain coordinate system. The
-        # interface sample has zero CPML strength and remains an identity update.
-        if physical_coordinates is not None:
+        physical = sample_coordinates is not None and self.cell_thickness is None
+        if physical:
             if domain_bounds is None:
                 raise ValueError(
                     "Physical CPML sample coordinates require domain_bounds."
                 )
-            lower_bound, upper_bound = (float(value) for value in domain_bounds)
-            coords = physical_coordinates
-
-        if low_active:
-            low_dist = (
-                jnp.clip(float(pml_cells) - coords, 0.0, float(pml_cells))
-                if physical_coordinates is None
-                else jnp.clip(
-                    physical_thickness - (coords - lower_bound),
-                    0.0,
-                    physical_thickness,
+            coords = jnp.asarray(sample_coordinates, dtype=jnp.float32)
+            lower, upper = map(float, domain_bounds)
+            thickness = self._physical_thickness()
+        else:
+            coords = jnp.arange(int(total_samples), dtype=jnp.float32) + (
+                0.0 if sample_kind == "E" else 0.5
+            )
+            lower, upper = 0.0, float(domain_cells)
+            thickness = float(
+                max(
+                    int(self.cell_thickness)
+                    if self.cell_thickness is not None
+                    else int(
+                        round(self._physical_thickness() / max(float(spacing), 1e-30))
+                    ),
+                    1,
                 )
             )
-            mask, side_sigma, side_kappa, side_alpha = apply_side(low_dist)
-            sigma = jnp.where(mask, jnp.maximum(sigma, side_sigma), sigma)
-            kappa = jnp.where(mask, jnp.maximum(kappa, side_kappa), kappa)
-            alpha = jnp.where(mask, jnp.maximum(alpha, side_alpha), alpha)
-
-        if high_active:
-            high_dist = (
-                jnp.clip(
-                    coords - float(domain_cells - pml_cells),
-                    0.0,
-                    float(pml_cells),
+        values = (jnp.zeros_like(coords), jnp.ones_like(coords), jnp.zeros_like(coords))
+        for active, distance in (
+            (low_active, thickness - (coords - lower)),
+            (high_active, coords - (upper - thickness)),
+        ):
+            if active:
+                distance = jnp.clip(distance, 0.0, thickness)
+                graded = self._cpml_polynomial(
+                    distance / max(thickness, 1e-30),
+                    sigma_order=float(
+                        self.spec.m if sigma_order is None else sigma_order
+                    ),
+                    kappa_order=float(
+                        self.spec.m if kappa_order is None else kappa_order
+                    ),
+                    alpha_order=float(1.0 if alpha_order is None else alpha_order),
+                    staggered=True,
                 )
-                if physical_coordinates is None
-                else jnp.clip(
-                    coords - (upper_bound - physical_thickness),
-                    0.0,
-                    physical_thickness,
+                values = tuple(
+                    jnp.where(distance > 0.0, jnp.maximum(old, new), old)
+                    for old, new in zip(values, graded, strict=True)
                 )
-            )
-            mask, side_sigma, side_kappa, side_alpha = apply_side(high_dist)
-            sigma = jnp.where(mask, jnp.maximum(sigma, side_sigma), sigma)
-            kappa = jnp.where(mask, jnp.maximum(kappa, side_kappa), kappa)
-            alpha = jnp.where(mask, jnp.maximum(alpha, side_alpha), alpha)
-
-        # 5. Return aligned sigma, kappa, and alpha vectors for broadcasting onto the
-        # corresponding directional derivative.
-        return sigma, kappa, alpha
+        return values
 
     def _create_sponge_profiles(self, fields, domain_size):
         """Create sponge profiles from one axis-driven 2D/3D implementation."""

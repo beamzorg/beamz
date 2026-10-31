@@ -9,6 +9,7 @@ import pytest
 
 from beamz.design import raster
 from beamz.devices.modes.solver import solve_grid
+from tests.mode_family_fixture import mode_grid_inputs
 
 
 def _rotated_waveguide_scene() -> raster.Scene:
@@ -45,13 +46,15 @@ def _effective_index(scene: raster.Scene, cells: int) -> float:
         eps_zy=components["eps_yz"],
     )
     modes = solve_grid(
-        **components,
-        x_edges=np.linspace(0.0, 4.0, cells + 1).tolist(),
-        y_edges=np.linspace(0.0, 4.0, cells + 1).tolist(),
-        wavelength=[1.55],
-        num_modes=1,
-        target_neff=3.0,
-        krylov_dim=32,
+        **mode_grid_inputs(
+            **components,
+            x_edges=np.linspace(0.0, 4.0, cells + 1).tolist(),
+            y_edges=np.linspace(0.0, 4.0, cells + 1).tolist(),
+            wavelength=[1.55],
+            num_modes=1,
+            target_neff=3.0,
+            krylov_dim=32,
+        )
     )
     return float(modes.n_eff.values[0, 0])
 
