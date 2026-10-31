@@ -155,5 +155,13 @@ def _monitor_analysis_plane_3d(
 ) -> tuple[np.ndarray, np.ndarray]:
     if axis != monitor.plane_normal:
         raise ValueError("Port axis must match the monitor plane normal.")
+    grid = sim.coordinates.grid
+    if grid is None or grid.metric_kind == "isotropic_uniform":
+        return monitor.get_analysis_plane_coords_3d(
+            dx=sim.resolution,
+            dy=sim.resolution,
+            dz=sim.resolution,
+            field_shape=sim.coordinates.fields.grid_shape,
+        )
     _, coord0, coord1 = monitor_plane_coordinates_3d(sim.coordinates, monitor)
     return coord0, coord1
