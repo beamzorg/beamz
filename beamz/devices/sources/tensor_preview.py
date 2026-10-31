@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from beamz.devices._placement import snap_mode_source_region_grid
+from beamz.devices._placement import mode_source_region
 from beamz.devices.modes.plane import bind_material_mode_plane
 from beamz.devices.modes.specs import ModeData
 from beamz.lattice import component_axis_offsets_3d
@@ -27,7 +27,7 @@ def solve_tensor_mode_plane(
     transverse = tuple(a for a in ("z", "y", "x") if a != axis)
     sizes: dict[str, float] = dict(zip(("x", "y", "z"), plane.size, strict=True))
     width, height = (sizes[a] for a in transverse[::-1])
-    snapped = snap_mode_source_region_grid(
+    snapped = mode_source_region(
         center=center,
         width=width,
         height=height,
