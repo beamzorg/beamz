@@ -10,7 +10,6 @@ from beamz.devices._immutable import (
     readonly_1d_array,
 )
 from beamz.devices._placement import (
-    line_region_points,
     plane_region_slices,
     snap_axis_aligned_line_region,
     snap_plane_region,
@@ -153,23 +152,16 @@ class _Monitor:
         dx, dy : float
             Cell spacing along x and y in metres.
         """
-        snapped = self.get_snapped_region(dx=dx, dy=dy)
-        if snapped is not None:
-            return line_region_points(snapped)
-
         start_x_grid = int(round(self.start[0] / dx))
         start_y_grid = int(round(self.start[1] / dy))
         end_x_grid = int(round(self.end[0] / dx))
         end_y_grid = int(round(self.end[1] / dy))
 
-        if abs(end_x_grid - start_x_grid) > abs(end_y_grid - start_y_grid):
-            num_points = abs(end_x_grid - start_x_grid) + 1
-            x_indices = np.linspace(start_x_grid, end_x_grid, num_points, dtype=int)
-            y_indices = np.linspace(start_y_grid, end_y_grid, num_points, dtype=int)
-        else:
-            num_points = abs(end_y_grid - start_y_grid) + 1
-            x_indices = np.linspace(start_x_grid, end_x_grid, num_points, dtype=int)
-            y_indices = np.linspace(start_y_grid, end_y_grid, num_points, dtype=int)
+        num_points = (
+            max(abs(end_x_grid - start_x_grid), abs(end_y_grid - start_y_grid)) + 1
+        )
+        x_indices = np.linspace(start_x_grid, end_x_grid, num_points, dtype=int)
+        y_indices = np.linspace(start_y_grid, end_y_grid, num_points, dtype=int)
 
         return list(zip(x_indices, y_indices, strict=True))
 
@@ -185,10 +177,7 @@ class _Monitor:
                 np.arange(int(interval.start), int(interval.stop), dtype=np.float64)
                 + 0.5
             ) * float(dy)
-            if self.end is not None:
-                x_coord = 0.5 * (float(self.start[0]) + float(self.end[0]))
-            else:
-                x_coord = float(self.start[0])
+            x_coord = 0.5 * (self.start[0] + self.end[0])
             x = np.full(y.shape, x_coord, dtype=np.float64)
             return x, y
         interval = snapped.axis_interval("x")
@@ -197,10 +186,7 @@ class _Monitor:
         x = (
             np.arange(int(interval.start), int(interval.stop), dtype=np.float64) + 0.5
         ) * float(dx)
-        if self.end is not None:
-            y_coord = 0.5 * (float(self.start[1]) + float(self.end[1]))
-        else:
-            y_coord = float(self.start[1])
+        y_coord = 0.5 * (self.start[1] + self.end[1])
         y = np.full(x.shape, y_coord, dtype=np.float64)
         return x, y
 
@@ -286,35 +272,25 @@ class _Monitor:
         field_shape : tuple of int, optional
             Base field shape in ``(z, y, x)`` order; required for 3D monitors.
         """
-        if field_shape is not None and len(tuple(field_shape)) == 3:
-            if dz is None or field_shape is None:
+        if field_shape is None:
+            return None
+        shape = tuple(int(value) for value in field_shape)
+        if len(shape) == 3:
+            if dz is None:
                 return None
             return snap_plane_region(
-                start=tuple(float(v) for v in self.start),
-                end=(
-                    None
-                    if getattr(self, "end", None) is None
-                    else tuple(float(v) for v in self.end)
-                ),
-                plane_normal=str(getattr(self, "plane_normal", "z")).lower(),
-                size=(
-                    None
-                    if getattr(self, "end", None) is not None
-                    else tuple(float(v) for v in getattr(self, "size", (0.0, 0.0)))
-                ),
+                start=self.start,
+                end=self.end,
+                plane_normal=self.plane_normal,
+                size=None,
                 dx=float(dx),
                 dy=float(dy),
                 dz=float(dz),
-                shape=tuple(int(v) for v in field_shape),
+                shape=shape,
             )
-
-        if field_shape is not None:
-            shape = tuple(int(v) for v in field_shape)
-        else:
-            return None
         return snap_axis_aligned_line_region(
-            tuple(float(v) for v in self.start),
-            tuple(float(v) for v in self.end),
+            self.start,
+            self.end,
             float(dx),
             float(dy),
             shape,
