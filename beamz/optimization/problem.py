@@ -180,7 +180,7 @@ class TopologyProblem:
         )
         self.fingerprint = hashlib.sha256(repr(token).encode()).hexdigest()
 
-    def simulation_data(self, density, *, beta=1.0, monitor_names=None):
+    def simulation_data(self, density, *, beta: float | None = 1.0, monitor_names=None):
         """Run and return differentiable ``data[name].amps.sel(...).values``.
 
         Use inside a JAX scalar objective and call ``jax.value_and_grad``. Names,
@@ -566,7 +566,7 @@ class TopologyProblem:
             shape=self.topology.region_mask.shape,
         )
 
-    def material_simulation(self, density, *, beta=1.0):
+    def material_simulation(self, density, *, beta: float | None = 1.0):
         """Create an ordinary simulation with the identical density material map."""
         eps = self._permittivity(
             self._density(density), None if beta is None else self._beta(beta)

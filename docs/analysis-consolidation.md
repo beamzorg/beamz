@@ -1,6 +1,7 @@
 # Analysis consolidation and optimization migration
 
-The analysis-only simplification keeps existing public and private call signatures.
+The analysis contract retains detached input ownership while its consumers share
+canonical projection and rendering preparation.
 `AnalysisData` still owns detached acquisition inputs. `AxisSlice` and `FieldView`
 remain the geometry and scalar-display foundations.
 
@@ -8,9 +9,10 @@ remain the geometry and scalar-display foundations.
 coupled forward/backward tangential measurement once. The returned
 `ModalProjectionPlan` exposes coefficient rows and projection with conditioning,
 component reconstruction residuals, complex reconstruction scales and signed
-reconstructed flux, including coherent cross terms. Both legacy
-`_modal_coefficient_rows_3d` and `_project_modal_coefficients_3d_group` use this
-assembly. Well-conditioned systems retain direct solves; poorly conditioned
+reconstructed flux, including coherent cross terms. The grouped
+`_project_modal_coefficients_3d_group` consumer uses this assembly; differentiable
+consumers read the same plan's coefficient rows. Well-conditioned systems retain
+direct solves; poorly conditioned
 systems retain pseudoinverses. Acquired components must already be temporally
 and spatially phase aligned and colocated in the plan's component order.
 The existing S-parameter boundary still performs those operations. Grouped

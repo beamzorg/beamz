@@ -709,22 +709,18 @@ def _device_geometry(device):
 
 
 def _draw_device_slice_overlay(ax, device, *, normal, origin, color, source):
+    from matplotlib.patches import Circle, Rectangle
+
+    vertical, horizontal = plane_axes_3d(normal)
+    indices = ["xyz".index(axis) for axis in (horizontal, vertical)]
+    offset = np.asarray(origin)[indices]
     spec = visual_spec_from_device(device)
     if spec is not None and (spec.style or {}).get("shape") == "circle":
-        from matplotlib.patches import Circle
-
-        vertical, horizontal = plane_axes_3d(normal)
-        indices = tuple("xyz".index(axis) for axis in (horizontal, vertical))
-        center = (
-            spec.center
-            if len(spec.center) == 2
-            else tuple(spec.center[i] for i in indices)
-        )
+        center = np.asarray(spec.center)
+        center = center if center.size == 2 else center[indices]
+        center = (center - offset) / _UM
         patch = Circle(
-            tuple(
-                (value - origin[i]) / _UM
-                for value, i in zip(center, indices, strict=True)
-            ),
+            (float(center[0]), float(center[1])),
             radius=0.5 * spec.size[0] / _UM,
             fill=False,
             edgecolor=color,
@@ -734,72 +730,33 @@ def _draw_device_slice_overlay(ax, device, *, normal, origin, color, source):
         return patch
     geometry = _device_geometry(device)
     if geometry is None:
-        return
+        return None
     axis, center, size, direction = geometry
-    vertical, horizontal = plane_axes_3d(normal)
+    center = (center[indices] - offset) / _UM
+    size = size[indices] / _UM
     if axis == normal:
-        # A source or monitor whose plane is parallel to the displayed cross
-        # section is best represented by its full footprint, rather than the
-        # two center lines used for edge-on devices.
-        from matplotlib.patches import Rectangle
-
-        origin_by_axis = dict(zip(("x", "y", "z"), map(float, origin), strict=True))
-        indices = {"x": 0, "y": 1, "z": 2}
-        horizontal_index = indices[horizontal]
-        vertical_index = indices[vertical]
-        lower = (
-            (center[horizontal_index] - 0.5 * size[horizontal_index])
-            - origin_by_axis[horizontal],
-            (center[vertical_index] - 0.5 * size[vertical_index])
-            - origin_by_axis[vertical],
-        )
-        rectangle = Rectangle(
-            tuple(value / _UM for value in lower),
-            size[horizontal_index] / _UM,
-            size[vertical_index] / _UM,
+        # Face-on planes retain their full footprint; edge-on planes use a line.
+        patch = Rectangle(
+            (float(center[0] - 0.5 * size[0]), float(center[1] - 0.5 * size[1])),
+            *size,
             facecolor=color,
             edgecolor=color,
             alpha=0.25,
             linewidth=2.0,
         )
-        ax.add_patch(rectangle)
-        return rectangle
-    if axis == horizontal:
-        segments = [(False, vertical, horizontal, True)]
-    elif axis == vertical:
-        segments = [(True, horizontal, vertical, True)]
-    elif normal == "z":
-        segments = [
-            (True, horizontal, vertical, True),
-            (False, vertical, horizontal, False),
-        ]
-    else:
-        return
-    origin_by_axis: dict[str, float] = dict(
-        zip(("x", "y", "z"), map(float, origin), strict=True)
-    )
-    indices = {"x": 0, "y": 1, "z": 2}
-    for horizontal_line, span_axis, fixed_axis, arrow in segments:
-        span_index, fixed_index = indices[span_axis], indices[fixed_axis]
-        half = 0.5 * size[span_index]
-        span = (
-            center[span_index] - half - origin_by_axis[span_axis],
-            center[span_index] + half - origin_by_axis[span_axis],
-        )
-        fixed = (center[fixed_index] - origin_by_axis[fixed_axis]) / _UM
-        span = tuple(value / _UM for value in span)
-        x, y = (span, (fixed, fixed)) if horizontal_line else ((fixed, fixed), span)
-        ax.plot(x, y, color=color, lw=2.0)
-        if not (source and arrow):
-            continue
-        anchor = (center[span_index] - origin_by_axis[span_axis]) / _UM
-        delta = -0.55 if direction.startswith("-") else 0.55
-        start_xy = (anchor, fixed) if horizontal_line else (fixed, anchor)
-        end_xy = (anchor, fixed + delta) if horizontal_line else (fixed + delta, anchor)
+        ax.add_patch(patch)
+        return patch
+    span = 1 if axis == horizontal else 0
+    half = np.zeros(2)
+    half[span] = 0.5 * size[span]
+    ax.plot(*(np.stack((center - half, center + half)).T), color=color, lw=2.0)
+    if source:
+        delta = np.zeros(2)
+        delta[1 - span] = -0.55 if direction.startswith("-") else 0.55
         ax.annotate(
             "",
-            xy=end_xy,
-            xytext=start_xy,
+            xy=center + delta,
+            xytext=center,
             arrowprops={"arrowstyle": "-|>", "color": color, "lw": 2.0},
         )
 
@@ -898,9 +855,6 @@ def _path_patch(ax, geometry, *, normal, origin, facecolor):
 
     vertical, horizontal = plane_axes_3d(normal)
     origin_by_axis: dict[str, float] = dict(zip(("x", "y", "z"), origin, strict=True))
-    axis_index: dict[str, int] = {"x": 0, "y": 1, "z": 2}
-    h_index = axis_index[horizontal]
-    v_index = axis_index[vertical]
     patches = []
     for polygon in _polygon_geometries(geometry):
         coords = []
@@ -909,22 +863,11 @@ def _path_patch(ax, geometry, *, normal, origin, facecolor):
             ring_coords = np.asarray(ring.coords[:-1], dtype=float)
             if ring_coords.shape[0] < 3:
                 continue
-            if normal == "z":
-                transformed = np.column_stack(
-                    (
-                        (ring_coords[:, h_index] - origin_by_axis[horizontal]) / _UM,
-                        (ring_coords[:, v_index] - origin_by_axis[vertical]) / _UM,
-                    )
-                )
-            else:
-                # xz sections arrive as x/z polygons, whose two coordinates are
-                # already in the horizontal/vertical order for a y-normal view.
-                transformed = np.column_stack(
-                    (
-                        (ring_coords[:, 0] - origin_by_axis[horizontal]) / _UM,
-                        (ring_coords[:, 1] - origin_by_axis[vertical]) / _UM,
-                    )
-                )
+            # Section polygons already use horizontal/vertical coordinate order.
+            transformed = (
+                ring_coords
+                - np.asarray([origin_by_axis[horizontal], origin_by_axis[vertical]])
+            ) / _UM
             coords.extend(transformed)
             codes.extend(
                 (Path.MOVETO, *(Path.LINETO,) * (len(transformed) - 1), Path.CLOSEPOLY)
@@ -964,21 +907,11 @@ def _draw_sphere_slice(ax, structure, *, normal, position, origin, facecolor):
     if squared_radius < 0.0:
         return None
     radius = float(np.sqrt(squared_radius))
-    if normal == "z":
-        horizontal, vertical = "x", "y"
-        coordinates = center[0], center[1]
-    elif normal == "y":
-        horizontal, vertical = "x", "z"
-        coordinates = center[0], center[2]
-    else:
-        horizontal, vertical = "y", "z"
-        coordinates = center[1], center[2]
-    origin_by_axis = dict(zip(("x", "y", "z"), origin, strict=True))
+    vertical, horizontal = plane_axes_3d(normal)
+    indices = ["xyz".index(axis) for axis in (horizontal, vertical)]
+    projected_center = (center[indices] - np.asarray(origin)[indices]) / _UM
     patch = Circle(
-        (
-            (coordinates[0] - origin_by_axis[horizontal]) / _UM,
-            (coordinates[1] - origin_by_axis[vertical]) / _UM,
-        ),
+        (float(projected_center[0]), float(projected_center[1])),
         radius / _UM,
         facecolor=facecolor,
         edgecolor="none",
@@ -1013,18 +946,17 @@ def _draw_structure_slice(
     if structure.shape_kind == "box":
         lower = structure.lower
         upper = structure.upper
-        if normal == "z" and lower[2] <= position <= upper[2]:
+        fixed = "xyz".index(normal)
+        if lower[fixed] <= position <= upper[fixed]:
+            vertical, horizontal = ("xyz".index(axis) for axis in plane_axes_3d(normal))
             return _path_patch(
                 ax,
-                _rectangle_geometry(lower[0], upper[0], lower[1], upper[1]),
-                normal=normal,
-                origin=origin,
-                facecolor=facecolor,
-            )
-        if normal == "y" and lower[1] <= position <= upper[1]:
-            return _path_patch(
-                ax,
-                _rectangle_geometry(lower[0], upper[0], lower[2], upper[2]),
+                _rectangle_geometry(
+                    lower[horizontal],
+                    upper[horizontal],
+                    lower[vertical],
+                    upper[vertical],
+                ),
                 normal=normal,
                 origin=origin,
                 facecolor=facecolor,
@@ -1103,24 +1035,33 @@ def _draw_geometry_cross_section(ax, sim, *, normal, position, origin, colors):
 def _plot_simulation_slices(
     sim,
     *,
-    z,
-    y,
-    origin,
-    display_position,
-    width_ratios,
-    figsize,
-    show,
-    cmap,
-    categorical,
-    overlays,
+    z=None,
+    y=None,
+    origin=None,
+    width_ratios=None,
+    figsize=None,
+    show=True,
+    cmap="Grays",
+    categorical=True,
     source_markers=True,
     monitor_markers=True,
     xlim=None,
     ylim=None,
     zlim=None,
-    geometry=False,
 ):
-    """Compose two simulation cross sections from the generic slice primitives."""
+    """Compose setup geometry or material cross sections on the same axes.
+
+    Setup views of native Design simulations preserve exact supplied geometry
+    without compiling the FDTD grid. Imported scenes and MaterialGrid inputs use
+    raster slices; noncategorical views show the numerical permittivity values.
+    """
+    geometry = categorical and sim.material_grid is None
+    origin = (
+        (_simulation_origin(sim) if categorical else (0.0, 0.0, 0.0))
+        if origin is None
+        else origin
+    )
+    figsize = figsize or ((11.0, 4.0) if categorical else (10.0, 4.0))
     if geometry:
         slices = [
             _layout_slice(axis, position, design=sim.design, origin=origin)
@@ -1156,7 +1097,7 @@ def _plot_simulation_slices(
                 step=steps[axis],
                 position=position,
                 origin=origin,
-                display_position=display_position,
+                display_position=categorical,
                 lengths=lengths,
                 unit=unit,
             )
@@ -1172,7 +1113,7 @@ def _plot_simulation_slices(
                 )
                 for item in slices
             )
-            if abs(float(z)) <= 0.5 * resolution:
+            if abs(float(z or 0.0)) <= 0.5 * resolution:
                 xy = np.where(xy >= 2, xy, 1)
             z_coords = np.arange(eps.shape[0], dtype=float) * resolution
             substrate_height = float(origin[2])
@@ -1213,7 +1154,7 @@ def _plot_simulation_slices(
             )[0]
             for ax, value, item in zip(axes, values, slices, strict=True)
         ]
-    if overlays:
+    if categorical:
         if geometry:
             for ax, item in zip(axes, slices, strict=True):
                 _overlay_layout_pml(ax, sim, normal=item.normal, extent=item.extent)
@@ -1277,7 +1218,7 @@ def _plot_simulation_slices(
     if not geometry:
         fig.tight_layout()
     _maybe_show(fig, show=show)
-    return fig, axes
+    return fig, axes if categorical else np.asarray(axes)
 
 
 def overlay_simulation_devices(
@@ -1324,129 +1265,6 @@ def _overlay_layout_pml(ax, sim, *, normal, extent):
             edgecolor="#666666",
             linewidth=0.0,
         )
-
-
-def _plot_3d_material_cross_sections(
-    sim,
-    *,
-    z=None,
-    y=None,
-    width_ratios=None,
-    figsize=None,
-    show=True,
-    cmap="Grays",
-):
-    fig, axes = _plot_simulation_slices(
-        sim,
-        z=z,
-        y=y,
-        origin=(0.0, 0.0, 0.0),
-        display_position=False,
-        width_ratios=width_ratios,
-        figsize=figsize or (10.0, 4.0),
-        show=show,
-        cmap=cmap,
-        categorical=False,
-        overlays=False,
-    )
-    return fig, np.asarray(axes)
-
-
-def _plot_3d_geometry_cross_sections(
-    sim,
-    *,
-    z,
-    y,
-    origin,
-    source_markers,
-    monitor_markers,
-    width_ratios,
-    figsize,
-    show,
-    xlim,
-    ylim,
-    zlim,
-):
-    """Draw setup cross sections directly from the design geometry.
-
-    This intentionally does not call :meth:`Simulation.compile`: material-grid
-    slices are valuable for inspecting discretization, but a setup plot should
-    preserve the exact polygon edges supplied by the user.
-    """
-    return _plot_simulation_slices(
-        sim,
-        z=z,
-        y=y,
-        origin=origin,
-        display_position=True,
-        source_markers=source_markers,
-        monitor_markers=monitor_markers,
-        width_ratios=width_ratios,
-        figsize=figsize,
-        show=show,
-        xlim=xlim,
-        ylim=ylim,
-        zlim=zlim,
-        categorical=True,
-        overlays=True,
-        cmap=None,
-        geometry=True,
-    )
-
-
-def _plot_3d_cross_sections(
-    sim,
-    *,
-    z=0.0,
-    y=0.0,
-    origin=None,
-    source_markers=True,
-    monitor_markers=True,
-    width_ratios=None,
-    figsize=None,
-    show=True,
-    xlim=None,
-    ylim=None,
-    zlim=None,
-):
-    if origin is None:
-        origin = _simulation_origin(sim)
-    # Imported scenes and user-provided MaterialGrid instances only retain a
-    # rasterized material field, so they keep the established grid-slice view.
-    # Native Design simulations instead use their analytic geometry.
-    if getattr(sim, "material_grid", None) is None:
-        return _plot_3d_geometry_cross_sections(
-            sim,
-            z=z,
-            y=y,
-            origin=origin,
-            source_markers=source_markers,
-            monitor_markers=monitor_markers,
-            width_ratios=width_ratios,
-            figsize=figsize or (11.0, 4.0),
-            show=show,
-            xlim=xlim,
-            ylim=ylim,
-            zlim=zlim,
-        )
-    return _plot_simulation_slices(
-        sim,
-        z=z,
-        y=y,
-        origin=origin,
-        display_position=True,
-        width_ratios=width_ratios,
-        figsize=figsize or (11.0, 4.0),
-        show=show,
-        cmap=None,
-        categorical=True,
-        overlays=True,
-        source_markers=source_markers,
-        monitor_markers=monitor_markers,
-        xlim=xlim,
-        ylim=ylim,
-        zlim=zlim,
-    )
 
 
 def plot_simulation_permittivity(
@@ -1640,19 +1458,10 @@ def plot_simulation(
     if z is not None or y is not None:
         if ax is not None:
             raise ValueError("3D cross-section plots create their own axes.")
-        if not categorical_cross_sections:
-            return _plot_3d_material_cross_sections(
-                sim,
-                z=z,
-                y=y,
-                width_ratios=width_ratios,
-                figsize=figsize,
-                show=show,
-            )
-        return _plot_3d_cross_sections(
+        return _plot_simulation_slices(
             sim,
-            z=0.0 if z is None else z,
-            y=0.0 if y is None else y,
+            z=0.0 if z is None and categorical_cross_sections else z,
+            y=0.0 if y is None and categorical_cross_sections else y,
             origin=origin,
             source_markers=source_markers,
             monitor_markers=monitor_markers,
@@ -1662,6 +1471,7 @@ def plot_simulation(
             xlim=xlim,
             ylim=ylim,
             zlim=zlim,
+            categorical=categorical_cross_sections,
         )
 
     fig, ax = plot_design(
@@ -2296,111 +2106,67 @@ def _monitor_extent_um(monitor, values, *, sim=None):
 
 def plot_result_field(
     results,
-    *args,
-    field_monitor_name=None,
     monitor_name=None,
-    field_name=None,
     field=None,
+    *,
     frequency=None,
-    f=None,
     val="real",
     frame=None,
     z=None,
     y=None,
-    ax=None,
-    figsize=None,
-    cmap=None,
-    show=True,
-    colorbar=True,
-    vmin=None,
-    vmax=None,
-    xlim=None,
-    ylim=None,
-    show_grid=False,
-    grid_color="black",
-    grid_linewidth=0.2,
-    grid_alpha=0.18,
-    **_kwargs,
+    **style,
 ):
-    """Plot saved simulation fields or a monitor DFT field."""
-    inputs = analysis_inputs(results)
-    if args:
-        first_arg = str(args[0])
-        if first_arg in results.monitors or len(args) > 1:
-            monitor_name = first_arg
-        else:
-            field_name = first_arg
-    if len(args) > 1:
-        field_name = args[1]
-    monitor_name = field_monitor_name or monitor_name
-    field_name = field_name or field
-    frequency = f if frequency is None else frequency
-    image_cmap = cmap or ("magma" if str(val).lower() == "abs^2" else "RdBu")
+    """Plot a saved field or named monitor DFT, forwarding rendering options.
 
+    ``monitor_name`` and ``field`` may be positional; ``frequency`` selects a
+    monitor spectrum. Static fields accept ``frame`` and physical ``z``/``y``.
+    Rendering options are those of :func:`plot_dft_field` or ``_plot_image``.
+    """
+    inputs = analysis_inputs(results)
+    style["cmap"] = style.get("cmap") or (
+        "magma" if str(val).lower() == "abs^2" else "RdBu"
+    )
+    style.setdefault("figsize", None)
     if monitor_name is not None:
         data = inputs[str(monitor_name)]
         monitor = data.monitor_geometry
         if getattr(monitor, "is_3d", False) and data.frequencies.size:
             return plot_dft_field(
                 data,
-                field=field_name or "Ez",
+                field=field or "Ez",
                 frequency=frequency,
                 val=val,
                 source_normalization=None,
                 sample_region=results.monitors[str(monitor_name)].sample_region,
-                ax=ax,
-                figsize=figsize,
-                cmap=image_cmap,
-                show=show,
-                vmin=vmin,
-                vmax=vmax,
-                xlim=xlim,
-                ylim=ylim,
-                show_grid=show_grid,
-                grid_color=grid_color,
-                grid_linewidth=grid_linewidth,
-                grid_alpha=grid_alpha,
-                colorbar=colorbar,
+                **style,
             )
         values, freq = _monitor_dft_values(
-            data,
-            field_name or "Ez",
-            frequency=frequency,
-            val=val,
+            data, field or "Ez", frequency=frequency, val=val
         )
-        extent, x_dim, y_dim = _monitor_extent_um(
-            monitor,
-            values,
-            sim=data.coordinates,
-        )
-        title = f"{field_name or 'field'} at {freq * 1e-12:g} THz"
+        extent, x_dim, y_dim = _monitor_extent_um(monitor, values, sim=data.coordinates)
+        title = f"{field or 'field'} at {freq * 1e-12:g} THz"
     else:
         from beamz.analysis.adapters import to_xarray
 
         fields = to_xarray(inputs)
         if not fields.data_vars:
             raise RuntimeError("No saved fields are available to plot.")
-        name = field_name or next(iter(fields.data_vars))
+        name = field or next(iter(fields.data_vars))
         selected = _select_saved_field(fields[str(name)], frame=frame, z=z, y=y)
         values = _field_view(selected, val=val).values
         data = next(iter(inputs.values()))
         extent, (x_dim, y_dim) = _coord_extent_um(selected, sim=data.coordinates)
         title = str(name)
+    # Grid glyphs describe 3D DFT apertures, not saved images or 2D line plots.
+    for key in ("show_grid", "grid_color", "grid_linewidth", "grid_alpha"):
+        style.pop(key, None)
     return _plot_image(
         values,
-        ax=ax,
-        figsize=figsize,
         extent=extent,
         xlabel=f"{x_dim} (um)",
         ylabel=f"{y_dim} (um)",
         title=title,
-        cmap=image_cmap,
-        colorbar=colorbar,
-        show=show,
-        vmin=vmin,
-        vmax=vmax,
-        xlim=xlim,
-        ylim=ylim,
+        **style,
     )
 
 

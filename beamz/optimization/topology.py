@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -250,7 +250,7 @@ class TopologySpec:
         )
         return DensityParameterization(
             self.region_mask.shape,
-            self.resolution,
+            cast(float, self.resolution),
             (self.eps_min, self.eps_max),
             transform,
             self.fixed_solid,
@@ -444,7 +444,7 @@ def create_optimization_mask(grid, region_structure):
 
     # Mask is where permittivity > background
     # Use a safe threshold to include any partial fill
-    mask = temp_grid.permittivity > 1.001
+    mask = np.asarray(temp_grid.permittivity) > 1.001
 
     return mask
 

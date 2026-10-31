@@ -136,3 +136,42 @@ tree_unflatten
 
 # Region rasterization is opt-in from examples and external benchmark scripts.
 rasterize_regions
+
+# Public geometry/placement/modal helpers exercised by independent validation.
+_.rotate
+snap_rectilinear_edge_interval
+solve_mode_plane_3d
+_.get_grid_slice_3d
+compute_parameter_gradient_vjp
+
+# Independent numerical kernel references retained by tests, outside this scan.
+fused_update_h_lossy_3d_material_metric
+tm_xy_curl_e_to_h_2d
+tm_xy_curl_h_to_e_2d
+te_xy_curl_e_to_h_2d
+te_xy_curl_h_to_e_2d
+tm_xy_curl_e_to_h_2d_metric
+tm_xy_curl_h_to_e_2d_metric
+
+# Coefficient leaves are selected by axis/component descriptors in execution.
+_.h_decay_x
+_.h_decay_y
+_.h_decay_z
+_.h_source_x
+_.h_source_y
+_.h_source_z
+_.h_sigma_m_x
+_.h_sigma_m_y
+_.h_sigma_m_z
+_.e_decay_x
+_.e_decay_y
+_.e_decay_z
+_.e_conductivity_x
+_.e_conductivity_y
+_.e_conductivity_z
+_.e_permittivity_x
+_.e_permittivity_y
+_.e_permittivity_z
+_.e_inverse_diagonal_x
+_.e_inverse_diagonal_y
+_.e_inverse_diagonal_z
