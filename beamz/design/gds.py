@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Literal, Mapping, cast
+from typing import Any, Callable, Literal, Mapping
 
 import numpy as np
 
@@ -21,6 +21,13 @@ from beamz.design.structures import Box, Polygon, Rectangle
 from beamz.devices.ports import Port
 
 Layer = tuple[int, int]
+
+
+@dataclass(frozen=True, slots=True)
+class _ImportSource:
+    render: Callable[..., ImportedComponent]
+    bounds: Any
+    design: Design
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,9 +58,7 @@ class ImportedComponent:
     world_origin: tuple[float, float, float]
     source_origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
     report: tuple[Mapping[str, Any], ...] = ()
-    _prepare: Callable[..., ImportedComponent] | None = field(
-        default=None, repr=False, compare=False
-    )
+    _source: _ImportSource | None = field(default=None, repr=False, compare=False)
 
     def port(self, name: str) -> Port:
         """Return a port by name."""
@@ -142,18 +147,6 @@ def _component_ports(
     ymin_um: float,
     xy_padding: float,
 ) -> tuple[dict[str, Any], ...]:
-    cached = getattr(component, "_beamz_ports", None)
-    if cached is not None:
-        return tuple(
-            {
-                **p,
-                "center": (
-                    p["center"][0] - xmin_um * µm + xy_padding,
-                    p["center"][1] - ymin_um * µm + xy_padding,
-                ),
-            }
-            for p in cached
-        )
     ports = []
     for port in component.ports:
         if getattr(port, "port_type", "optical") != "optical":
@@ -255,21 +248,10 @@ def _beamz_ports(
     return tuple(result)
 
 
-def _source_layers(expression: Any):
-    if expression is None:
-        return set()
-    if isinstance(expression, (tuple, list)) and len(expression) == 2:
-        return {tuple(expression)}
-    if isinstance(expression, (int, str)):
-        return {tuple(_gdsfactory().get_layer_tuple(cast(Any, expression)))}
-    layer = getattr(expression, "layer", None)
-    if layer is not None:
-        return _source_layers(layer)
-    # Subtracted layers do not contribute material to the resulting footprint.
-    layers = _source_layers(getattr(expression, "layer1", None))
-    if getattr(expression, "operation", None) != "not":
-        layers |= _source_layers(getattr(expression, "layer2", None))
-    return layers
+def _local_ports(ports, origin):
+    return tuple(
+        dict(port, center=tuple(np.subtract(port["center"], origin))) for port in ports
+    )
 
 
 def _extend_stack_polygon(polygon, ports, bounds):
@@ -316,73 +298,10 @@ def _extend_stack_polygon(polygon, ports, bounds):
     return _shapely_polygons(unary_union(additions))
 
 
-def _snapshot_component(component, *, stack=False):
-    from types import SimpleNamespace
-
-    raw = {} if stack else component.get_polygons_points(by="tuple")
-    polygons = {
-        layer: tuple(np.array(p, dtype=float, copy=True) for p in points)
-        for layer, points in raw.items()
-    }
-    return SimpleNamespace(
-        name=str(component.name),
-        _beamz_ports=_component_ports(component, xmin_um=0, ymin_um=0, xy_padding=0),
-        get_polygons_points=lambda **_: polygons,
-    )
-
-
-def _snapshot_stack(component, layer_stack, fill_levels):
-    from types import SimpleNamespace
-
-    from .raster.importers.gdsfactory import (
-        _exclusion_polygons,
-        _mesh_order,
-        _polygons_by_layer,
-        _region_polygons,
-        _z_to_bias_profile,
-    )
-
-    polygons = _polygons_by_layer(component)
-    levels = {}
-    for name, level in layer_stack.layers.items():
-        fill = name in fill_levels or bool(getattr(level, "background", False))
-        masks = () if fill else tuple(_region_polygons(component, level, polygons, µm))
-        exclusions = _exclusion_polygons(component, level, polygons, µm) if fill else ()
-        profile = getattr(level, "z_to_bias", None)
-        sampled = callable(profile)
-        if profile is not None and (masks or fill):
-            try:
-                z, bias = _z_to_bias_profile(profile)
-            except ValueError as exc:
-                raise ValueError(f"Layer {name!r}: {exc}") from exc
-            profile = (tuple(z), tuple(bias))
-        else:
-            profile = None
-        levels[name] = SimpleNamespace(
-            layer=None,
-            _polygons=masks,
-            _exclusions=tuple(exclusions),
-            _port_layers=tuple(
-                _source_layers(getattr(level, "layer", None))
-                | _source_layers(getattr(level, "derived_layer", None))
-            ),
-            zmin=float(level.zmin),
-            thickness=float(level.thickness),
-            material=str(getattr(level, "material", "")),
-            sidewall_angle=float(getattr(level, "sidewall_angle", 0) or 0),
-            width_to_z=float(getattr(level, "width_to_z", 0) or 0),
-            bias=getattr(level, "bias", None),
-            z_to_bias=profile,
-            _sampled=sampled,
-            mesh_order=_mesh_order(level),
-            background=fill,
-        )
-    return SimpleNamespace(layers=levels)
-
-
 def _import_stack(
-    component,
-    layer_stack,
+    name,
+    levels,
+    ports,
     *,
     material_map,
     bounds,
@@ -393,21 +312,19 @@ def _import_stack(
     port_overlap,
     unify,
 ):
-    from .raster.importers.gdsfactory import _resolve_gdsfactory
+    from .raster.importers.gdsfactory import _resolve_levels
     from .raster.schema import ExtrudedPolygon, TaperedExtrudedPolygon
 
-    scene, report, bounds = _resolve_gdsfactory(
-        component,
-        layer_stack,
+    scene, report, bounds = _resolve_levels(
+        levels,
         material_map=material_map,
         bounds=bounds,
         _padding=(xy_padding, z_padding),
     )
     origin = np.asarray(bounds[0])
     extent = np.subtract(bounds[1], origin)
-    raw_ports = _component_ports(
-        component, xmin_um=origin[0] / µm, ymin_um=origin[1] / µm, xy_padding=0
-    )
+    raw_ports = _local_ports(ports, origin[:2])
+    levels = {level.name: level for level in levels}
     port_levels = dict(port_levels or {})
     if set(port_levels) - {p["name"] for p in raw_ports}:
         raise ValueError("port_levels contains unknown optical port names.")
@@ -418,7 +335,7 @@ def _import_stack(
             entry
             for entry in report
             if entry["status"] == "included"
-            and (port["layer"] in layer_stack.layers[entry["name"]]._port_layers)
+            and (port["layer"] in levels[entry["name"]].port_layers)
         ]
         if port["name"] in port_levels:
             candidates = [
@@ -475,7 +392,7 @@ def _import_stack(
             assert isinstance(geometry, (ExtrudedPolygon, TaperedExtrudedPolygon))
             footprints = (
                 _extend_stack_polygon(geometry.polygon, selected, bounds)
-                if extend_ports and not layer_stack.layers[entry["name"]].background
+                if extend_ports and not levels[entry["name"]].background
                 else [geometry.polygon]
             )
             for polygon in footprints:
@@ -513,7 +430,7 @@ def _import_stack(
     return ImportedComponent(
         design,
         tuple(ports),
-        str(component.name),
+        name,
         (-0.5 * design.width, -0.5 * design.height, float(origin[2])),
         (float(origin[0]), float(origin[1]), float(origin[2])),
         report,
@@ -606,20 +523,15 @@ def import_component(
     if layer_stack is not None:
         if material_map is None:
             raise ValueError("layer_stack requires an explicit material_map.")
-        unknown = set(fill_levels) - set(layer_stack.layers)
-        if unknown:
-            raise ValueError(f"Unknown fill_levels: {sorted(unknown)}.")
-        stack = _snapshot_stack(component, layer_stack, fill_levels)
-        component = _snapshot_component(component, stack=True)
-        materials = dict(material_map)
-        port_levels = dict(port_levels or {})
+        from .raster.importers.gdsfactory import _read_stack
 
         render = partial(
             _import_stack,
-            component,
-            stack,
-            material_map=materials,
-            port_levels=port_levels,
+            str(component.name),
+            _read_stack(component, layer_stack, fill_levels=fill_levels),
+            _component_ports(component, xmin_um=0, ymin_um=0, xy_padding=0),
+            material_map=dict(material_map),
+            port_levels=dict(port_levels or {}),
             unify=unify,
         )
     else:
@@ -629,12 +541,11 @@ def import_component(
             )
         if bounds is not None or fill_levels or port_levels:
             raise ValueError("bounds, fill_levels and port_levels require layer_stack.")
-        component = _snapshot_component(component)
-
         render = partial(
             _import_simple,
-            component,
-            layer=layer,
+            str(component.name),
+            _polygons_on_layer(component, layer),
+            _component_ports(component, xmin_um=0, ymin_um=0, xy_padding=0),
             n_core=n_core,
             n_clad=n_clad,
             core_thickness=core_thickness,
@@ -643,37 +554,41 @@ def import_component(
             unify=unify,
         )
 
-    def build(xy_padding, z_padding, bounds=bounds, overlap=0.0, extend=True):
-        if bounds is not None and (xy_padding or z_padding):
-            raise ValueError(
-                "Choose bounds or padding, not both; use zero padding with explicit bounds."
-            )
-        result = render(
-            xy_padding=xy_padding,
-            z_padding=z_padding,
-            bounds=bounds,
-            port_overlap=overlap,
-            extend_ports=extend,
+    return _render_import(
+        render,
+        xy_padding=xy_padding,
+        z_padding=z_padding,
+        bounds=bounds,
+        overlap=port_overlap,
+        extend_ports=extend_ports,
+    )
+
+
+def _render_import(
+    render, *, xy_padding, z_padding, bounds=None, overlap=0.0, extend_ports=True
+):
+    from .raster.importers.gdsfactory import _validate_bounds
+
+    bounds = _validate_bounds(bounds)
+    if bounds is not None and (xy_padding or z_padding):
+        raise ValueError(
+            "Choose bounds or padding, not both; use zero padding with explicit bounds."
         )
-
-        def prepare_geometry(
-            *, design, xy_padding, z_padding, bounds=bounds, overlap=0.0
-        ):
-            if design is not result.design:
-                raise ValueError(
-                    "Imported geometry was edited; use a native Simulation for the edited Design."
-                )
-            return build(xy_padding, z_padding, bounds, overlap)
-
-        return replace(result, _prepare=prepare_geometry)
-
-    return build(xy_padding, z_padding, bounds, port_overlap, extend_ports)
+    result = render(
+        xy_padding=xy_padding,
+        z_padding=z_padding,
+        bounds=bounds,
+        port_overlap=overlap,
+        extend_ports=extend_ports,
+    )
+    return replace(result, _source=_ImportSource(render, bounds, result.design))
 
 
 def _import_simple(
-    component,
+    name,
+    polygons,
+    ports,
     *,
-    layer,
     n_core,
     n_clad,
     core_thickness,
@@ -689,7 +604,6 @@ def _import_simple(
     if bounds is not None:
         raise ValueError("bounds requires layer_stack.")
 
-    polygons = _polygons_on_layer(component, layer)
     points = np.vstack(polygons)
     xmin_um, ymin_um = np.min(points, axis=0)
     xmax_um, ymax_um = np.max(points, axis=0)
@@ -725,11 +639,8 @@ def _import_simple(
             width_to_z=profile.width_to_z,
         )
 
-    raw_ports = _component_ports(
-        component,
-        xmin_um=float(xmin_um),
-        ymin_um=float(ymin_um),
-        xy_padding=xy_padding,
+    raw_ports = _local_ports(
+        ports, (float(xmin_um) * µm - xy_padding, float(ymin_um) * µm - xy_padding)
     )
     design = _extend_ports(
         design,
@@ -744,7 +655,7 @@ def _import_simple(
     return ImportedComponent(
         design=design,
         ports=_beamz_ports(raw_ports, profile),
-        component_name=str(component.name),
+        component_name=name,
         world_origin=(
             -0.5 * design.width,
             -0.5 * design.height,

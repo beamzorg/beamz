@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, cast
 
@@ -39,9 +40,6 @@ def _region_polygons(
     polygons_by_layer: Mapping[tuple[int, int], Any],
     unit_scale: float,
 ) -> list[Polygon]:
-    cached = getattr(level, "_polygons", None)
-    if cached is not None:
-        return list(cached)
     layer_expression = getattr(level, "layer", None)
     get_shapes = getattr(layer_expression, "get_shapes", None)
     if callable(get_shapes):
@@ -183,7 +181,7 @@ def _level_profile(level, name, downward, unit_scale):
     if downward:
         sidewall, reference = -sidewall, 1.0 - reference
     profile = getattr(level, "z_to_bias", None)
-    sampled = callable(profile) or getattr(level, "_sampled", False)
+    sampled = callable(profile)
     if profile is not None:
         try:
             normalized_z, bias = _z_to_bias_profile(profile)
@@ -203,21 +201,21 @@ def _level_profile(level, name, downward, unit_scale):
         mask_bias,
         sidewall,
         reference,
-        (normalized_z, bias) if profile is not None else None,
+        tuple(tuple(values) for values in (normalized_z, bias))
+        if profile is not None
+        else None,
         sampled,
     )
 
 
-def _resolve_gdsfactory(
-    component: Any,
-    layer_stack: Any,
+def _resolve_levels(
+    levels,
     *,
     material_map: Mapping[str, Material | float] | None = None,
     use_builtin_materials: bool = False,
     background: Material | None = None,
     unit_scale: float = 1e-6,
     bounds: tuple[Sequence[float], Sequence[float]] | None = None,
-    fill_levels: Sequence[str] = (),
     _padding: tuple[float, float] | None = None,
 ) -> tuple[Scene, tuple[Mapping[str, Any], ...], Any]:
     """Convert a GDSFactory component and PDK layer stack.
@@ -246,7 +244,6 @@ def _resolve_gdsfactory(
         }
     )
 
-    polygons = _polygons_by_layer(component)
     materials = [background]
     material_ids = {background: 0}
 
@@ -257,10 +254,7 @@ def _resolve_gdsfactory(
         return material_ids[material]
 
     bounds = _validate_bounds(bounds)
-    levels = getattr(layer_stack, "layers", {})
-    unknown = set(fill_levels) - set(levels)
-    if unknown:
-        raise ValueError(f"Unknown fill_levels: {sorted(unknown)}.")
+    levels = {level.name: level for level in levels}
     # Rank original levels once: low mesh_order/later ties win; users stay above the stack.
     level_order = {
         name: rank
@@ -273,7 +267,7 @@ def _resolve_gdsfactory(
     object_id = 1
 
     def is_fill(name):
-        return name in fill_levels or bool(getattr(levels[name], "background", False))
+        return levels[name].background
 
     # Resolve finite patterned geometry first so native imports can infer bounds.
     for level_name in sorted(levels, key=is_fill):
@@ -281,9 +275,7 @@ def _resolve_gdsfactory(
         if is_fill(level_name) and bounds is None and _padding is not None:
             bounds = _geometry_bounds(objects, _padding)
 
-        z_start = float(level.zmin) * unit_scale
-        z_end = z_start + float(level.thickness) * unit_scale
-        z_min, z_max = sorted((z_start, z_end))
+        z_min, z_max = level.z_bounds
         record = dict(
             name=str(level_name),
             z_bounds=(z_min, z_max),
@@ -304,7 +296,7 @@ def _resolve_gdsfactory(
         if bounds is not None and (z_max <= bounds[0][2] or z_min >= bounds[1][2]):
             skip("outside bounds")
             continue
-        fill = level_name in fill_levels or bool(getattr(level, "background", False))
+        fill = level.background
         if fill:
             if bounds is None:
                 raise ValueError(
@@ -312,22 +304,18 @@ def _resolve_gdsfactory(
                 )
             level_polygons = []  # resolved after the physical profile below
         else:
-            level_polygons = _region_polygons(component, level, polygons, unit_scale)
+            level_polygons = level.polygons
         if not level_polygons and not fill:
             skip("empty mask")
             continue
-        mask_bias, sidewall, reference, profile, sampled = _level_profile(
-            level, level_name, z_end < z_start, unit_scale
-        )
+        mask_bias, sidewall, reference, profile, sampled = level.profile
         if profile is not None:
             normalized_z, bias = profile
         margin = abs(mask_bias) + (z_max - z_min) * abs(np.tan(np.radians(sidewall)))
         if profile is not None:
             margin += float(np.max(np.abs(bias))) * unit_scale
         if fill:
-            level_polygons = _fill_polygons(
-                component, level, polygons, unit_scale, bounds, margin
-            )
+            level_polygons = _fill_polygons(level.exclusions, bounds, margin)
             if not level_polygons:
                 skip("empty mask")
                 continue
@@ -415,11 +403,7 @@ def _resolve_gdsfactory(
         )
 
     if not objects:
-        available = sorted(polygons)
-        raise ValueError(
-            "No physical layer-stack levels matched component polygons. "
-            f"Component layers: {available}."
-        )
+        raise ValueError("No physical layer-stack levels matched component polygons.")
     level_index = {name: index for index, name in enumerate(levels)}
     if bounds is None and _padding is not None:
         bounds = _geometry_bounds(objects, _padding)
@@ -442,7 +426,7 @@ def _validate_bounds(bounds):
     return (tuple(float(x) for x in values[0]), tuple(float(x) for x in values[1]))
 
 
-def _fill_polygons(component, level, polygons, unit_scale, bounds, profile_margin):
+def _fill_polygons(exclusions, bounds, profile_margin):
     from shapely.geometry import Polygon as ShapelyPolygon
     from shapely.geometry import box
     from shapely.ops import unary_union
@@ -456,10 +440,7 @@ def _fill_polygons(component, level, polygons, unit_scale, bounds, profile_margi
         bounds[1][0] + margin,
         bounds[1][1] + margin,
     )
-    excluded = [
-        ShapelyPolygon(p.exterior, p.holes)
-        for p in _exclusion_polygons(component, level, polygons, unit_scale)
-    ]
+    excluded = [ShapelyPolygon(p.exterior, p.holes) for p in exclusions]
     if excluded:
         area = area.difference(unary_union(excluded))
     return _shapely_polygons(area)
@@ -495,15 +476,13 @@ def from_gdsfactory(
     slabs in older PDKs; background metadata and exclusions are also supported.
     Materials are explicit unless approximate 1.55 µm constants are opted into.
     """
-    return _resolve_gdsfactory(
-        component,
-        layer_stack,
+    return _resolve_levels(
+        _read_stack(component, layer_stack, unit_scale, fill_levels),
         material_map=material_map,
         use_builtin_materials=use_builtin_materials,
         background=background,
         unit_scale=unit_scale,
         bounds=bounds,
-        fill_levels=fill_levels,
     )[0]
 
 
@@ -553,9 +532,6 @@ def _mesh_order(level):
 def _exclusion_polygons(component, level, polygons, unit_scale):
     from types import SimpleNamespace
 
-    cached = getattr(level, "_exclusions", None)
-    if cached is not None:
-        return cached
     result = []
     for layer in getattr(level, "background_exclude_layers", ()):
         from gdsfactory.technology import LogicalLayer
@@ -569,3 +545,79 @@ def _exclusion_polygons(component, level, polygons, unit_scale):
             )
         )
     return tuple(result)
+
+
+@dataclass(frozen=True)
+class _Layer:
+    name: str
+    polygons: tuple
+    exclusions: tuple | None
+    port_layers: frozenset
+    z_bounds: tuple[float, float]
+    material: str
+    mesh_order: int
+    profile: tuple
+
+    @property
+    def background(self):
+        return self.exclusions is not None
+
+
+def _read_stack(component, stack, unit_scale=1e-6, fill_levels=()):
+    unit_scale = float(unit_scale)
+    if not np.isfinite(unit_scale) or unit_scale <= 0:
+        raise ValueError("unit_scale must be finite and positive.")
+    levels = getattr(stack, "layers", {})
+    if unknown := set(fill_levels) - set(levels):
+        raise ValueError(f"Unknown fill_levels: {sorted(unknown)}.")
+    polygons = _polygons_by_layer(component)
+    result = []
+    for name, level in levels.items():
+        fill = name in fill_levels or bool(getattr(level, "background", False))
+        masks = (
+            ()
+            if fill
+            else tuple(_region_polygons(component, level, polygons, unit_scale))
+        )
+        z_start = float(level.zmin) * unit_scale
+        z_end = z_start + float(level.thickness) * unit_scale
+        profile = (
+            _level_profile(level, name, z_end < z_start, unit_scale)
+            if masks or fill
+            else (0, 0, 0, None, False)
+        )
+        result.append(
+            _Layer(
+                str(name),
+                masks,
+                _exclusion_polygons(component, level, polygons, unit_scale)
+                if fill
+                else None,
+                frozenset(
+                    _source_layers(getattr(level, "layer", None))
+                    | _source_layers(getattr(level, "derived_layer", None))
+                ),
+                (min(z_start, z_end), max(z_start, z_end)),
+                str(getattr(level, "material", "")),
+                _mesh_order(level),
+                profile,
+            )
+        )
+    return tuple(result)
+
+
+def _source_layers(expression):
+    if expression is None:
+        return set()
+    if isinstance(expression, (tuple, list)) and len(expression) == 2:
+        return {tuple(expression)}
+    if isinstance(expression, (int, str)):
+        import gdsfactory as gf
+
+        return {tuple(gf.get_layer_tuple(cast(Any, expression)))}
+    if (layer := getattr(expression, "layer", None)) is not None:
+        return _source_layers(layer)
+    layers = _source_layers(getattr(expression, "layer1", None))
+    if getattr(expression, "operation", None) != "not":
+        layers |= _source_layers(getattr(expression, "layer2", None))
+    return layers
