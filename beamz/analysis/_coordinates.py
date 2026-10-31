@@ -63,13 +63,6 @@ def monitor_plane_coordinates_3d(
             plane_normal=monitor.plane_normal,
             grid=grid,
         )
-        coord0, coord1 = yee_plane_coordinates_3d(
-            monitor.center,
-            monitor.size,
-            monitor.plane_normal,
-            region,
-            grid=grid,
-        )
     else:
         if region is None:
             fields = getattr(metadata, "fields", None)
@@ -83,12 +76,13 @@ def monitor_plane_coordinates_3d(
             )
             if region is None:
                 raise ValueError("3D analysis plane requires a snapped monitor region.")
-        coord0, coord1 = yee_plane_coordinates_3d(
-            monitor.center,
-            monitor.size,
-            monitor.plane_normal,
-            region,
-        )
+    coord0, coord1 = yee_plane_coordinates_3d(
+        monitor.center,
+        monitor.size,
+        monitor.plane_normal,
+        region,
+        grid=grid,
+    )
     return region, np.asarray(coord0, dtype=float), np.asarray(coord1, dtype=float)
 
 

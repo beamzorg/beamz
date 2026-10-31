@@ -2171,7 +2171,7 @@ def plot_dft_field(
     f_idx, freqs = _monitor_frequency_index(data, selected_frequency)
 
     field_key = str(field)
-    coordinate_context = data.coordinates if data is not None else simulation
+    coordinate_context = data.coordinates
     plane_shape, target0, target1, sample_region = _monitor_plane_shape_and_coords(
         coordinate_context, monitor, region=sample_region
     )
@@ -2367,29 +2367,27 @@ def plot_result_field(
         data = inputs[str(monitor_name)]
         monitor = data.monitor_geometry
         if getattr(monitor, "is_3d", False) and data.frequencies.size:
-            dft_freqs = data.frequencies
-            if dft_freqs.size:
-                return plot_dft_field(
-                    data,
-                    field=field_name or "Ez",
-                    frequency=frequency,
-                    val=val,
-                    source_normalization=None,
-                    sample_region=results.monitors[str(monitor_name)].sample_region,
-                    ax=ax,
-                    figsize=figsize,
-                    cmap=image_cmap,
-                    show=show,
-                    vmin=vmin,
-                    vmax=vmax,
-                    xlim=xlim,
-                    ylim=ylim,
-                    show_grid=show_grid,
-                    grid_color=grid_color,
-                    grid_linewidth=grid_linewidth,
-                    grid_alpha=grid_alpha,
-                    colorbar=colorbar,
-                )
+            return plot_dft_field(
+                data,
+                field=field_name or "Ez",
+                frequency=frequency,
+                val=val,
+                source_normalization=None,
+                sample_region=results.monitors[str(monitor_name)].sample_region,
+                ax=ax,
+                figsize=figsize,
+                cmap=image_cmap,
+                show=show,
+                vmin=vmin,
+                vmax=vmax,
+                xlim=xlim,
+                ylim=ylim,
+                show_grid=show_grid,
+                grid_color=grid_color,
+                grid_linewidth=grid_linewidth,
+                grid_alpha=grid_alpha,
+                colorbar=colorbar,
+            )
         values, freq = _monitor_dft_values(
             data,
             field_name or "Ez",
@@ -2405,8 +2403,8 @@ def plot_result_field(
     else:
         from beamz.analysis.adapters import to_xarray
 
-        fields = to_xarray(results)
-        if fields is None or not getattr(fields, "data_vars", None):
+        fields = to_xarray(inputs)
+        if not fields.data_vars:
             raise RuntimeError("No saved fields are available to plot.")
         name = field_name or next(iter(fields.data_vars))
         selected = _select_saved_field(fields[str(name)], frame=frame, z=z, y=y)

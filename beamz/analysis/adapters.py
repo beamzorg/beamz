@@ -440,9 +440,7 @@ def mode_data(results, name):
     return ModeMonitorData(
         monitor=monitor,
         amps=amp_data,
-        flux=flux
-        if hasattr(flux, "dims")
-        else _data_array_1d(flux, name="flux", freqs=freqs),
+        flux=_data_array_1d(flux, name="flux", freqs=freqs),
         modal_flux=_data_array_1d(modal_flux, name="modal_flux", freqs=freqs),
         projection_residual=_data_array_1d(
             diagnostics.get("projection_residual", default),

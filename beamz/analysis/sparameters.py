@@ -162,12 +162,10 @@ def _extract_port_waves_dft(
     sim,
     ports,
     frequencies,
-    min_incident_db=-40.0,
     return_power=True,
     mode_strategy="per_frequency",
 ):
     """Extract modal waves after lowering acquisitions to :class:`AnalysisData`."""
-    del min_incident_db  # Used by s_parameters validity masking.
     inputs = analysis_inputs(sim)
     context = next(iter(inputs.values()))
     if (not context.is_3d) and context.plane_2d != "xy":
@@ -377,9 +375,9 @@ def s_parameters(
     min_incident_db : float, default=-40
         Incident-amplitude floor relative to its peak, in decibels. Samples below
         the threshold are excluded from stable ratios.
-    mode_strategy : {"per_frequency", "tracked"}, default="per_frequency"
-        Solve modes independently at each frequency or track branch identity
-        across the frequency grid.
+    mode_strategy : {"per_frequency", "single"}, default="per_frequency"
+        Solve modes independently at each frequency or reuse the basis solved
+        at the median requested frequency.
 
     Returns
     -------
@@ -423,7 +421,6 @@ def s_parameters(
         inputs,
         ports=port_map.values(),
         frequencies=frequencies,
-        min_incident_db=min_incident_db,
         return_power=True,
         mode_strategy=mode_strategy,
     )
