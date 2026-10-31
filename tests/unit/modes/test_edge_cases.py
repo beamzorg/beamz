@@ -278,7 +278,7 @@ def test_negative_y_profile_build_flips_electric_components():
         name: np.ones((3, 3), dtype=np.complex128)
         for name in discrete_module._COMPONENTS
     }
-    profiles, _indices, _extra = discrete_module._build_y_profiles(fields, spec)
+    profiles, _indices, _extra = discrete_module._build_profiles(fields, spec)
     assert all(
         np.all(values >= 0.0)
         for name, values in profiles.items()
