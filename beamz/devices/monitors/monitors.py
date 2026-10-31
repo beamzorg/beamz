@@ -12,6 +12,7 @@ from beamz.devices._immutable import (
     shifted_coordinates,
 )
 from beamz.devices._placement import (
+    line_region_coordinates,
     plane_region_slices,
     snap_axis_aligned_line_region,
     snap_plane_region,
@@ -168,26 +169,12 @@ class _Monitor(Replaceable):
         snapped = self.get_snapped_region(dx=dx, dy=dy, field_shape=field_shape)
         if snapped is None:
             return None
-        if snapped.normal_axis == "x":
-            interval = snapped.axis_interval("y")
-            if interval is None:
-                return None
-            y = (
-                np.arange(int(interval.start), int(interval.stop), dtype=np.float64)
-                + 0.5
-            ) * float(dy)
-            x_coord = 0.5 * (self.start[0] + self.end[0])
-            x = np.full(y.shape, x_coord, dtype=np.float64)
-            return x, y
-        interval = snapped.axis_interval("x")
-        if interval is None:
-            return None
-        x = (
-            np.arange(int(interval.start), int(interval.stop), dtype=np.float64) + 0.5
-        ) * float(dx)
-        y_coord = 0.5 * (self.start[1] + self.end[1])
-        y = np.full(x.shape, y_coord, dtype=np.float64)
-        return x, y
+        index = 0 if snapped.normal_axis == "x" else 1
+        return line_region_coordinates(
+            snapped,
+            steps={"x": float(dx), "y": float(dy)},
+            normal_coord=0.5 * (self.start[index] + self.end[index]),
+        )
 
     def get_grid_slice_3d(self, dx, dy, dz, field_shape):
         """Return array indices for a 3D plane monitor.

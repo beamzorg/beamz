@@ -11,14 +11,17 @@ import numpy as np
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.devices._immutable import readonly_array
 from beamz.devices._placement import (
-    snap_mode_source_region,
-    snap_mode_source_region_grid,
+    mode_source_region,
     snap_plane_region,
     snap_plane_region_grid,
 )
 from beamz.devices.modes.discrete import solve_beamz_mode
 from beamz.devices.modes.fields import _modal_power, _numeric_wave_number
-from beamz.devices.modes.plane import solve_mode_plane_3d, solve_modes
+from beamz.devices.modes.plane import (
+    mode_plane_solve_arguments,
+    solve_mode_plane_3d,
+    solve_modes,
+)
 from beamz.lattice import (
     common_grid_shape_3d,
     compile_yee_plane_quadrature_3d,
@@ -346,30 +349,17 @@ def _plan_2d_mode_source(
         if grid is not None and grid.metric_kind_for(("x", "y")) != "isotropic_uniform"
         else None
     )
-    source_center = tuple(float(v) for v in source.center)
-    source_width = float(source.transverse_size[0])
-    direction_sign = 1.0 if source.direction == "+" else -1.0
-    if metric_grid is not None:
-        snapped = snap_mode_source_region_grid(
-            center=source_center,
-            width=source_width,
-            height=None,
-            axis=axis,
-            direction_sign=direction_sign,
-            is_3d=False,
-            grid=metric_grid,
-        )
-    else:
-        snapped = snap_mode_source_region(
-            center=source_center,
-            width=source_width,
-            height=None,
-            axis=axis,
-            direction_sign=direction_sign,
-            is_3d=False,
-            grid_shape=(ny, nx),
-            resolution=float(resolution),
-        )
+    snapped = mode_source_region(
+        center=source.center,
+        width=float(source.transverse_size[0]),
+        height=None,
+        axis=axis,
+        direction_sign=1.0 if source.direction == "+" else -1.0,
+        is_3d=False,
+        grid=metric_grid,
+        grid_shape=(ny, nx),
+        resolution=resolution,
+    )
     center_idx = int(snapped.plane_index)
     if snapped.companion_index is None:
         raise ValueError("A mode source launch needs a companion Yee plane.")
@@ -457,72 +447,46 @@ def _plan_3d_mode_source(
         grid if grid is not None and grid.metric_kind != "isotropic_uniform" else None
     )
     width, height = source.transverse_size
-    source_center = tuple(float(v) for v in source.center)
-    source_width = float(width)
-    source_height = float(height)
-    direction_sign = 1.0 if source.direction == "+" else -1.0
-    if grid is not None:
-        snapped = snap_mode_source_region_grid(
-            center=source_center,
-            width=source_width,
-            height=source_height,
-            axis=axis,
-            direction_sign=direction_sign,
-            is_3d=True,
-            grid=grid,
-        )
-    else:
-        snapped = snap_mode_source_region(
-            center=source_center,
-            width=source_width,
-            height=source_height,
-            axis=axis,
-            direction_sign=direction_sign,
-            is_3d=True,
-            grid_shape=(nz, ny, nx),
-            resolution=float(resolution),
-        )
-    center_idx = int(snapped.plane_index)
+    snapped = mode_source_region(
+        center=source.center,
+        width=float(source.transverse_size[0]),
+        height=float(height),
+        axis=axis,
+        direction_sign=1.0 if source.direction == "+" else -1.0,
+        is_3d=True,
+        grid=grid,
+        grid_shape=(nz, ny, nx),
+        resolution=resolution,
+    )
     if snapped.companion_index is None:
         raise ValueError("A mode source launch needs a companion Yee plane.")
-    offset_idx = int(snapped.companion_index)
     omega = 2.0 * np.pi * source.frequency
     solver_direction = "+y" if axis == "y" else source.signed_direction
     discrete_mode = solve_mode_plane_3d(
         permittivity,
         np.asarray(fields.permeability),
-        material_tensors=getattr(fields.material_grid, "tensors", None),
-        yee_tensors=getattr(fields.material_grid, "yee_tensors", None),
+        **mode_plane_solve_arguments(
+            fields.material_grid,
+            spec=source.mode_spec,
+            num_modes=max(source.mode_spec.num_modes, source.mode_spec.mode_index + 1),
+            center=source.center,
+            width=width,
+            height=height,
+            snapped=snapped,
+            direction=source.signed_direction,
+            resolution=resolution,
+            dt=dt,
+            grid=metric_grid,
+        ),
         yee_materials=(
             getattr(fields.material_grid, "yee_materials", None)
             if fields.material_grid.uses_direct_yee_materials
             else None
         ),
         frequency=source.frequency,
-        resolution=resolution,
-        dt=dt,
-        axis=axis,
-        grid_shape=(nz, ny, nx),
-        center=source.center,
-        width=width,
-        height=height,
-        plane_index=center_idx,
-        offset_index=offset_idx,
-        direction=source.signed_direction,
         solver_direction=solver_direction,
         mode_index=source.mode_spec.mode_index,
-        polarization=source.mode_spec.polarization,
-        target_neff=source.mode_spec.target_neff,
-        force_symmetry=source.mode_spec.force_symmetry,
-        min_aperture_fraction=source.mode_spec.min_aperture_fraction,
-        solver_padding_cells=source.mode_spec.solver_padding_cells,
-        num_modes=max(
-            int(source.mode_spec.num_modes),
-            int(source.mode_spec.mode_index) + 1,
-        ),
-        snapped_region=snapped,
         solver=solve_beamz_mode,
-        grid=metric_grid,
     )
     profiles = {
         name: np.asarray(value, dtype=np.complex128)

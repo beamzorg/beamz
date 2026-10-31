@@ -391,7 +391,9 @@ def test_2d_mode_source_rejects_polarization_mismatch():
 
 def test_public_mode_solve_rejects_full_off_diagonal_materials():
     fields = _full_tensor_2d_fields((5, 6))
-    simulation = SimpleNamespace(fields=fields, resolution=1.0)
+    simulation = SimpleNamespace(
+        _material_grid=lambda: fields.material_grid, resolution=1.0
+    )
     plane = SimpleNamespace(
         center=(2.5, 2.5, 2.5),
         size=(0.0, 2.0, 2.0),
@@ -410,7 +412,7 @@ def test_public_mode_solve_rejects_conductive_materials():
         resolution=1.0,
     )
     simulation = SimpleNamespace(
-        fields=fields,
+        _material_grid=lambda: fields.material_grid,
         resolution=1.0,
         design=SimpleNamespace(width=6.0, height=5.0, depth=0.0),
     )

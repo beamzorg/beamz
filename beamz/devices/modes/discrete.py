@@ -1274,17 +1274,18 @@ def _crop_window_all(
     spec: ModePlaneSpec,
 ) -> dict[str, np.ndarray]:
     profiles = {}
-    row_axis, col_axis = {"x": ("z", "y"), "y": ("z", "x"), "z": ("y", "x")}[spec.axis]
     for component, values in staggered.items():
-        comp_row_stop = _support_stop_for_offset(
-            row_start, row_stop, _YEE_OFFSETS_3D[component][row_axis]
-        )
-        comp_col_stop = _support_stop_for_offset(
-            col_start, col_stop, _YEE_OFFSETS_3D[component][col_axis]
-        )
-        row_end = min(comp_row_stop, values.shape[0])
-        col_end = min(comp_col_stop, values.shape[1])
-        cropped = values[row_start:row_end, col_start:col_end]
+        cropped = values[
+            _support_slices(
+                component,
+                spec.axis,
+                row_start,
+                row_stop,
+                col_start,
+                col_stop,
+                values.shape,
+            )
+        ]
         window = _tukey2d(
             cast(tuple[int, int], cropped.shape), alpha=spec.aperture_window_alpha
         )
