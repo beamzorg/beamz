@@ -79,6 +79,7 @@ from beamz.simulation.preparation_trace import trace_preparation
 from beamz.simulation.results import MonitorResults as MonitorResults
 from beamz.simulation.results import SimulationResults as SimulationResults
 from beamz.simulation.results import SimulationRun as SimulationRun
+from beamz.simulation.sharding import sharding_cache_token
 
 _MONITOR_TYPES = (FieldMonitor, FieldRecorder, FluxMonitor, ModeMonitor)
 _MAX_MATERIAL_GRIDS = 4
@@ -1236,7 +1237,7 @@ class Simulation:
         loop_kind: str = "scan",
         source_single_slab_dense: bool = False,
         backend: str = "jax",
-        sharding=(False, "auto", None, None),
+        sharding=None,
         compiler_sharding=None,
         progress: bool = False,
         schedule: str | None = None,
@@ -1259,7 +1260,7 @@ class Simulation:
         sharding : tuple, optional
             Stable sharding token used in request and compilation cache identity.
         compiler_sharding : object, optional
-            Runtime sharding configuration consumed by the compiler.
+            Alias for sharding; simultaneous selections must agree.
         progress : bool, default=False
             Display setup progress while rasterizing the material grid.
         schedule : {"auto", "streamed", "mstep"}, optional
@@ -1288,6 +1289,12 @@ class Simulation:
         cuda_schedule, expected_runs = normalize_schedule_request(
             backend, schedule, expected_runs
         )
+        token = sharding_cache_token(sharding)
+        if compiler_sharding is not None:
+            compiler_token = sharding_cache_token(compiler_sharding)
+            if sharding is not None and token != compiler_token:
+                raise ValueError("sharding and compiler_sharding must agree.")
+            token = compiler_token
         material_grid = self._material_grid(progress=progress)
         requested_steps = int(self.num_steps if num_steps is None else num_steps)
         # 2. Snapshot grid, run, and domain controls into immutable value objects, then
@@ -1303,7 +1310,7 @@ class Simulation:
                 backend=str(backend),
                 cuda_schedule=cuda_schedule,
                 cuda_expected_runs=expected_runs,
-                sharding=sharding,
+                sharding=token,
             ),
             DomainSpec(
                 tuple(float(v) for v in self.size),  # type: ignore[arg-type]
@@ -1316,7 +1323,6 @@ class Simulation:
             tuple(self.sources),
             tuple(self.monitors),
             tuple(self.boundaries),
-            compiler_sharding,
         )
 
     def compile(

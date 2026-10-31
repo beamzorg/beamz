@@ -42,6 +42,8 @@ def normalize_sharding_config(value) -> ShardingConfig:
     # objects.
     if value is None or value is False:
         return _disabled_sharding_config()
+    if isinstance(value, tuple):
+        return ShardingConfig(*value)
     if isinstance(value, ShardingConfig):
         return value
     if value is True:
@@ -51,7 +53,7 @@ def normalize_sharding_config(value) -> ShardingConfig:
         enabled = bool(raw.pop("enabled", True))
         return ShardingConfig(enabled=enabled, **raw)
     raise TypeError(
-        "sharding must be None, bool, dict, or beamz.simulation.ShardingConfig"
+        "sharding must be None, bool, dict, tuple, or beamz.simulation.ShardingConfig"
     )
 
 
