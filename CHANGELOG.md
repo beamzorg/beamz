@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Mode previews now show solver fields by default, retaining eigensolver sampling
+  and normalization. Use `ModeSource.solve_modes(..., field_representation="launch")`
+  to inspect prepared 3D launch fields. Source injection is unchanged.
+
+- 3D mode sources, previews, and monitors now solve on their mesh-snapped aperture
+  by default, without automatic transverse padding or tapering. Additional solve
+  cells require `ModeSpec.solver_padding_cells`; nondecaying raw fields produce
+  edge diagnostics and a warning. Aperture-confinement selection is opt-in.
+
 ## v0.6.0 - 2026-10-25
 
 ### Added

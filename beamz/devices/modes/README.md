@@ -84,10 +84,17 @@ clipped/off-center crop, asymmetric tensor, or unavailable/non-closed component
 support is skipped. There is no approximate mirror interpolation. Full-tensor
 ports use the separate coupled path described below and reject forced symmetry.
 
-`ModeSource.solve_modes()` previews the solver representation, with optional
-validated symmetry, before Yee interpolation, launch aperture processing,
-Maxwell refinement, and launch power scaling. It retains the eigensolver's own
-normalization. `ModeData.diagnostics` contains one immutable mapping per
+`ModeSource.solve_modes()` defaults to solver fields, including optional
+validated symmetry, before Yee interpolation, Maxwell refinement, and launch
+power normalization. It retains the eigensolver's sampling and normalization.
+For a colocated view of the prepared 3D fields used for injection, request
+`source.solve_modes(simulation, field_representation="launch")`. This choice
+affects the returned preview only; injection always uses prepared launch fields.
+Prepared launch previews are available for 3D simulations.
+`field_representation` and `processing_stage` in the returned diagnostics identify
+the view. With no surrounding solve cells, Yee interpolation can omit an outer
+sample from the launch view; the solver view retains the complete solve domain.
+`ModeData.diagnostics` contains one immutable mapping per
 frequency; `DiscreteMode.diagnostics` records the discrete processing result.
 Both report `force_symmetry_requested`, `force_symmetry_applied`,
 `force_symmetry_axes`, `force_symmetry_skipped`, and `symmetry_stage`. Refinement
@@ -106,8 +113,9 @@ explicitly. Source launch and monitor projection retain dielectric cross terms.
 
 ## 3D mode selection
 
-Previews, source launch and modal projection use the same padded eigenproblem
-and discrete field preparation. The aperture defines injection/integration support.
+Previews, source launch and modal projection share material extraction and mode
+selection. Source launch, modal projection, and explicit launch previews also
+share discrete field preparation. The aperture defines injection/integration support.
 `ModeSpec(min_aperture_fraction=0.5)` prefers modes with at least half their
 area-weighted transverse electric intensity inside that aperture, retaining
 polarization/neff ordering. Heterogeneous planes search up to 64 candidates
@@ -119,30 +127,29 @@ Resolve the complete requested family before assigning indices, and share the
 final candidate pool per preview frequency. This prevents duplicate selections
 and repeated eigensolves while preserving per-mode field preparation.
 
-## Configurable 3D solve padding
+## Source apertures and solve domains
 
-`ModeSpec(solver_padding_cells=None)` preserves automatic padding: half the
-larger aperture extent in nominal grid cells, rounded up and clamped to 8–48
-cells per side. Set `solver_padding_cells=0` to remove extra padding, an integer
-for equal padding, or `(width_cells, height_cells)` for independent directions.
-The pair maps to `(y, z)` for x-normal ports, `(x, z)` for y-normal ports, and
-`(x, y)` for z-normal ports. For example:
+Three-dimensional mode sources, previews, and mode monitors solve on the requested
+plane, snapped outward to the material grid. The default adds no transverse solve
+padding and applies no aperture taper. Additional cells retained for component
+sampling are not a request to solve on the entire simulation cross-section.
 
-```python
-spec = ModeSpec(polarization="te", solver_padding_cells=(4, 8))
-```
+Place sources in a straight, longitudinally invariant section and make the plane
+large enough for the desired guided field to decay at its edges. The solver logs
+a warning when the raw electric edge-intensity sum exceeds one percent of the
+whole-plane sum. `edge_intensity_fraction` and `fields_decay_at_boundary` retain
+this sampling diagnostic; it is not a modal power or confinement fraction.
+Warnings do not resize the solve domain or suppress radiation candidates.
 
-Preview, launch, and modal projection use the same setting. Cell counts follow
-the actual grid, so physical padding distances vary on nonuniform meshes and
-under refinement. Bounds clip at the simulation boundary, and the minimum
-two-cell solver support remains even with zero padding. The declared aperture
-stays fixed, but padding below the usual two-cell injection margin can clip
-returned Yee field support and move the taper inward. The taper parameter stays
-fixed; its spatial window follows the clipped component support. This option
-applies only to 3D mode planes; 2D line solves retain their existing behavior.
+`ModeSpec(solver_padding_cells=4)` explicitly adds four cells on each transverse
+side. A pair specifies `(width, height)` padding: `(y, z)` for x-normal planes,
+`(x, z)` for y-normal planes, and `(x, y)` for z-normal planes. `None` and zero
+both mean no extra padding. Counts use actual cells on graded grids and clip to
+the simulation boundary. `solver_bounds` records the actual solve region.
 
-Per-mode diagnostics expose `solver_padding_cells` (`None` means automatic)
-and `solver_bounds`, a mapping from transverse axis to `(lower, upper)` in
-metres in the solver's global coordinate frame. Preview includes these in
-`ModeData.diagnostics`. Small padding can truncate evanescent tails: check
-convergence rather than assuming zero padding improves accuracy.
+A padded solve still uses the declared aperture to select injection/integration
+support, including component-sampling margins. Fields outside that support must
+be negligible for clean directional injection. The default solver preview shows
+the complete solve domain, including explicitly requested padding. Launch previews
+show the prepared injection support. `min_aperture_fraction` is now opt-in; its default `None`
+preserves polarization/effective-index candidate ordering.

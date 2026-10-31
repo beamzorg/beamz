@@ -210,7 +210,7 @@ def test_tensor_preview_is_invariant_under_imported_grid_translation():
         )
 
 
-def test_homogeneous_tensor_port_reports_unsupported_radiation_basis():
+def test_tensor_radiation_can_be_inspected_but_not_prepared_for_launch():
     import beamz as bz
     from beamz.design.discretization import MaterialGrid
     from beamz.design.raster import Grid, Material, RasterOptions, Scene, rasterize
@@ -238,8 +238,10 @@ def test_homogeneous_tensor_port_reports_unsupported_radiation_basis():
         source_time=bz.GaussianPulse(freq0=3e8, fwidth=1e8),
         mode_spec=bz.ModeSpec(),
     )
+    preview = source.solve_modes(simulation, freqs=[3e8])
+    assert not preview.diagnostics[0]["fields_decay_at_boundary"]
     with pytest.raises(ValueError, match="confined guided mode"):
-        source.solve_modes(simulation, freqs=[3e8])
+        source.solve_modes(simulation, freqs=[3e8], field_representation="launch")
 
 
 @pytest.mark.parametrize(

@@ -8,6 +8,7 @@ layer.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from dataclasses import fields as dataclass_fields
@@ -38,6 +39,8 @@ AxisName = Literal["x", "y", "z"]
 DirectionName = Literal["+x", "-x", "+y", "-y", "+z", "-z"]
 PolarizationName = Literal["te", "tm"]
 ComponentIndex = tuple[slice | int, slice | int, slice | int]
+
+_LOGGER = logging.getLogger(__name__)
 
 _COMPONENTS = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
 DISCRETE_MODE_CONTRACT = "beamz.devices.modes.DiscreteMode/v1"
@@ -86,7 +89,7 @@ class ModePlaneSpec:
     num_modes: int | None = None
     solver_direction: DirectionName | None = None
     aperture_pad_cells: int = 2
-    aperture_window_alpha: float = 0.2
+    aperture_window_alpha: float = 0.0
     component_permittivity: Mapping[str, np.ndarray] = field(default_factory=dict)
     component_permeability: Mapping[str, np.ndarray] = field(default_factory=dict)
     diagonal_permittivity: Mapping[str, np.ndarray] = field(default_factory=dict)
@@ -313,6 +316,40 @@ class DiscreteMode:
             raise ValueError(f"Unknown component {name!r}") from exc
 
 
+@dataclass(frozen=True)
+class _SolverMode:
+    """Selected collocated eigenmode before any launch preparation."""
+
+    neff: complex
+    fields: dict[str, np.ndarray]
+    transverse_axes: tuple[AxisName, AxisName]
+    grid_edges: tuple[np.ndarray, ...]
+    diagnostics: dict[str, object]
+
+
+def solve_solver_mode(spec: ModePlaneSpec, *, basis_cache=None) -> _SolverMode:
+    basis = _shared_mode_basis(spec, basis_cache=basis_cache)
+    selected, fields, diagnostics = _prepare_solver_fields(spec, basis)
+    return _SolverMode(
+        neff=complex(selected["neff"]),
+        fields=fields,
+        transverse_axes=spec.transverse_axes,
+        grid_edges=tuple(_axis_edges(spec, axis) for axis in spec.transverse_axes),
+        diagnostics={
+            **diagnostics,
+            "contract": "solver_preview",
+            "field_representation": "solver",
+            "processing_stage": "solver_fields_before_yee_interpolation_and_refinement",
+            "full_tensor_operator": bool(spec.offdiagonal_permittivity),
+            "mode_index": spec.mode_index,
+            "candidate_count": basis.candidate_count,
+            "selected_neff": complex(selected["neff"]),
+            "aperture_fraction": _aperture_fraction(selected, spec),
+            "solver_info": basis.result.solver_info or {},
+        },
+    )
+
+
 def solve_beamz_mode(spec: ModePlaneSpec) -> DiscreteMode:
     """Solve and return a BEAMZ-shaped discrete mode."""
     return _solve_beamz_mode(spec)
@@ -371,6 +408,15 @@ def _solve_beamz_mode(
             spec, candidate_cache=candidate_cache, basis_cache=basis_cache
         )
 
+    return _prepare_discrete_mode(
+        spec,
+        _shared_mode_basis(
+            spec, candidate_cache=candidate_cache, basis_cache=basis_cache
+        ),
+    )
+
+
+def _shared_mode_basis(spec, *, candidate_cache=None, basis_cache=None):
     requested = max(spec.num_modes or 1, spec.mode_index + 1)
     # One family has one final pool, independent of which member is prepared.
     # This cache is request-local (one preview frequency), never process-global.
@@ -395,7 +441,7 @@ def _solve_beamz_mode(
         basis = _resolve_mode_basis(spec, candidate_cache=candidate_cache)
         if basis_cache is not None:
             basis_cache[key] = basis
-    return _prepare_discrete_mode(spec, basis)
+    return basis
 
 
 @dataclass(frozen=True)
@@ -513,16 +559,9 @@ def _resolve_mode_basis(
     return _ResolvedModeBasis(result, tuple(candidates), mode_count, qualifying)
 
 
-def _prepare_discrete_mode(
-    spec: ModePlaneSpec, basis: _ResolvedModeBasis
-) -> DiscreteMode:
-    """Prepare one member without modifying the shared candidate fields."""
-    result, candidates, mode_count = (
-        basis.result,
-        basis.candidates,
-        basis.candidate_count,
-    )
-    solver_axes = _solver_axes_for_axis(spec.axis)
+def _prepare_solver_fields(spec: ModePlaneSpec, basis: _ResolvedModeBasis):
+    """Select, phase-align and validate symmetry without launch processing."""
+    result, candidates = basis.result, basis.candidates
     if basis.qualifying_count is not None and spec.mode_index >= basis.qualifying_count:
         raise ValueError(
             "No requested mode meets min_aperture_fraction in the candidate pool; enlarge the aperture, adjust target_neff or num_modes, or explicitly disable aperture preference with min_aperture_fraction=None"
@@ -583,6 +622,37 @@ def _prepare_discrete_mode(
         ],
         supports=symmetry_supports,
         rejected_axes=rejected_axes,
+    )
+    edge_fraction = _mode_edge_fraction(aligned)
+    if edge_fraction > 0.01:
+        _LOGGER.warning(
+            "Mode %s at %g Hz does not decay at the solve boundaries "
+            "(edge electric intensity fraction %.3g). Enlarge the "
+            "source/monitor aperture or set ModeSpec.solver_padding_cells explicitly.",
+            spec.mode_index,
+            spec.frequency,
+            edge_fraction,
+        )
+    return (
+        selected,
+        aligned,
+        {
+            **symmetry_diagnostics,
+            "edge_intensity_fraction": edge_fraction,
+            "fields_decay_at_boundary": edge_fraction <= 0.01,
+        },
+    )
+
+
+def _prepare_discrete_mode(
+    spec: ModePlaneSpec, basis: _ResolvedModeBasis
+) -> DiscreteMode:
+    """Prepare one member without modifying the shared candidate fields."""
+    selected, aligned, solver_diagnostics = _prepare_solver_fields(spec, basis)
+    result, mode_count = basis.result, basis.candidate_count
+    solver_axes = _solver_axes_for_axis(spec.axis)
+    phase_component = _select_phase_reference_component(
+        spec.axis, spec.polarization, selected["fields"]
     )
     profiles, indices, extra = _build_profiles(aligned, spec)
 
@@ -737,11 +807,13 @@ def _prepare_discrete_mode(
     )
 
     diagnostics = {
-        **symmetry_diagnostics,
+        **solver_diagnostics,
         **tensor_diagnostics,
         "full_tensor_operator": bool(spec.yee_tensors),
         "canonical_axis_rotation": bool(spec.yee_tensors),
         "contract": DISCRETE_MODE_CONTRACT,
+        "field_representation": "launch",
+        "processing_stage": "prepared_launch_fields",
         "normal_axis": spec.axis,
         "transverse_axes": spec.transverse_axes,
         "solver_axes": solver_axes,
@@ -930,6 +1002,26 @@ def _solve_mode_in_x_frame(
         },
         diagnostics=diagnostics,
     )
+
+
+def _mode_edge_fraction(fields) -> float:
+    """Discrete electric intensity at the four solve edges, as in Tidy3D.
+
+    This is a sampling diagnostic, not a modal power or confinement fraction.
+    Corners belong to both adjacent edges. Inspect untapered solver fields.
+    """
+    intensity = np.sum(
+        np.stack([np.abs(np.asarray(fields["E" + axis])) ** 2 for axis in "xyz"]),
+        axis=0,
+    )
+    total = float(np.sum(intensity))
+    if total <= 0.0 or not np.isfinite(total):
+        return 0.0
+    edge = sum(
+        float(np.sum(values))
+        for values in (intensity[0], intensity[-1], intensity[:, 0], intensity[:, -1])
+    )
+    return edge / total
 
 
 def _boundary_refractive_index(permittivity: np.ndarray) -> float:
@@ -1490,7 +1582,7 @@ def _tukey2d(shape: tuple[int, int], alpha: float) -> np.ndarray:
 def _tukey(count: int, alpha: float) -> np.ndarray:
     if count <= 0:
         return np.ones((0,), dtype=np.float64)
-    if count == 1 or count <= 2:
+    if count <= 2 or alpha <= 0.0:
         return np.ones((count,), dtype=np.float64)
     n = np.arange(count, dtype=np.float64)
     width = max(float(alpha) * (count - 1) / 2.0, np.finfo(float).eps)
