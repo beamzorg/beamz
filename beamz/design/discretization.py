@@ -194,7 +194,7 @@ class MaterialGrid:
         if grid.metric_kind_for(active_axes) != "isotropic_uniform":
             required = set()
             for cell_name, supports in supports_by_cell(
-                len(shape), polarization
+                len(shape), polarization or "tm"
             ).items():
                 values = np.asarray(getattr(self, cell_name))
                 if (

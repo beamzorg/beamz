@@ -797,30 +797,19 @@ def cpml_update_e_from_h_3d_metric(
 
 
 def precompute_h_update_coefficients(sigma_m, dt):
-    denom = 1.0 + sigma_m * dt / (2.0 * MU_0)
-    decay = (1.0 - sigma_m * dt / (2.0 * MU_0)) / denom
-    source = (dt / MU_0) / denom
-    return decay.astype(jnp.float32), source.astype(jnp.float32)
+    from beamz.lattice import magnetic_update_factors
+
+    return tuple(v.astype(jnp.float32) for v in magnetic_update_factors(sigma_m, dt))
 
 
 def precompute_e_update_coefficients(shape, conductivity, permittivity, dt, region):
-    denom = 1.0 + conductivity * dt / (2.0 * EPS_0 * permittivity)
-    decay = (
-        jnp.ones(shape, dtype=jnp.float32)
-        .at[region]
-        .set(
-            ((1.0 - conductivity * dt / (2.0 * EPS_0 * permittivity)) / denom).astype(
-                jnp.float32
-            )
-        )
+    from beamz.lattice import electric_update_factors
+
+    decay, source = electric_update_factors(conductivity, permittivity, dt)
+    return (
+        jnp.ones(shape, dtype=jnp.float32).at[region].set(decay.astype(jnp.float32)),
+        jnp.zeros(shape, dtype=jnp.float32).at[region].set(source.astype(jnp.float32)),
     )
-    source_value = (dt / (EPS_0 * permittivity)) / denom
-    source = (
-        jnp.zeros(shape, dtype=jnp.float32)
-        .at[region]
-        .set(source_value.astype(jnp.float32))
-    )
-    return decay, source
 
 
 def tm_xy_curl_e_to_h_2d(ez, resolution, hx_shape, hy_shape, metallic_edges):

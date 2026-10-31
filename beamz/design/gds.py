@@ -22,6 +22,7 @@ from beamz.design._gds_decode import (
 from beamz.design._gds_decode import (
     polygons_by_layer as _polygons_by_layer,
 )
+from beamz.design._geometry import polygon_rings
 from beamz.design.core import Design
 from beamz.design.materials import Material
 from beamz.design.structures import Box, Polygon, Rectangle
@@ -503,10 +504,9 @@ def _material_key(structure: Any) -> tuple[float, float, float] | None:
 
 
 def _add_polygon(cell, structure, layer_index, *, kdb, precision):
-    vertices = getattr(structure, "vertices", ())
-    if not vertices:
+    rings = polygon_rings(structure)
+    if not rings[0]:
         raise TypeError(f"GDS export does not support {type(structure).__name__}.")
-    rings = [vertices, *getattr(structure, "interiors", ())]
     points = []
     for ring in rings:
         xy = np.asarray(ring, dtype=float)[:, :2]
