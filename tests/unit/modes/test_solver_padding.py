@@ -6,7 +6,7 @@ import pytest
 from beamz import ModeSpec
 from beamz._cache_tokens import cache_token
 from beamz.design.grid import RectilinearGrid
-from beamz.devices._placement import snap_mode_source_region_grid
+from beamz.devices._placement import mode_source_region
 from beamz.devices.modes.plane import _local_mode_plane_spec
 
 
@@ -42,7 +42,7 @@ def test_padding_counts_actual_cells_and_clips_at_boundaries(axis, stretched, pa
         edges = (edges / edges[-1]) ** 1.2 * edges[-1]
     grid = RectilinearGrid(edges, edges, edges)
     center = (0.7e-6,) * 3
-    region = snap_mode_source_region_grid(
+    region = mode_source_region(
         center=center,
         width=0.5e-6,
         height=0.4e-6,

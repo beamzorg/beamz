@@ -1914,6 +1914,8 @@ def _monitor_plane_display(metadata, region, *, normal, origin, coords=None):
     offsets = dict(zip("xyz", origin, strict=True))
     grid = metadata.grid
     if grid is None:
+        if coords is None:
+            raise ValueError("Legacy monitor display requires tangential coordinates.")
         extent = _coordinate_extent(
             *coords,
             origin0=offsets[vertical],

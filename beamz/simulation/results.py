@@ -268,47 +268,18 @@ def material_region_for_monitor(simulation, monitor: _Monitor, *, runtime_fields
         if snapped_region is None:
             return None
 
-        def axis_index(axis):
-            if axis == snapped_region.normal_axis:
-                return snapped_region.plane_index
-            interval = snapped_region.axis_interval(axis)
-            if interval is None:
-                raise RuntimeError(f"Monitor region omits transverse axis {axis!r}.")
-            return interval.as_slice()
-
-        indices = tuple(axis_index(axis) for axis in ("z", "y", "x"))
         dim = {"z": 0, "y": 1, "x": 2}[axis]
-        normal = indices[dim]
-        if isinstance(normal, slice):
-            start = 0 if normal.start is None else int(normal.start)
-            stop = full_shape[dim] if normal.stop is None else int(normal.stop)
-            plane = (start + max(start + 1, stop) - 1) // 2
-        else:
-            plane = int(normal)
+        plane = snapped_region.plane_index
     elif permittivity.ndim == 2:
-        from beamz.devices._placement import (
-            line_region_points,
-            snap_axis_aligned_line_region_grid,
-        )
+        from beamz.devices._placement import snap_axis_aligned_line_region_grid
 
         snapped_region = snap_axis_aligned_line_region_grid(
             monitor.start, monitor.end, grid
         )
         if snapped_region is None:
             return None
-        points = line_region_points(snapped_region)
-        if not points:
-            return None
-        if axis not in {"x", "y"}:
-            start, end = np.asarray(monitor.start), np.asarray(monitor.end)
-            axis = (
-                "x"
-                if abs(float(end[0] - start[0])) <= abs(float(end[1] - start[1]))
-                else "y"
-            )
-        dim = 1 if axis == "x" else 0
-        point_axis = 0 if axis == "x" else 1
-        plane = int(round(float(np.mean([point[point_axis] for point in points]))))
+        dim = 1 if snapped_region.normal_axis == "x" else 0
+        plane = snapped_region.plane_index
     else:
         return None
 
