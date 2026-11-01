@@ -30,6 +30,12 @@ def test_field_plane_matches_lines_and_plot(polarization, components):
         backend="jax", performance=False
     )
     region = data["plane"].sample_region
+    assert region.sample_shape == (20, 40)
+    for coordinates, count in zip(region.sample_coordinates, (20, 40), strict=True):
+        np.testing.assert_allclose(
+            coordinates, (1.0 + (np.arange(count) + 0.5) * 0.1) * 1e-6
+        )
+        assert not coordinates.flags.writeable
     assert region.axis_interval("x").size == pytest.approx(4e-6)
     assert region.axis_interval("y").size == pytest.approx(2e-6)
     for component in components:

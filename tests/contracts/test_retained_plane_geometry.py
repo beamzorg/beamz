@@ -14,6 +14,27 @@ from beamz.devices.monitors import geometry as monitor_geometry
 from beamz.simulation.execute import initial_program_state
 
 
+def _remove_archived_coordinates(path):
+    with np.load(path, allow_pickle=False) as saved:
+        payload = {name: np.array(saved[name]) for name in saved.files}
+    manifest = json.loads(str(payload["manifest"]))
+
+    def remove_geometry(value):
+        if isinstance(value, dict):
+            if value.get("class") == "SnappedRegion":
+                value["fields"].pop("sample_coordinates", None)
+            for child in value.values():
+                remove_geometry(child)
+        elif isinstance(value, list):
+            for child in value:
+                remove_geometry(child)
+
+    remove_geometry(manifest)
+    manifest["format"] = "beamz.simulation.results/1"
+    payload["manifest"] = np.asarray(json.dumps(manifest))
+    np.savez(path, **payload)
+
+
 @pytest.mark.parametrize("normal", ["x", "y", "z"])
 def test_shifted_uniform_plane_retains_actual_sample_coordinates(
     tmp_path, monkeypatch, normal
@@ -101,25 +122,7 @@ def test_shifted_uniform_plane_retains_actual_sample_coordinates(
                 coordinates - data.coordinates.coordinate_offset["xyz".index(axis)],
             )
 
-    # Old archives have no geometry member. Normalize them at the result boundary.
-    with np.load(path, allow_pickle=False) as saved:
-        payload = {name: np.array(saved[name]) for name in saved.files}
-    manifest = json.loads(str(payload["manifest"]))
-
-    def remove_geometry(value):
-        if isinstance(value, dict):
-            if value.get("class") == "SnappedRegion":
-                value["fields"].pop("sample_coordinates", None)
-            for child in value.values():
-                remove_geometry(child)
-        elif isinstance(value, list):
-            for child in value:
-                remove_geometry(child)
-
-    remove_geometry(manifest)
-    manifest["format"] = "beamz.simulation.results/1"
-    payload["manifest"] = np.asarray(json.dumps(manifest))
-    np.savez(path, **payload)
+    _remove_archived_coordinates(path)
     legacy = bz.SimulationResults.load(path)
     for actual, expected_coord in zip(
         legacy.monitors["plane"].sample_region.sample_coordinates,
@@ -173,3 +176,83 @@ def test_standalone_shifted_metadata_uses_realized_sampling():
     ):
         np.testing.assert_array_equal(value, truth)
         np.testing.assert_array_equal(value, sampled)
+
+
+def test_2d_planar_coordinates_survive_detachment_and_legacy_archives(
+    tmp_path, monkeypatch
+):
+    step = 2.0**-20
+    grid = bz.RectilinearGrid(
+        np.array([2, 3, 5, 8]) * step,
+        np.array([1, 2, 4]) * step,
+        np.array([0, 1]) * step,
+    )
+    materials = MaterialGrid(
+        np.ones((2, 3)),
+        np.array(0.0),
+        np.array(1.0),
+        step,
+        (2, 3),
+        grid=grid,
+        origin=grid.origin,
+        polarization="tm",
+    )
+    sim = bz.Simulation(
+        material_grid=materials,
+        time=np.array([0.0, 1e-17]),
+        normalize_source=None,
+        monitors=[
+            bz.FieldMonitor(
+                center=(5 * step, 2.5 * step, 0),
+                size=(6 * step, 3 * step, 0),
+                fields=("Ez",),
+                freqs=[2e14],
+                name="plane",
+            )
+        ],
+    )
+    program = sim.compile(backend="jax")
+    compiled = program.monitors[0].sample_region
+    result = bz.MonitorResults.from_compiled_state(
+        sim.monitors[0],
+        program.monitors[0],
+        initial_program_state(program, t=0.0, current_step=0),
+        program.config,
+    )
+    results = bz.SimulationResults.from_run(
+        sim, runtime_fields=program.grid, monitor_results={"plane": result}
+    )
+    assert compiled.sample_shape == (2, 3)
+    for axis, expected in zip(("y", "x"), ([1.5, 3], [2.5, 4, 6.5]), strict=True):
+        values = compiled.sample_coordinates[("y", "x").index(axis)]
+        offset = results.metadata.coordinate_offset["xyz".index(axis)]
+        np.testing.assert_allclose(values - offset, np.array(expected) * step)
+        assert not values.flags.writeable
+    path = tmp_path / "area.npz"
+    results.save(path)
+    with monkeypatch.context() as patch:
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError(
+                "New planar results must not re-snap their coordinates"
+            )
+
+        patch.setattr(monitor_geometry, "_restore_sample_region", forbidden)
+        loaded = bz.SimulationResults.load(path)
+    _remove_archived_coordinates(path)
+    legacy = bz.SimulationResults.load(path)
+    for restored in (loaded, legacy):
+        region = restored["plane"].sample_region
+        for actual, expected in zip(
+            region.sample_coordinates, compiled.sample_coordinates, strict=True
+        ):
+            np.testing.assert_array_equal(actual, expected)
+        figure, axis = restored.plot_field(
+            "plane", "Ez", val="abs^2", frequency=2e14, show=False
+        )
+        mesh = axis.collections[0].get_coordinates()
+        np.testing.assert_allclose(mesh[0, :, 0], np.array([2, 3, 5, 8]) * step / bz.um)
+        np.testing.assert_allclose(mesh[:, 0, 1], np.array([1, 2, 4]) * step / bz.um)
+        import matplotlib.pyplot as plt
+
+        plt.close(figure)

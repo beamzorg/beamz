@@ -15,6 +15,7 @@ from beamz.devices._placement import (
     line_region_points,
     snap_axis_aligned_line_region_grid,
 )
+from beamz.devices.monitors.geometry import planar_sample_region_2d
 from beamz.devices.monitors.monitors import (
     FieldMonitor,
     FieldRecorder,
@@ -533,31 +534,10 @@ def compile_monitor_specs(
                     raise ValueError(
                         "Planar 2D FieldMonitor sampling requires the xy plane."
                     )
-                region = monitor.get_snapped_region(
-                    grid=active_grid,
-                    dx=resolution,
-                    dy=resolution,
-                    dz=resolution,
-                    field_shape=(1, *fields.permittivity.shape),
+                region = planar_sample_region_2d(
+                    monitor, active_grid, resolution, fields.permittivity.shape
                 )
-                assert region is not None
-                coords = {}
-                for axis in ("x", "y"):
-                    interval = region.axis_interval(axis)
-                    assert interval is not None
-                    centers = (
-                        np.asarray(active_grid.centers(axis))
-                        if active_grid is not None
-                        else (
-                            np.arange(
-                                fields.permittivity.shape[1 if axis == "x" else 0]
-                            )
-                            + 0.5
-                        )
-                        * resolution
-                    )
-                    coords[axis] = centers[interval.start : interval.stop]
-                xx, yy = np.meshgrid(coords["x"], coords["y"], indexing="xy")
+                yy, xx = np.meshgrid(*region.sample_coordinates, indexing="ij")
                 point_count = xx.size
                 active = (
                     {"Ez", "Hx", "Hy"}
