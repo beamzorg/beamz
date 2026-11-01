@@ -1669,7 +1669,7 @@ def _monitor_plane_display(metadata, region, *, normal, origin, coords=None):
     for axis in (horizontal, vertical):
         interval = region.axis_interval(axis)
         if interval is None:
-            raise ValueError("A 3D monitor is missing a tangential grid interval.")
+            raise ValueError("A monitor plane is missing a tangential grid interval.")
         edges.append(
             (grid.axis_edges(axis)[interval.start : interval.stop + 1] - offsets[axis])
             / _UM
@@ -1893,7 +1893,7 @@ def plot_dft_field(
     if monitor is None:
         raise ValueError("A monitor geometry is required to plot a DFT field.")
     if not getattr(monitor, "is_3d", False):
-        raise ValueError("plot_dft_field expects a 3D plane monitor.")
+        raise ValueError("plot_dft_field expects an area monitor.")
     axis = monitor.plane_normal
     axis0, axis1 = plane_axes_3d(axis)
 
