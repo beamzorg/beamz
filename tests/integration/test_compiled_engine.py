@@ -1182,6 +1182,7 @@ def test_compiled_dft_component_monitor_populated(small_sim_params):
     )
     result = sim.advance(num_steps=60, progress=False)
     monitor_result = _monitor_result(result)
+    assert not monitor_result.sample_region.sample_coordinates
     ez_dft = np.asarray(monitor_dft_component(monitor_result, "Ez"))
     hy_dft = np.asarray(monitor_dft_component(monitor_result, "Hy"))
     assert ez_dft.shape[0] == 1

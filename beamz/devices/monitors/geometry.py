@@ -34,7 +34,11 @@ def retained_sample_region(metadata, monitor, region=None):
         monitor is None
         or (
             not metadata.is_3d
-            and not (isinstance(monitor, FieldMonitor) and monitor.is_3d)
+            and not (
+                isinstance(monitor, FieldMonitor)
+                and monitor.is_3d
+                and monitor.plane_normal == "z"
+            )
         )
         or getattr(monitor, "region", "slice") == "domain"
         or (region is not None and region.sample_coordinates)

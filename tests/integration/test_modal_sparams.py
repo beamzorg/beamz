@@ -15,6 +15,7 @@ from beamz import (
 from beamz.analysis import s_parameters
 from beamz.analysis import sparameters as sp
 from beamz.analysis.data import AnalysisData
+from beamz.simulation.execute import initial_program_state
 from beamz.simulation.results import (
     FieldMetadata,
     MonitorResults,
@@ -268,7 +269,6 @@ def test_results_analysis_snapshot_keeps_compact_field_shapes():
 
 def test_3d_mode_results_store_a_thin_material_region_by_default():
     shape = (12, 14, 16)
-    sim = _simulation(width=16.0, height=14.0, depth=12.0)
     monitor = ModeMonitor(
         center=(8.0, 7.0, 6.0),
         size=(0.0, 6.0, 6.0),
@@ -276,11 +276,18 @@ def test_3d_mode_results_store_a_thin_material_region_by_default():
         mode_spec=ModeSpec(polarization="te"),
         name="mode",
     )
-
+    sim = _simulation(width=16.0, height=14.0, depth=12.0, monitors=[monitor])
+    program = sim.compile(backend="jax")
+    acquired = MonitorResults.from_compiled_state(
+        sim.monitors[0],
+        program.monitors[0],
+        initial_program_state(program, t=0.0, current_step=0),
+        program.config,
+    )
     results = SimulationResults.from_run(
         sim,
-        runtime_fields=sim.compile().grid,
-        monitor_results={"mode": _empty_monitor_result(monitor)},
+        runtime_fields=program.grid,
+        monitor_results={"mode": acquired},
     )
     region = results.monitors["mode"].material_region
 
