@@ -16,7 +16,7 @@ import numpy as np
 
 from beamz.devices.sources.compiler import CompiledSourceSpec, batch_slab_specs
 from beamz.simulation.execute import _apply_batched_slabs
-from beamz.simulation.observe import _sample_components
+from beamz.devices.monitors.compiler import SamplingPlan
 
 mesh = jax.sharding.Mesh(np.asarray(jax.devices()), ('shard',))
 rng = np.random.default_rng(13)
@@ -33,7 +33,7 @@ for shape in ((7, 32), (3, 7, 32)):
     weights = tuple(jnp.asarray([[0.1, 0.2, 0.3, 0.4]] * 3) for _ in fields)
     placed = tuple(jax.device_put(field, partition) for field in fields)
     sample = jax.jit(
-        lambda values: _sample_components(values, indices, weights),
+        SamplingPlan(indices, weights).sample,
         out_shardings=replicated,
     )
     executable = sample.lower(placed).compile()

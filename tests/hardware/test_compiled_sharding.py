@@ -134,6 +134,7 @@ from dataclasses import replace
 from beamz import Design, FieldRecorder, Material, PML, Simulation
 from beamz.simulation.model import ShardingConfig
 from beamz.simulation.execute import runtime_inputs
+from beamz.simulation.observe import MONITOR_FIELDS
 from beamz.simulation.sharding import prepare_state
 
 
@@ -181,7 +182,7 @@ state = runtime_inputs(program, sharded_state, monitor_steps=2)
 prepared = prepare_state(
     program,
     state,
-    replicated_fields=("powers", "timestamps", "counts", "t", "current_step"),
+    replicated_fields=(*MONITOR_FIELDS, "t", "current_step"),
 )
 assert program.sharding.layout.enabled
 assert prepared.ex.sharding.mesh is program.sharding.mesh
@@ -244,6 +245,7 @@ from dataclasses import replace
 from beamz import Design, Material, PEC, Simulation
 from beamz.simulation.model import ShardingConfig
 from beamz.simulation.execute import runtime_inputs
+from beamz.simulation.observe import MONITOR_FIELDS
 from beamz.simulation.sharding import crop_state, prepare_state
 
 
@@ -285,7 +287,7 @@ state = runtime_inputs(program, sharded_state, monitor_steps=2)
 prepared = prepare_state(
     program,
     state,
-    replicated_fields=("powers", "timestamps", "counts", "t", "current_step"),
+    replicated_fields=(*MONITOR_FIELDS, "t", "current_step"),
 )
 cropped = crop_state(program, prepared)
 assert program.sharding.layout.enabled
