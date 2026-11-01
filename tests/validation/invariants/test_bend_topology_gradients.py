@@ -33,7 +33,9 @@ def test_bend_output_direction_and_external_density_gradient(
     design += Rectangle(
         position=(2.6e-6, 4e-6), width=0.8e-6, height=2e-6, material=core
     )
-    modes = ModeSpec(num_modes=1, polarization=polarization)
+    # Decouple the finite mode-solve boundaries from the launch/measurement
+    # aperture so this remains a bend-direction and derivative oracle.
+    modes = ModeSpec(num_modes=1, polarization=polarization, solver_padding_cells=6)
     source = ModeSource(
         center=(1e-6, 3e-6, 0),
         size=(0, 2.8e-6, 1e-6),
@@ -78,10 +80,11 @@ def test_bend_output_direction_and_external_density_gradient(
     )
     density = np.zeros(mask.shape)
     # Seed a connected bend to avoid a weak resonant-cavity signal masquerading
-    # as a successful direction/derivative check.
+    # as a successful direction/derivative check. Use a lower-contrast seed
+    # to retain measurable TM transmission through the sharp corner.
     density[mask] = 0.1
-    density[26:34, 20:34] = 0.9
-    density[26:40, 26:34] = 0.9
+    density[26:34, 20:34] = 0.8
+    density[26:40, 26:34] = 0.8
     value, gradient = problem.value_and_grad(density)
     data = problem.material_simulation(density).run(backend="jax", performance=False)
     input_power = abs(data.mode("input").amps.sel(direction="+").item()) ** 2
