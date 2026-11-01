@@ -16,6 +16,7 @@ from beamz.design.discretization import MaterialGrid
 from beamz.design.grid import RectilinearGrid
 from beamz.devices.sources import mode_launch, solve
 from beamz.lattice import sample_voxel_grid_at_component_2d
+from beamz.simulation.compile import clear_program_cache
 
 
 def _simulation(materials, spec, center, size, direction="+"):
@@ -106,6 +107,9 @@ def test_outside_guide_does_not_change_port_mode(
         )
         simulation = _simulation(materials, spec, center, size, direction)
         source = simulation.sources[0]
+        # Equivalent earlier parameter cases can cache this launch plan. Force
+        # compilation so the spy observes all three port consumers in any order.
+        clear_program_cache()
         calls.clear()
         preview = source.solve_modes(simulation)
         if reference is None:
