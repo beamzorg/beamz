@@ -6,6 +6,7 @@ from typing import Literal, cast
 
 import numpy as np
 
+from beamz.devices.modes.line import prepare_mode_line, solve_mode_line
 from beamz.devices.modes.plane import SignedAxis, solve_modes
 from beamz.devices.modes.specs import ModeData, ModeSpec
 
@@ -252,6 +253,63 @@ def solve_mode_plane(
         )
     if field_representation == "launch":
         raise ValueError("Prepared launch previews require a 3D simulation")
+    if (materials is not None and len(materials.shape) == 2) or (
+        fields is not None and np.ndim(fields.permittivity) == 2
+    ):
+        grid_view = _simulation_grid_view(simulation)
+        axis, center, _ = plane_axis_and_spans(plane)
+        offset = getattr(simulation, "coordinate_offset", (0.0, 0.0, 0.0))
+        center = tuple(c + o for c, o in zip(center, offset, strict=True))
+        geometry = getattr(grid_view, "grid", None)
+        if geometry is not None:
+            geometry = geometry.translated(tuple(-v for v in geometry.origin))
+        if np.any(np.asarray(grid_view.conductivity) != 0):
+            raise ValueError("2D mode previews require lossless materials")
+        polarization = spec.polarization or getattr(grid_view, "polarization", None)
+        if polarization is None:
+            polarization = getattr(fields, "polarization_2d", "tm")
+        context = prepare_mode_line(
+            permittivity=grid_view.permittivity,
+            center=center,
+            size=plane.size,
+            axis=axis,
+            spec=spec,
+            resolution=simulation.resolution,
+            grid=geometry,
+        )
+        signed = _resolve_solver_direction(axis, direction)
+        diagnostics = [{} for _ in frequencies]
+        solved = [
+            solve_mode_line(
+                context,
+                spec=spec,
+                frequency=f,
+                resolution=simulation.resolution,
+                direction=signed,
+                polarization=polarization,
+                solver=solve_modes,
+                diagnostics=diagnostics[i],
+                use_grid_edges=geometry is not None
+                and geometry.metric_kind_for(("x", "y")) != "isotropic_uniform",
+            )
+            for i, f in enumerate(frequencies)
+        ]
+        return ModeData(
+            frequencies=frequencies,
+            neffs=np.asarray([v[0] for v in solved]),
+            e_fields=np.asarray([v[1] for v in solved]),
+            h_fields=np.asarray([v[2] for v in solved]),
+            eps_profiles=np.repeat(context.eps[None], len(frequencies), axis=0),
+            resolution=float(simulation.resolution),
+            solver_direction=signed,
+            axis=axis,
+            center=tuple(plane.center),
+            plane=plane,
+            crop_slices=(context.crop,),
+            grid_edges=(context.edges - offset[1 if axis == "x" else 0],),
+            transverse_axes=(context.transverse_axis,),
+            diagnostics=tuple(diagnostics),
+        )
     context = mode_plane_context(simulation=simulation, plane=plane)
     coordinate_offset = tuple(
         float(value)

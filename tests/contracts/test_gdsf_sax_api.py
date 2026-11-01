@@ -523,6 +523,7 @@ def test_build_port_projection_2d_preserves_requested_mode_index_without_seed(
         target_neff,
         return_fields,
         force_symmetry=False,
+        grid_edges=None,
     ):
         requested.append(force_symmetry)
         del eps, omega, dL, m, direction, filter_pol, target_neff, return_fields

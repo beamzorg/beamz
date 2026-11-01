@@ -153,3 +153,11 @@ be negligible for clean directional injection. The default solver preview shows
 the complete solve domain, including explicitly requested padding. Launch previews
 show the prepared injection support. `min_aperture_fraction` is now opt-in; its default `None`
 preserves polarization/effective-index candidate ordering.
+
+## Two-dimensional port lines
+
+`line.py` prepares the same aperture, padding, target index and selected modes
+for 2D preview, launch and measurement. `policy.py` shares bounds and candidate
+ranking with 3D. Padding pairs use the width entry for 2D; measurement adds no
+independent halo. Consumers convert raw solver fields to their own Yee supports
+and power normalization, without a launch taper. Check aperture convergence.

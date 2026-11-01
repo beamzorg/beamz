@@ -14,7 +14,11 @@ pytestmark = pytest.mark.optimization
 
 @pytest.fixture(scope="module")
 def problem():
-    return make_problem(target_mode=0, run_time=320e-15)
+    # Keep modal tails away from the finite solve boundaries. The shared
+    # aperture-only default is intentionally too tight for this symmetry oracle.
+    return make_problem(
+        target_mode=0, run_time=320e-15, height=6e-6, solver_padding_cells=16
+    )
 
 
 def relative_mirror_error(values):
@@ -73,8 +77,8 @@ def test_objective_gradient_is_reflection_equivariant(problem, backend):
 def test_symmetric_forward_field_and_mode_basis(problem):
     rho = np.full(problem.topology.region_mask.shape, 0.5)
     monitor = FieldMonitor(
-        center=(3e-6, 2e-6, 0),
-        size=(6e-6, 4e-6, 0),
+        center=(3e-6, 3e-6, 0),
+        size=(6e-6, 6e-6, 0),
         freqs=problem.simulation.monitors[0].freqs,
         fields=("Ez",),
         name="plane",
@@ -86,7 +90,7 @@ def test_symmetric_forward_field_and_mode_basis(problem):
     output = problem.simulation.monitors[1]
     paired = [
         output.updated_copy(center=(5e-6, y, 0), size=(0, 2.4e-6, 1e-6), name=name)
-        for y, name in [(1.6e-6, "lower"), (2.4e-6, "upper")]
+        for y, name in [(2.6e-6, "lower"), (3.4e-6, "upper")]
     ]
     sim = problem.material_simulation(rho).updated_copy(
         monitors=[*problem.simulation.monitors, *paired, monitor]

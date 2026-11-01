@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from typing import Any, Literal, cast
+from typing import Any
 
 import numpy as np
 
@@ -18,6 +18,7 @@ from beamz.devices._placement import (
 )
 from beamz.devices.modes.discrete import solve_beamz_mode
 from beamz.devices.modes.fields import _modal_power, _numeric_wave_number
+from beamz.devices.modes.line import prepare_mode_line, solve_mode_line
 from beamz.devices.modes.plane import solve_mode_plane_3d, solve_modes
 from beamz.lattice import (
     common_grid_shape_3d,
@@ -169,56 +170,6 @@ def _impedance_match_e_profile(e_profile, h_profile, z_target, eps=1e-12):
     return np.asarray(e_profile) * (float(abs(z_target)) / z_mag)
 
 
-def _make_1d_window(width_cells, alpha=0.3):
-    if width_cells > 2:
-        from scipy.signal.windows import tukey
-
-        return tukey(width_cells, alpha=alpha)
-    return np.ones(max(1, width_cells))
-
-
-def _solve_2d_mode(
-    source: ModeSource,
-    eps_profile,
-    omega: float,
-    resolution: float,
-    axis: str,
-    polarization: str,
-    grid_edges: np.ndarray | None = None,
-):
-    del axis
-    mode_spec = source.mode_spec
-    eps_profile_arr = np.asarray(eps_profile)
-    n_local_max = float(np.sqrt(max(float(np.max(np.real(eps_profile_arr))), 1e-12)))
-    target_neff = (
-        mode_spec.target_neff
-        if mode_spec.target_neff is not None
-        else 0.98 * n_local_max
-    )
-    mode_count = max(
-        int(mode_spec.num_modes),
-        int(mode_spec.mode_index) + 1,
-        3,
-    )
-    neff_val, e_fields, h_fields, _ = solve_modes(
-        eps=eps_profile,
-        omega=omega,
-        dL=resolution,
-        m=mode_count,
-        direction=cast(
-            Literal["+x", "-x", "+y", "-y", "+z", "-z"],
-            source.signed_direction,
-        ),
-        filter_pol=cast(Literal["te", "tm"], polarization),
-        target_neff=target_neff,
-        force_symmetry=mode_spec.force_symmetry,
-        return_fields=True,
-        grid_edges=None if grid_edges is None else (np.asarray(grid_edges),),
-    )
-    mode_idx = min(int(mode_spec.mode_index), len(neff_val) - 1)
-    return np.asarray(neff_val)[mode_idx], e_fields[mode_idx], h_fields[mode_idx]
-
-
 def _normalize_2d_launch_pair(first, second, *, flux_sign, resolution, power):
     first, second = _normalize_2d_pair_by_power(
         first, second, signed_flux_sign=flux_sign, dl=resolution
@@ -260,10 +211,8 @@ def _plan_2d_entries(
         e_component, h_component = "Ez", "Hy" if axis == "x" else "Hx"
         flux_sign = -1.0 if axis == "x" else 1.0
     else:
-        h_nodes = np.squeeze(h_mode[2])
-        e_nodes = np.squeeze(e_mode[1 if axis == "x" else 0])
-        h_raw = 0.5 * (h_nodes[:-1] + h_nodes[1:])
-        e_raw = 0.5 * (e_nodes[:-1] + e_nodes[1:])
+        h_raw = np.squeeze(h_mode[2])
+        e_raw = np.squeeze(e_mode[1 if axis == "x" else 0])
         end = min(end, len(h_raw), len(e_raw))
         e_component, h_component = "Ey" if axis == "x" else "Ex", "Hz"
         flux_sign = 1.0 if axis == "x" else -1.0
@@ -276,10 +225,9 @@ def _plan_2d_entries(
     # both axes. Orient the pair by its Poynting flux, rather than that adapter.
     if flux_sign * dir_sign * np.real(np.vdot(h_profile, e_profile)) < 0:
         e_profile = -e_profile
-    window = _make_1d_window(end - start)
     h_crop, e_crop = _normalize_2d_launch_pair(
-        h_profile[start:end] * window,
-        e_profile[start:end] * window,
+        h_profile[start:end],
+        e_profile[start:end],
         flux_sign=flux_sign,
         resolution=resolution if measure is None else measure,
         power=source.power,
@@ -373,49 +321,53 @@ def _plan_2d_mode_source(
     center_idx = int(snapped.plane_index)
     if snapped.companion_index is None:
         raise ValueError("A mode source launch needs a companion Yee plane.")
-    material_grid = getattr(fields, "material_grid", None)
-    if (
-        material_grid is not None
-        and material_grid.uses_direct_yee_materials
-        and metric_grid is None
-    ):
-        component = (
-            "eps_z" if polarization == "tm" else ("eps_y" if axis == "x" else "eps_x")
-        )
-        direct = np.asarray(getattr(fields, component))
-        normal_index = min(center_idx, direct.shape[1 if axis == "x" else 0] - 1)
-        eps_profile = (
-            direct[:, normal_index] if axis == "x" else direct[normal_index, :]
-        )
-    else:
-        eps_profile = (
-            permittivity[:, center_idx] if axis == "x" else permittivity[center_idx, :]
-        )
-    omega = 2.0 * np.pi * source.frequency
     interval = snapped.axis_interval("y" if axis == "x" else "x")
     if interval is None:
         raise RuntimeError("A 2D mode source is missing its transverse interval.")
+    context = prepare_mode_line(
+        permittivity=permittivity,
+        center=source.center,
+        size=source.size,
+        axis=axis,
+        spec=source.mode_spec,
+        resolution=resolution,
+        grid=grid,
+        snapped=snapped,
+    )
+    neffs, electric, magnetic = solve_mode_line(
+        context,
+        spec=source.mode_spec,
+        frequency=source.frequency,
+        resolution=resolution,
+        direction=source.signed_direction,
+        polarization=polarization,
+        solver=solve_modes,
+        use_grid_edges=metric_grid is not None,
+    )
+    mode_index = source.mode_spec.mode_index
+    neff = neffs[mode_index]
+    # Convert cell-centred solver fields onto the injection's transverse Yee
+    # support. Conversion must not change the material eigenproblem.
+    transverse_axis = context.transverse_axis
+    edges = (
+        np.asarray(grid.axis_edges(transverse_axis))
+        if grid is not None
+        else np.arange(permittivity.shape[0 if axis == "x" else 1] + 1) * resolution
+    )
+    centers = 0.5 * (context.edges[:-1] + context.edges[1:])
+    targets = edges if polarization == "tm" else 0.5 * (edges[:-1] + edges[1:])
+
+    def on_support(values):
+        return np.stack([np.interp(targets, centers, v) for v in values])
+
+    e_mode, h_mode = on_support(electric[mode_index]), on_support(magnetic[mode_index])
+    measure = None
     if metric_grid is not None:
-        transverse_axis = "y" if axis == "x" else "x"
-        grid_edges = np.asarray(metric_grid.axis_edges(transverse_axis))
         measure = np.asarray(metric_grid.cell_widths(transverse_axis))[
             int(interval.start) : int(interval.stop)
         ]
         if polarization == "tm":
-            # TM profiles occupy the bounding nodes, rather than cell centres.
             measure = 0.5 * (np.pad(measure, (1, 0)) + np.pad(measure, (0, 1)))
-    else:
-        grid_edges = None
-        measure = None
-    neff, e_mode, h_mode = _solve_2d_mode(
-        source,
-        eps_profile,
-        omega,
-        resolution,
-        axis,
-        polarization,
-        grid_edges=grid_edges,
-    )
     normal_spacing = (
         float(metric_grid.cell_widths(axis)[center_idx])
         if metric_grid is not None
