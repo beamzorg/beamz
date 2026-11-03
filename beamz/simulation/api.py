@@ -1736,6 +1736,15 @@ class Simulation:
         >>> results.termination.reason in {"converged", "time_limit"}
         True
 
+        Limit elapsed execution time while retaining partial measurements:
+
+        >>> results = sim.run(termination=AutoTermination(max_wall_time=600.0))
+
+        The elapsed-time budget includes compilation and is checked between
+        chunks. A time-limited run returns its acquired results with termination
+        reason ``"wall_time_limit"``; finishing a chunk and constructing the result
+        may take execution beyond the budget.
+
         Notes
         -----
         This is the normal user-facing execution method. Compilation is automatic.

@@ -1864,6 +1864,7 @@ def run_until_terminated(
     """Run reusable chunks until convergence, failure, or the configured time limit."""
     if not isinstance(policy, AutoTermination):
         raise TypeError("termination must be an AutoTermination instance or None.")
+    wall_start = perf_counter()
     chunk_steps = min(int(policy.chunk_steps), int(simulation.num_steps))
     first_program = simulation.compile(
         num_steps=chunk_steps,
@@ -1908,6 +1909,13 @@ def run_until_terminated(
 
     try:
         while int(state.current_step) < int(simulation.num_steps):
+            if (
+                monitor_results is not None
+                and policy.max_wall_time is not None
+                and perf_counter() - wall_start >= policy.max_wall_time
+            ):
+                reason = "wall_time_limit"
+                break
             current_step = int(state.current_step)
             remaining = int(simulation.num_steps) - current_step
             steps = min(chunk_steps, remaining)
@@ -2021,6 +2029,9 @@ def run_until_terminated(
         simulation,
         runtime_fields=program.grid,
         monitor_results=monitor_results,
+        completed_steps=int(state.current_step)
+        if reason == "wall_time_limit"
+        else None,
         store_full_materials=store_full_materials,
         source_launch_powers=_compiled_source_launch_powers(
             program, len(simulation.sources)
