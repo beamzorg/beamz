@@ -4,7 +4,7 @@
     "central_mode_0_w": 0.9999947458455476,
     "maximum_mode0_flux_relative_difference": 0.0034064989513201875,
     "maximum_backward_mode_0_power_w": 2.8353533445318387e-08,
-    "runtime_seconds": 2.669420675971196,
+    "runtime_seconds": 2.6977010609844,
     "central_sum_forward_modes_w": 0.9999947458455566,
     "central_net_modal_flux_w": 0.9999947458226475
   },
@@ -13,7 +13,7 @@
     "central_mode_0_w": 0.9999971295374428,
     "maximum_mode0_flux_relative_difference": 0.0014502189149692738,
     "maximum_backward_mode_0_power_w": 2.7924862146859826e-08,
-    "runtime_seconds": 2.66947351503768,
+    "runtime_seconds": 2.6749835630180314,
     "central_sum_forward_modes_w": 0.9999971295374511,
     "central_net_modal_flux_w": 0.99999712951556
   },
@@ -21,7 +21,7 @@
     "central_flux_w": 0.9733916581849996,
     "central_mode_0_w": 0.710300755478105,
     "maximum_backward_mode_0_power_w": 3.158748762248201e-08,
-    "runtime_seconds": 3.057935830001952,
+    "runtime_seconds": 3.084784026010311,
     "central_sum_forward_modes_w": 0.960517919973388,
     "central_net_modal_flux_w": 0.9606265647610811,
     "interpretation": "Multimode junction: mode-0 power alone does not reconstruct total flux; the tutorial retains only three modes."
@@ -70,12 +70,24 @@
   },
   "notebook_executions": {
     "modal_sources_monitors": {
-      "full_execution": true,
+      "revision": "e1613e094487c7b7ad3161e0f0072b8f9f649340",
+      "backend": "cuda_streamed",
+      "device": [
+        "NVIDIA GeForce RTX 3090"
+      ],
+      "python_version": "3.11.15",
+      "jax_version": "0.10.2",
+      "cuda_version": "0.30.0",
+      "cuda_sha256": "8930343f945629cfa09a6bfe2ecd3f0f879828bc437acdaf3ed09263149b228a",
+      "raster_sha256": "85e3809e35ee471083d9c14fa670272606b6cb3daa372811185a0accc54c8a6a",
+      "notebook_code_sha256": "542de01b114b59ffed8e0849fb89d44906eaad1792dd28f13339ff2b4f313c4d",
+      "nfreqs": 17,
+      "broadband_profiles": 7,
+      "elapsed_seconds": 47.00018323799304,
       "all_cells_passed": true,
-      "wall_seconds": 47.130549287991016,
-      "execution_scope": "full default notebook; BEAMZ_DOCS_TEST unset",
-      "device": "NVIDIA GeForce RTX 3090",
-      "native_cuda_component": "0.30.0 / ABI 30"
+      "full_execution": true,
+      "execution_scope": "Full default notebook, three simulations; BEAMZ_DOCS_TEST unset",
+      "comparison_to_main": "modal-main-regression/comparison.json"
     },
     "cosine_waveguide_crossing": {
       "worktree_changes": true,

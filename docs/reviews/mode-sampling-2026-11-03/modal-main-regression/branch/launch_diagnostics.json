@@ -1,0 +1,27 @@
+[
+  {
+    "preview_selected_neff": 2.2635194353302546,
+    "launch_k_axis": 9232904.045859786,
+    "launch_phase_neff": 2.277666592887204,
+    "refinement_accepted": true,
+    "refinement_eligible": true,
+    "refinement_validation": {
+      "electric_overlap": 0.37613791231019095,
+      "magnetic_overlap": 0.6498337582044548,
+      "seed_rms_impedance": 132.00670839458252,
+      "candidate_rms_impedance": 133.36184298451096,
+      "impedance_change": 1.0102656494234958,
+      "seed_energy_ratio": 0.9516872760609151,
+      "candidate_energy_ratio": 1.0000000053318285,
+      "energy_ratio_change": 1.0507653411852709,
+      "candidate_energy_imbalance": 1.0000000053318285,
+      "seed_signed_power": 1.0000000000000002,
+      "candidate_signed_power": 5.623754045697259e-19,
+      "faraday_residual": 6.825697638561153e-17,
+      "ampere_residual": 2.4223353124194877e-09,
+      "accepted": true,
+      "rejection_reason": ""
+    },
+    "yee_residual": 5.622230233639095e-15
+  }
+]
