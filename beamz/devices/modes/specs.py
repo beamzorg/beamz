@@ -36,7 +36,7 @@ class ModeSpec:
         mirrors. One-dimensional line profiles remain unprojected.
         Applied before Yee interpolation and independent Maxwell refinement.
     min_aperture_fraction : float or None, default=None
-        In 3D, prefer modes with at least this fraction of area-weighted transverse
+        Prefer modes with at least this fraction of cell-weighted transverse
         electric intensity inside the aperture, within the requested polarization.
         Preserve decreasing-neff order within that group. A heterogeneous plane
         adaptively searches up to at least 64 candidates, then fails explicitly
@@ -44,7 +44,7 @@ class ModeSpec:
         polarization/neff ordering. This fraction is not modal power or energy.
 
     solver_padding_cells : int or tuple[int, int] or None, default=None
-        Extra cells on each side of the 3D solve aperture. None and zero add no
+        Extra cells on each side of the solve aperture. None and zero add no
         padding; the default solves only the outward-snapped requested aperture.
         A pair specifies (width, height):
         (y, z) for x-normal, (x, z) for y-normal, (x, y) for z-normal planes.
@@ -52,7 +52,8 @@ class ModeSpec:
         to the simulation domain; the minimum two-cell solver support remains.
         Injection/integration support follows the aperture and available Yee
         samples; no taper is applied. Fields should decay at the solve boundaries.
-        Two-dimensional line solves do not use this setting.
+        A 2D line uses the width entry (y for x-normal, x for y-normal);
+        the height entry is unused. Preview, launch and measurement share bounds.
 
     Examples
     --------

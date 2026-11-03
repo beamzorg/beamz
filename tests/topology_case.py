@@ -24,42 +24,56 @@ def make_problem(
     target_mode=1,
     polarization="tm",
     reference=True,
+    height=4e-6,
+    solver_padding_cells=None,
 ):
-    width, height = 6e-6, 4e-6
+    width, y_offset = 6e-6, (height - 4e-6) / 2
     wavelength = 1.55e-6
     frequency = LIGHT_SPEED / wavelength
     design = Design(width=width, height=height, material=Material(permittivity=1))
     design += Rectangle(
-        position=(0, 1.6e-6),
+        position=(0, 1.6e-6 + y_offset),
         width=2e-6,
         height=0.8e-6,
         material=Material(permittivity=4),
     )
     design += Rectangle(
-        position=(4e-6, 1.4e-6),
+        position=(4e-6, 1.4e-6 + y_offset),
         width=2e-6,
         height=1.2e-6,
         material=Material(permittivity=4),
     )
-    mode_spec = ModeSpec(num_modes=2, polarization=polarization)
+    mode_spec = ModeSpec(
+        num_modes=2,
+        polarization=polarization,
+        solver_padding_cells=solver_padding_cells,
+    )
     source = ModeSource(
-        center=(1e-6, 2e-6, 0),
+        center=(1e-6, height / 2, 0),
         size=(0, 2.8e-6, 1e-6),
         direction="+",
-        mode_spec=ModeSpec(num_modes=1, polarization=polarization),
+        mode_spec=ModeSpec(
+            num_modes=1,
+            polarization=polarization,
+            solver_padding_cells=solver_padding_cells,
+        ),
         source_time=GaussianPulse(freq0=frequency, fwidth=0.15 * frequency, offset=1.5),
     )
     monitor = ModeMonitor(
-        center=(5e-6, 2e-6, 0),
+        center=(5e-6, height / 2, 0),
         size=(0, 2.8e-6, 1e-6),
         freqs=[frequency],
         mode_spec=mode_spec,
         name="output",
     )
     incoming = monitor.updated_copy(
-        center=(1.6e-6, 2e-6, 0),
+        center=(1.6e-6, height / 2, 0),
         name="input",
-        mode_spec=ModeSpec(num_modes=1, polarization=polarization),
+        mode_spec=ModeSpec(
+            num_modes=1,
+            polarization=polarization,
+            solver_padding_cells=solver_padding_cells,
+        ),
     )
     sim = Simulation(
         polarization=polarization,
@@ -75,8 +89,8 @@ def make_problem(
     mask = (
         (x * dx >= 2e-6 - 1e-15)
         & (x * dx < 4e-6 - 1e-15)
-        & (y * dx >= 1.2e-6 - 1e-15)
-        & (y * dx < 2.8e-6 - 1e-15)
+        & (y * dx >= 1.2e-6 + y_offset - 1e-15)
+        & (y * dx < 2.8e-6 + y_offset - 1e-15)
     )
     topo = TopologySpec(
         design=sim.design,
