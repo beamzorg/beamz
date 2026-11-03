@@ -822,7 +822,9 @@ def _draw_device_slice_overlay(ax, device, *, normal, origin, color, source):
         )
 
 
-def overlay_boundaries(ax, extent, thickness, *, edges=None, **style):
+def overlay_boundaries(
+    ax, extent, thickness: float | Mapping[str, float], *, edges=None, **style
+):
     """Draw PML bands from a scalar width or widths keyed by section edge."""
     from matplotlib.patches import Rectangle
 

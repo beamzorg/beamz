@@ -96,6 +96,10 @@ def test_auto_termination_is_an_immutable_validated_configuration():
         {"consecutive_checks": 0},
         {"growth_factor": 1.0},
         {"growth_checks": 0},
+        {"max_wall_time": 0},
+        {"max_wall_time": -1},
+        {"max_wall_time": np.inf},
+        {"max_wall_time": np.nan},
         {"monitor_names": ("m", "m")},
         {"field_decay": 0.0, "monitor_change": None},
     )
@@ -191,6 +195,70 @@ def test_run_can_stop_after_consecutive_field_decay_checks():
     assert result.termination.steps == 4
     assert result.termination.field_decay == pytest.approx(0.0)
     assert result.termination.source_decay == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("with_source", [False, True])
+def test_wall_time_limit_retains_partial_measurements(
+    monkeypatch, tmp_path, with_source
+):
+    from beamz.simulation import execute
+
+    monitor = FieldMonitor(
+        center=(um, um, 0.0),
+        size=(0.0, um, 0.0),
+        freqs=(2e14,),
+        name="output",
+    )
+    sources = (
+        (
+            GaussianSource(
+                position=(um, um), width=0.2 * um, signal=np.linspace(0.1, 1, 20)
+            ),
+        )
+        if with_source
+        else ()
+    )
+    sim = _simulation(
+        time=np.arange(20, dtype=float) * 1e-16, monitors=(monitor,), sources=sources
+    )
+    initial = sim.initial_state()
+    initial = initial._replace(ez=np.ones_like(initial.ez))
+    reference_state = sim.initial_state()
+    reference_state = reference_state._replace(ez=np.ones_like(reference_state.ez))
+    monkeypatch.setattr(execute.SimulationState, "initial", lambda *a, **kw: initial)
+    # Expire after two chunks without sleeping or depending on machine speed.
+    clock = iter((0.0, 0.0, 601.0))
+    monkeypatch.setattr(execute, "perf_counter", lambda: next(clock))
+    result = sim.run(
+        termination=AutoTermination(
+            max_wall_time=600,
+            chunk_steps=2,
+            min_steps=20,
+        ),
+        performance=False,
+    )
+    assert result.termination.reason == "wall_time_limit"
+    assert not result.termination.converged
+    assert result.termination.steps == 4
+    np.testing.assert_array_equal(result.metadata.time, sim.time[:4])
+    np.testing.assert_allclose(result["output"].dft_weight_sum, [4.0])
+    assert np.linalg.norm(result["output"].get_dft_component("Ez")) > 0
+    reference = sim.advance(
+        state=reference_state, num_steps=4, performance=False
+    ).results
+    np.testing.assert_allclose(
+        result["output"].get_dft_component("Ez"),
+        reference["output"].get_dft_component("Ez"),
+    )
+    path = tmp_path / "partial.npz"
+    result.save(path)
+    loaded = SimulationResults.load(path)
+    assert loaded.termination == result.termination
+    np.testing.assert_array_equal(loaded.metadata.time, result.metadata.time)
+    np.testing.assert_array_equal(
+        loaded["output"].get_dft_component("Ez"),
+        result["output"].get_dft_component("Ez"),
+    )
 
 
 def test_run_monitor_stability_requires_a_previous_check():

@@ -99,7 +99,7 @@ class RunTermination:
 
     Attributes
     ----------
-    reason : {"converged", "time_limit", "nonfinite", "diverged"}
+    reason : {"converged", "time_limit", "wall_time_limit", "nonfinite", "diverged"}
         Terminal condition reached by the execution controller.
     steps : int
         Number of timesteps executed.
@@ -128,7 +128,13 @@ class RunTermination:
     consecutive_checks: int = 0
 
     def __post_init__(self) -> None:
-        reasons = {"converged", "time_limit", "nonfinite", "diverged"}
+        reasons = {
+            "converged",
+            "time_limit",
+            "wall_time_limit",
+            "nonfinite",
+            "diverged",
+        }
         reason = str(self.reason)
         if reason not in reasons:
             raise ValueError(f"RunTermination.reason must be one of {sorted(reasons)}.")

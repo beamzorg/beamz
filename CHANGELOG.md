@@ -10,6 +10,10 @@
   positions when copying centered simulations, including source attachment.
 - Updated the cosine-crossing example with 20-cell-per-wavelength automatic
   meshing and PML padding outside the physical region.
+- Added `AutoTermination(max_wall_time=...)` to stop at a chunk boundary while
+  retaining acquired measurements and reporting `wall_time_limit`. Updated the
+  microring add-drop notebook to 15 cells per wavelength with a 600-second budget
+  and convergence-based early stopping.
 
 ## v0.6.1 - 2026-11-03
 
