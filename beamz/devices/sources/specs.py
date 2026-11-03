@@ -179,8 +179,8 @@ class ModeSource:
     ) -> ModeData:
         """Preview solver fields, or prepared 3D launch fields with ``'launch'``.
 
-        Solver fields retain eigensolver normalization and sampling, before Yee
-        interpolation, launch refinement, and power scaling. This display choice
+        Solver fields retain eigensolver normalization on common transverse cell
+        centres, before launch Yee interpolation, refinement, and power scaling. This display choice
         does not change the fields used for injection.
         """
         from .solve import solve_mode_plane

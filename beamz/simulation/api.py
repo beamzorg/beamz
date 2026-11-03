@@ -242,6 +242,30 @@ def _resolve_design_time_and_grid(
     return resolution, grid, time, use_realized_grid
 
 
+def _shift_grid_spec_to_domain(grid_spec, offset):
+    """Translate public mesh constraints with their geometry and devices."""
+    return replace(
+        grid_spec,
+        overrides=tuple(
+            replace(
+                item,
+                center=tuple(
+                    value + delta
+                    for value, delta in zip(item.center, offset, strict=True)
+                ),
+            )
+            for item in grid_spec.overrides
+        ),
+        snapping_points=tuple(
+            tuple(
+                None if value is None else value + delta
+                for value, delta in zip(point, offset, strict=True)
+            )
+            for point in grid_spec.snapping_points
+        ),
+    )
+
+
 def _prepare_design(design, *, domain, size, background, grid_spec, resolution, time, run_time, require_uniform_grid, plane_2d):  # fmt: skip
     # 1. Resolve the optional domain/size alias. An already domain-based design can keep its coordinates and only needs grid/time normalization.
     sim_size = _normalize_domain(domain, size)
@@ -285,26 +309,7 @@ def _prepare_design(design, *, domain, size, background, grid_spec, resolution, 
         new_design += _structure_to_domain(structure, offset, sim_size)
     if grid_spec is not None:
         # Mesh requests use the same public coordinates as geometry and devices.
-        grid_spec = replace(
-            grid_spec,
-            overrides=tuple(
-                replace(
-                    item,
-                    center=tuple(
-                        value + delta
-                        for value, delta in zip(item.center, offset, strict=True)
-                    ),
-                )
-                for item in grid_spec.overrides
-            ),
-            snapping_points=tuple(
-                tuple(
-                    None if value is None else value + delta
-                    for value, delta in zip(point, offset, strict=True)
-                )
-                for point in grid_spec.snapping_points
-            ),
-        )
+        grid_spec = _shift_grid_spec_to_domain(grid_spec, offset)
     # 4. Resolve adaptive spacing from the rebuilt material set, derive the final time
     # grid, and return the offset needed to shift sources and monitors consistently.
     resolution, grid, time, use_realized_grid = _resolve_design_time_and_grid(
@@ -1066,7 +1071,26 @@ class Simulation:
             "run_time" in changes or self.run_time is not None
         ):
             values["time"] = None
+        public_grid_spec = values["grid_spec"]
+        if (
+            self.material_grid is None
+            and not material_source_changed
+            and public_grid_spec is not None
+            and offset != (0.0, 0.0, 0.0)
+        ):
+            # The retained design is already in domain coordinates, while mesh
+            # requests remain in public coordinates, just like replacement devices.
+            grid_offset = (
+                offset
+                if self.is_3d
+                else physical_vector_to_grid_2d(offset, self.plane_2d)
+            )
+            values["grid_spec"] = _shift_grid_spec_to_domain(
+                public_grid_spec, grid_offset
+            )
         result = type(self)(**values)
+        # Keep constraints public so subsequent copies translate them exactly once.
+        object.__setattr__(result, "grid_spec", public_grid_spec)
         if self.material_grid is None and not material_source_changed:
             preserved_offset = offset
             target_plane = str(values["plane_2d"])

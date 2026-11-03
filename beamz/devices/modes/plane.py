@@ -20,6 +20,7 @@ from beamz.lattice import (
     sample_voxel_grid_at_e_component_3d_centered,
 )
 
+from ._sampling import cell_material_samples, collocate_result
 from ._symmetry import project_mode_symmetry
 from .constitutive import crop_tensor_support, has_cross_terms, require_diagonal_support
 from .discrete import (
@@ -184,6 +185,18 @@ def solve_modes(
         solver_plane(eps if eps_zz is None else eps_zz),
     )
     permeability = tuple(solver_plane(v) for v in (mu_xx, mu_yy, mu_zz))
+    if is_plane:
+        solver_axes = tuple(a for a in "xyz" if a != axis)
+        epsilon = tuple(
+            cell_material_samples(value, "E" + a, solver_axes)
+            for a, value in zip("xyz", epsilon, strict=True)
+        )
+        permeability = tuple(
+            None
+            if value is None
+            else cell_material_samples(value, "H" + a, solver_axes)
+            for a, value in zip("xyz", permeability, strict=True)
+        )
     result = solve_grid(
         eps_xx=cast(np.ndarray, epsilon[order[0]]),
         eps_yy=epsilon[order[1]],
@@ -200,6 +213,12 @@ def solve_modes(
         pml=(int(npml), int(npml)),
         normal_axis=cast(Literal[0, 1, 2], axis_index),
     )
+    if is_plane:
+        result = collocate_result(
+            result,
+            tuple(a for a in "xyz" if a != axis),
+            tuple(np.asarray(e) for e in edges),
+        )
     fields = {
         name: _mode_planes(data, axis) for name, data in result.field_components.items()
     }
@@ -268,7 +287,9 @@ def solve_modes(
     if diagnostics is not None:
         diagnostics.update(symmetry_diagnostics)
         diagnostics["processing_stage"] = (
-            "solver_fields_before_yee_interpolation_and_refinement"
+            "solver_fields_colocated_before_launch_preparation"
+            if is_plane
+            else "solver_fields_before_yee_interpolation_and_refinement"
         )
     if axis_index == 1:
         magnetic = -magnetic

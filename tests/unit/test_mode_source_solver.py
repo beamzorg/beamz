@@ -1,11 +1,10 @@
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 import xarray as xr
 
 from beamz import LIGHT_SPEED
 from beamz.devices.modes.plane import solve_modes
+from beamz.devices.modes.result import Result
 
 
 def test_solve_modes_uses_one_native_solve_and_forwards_pml(monkeypatch):
@@ -13,13 +12,15 @@ def test_solve_modes_uses_one_native_solve_and_forwards_pml(monkeypatch):
     mode_count = 11
     dims = ("y", "z", "x", "f", "mode_index")
     values = np.ones((3, 4, 1, 1, mode_count), dtype=np.complex128)
-    result = SimpleNamespace(
+    result = Result(
         n_complex=xr.DataArray(
             np.linspace(3.0, 1.0, mode_count)[None, :],
             dims=("f", "mode_index"),
         ),
         field_components={
-            name: xr.DataArray(values, dims=dims)
+            name: xr.DataArray(
+                values, dims=dims, attrs={"grid_sampling": "cell_centres"}
+            )
             for name in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
         },
     )
@@ -52,13 +53,15 @@ def test_solve_modes_uses_one_signed_axis_for_normal_and_direction(monkeypatch):
     calls = []
     dims = ("x", "z", "y", "f", "mode_index")
     values = np.ones((4, 1, 1, 1, 7), dtype=np.complex128)
-    result = SimpleNamespace(
+    result = Result(
         n_complex=xr.DataArray(
             np.linspace(3.0, 1.0, 7)[None, :],
             dims=("f", "mode_index"),
         ),
         field_components={
-            name: xr.DataArray(values, dims=dims)
+            name: xr.DataArray(
+                values, dims=dims, attrs={"grid_sampling": "cell_centres"}
+            )
             for name in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
         },
     )
@@ -85,12 +88,13 @@ def test_solve_modes_projects_fields_to_symmetric_material_parity(monkeypatch):
     dims = ("y", "z", "x", "f", "mode_index")
     y, z = np.meshgrid(np.arange(5.0), np.arange(4.0), indexing="ij")
     skewed = (1.0 + y + 2.0 * z)[..., None, None, None].astype(np.complex128)
-    result = SimpleNamespace(
+    result = Result(
         n_complex=xr.DataArray([[2.0]], dims=("f", "mode_index")),
         field_components={
             name: xr.DataArray(
                 skewed * (index + 1),
                 dims=dims,
+                attrs={"grid_sampling": "cell_centres"},
                 coords={
                     "y": (np.arange(5) + 0.5) * 0.1,
                     "z": (np.arange(4) + 0.5) * 0.1,
@@ -126,7 +130,7 @@ def test_solve_modes_leaves_2d_launch_line_profiles_unprojected(
 ):
     dims = ("y", "z", "x", "f", "mode_index")
     profile = (1.0 + np.arange(5.0))[:, None, None, None, None]
-    result = SimpleNamespace(
+    result = Result(
         n_complex=xr.DataArray([[2.0]], dims=("f", "mode_index")),
         field_components={
             name: xr.DataArray(profile * (index + 1), dims=dims)

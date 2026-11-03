@@ -131,7 +131,9 @@ class ModeData:
     h_fields : array-like
         Complex magnetic modal fields matching ``e_fields``.
     eps_profiles : array-like
-        Relative-permittivity cross sections used by the eigensolver.
+        Scalar cell-centred relative-permittivity cross sections. Three-dimensional
+        solves derive component-specific native Yee material samples from the
+        simulation material supports.
     resolution : float
         Cross-section cell size in metres.
     solver_direction : str, optional

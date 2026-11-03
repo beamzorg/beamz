@@ -1,0 +1,585 @@
+{
+  "beamz_version": "0.6.1",
+  "source_sha256": {
+    "scripts/validate_mode_sampling.py": "36729501a433a1c2c6cdbf2a8a11101fbc8f8e4e782a358b463c17f4fc30cde9",
+    "beamz/devices/modes/_sampling.py": "462d83cb83e69a3e984f235c30292c04657f7d070143fd7e2bcb7b873dc32912",
+    "beamz/devices/modes/discrete.py": "0dbb50fe98c78972b766dd1fcb5e840ce99c98aee57653d2df1d7c176c3e04c1",
+    "beamz/devices/modes/solver.py": "946502003d9c2693c42093b35f4fcd5fd03b1a64377284139d362b0895ce5789",
+    "beamz/simulation/api.py": "2bac09fe16031e8e169aea08b8ae0db2c95ce3350f4e44ca2305a3e79f798753"
+  },
+  "python_version": "3.11.15",
+  "numpy_version": "2.4.6",
+  "accuracy_notes": "Mirror symmetry does not establish continuum accuracy. Resolution and finite-aperture errors are assessed separately. Aperture changes at fixed nominal PPW also slightly change fitted cladding cell widths.",
+  "records": [
+    {
+      "ppw": 10,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        29,
+        38,
+        4
+      ],
+      "neff": 2.3004050223998807,
+      "mirror_error_z_y": [
+        5.020913338155793e-16,
+        6.411735622707405e-16
+      ],
+      "edge_intensity_fraction": 5.747392066271541e-05
+    },
+    {
+      "ppw": 15,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        42,
+        55,
+        4
+      ],
+      "neff": 2.312573219065984,
+      "mirror_error_z_y": [
+        1.9640464726828626e-15,
+        1.840777852896265e-15
+      ],
+      "edge_intensity_fraction": 3.056821911668516e-05
+    },
+    {
+      "ppw": 20,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        56,
+        74,
+        4
+      ],
+      "neff": 2.3093042539507866,
+      "mirror_error_z_y": [
+        1.6999451673624499e-15,
+        1.6250907058650043e-15
+      ],
+      "edge_intensity_fraction": 2.2682768939143025e-05
+    },
+    {
+      "ppw": 30,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        83,
+        109,
+        4
+      ],
+      "neff": 2.3104005821372597,
+      "mirror_error_z_y": [
+        1.7335592648703616e-15,
+        3.581662793978257e-15
+      ],
+      "edge_intensity_fraction": 1.4754998514154208e-05
+    },
+    {
+      "ppw": 40,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        110,
+        145,
+        4
+      ],
+      "neff": 2.3110466735257496,
+      "mirror_error_z_y": [
+        5.181315535573129e-15,
+        1.757576133755404e-14
+      ],
+      "edge_intensity_fraction": 1.0779449235007217e-05
+    },
+    {
+      "ppw": 60,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        164,
+        216,
+        4
+      ],
+      "neff": 2.3113187813828127,
+      "mirror_error_z_y": [
+        1.545537695071103e-14,
+        4.574842520771729e-15
+      ],
+      "edge_intensity_fraction": 7.129060178756094e-06
+    },
+    {
+      "ppw": 96,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        260,
+        347,
+        4
+      ],
+      "neff": 2.31146416828444,
+      "mirror_error_z_y": [
+        3.3388516485271975e-14,
+        2.610472172848819e-14
+      ],
+      "edge_intensity_fraction": 4.402829349702681e-06
+    },
+    {
+      "ppw": 20,
+      "aperture_um": [
+        0.8,
+        0.6
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        28,
+        38,
+        4
+      ],
+      "neff": 2.2708820615356182,
+      "mirror_error_z_y": [
+        1.472302573350156e-15,
+        4.528708046259589e-15
+      ],
+      "edge_intensity_fraction": 0.009159966225467511
+    },
+    {
+      "ppw": 20,
+      "aperture_um": [
+        1.2,
+        1.0
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        46,
+        56,
+        4
+      ],
+      "neff": 2.3086202581379394,
+      "mirror_error_z_y": [
+        1.7388684339990237e-15,
+        3.697105316993846e-15
+      ],
+      "edge_intensity_fraction": 0.0004164994901122929
+    },
+    {
+      "ppw": 20,
+      "aperture_um": [
+        2.4,
+        1.8
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        82,
+        110,
+        4
+      ],
+      "neff": 2.3109328597224557,
+      "mirror_error_z_y": [
+        1.2714442906595583e-15,
+        2.1347154248770077e-15
+      ],
+      "edge_intensity_fraction": 7.69980968696242e-08
+    },
+    {
+      "ppw": 20,
+      "aperture_um": [
+        3.2,
+        2.4
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        108,
+        146,
+        4
+      ],
+      "neff": 2.311525888838226,
+      "mirror_error_z_y": [
+        1.0827280814982168e-15,
+        2.7527149549426313e-15
+      ],
+      "edge_intensity_fraction": 3.9618548741042344e-10
+    },
+    {
+      "ppw": 20,
+      "aperture_um": [
+        4.8,
+        3.6
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        162,
+        218,
+        4
+      ],
+      "neff": 2.31159767403909,
+      "mirror_error_z_y": [
+        1.5474407908711502e-15,
+        2.150407726078455e-15
+      ],
+      "edge_intensity_fraction": 2.886625990480382e-14
+    },
+    {
+      "ppw": 15,
+      "aperture_um": [
+        3.2,
+        2.4
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        82,
+        109,
+        4
+      ],
+      "neff": 2.314147860935432,
+      "mirror_error_z_y": [
+        8.811815016314247e-16,
+        1.68108612491965e-15
+      ],
+      "edge_intensity_fraction": 6.070366450070131e-10
+    },
+    {
+      "ppw": 30,
+      "aperture_um": [
+        3.2,
+        2.4
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        163,
+        217,
+        4
+      ],
+      "neff": 2.3114070191339815,
+      "mirror_error_z_y": [
+        1.4608169518599606e-15,
+        2.5362178765292278e-15
+      ],
+      "edge_intensity_fraction": 2.2330388844746326e-10
+    },
+    {
+      "ppw": 60,
+      "aperture_um": [
+        3.2,
+        2.4
+      ],
+      "polarization": "te",
+      "shape_zyx": [
+        324,
+        432,
+        4
+      ],
+      "neff": 2.31185162428042,
+      "mirror_error_z_y": [
+        6.5787050834802485e-15,
+        1.145843444378432e-14
+      ],
+      "edge_intensity_fraction": 9.756914122702041e-11
+    },
+    {
+      "ppw": 10,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        29,
+        38,
+        4
+      ],
+      "neff": 1.7460842741354143,
+      "mirror_error_z_y": [
+        2.943565043699339e-14,
+        2.0193753980364352e-14
+      ],
+      "edge_intensity_fraction": 0.009075948441819581
+    },
+    {
+      "ppw": 15,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        42,
+        55,
+        4
+      ],
+      "neff": 1.7404553002366145,
+      "mirror_error_z_y": [
+        4.369601624263018e-15,
+        2.8346626692986184e-15
+      ],
+      "edge_intensity_fraction": 0.006282354348473901
+    },
+    {
+      "ppw": 20,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        56,
+        74,
+        4
+      ],
+      "neff": 1.7320483170201901,
+      "mirror_error_z_y": [
+        1.3154133807764592e-14,
+        3.75692144796828e-15
+      ],
+      "edge_intensity_fraction": 0.004938505302338336
+    },
+    {
+      "ppw": 30,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        83,
+        109,
+        4
+      ],
+      "neff": 1.7290782779323295,
+      "mirror_error_z_y": [
+        3.89861059382367e-15,
+        1.0275308586879962e-14
+      ],
+      "edge_intensity_fraction": 0.003384612444073214
+    },
+    {
+      "ppw": 40,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        110,
+        145,
+        4
+      ],
+      "neff": 1.7280862822102072,
+      "mirror_error_z_y": [
+        9.206107227049203e-14,
+        3.72801048301705e-14
+      ],
+      "edge_intensity_fraction": 0.0025561402205118806
+    },
+    {
+      "ppw": 60,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        164,
+        216,
+        4
+      ],
+      "neff": 1.7272618767880077,
+      "mirror_error_z_y": [
+        2.5304220784753995e-14,
+        2.3867679051521545e-14
+      ],
+      "edge_intensity_fraction": 0.0017204921502740344
+    },
+    {
+      "ppw": 96,
+      "aperture_um": [
+        1.6,
+        1.2
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        260,
+        347,
+        4
+      ],
+      "neff": 1.7268649622145742,
+      "mirror_error_z_y": [
+        1.144001785034628e-13,
+        6.018716682486709e-14
+      ],
+      "edge_intensity_fraction": 0.0010870257958237423
+    },
+    {
+      "ppw": 20,
+      "aperture_um": [
+        0.8,
+        0.6
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        28,
+        38,
+        4
+      ],
+      "neff": 1.7573979461397748,
+      "mirror_error_z_y": [
+        1.2762628839070435e-14,
+        9.65335649310062e-16
+      ],
+      "edge_intensity_fraction": 0.05272297921138056
+    },
+    {
+      "ppw": 20,
+      "aperture_um": [
+        1.2,
+        1.0
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        46,
+        56,
+        4
+      ],
+      "neff": 1.7333892728275495,
+      "mirror_error_z_y": [
+        6.862873532050148e-15,
+        3.561702412402124e-15
+      ],
+      "edge_intensity_fraction": 0.010384656113592263
+    },
+    {
+      "ppw": 20,
+      "aperture_um": [
+        2.4,
+        1.8
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        82,
+        110,
+        4
+      ],
+      "neff": 1.7271642072788678,
+      "mirror_error_z_y": [
+        1.34750525986927e-14,
+        5.423436145187521e-15
+      ],
+      "edge_intensity_fraction": 0.00047266671037078114
+    },
+    {
+      "ppw": 20,
+      "aperture_um": [
+        3.2,
+        2.4
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        108,
+        146,
+        4
+      ],
+      "neff": 1.727192966628097,
+      "mirror_error_z_y": [
+        4.553252371774099e-15,
+        4.318872405560106e-15
+      ],
+      "edge_intensity_fraction": 4.247680521032076e-05
+    },
+    {
+      "ppw": 20,
+      "aperture_um": [
+        4.8,
+        3.6
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        162,
+        218,
+        4
+      ],
+      "neff": 1.7271337442666723,
+      "mirror_error_z_y": [
+        9.587718980384251e-15,
+        4.433513429044284e-15
+      ],
+      "edge_intensity_fraction": 3.5070438629183674e-07
+    },
+    {
+      "ppw": 15,
+      "aperture_um": [
+        3.2,
+        2.4
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        82,
+        109,
+        4
+      ],
+      "neff": 1.7351913256969453,
+      "mirror_error_z_y": [
+        1.0802199252895208e-14,
+        1.6324940888430304e-15
+      ],
+      "edge_intensity_fraction": 4.9386016531781265e-05
+    },
+    {
+      "ppw": 30,
+      "aperture_um": [
+        3.2,
+        2.4
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        163,
+        217,
+        4
+      ],
+      "neff": 1.7226433424690164,
+      "mirror_error_z_y": [
+        1.517061690273707e-14,
+        3.0601982667023518e-15
+      ],
+      "edge_intensity_fraction": 3.0353434971427413e-05
+    },
+    {
+      "ppw": 60,
+      "aperture_um": [
+        3.2,
+        2.4
+      ],
+      "polarization": "tm",
+      "shape_zyx": [
+        324,
+        432,
+        4
+      ],
+      "neff": 1.7202530269333507,
+      "mirror_error_z_y": [
+        3.257271276576895e-14,
+        1.5369195712532805e-14
+      ],
+      "edge_intensity_fraction": 1.5742110309309057e-05
+    }
+  ]
+}

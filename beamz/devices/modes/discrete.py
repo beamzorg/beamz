@@ -21,6 +21,7 @@ from beamz.design.grid import RectilinearGrid
 from beamz.devices._immutable import immutable_snapshot, readonly_array
 
 from ._cache import _SolveCache
+from ._sampling import collocate_result, launch_samples, plane_material_samples
 from ._symmetry import material_symmetric, mirror_closed, project_mode_symmetry
 from ._yee import (
     refine_x_mode_at_fixed_beta,
@@ -344,7 +345,7 @@ def solve_solver_mode(spec: ModePlaneSpec, *, basis_cache=None) -> _SolverMode:
             **diagnostics,
             "contract": "solver_preview",
             "field_representation": "solver",
-            "processing_stage": "solver_fields_before_yee_interpolation_and_refinement",
+            "processing_stage": "solver_fields_colocated_before_launch_preparation",
             "full_tensor_operator": bool(spec.offdiagonal_permittivity),
             "mode_index": spec.mode_index,
             "candidate_count": basis.candidate_count,
@@ -528,6 +529,32 @@ def _resolve_mode_basis(
         normal_axis=_AXIS_INDEX[spec.axis],
     )
 
+    if not spec.offdiagonal_permittivity:
+        for local, axis in zip("xyz", (u, v, n), strict=True):
+            for prefix, components, diagonal, fallback in (
+                (
+                    "eps",
+                    spec.component_permittivity,
+                    spec.diagonal_permittivity,
+                    spec.scalar_permittivity,
+                ),
+                (
+                    "mu",
+                    spec.component_permeability,
+                    spec.diagonal_permeability,
+                    np.ones_like(spec.scalar_permittivity),
+                ),
+            ):
+                plane = plane_material_samples(
+                    spec,
+                    ("E" if prefix == "eps" else "H") + axis,
+                    components,
+                    diagonal.get(axis * 2, fallback),
+                )
+                candidate_kwargs[prefix + "_" + local * 2] = _transpose_between_axes(
+                    plane, spec.transverse_axes, solver_axes
+                )
+
     def solve_candidates(count):
         return _solve_candidate_pool(
             candidate_cache, **{**candidate_kwargs, "num_modes": count}
@@ -566,7 +593,7 @@ def _resolve_mode_basis(
 
 def _prepare_solver_fields(spec: ModePlaneSpec, basis: _ResolvedModeBasis):
     """Select, phase-align and validate symmetry without launch processing."""
-    result, candidates = basis.result, basis.candidates
+    candidates = basis.candidates
     if basis.qualifying_count is not None and spec.mode_index >= basis.qualifying_count:
         raise ValueError(
             "No requested mode meets min_aperture_fraction in the candidate pool; enlarge the aperture, adjust target_neff or num_modes, or explicitly disable aperture preference with min_aperture_fraction=None"
@@ -587,9 +614,8 @@ def _prepare_solver_fields(spec: ModePlaneSpec, basis: _ResolvedModeBasis):
 
     symmetry_edges = tuple(_axis_edges(spec, a) for a in spec.transverse_axes)
     symmetry_supports = {
-        name: tuple(np.asarray(data.coords[a]) * 1e-6 for a in spec.transverse_axes)
-        for name, data in getattr(result, "field_components", {}).items()
-        if all(a in data.coords for a in spec.transverse_axes)
+        name: tuple(0.5 * (edge[:-1] + edge[1:]) for edge in symmetry_edges)
+        for name in aligned
     }
     rejected_axes = []
     if spec.force_symmetry:
@@ -1004,7 +1030,7 @@ def _solve_mode_in_x_frame(
 
 
 def _mode_edge_fraction(fields) -> float:
-    """Discrete electric intensity at the four solve edges, as in Tidy3D.
+    """Discrete electric intensity at the four solve edges.
 
     This is a sampling diagnostic, not a modal power or confinement fraction.
     Corners belong to both adjacent edges. Inspect untapered solver fields.
@@ -1033,6 +1059,11 @@ def _boundary_refractive_index(permittivity: np.ndarray) -> float:
 
 
 def _candidate_modes(result, spec: ModePlaneSpec) -> list[_ModeCandidate]:
+    result = collocate_result(
+        result,
+        spec.transverse_axes,
+        tuple(_axis_edges(spec, axis) / 1e-6 for axis in spec.transverse_axes),
+    )
     candidates = []
     count = int(result.n_complex.shape[1])
     for mode_index in range(count):
@@ -1169,12 +1200,9 @@ def _build_x_profiles(
     fields: dict[str, np.ndarray],
     spec: ModePlaneSpec,
 ) -> tuple[dict[str, np.ndarray], dict[str, ComponentIndex], dict[str, float]]:
-    ex_s = fields["Ex"]
-    ey_s = _stagger_half(fields["Ey"], axis=1, coordinates=_axis_sampling(spec, "y"))
-    ez_s = _stagger_half(fields["Ez"], axis=0, coordinates=_axis_sampling(spec, "z"))
-    hx_s = _stagger_both(fields["Hx"], spec=spec)
-    hy_s = _stagger_half(fields["Hy"], axis=0, coordinates=_axis_sampling(spec, "z"))
-    hz_s = _stagger_half(fields["Hz"], axis=1, coordinates=_axis_sampling(spec, "y"))
+    ex_s, ey_s, ez_s, hx_s, hy_s, hz_s = (
+        launch_samples(fields[name], name, spec) for name in _COMPONENTS
+    )
     nz, ny, _nx = spec.grid_shape
     y_start, y_end = _padded_bounds(
         spec.center[1],
@@ -1235,12 +1263,9 @@ def _build_y_profiles(
     fields: dict[str, np.ndarray],
     spec: ModePlaneSpec,
 ) -> tuple[dict[str, np.ndarray], dict[str, ComponentIndex], dict[str, float]]:
-    ex_s = _stagger_half(fields["Ex"], axis=1, coordinates=_axis_sampling(spec, "x"))
-    ey_s = fields["Ey"]
-    ez_s = _stagger_half(fields["Ez"], axis=0, coordinates=_axis_sampling(spec, "z"))
-    hx_s = _stagger_half(fields["Hx"], axis=0, coordinates=_axis_sampling(spec, "z"))
-    hy_s = _stagger_both(fields["Hy"], spec=spec)
-    hz_s = _stagger_half(fields["Hz"], axis=1, coordinates=_axis_sampling(spec, "x"))
+    ex_s, ey_s, ez_s, hx_s, hy_s, hz_s = (
+        launch_samples(fields[name], name, spec) for name in _COMPONENTS
+    )
     nz, _ny, nx = spec.grid_shape
     x_start, x_end = _padded_bounds(
         spec.center[0],
@@ -1305,12 +1330,9 @@ def _build_z_profiles(
     fields: dict[str, np.ndarray],
     spec: ModePlaneSpec,
 ) -> tuple[dict[str, np.ndarray], dict[str, ComponentIndex], dict[str, float]]:
-    ex_s = _stagger_half(fields["Ex"], axis=1, coordinates=_axis_sampling(spec, "x"))
-    ey_s = _stagger_half(fields["Ey"], axis=0, coordinates=_axis_sampling(spec, "y"))
-    ez_s = fields["Ez"]
-    hx_s = _stagger_half(fields["Hx"], axis=0, coordinates=_axis_sampling(spec, "y"))
-    hy_s = _stagger_half(fields["Hy"], axis=1, coordinates=_axis_sampling(spec, "x"))
-    hz_s = _stagger_both(fields["Hz"], spec=spec)
+    ex_s, ey_s, ez_s, hx_s, hy_s, hz_s = (
+        launch_samples(fields[name], name, spec) for name in _COMPONENTS
+    )
     nz, ny, nx = spec.grid_shape
     x_start, x_end = _padded_bounds(
         spec.center[0],
@@ -1394,50 +1416,6 @@ def _axis_edges(spec: ModePlaneSpec, axis: AxisName) -> np.ndarray:
     if spec.grid is None:
         return np.arange(count + 1, dtype=float) * float(spec.resolution)
     return np.asarray(spec.grid.axis_edges(axis), dtype=float)
-
-
-def _axis_sampling(
-    spec: ModePlaneSpec, axis: AxisName
-) -> tuple[np.ndarray, np.ndarray]:
-    edges = _axis_edges(spec, axis)
-    return 0.5 * (edges[:-1] + edges[1:]), edges[1:-1]
-
-
-def _stagger_half(
-    field: np.ndarray,
-    axis: int,
-    coordinates: tuple[np.ndarray, np.ndarray] | None = None,
-) -> np.ndarray:
-    if field.shape[axis] <= 1:
-        return field
-    low = np.take(field, np.arange(field.shape[axis] - 1), axis=axis)
-    high = np.take(field, np.arange(1, field.shape[axis]), axis=axis)
-    if coordinates is None:
-        alpha = np.full(field.shape[axis] - 1, 0.5, dtype=float)
-    else:
-        source, target = coordinates
-        source = np.asarray(source, dtype=float)[: field.shape[axis]]
-        target = np.asarray(target, dtype=float)[: field.shape[axis] - 1]
-        alpha = (target - source[:-1]) / np.maximum(
-            source[1:] - source[:-1], np.finfo(float).tiny
-        )
-    shape = [1] * field.ndim
-    shape[axis] = alpha.size
-    weights = alpha.reshape(shape)
-    return (1.0 - weights) * low + weights * high
-
-
-def _stagger_both(
-    field: np.ndarray, *, spec: ModePlaneSpec | None = None
-) -> np.ndarray:
-    out = field
-    sampling1 = None if spec is None else _axis_sampling(spec, spec.transverse_axes[1])
-    sampling0 = None if spec is None else _axis_sampling(spec, spec.transverse_axes[0])
-    if out.shape[1] > 1:
-        out = _stagger_half(out, 1, sampling1)
-    if out.shape[0] > 1:
-        out = _stagger_half(out, 0, sampling0)
-    return out
 
 
 def _padded_bounds(

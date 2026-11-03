@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Corrected native Yee material and field sampling for 3D mode ports. Solver
+  results now carry component-specific coordinates; previews colocate fields
+  before launch preparation. Symmetric dielectric ports no longer require forced
+  mirror projection to remove sampling-induced mode asymmetry.
+- Kept automatic-grid snapping points and mesh overrides in the same physical
+  positions when copying centered simulations, including source attachment.
+- Updated the cosine-crossing example with 20-cell-per-wavelength automatic
+  meshing and PML padding outside the physical region.
+
 ## v0.6.1 - 2026-11-03
 
 - 2D mode preview, launch and measurement now share aperture bounds, explicit
