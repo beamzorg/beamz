@@ -173,19 +173,21 @@ def test_preview_index_is_invariant_under_rotating_anisotropic_guide(
     eps, x_edges, y_edges = _strip()
     epsilon = (eps, 1.2 * eps, 1.5 * eps)
     mu = tuple(np.full_like(eps, v) if magnetic else None for v in (1.1, 1.3, 1.6))
-    expected = solve_grid(
-        eps_xx=epsilon[0],
-        eps_yy=epsilon[1],
-        eps_zz=epsilon[2],
-        mu_xx=mu[0],
-        mu_yy=mu[1],
-        mu_zz=mu[2],
-        x_edges=x_edges,
-        y_edges=y_edges,
-        freqs=[C_0 / 1.55],
-        num_modes=7,
-        direction=sign,
-    ).n_complex.values[0, 0]
+    # Reference is the same cell-centred guide propagated along local +z.
+    # solve_grid takes native Yee samples, whereas solve_modes takes cell profiles.
+    reference, _ = solve_modes(
+        epsilon[0].T,
+        omega=2 * np.pi * C_0 / 1.55,
+        dL=0.1e-6,
+        direction=sign + "z",
+        eps_yy=epsilon[1].T,
+        eps_zz=epsilon[2].T,
+        mu_xx=None if mu[0] is None else mu[0].T,
+        mu_yy=None if mu[1] is None else mu[1].T,
+        mu_zz=None if mu[2] is None else mu[2].T,
+        grid_edges=(np.asarray(y_edges) * 1e-6, np.asarray(x_edges) * 1e-6),
+    )
+    expected = reference[0]
     global_eps = [epsilon[i].T for i in order]
     global_mu = [None if mu[i] is None else mu[i].T for i in order]
     neff, _ = solve_modes(

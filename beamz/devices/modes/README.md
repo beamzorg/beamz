@@ -86,7 +86,8 @@ ports use the separate coupled path described below and reject forced symmetry.
 
 `ModeSource.solve_modes()` defaults to solver fields, including optional
 validated symmetry, before Yee interpolation, Maxwell refinement, and launch
-power normalization. It retains the eigensolver's sampling and normalization.
+power normalization. Native Yee components are first interpolated to common transverse cell centres;
+the eigensolver's normalization is retained.
 For a colocated view of the prepared 3D fields used for injection, request
 `source.solve_modes(simulation, field_representation="launch")`. This choice
 affects the returned preview only; injection always uses prepared launch fields.
@@ -110,6 +111,20 @@ shared with propagation. Set `ModeSpec(polarization=None, force_symmetry=False)`
 Uniform and rectilinear grids are supported; normal spacing must be locally
 uniform and the material longitudinally invariant. Unsupported combinations fail
 explicitly. Source launch and monitor projection retain dielectric cross terms.
+
+## Native solver sampling
+
+`solve_grid()` takes diagonal materials sampled at their native electric and
+magnetic Yee sites and returns each field component with its own physical
+coordinates. Node-aligned solver axes omit the final high-boundary node.
+Three-dimensional ports use the same component material supports as propagation,
+rather than passing one cell-centred scalar profile to every component.
+
+Port previews and mode selection interpolate these native fields onto common
+cell centres. Launch preparation then samples the actual compact component
+supports; source launch and monitor projection share that preparation. This
+colocation is interpolation, not forced mirror projection or Maxwell refinement.
+An asymmetric surrounding mesh can still produce an asymmetric mode.
 
 ## 3D mode selection
 

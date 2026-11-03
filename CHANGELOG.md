@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Corrected native Yee material and field sampling for 3D mode ports. Solver
+  results now carry component-specific coordinates; previews colocate fields
+  before launch preparation. Symmetric dielectric ports no longer require forced
+  mirror projection to remove sampling-induced mode asymmetry.
+- Kept automatic-grid snapping points and mesh overrides in the same physical
+  positions when copying centered simulations, including source attachment.
+- Updated the cosine-crossing example with 20-cell-per-wavelength automatic
+  meshing and PML padding outside the physical region.
+- Corrected the 1×4 MMI example to excite the fundamental TM-like slot mode,
+  with mode-identity checks and separate Ex, Ey, and Ez previews of mode 0.
+  The notebook now uses automatic rectilinear meshing at 16 points per wavelength,
+  five source frequency profiles, and 401 monitor wavelengths. Added convergence
+  checks with a 20-minute execution budget and explicit provisional-spectrum labels.
+- Refreshed executed modal-source, microring, and MMI notebook results.
 - Added `AutoTermination(max_wall_time=...)` to stop at a chunk boundary while
   retaining acquired measurements and reporting `wall_time_limit`. Updated the
   microring add-drop notebook to 15 cells per wavelength with a 600-second budget

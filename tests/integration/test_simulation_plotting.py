@@ -353,6 +353,117 @@ def test_3d_layout_plot_only_draws_pml_faces_visible_in_each_section():
         plt.close(fig)
 
 
+def _assert_cell_count_pml_patches(ax, simulation, axes, selected):
+    offset = simulation.coordinate_offset
+    if not simulation.is_3d:
+        from beamz.lattice import physical_vector_to_grid_2d
+
+        offset = physical_vector_to_grid_2d(offset, simulation.plane_2d)
+    inner = []
+    outer = []
+    for axis in axes:
+        edges = simulation.grid.axis_edges(axis)
+        origin = offset["xyz".index(axis)]
+        outer.append((edges[[0, -1]] - origin) / bz.um)
+        inner.append((edges[[12, -13]] - origin) / bz.um)
+    (x0, x1), (y0, y1) = outer
+    (xl, xr), (yb, yt) = inner
+    if "bottom" not in selected:
+        yb = y0
+    if "top" not in selected:
+        yt = y1
+    expected = {
+        "left": (x0, yb, xl - x0, yt - yb),
+        "right": (xr, yb, x1 - xr, yt - yb),
+        "bottom": (x0, y0, x1 - x0, yb - y0),
+        "top": (x0, yt, x1 - x0, y1 - yt),
+    }
+    patches = [p for p in ax.patches if p.get_hatch() == "///"]
+    assert len(patches) == len(selected)
+    for patch, edge in zip(patches, selected, strict=True):
+        np.testing.assert_allclose(
+            [patch.get_x(), patch.get_y(), patch.get_width(), patch.get_height()],
+            expected[edge],
+            atol=1e-12,
+        )
+
+
+@pytest.mark.parametrize("faces", ["all", "left-front", "split-left-front"])
+def test_default_cpml_layout_matches_twelve_asymmetric_grid_cells(monkeypatch, faces):
+    boundaries = {
+        "all": [bz.PML(formulation="cpml")],
+        "left-front": [bz.PML(edges=("left", "front"), formulation="cpml")],
+        "split-left-front": [
+            bz.PML(edges="left", formulation="cpml"),
+            bz.PML(edges="front", formulation="cpml"),
+        ],
+    }[faces]
+    sim = bz.Simulation(
+        domain=(6 * bz.um, 5 * bz.um, 4 * bz.um),
+        design=bz.Design(background=bz.Material(1)),
+        grid_spec=bz.GridSpec.auto(
+            wavelength=1.5 * bz.um,
+            min_steps_per_wvl=20,
+            overrides=(
+                bz.MeshOverride(
+                    center=(2 * bz.um, 0, 0),
+                    size=(2 * bz.um, bz.inf, bz.inf),
+                    dl=(0.03 * bz.um, None, None),
+                ),
+                bz.MeshOverride(
+                    center=(0, 1.5 * bz.um, 0),
+                    size=(bz.inf, 2 * bz.um, bz.inf),
+                    dl=(None, 0.04 * bz.um, None),
+                ),
+                bz.MeshOverride(
+                    center=(0, 0, 1.5 * bz.um),
+                    size=(bz.inf, bz.inf, bz.um),
+                    dl=(None, None, 0.02 * bz.um),
+                ),
+            ),
+        ),
+        boundaries=boundaries,
+        time=np.array([0.0, 1e-16]),
+    )
+
+    def fail(*args, **kwargs):
+        raise AssertionError("Layout previews must not compile the FDTD grid")
+
+    monkeypatch.setattr(bz.Simulation, "compile", fail)
+    fig, axes = sim.plot(z=0.0, y=0.0, show=False)
+    try:
+        for ax, plane in zip(axes, ("xy", "xz"), strict=True):
+            selected = (
+                ("left", "right", "bottom", "top")
+                if faces == "all"
+                else (("left",) if plane == "xy" else ("left", "bottom"))
+            )
+            _assert_cell_count_pml_patches(ax, sim, plane, selected)
+        dx = np.diff(sim.grid.x_edges)
+        assert not np.isclose(dx[:12].sum(), dx[-12:].sum(), atol=1e-15)
+    finally:
+        plt.close(fig)
+
+
+@pytest.mark.parametrize("plane", ["xy", "xz", "yz"])
+def test_default_cpml_2d_layout_uses_stored_plane_grid_cells(plane):
+    sim = bz.Simulation(
+        domain=(6 * bz.um, 5 * bz.um),
+        design=bz.Design(background=bz.Material(1)),
+        grid_spec=bz.GridSpec.auto(wavelength=1.5 * bz.um, min_steps_per_wvl=20),
+        plane_2d=plane,
+        boundaries=[bz.PML(formulation="cpml")],
+        time=np.array([0.0, 1e-16]),
+    )
+    fig, ax = sim.plot(show=False)
+    try:
+        _assert_cell_count_pml_patches(
+            ax, sim, "xy", ("left", "right", "bottom", "top")
+        )
+    finally:
+        plt.close(fig)
+
+
 def test_3d_plot_keeps_square_limits_for_source_added_by_copy_update():
     sim0 = bz.Simulation(
         domain=(4.0 * bz.um, 4.0 * bz.um, 2.0 * bz.um),

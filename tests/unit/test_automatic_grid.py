@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -223,6 +225,52 @@ def test_centered_design_geometry_overrides_and_snapping_are_translated():
     assert np.any(np.isclose(grid.x_edges, 0.4 * bz.um, rtol=1e-12, atol=0.0))
     assert np.any(np.isclose(grid.x_edges, 0.6 * bz.um, rtol=1e-12, atol=0.0))
     assert np.any(np.isclose(grid.x_edges, 3.5 * bz.um, rtol=1e-12, atol=0.0))
+
+
+@pytest.mark.parametrize(
+    "plane,dimensions", [("xy", 2), ("xz", 2), ("yz", 2), ("xy", 3)]
+)
+@pytest.mark.parametrize("replace_spec", [False, True])
+def test_updated_copy_preserves_centered_mesh_constraints(
+    plane, dimensions, replace_spec
+):
+    spec = bz.GridSpec.auto(
+        wavelength=1.55 * bz.um,
+        min_steps_per_wvl=6,
+        overrides=(
+            bz.MeshOverride(
+                center=(-0.6 * bz.um, 0.2 * bz.um, 0.0),
+                size=(0.4 * bz.um, 0.5 * bz.um, 0.6 * bz.um),
+                dl=(0.04 * bz.um, 0.06 * bz.um, None),
+            ),
+        ),
+        snapping_points=((0.37 * bz.um, -0.41 * bz.um, 0.23 * bz.um),),
+    )
+    domain = (4 * bz.um, 3 * bz.um, 2 * bz.um)[:dimensions]
+    original = bz.Simulation(
+        domain=domain, grid_spec=spec, plane_2d=plane, run_time=1e-15
+    )
+    replacement = replace(
+        spec, snapping_points=((-0.28 * bz.um, 0.31 * bz.um, -0.13 * bz.um),)
+    )
+    expected = (
+        bz.Simulation(
+            domain=domain, grid_spec=replacement, plane_2d=plane, run_time=1e-15
+        )
+        if replace_spec
+        else original
+    )
+    updated = original
+    for _ in range(3):
+        changes = {"grid_spec": replacement} if replace_spec else {}
+        updated = updated.updated_copy(normalize_source=None, **changes)
+        assert updated.grid_spec == expected.grid_spec
+        assert updated.coordinate_offset == original.coordinate_offset
+        np.testing.assert_array_equal(updated.time, expected.time)
+        for actual, expected_edge in zip(
+            updated.grid.edges, expected.grid.edges, strict=True
+        ):
+            np.testing.assert_array_equal(actual, expected_edge)
 
 
 @pytest.mark.parametrize(

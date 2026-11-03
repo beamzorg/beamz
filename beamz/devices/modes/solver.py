@@ -9,6 +9,7 @@ import numpy as np
 import xarray as xr
 
 from ._bend import bend_materials
+from ._sampling import native_coordinates
 from ._scipy import solve_diagonal_scipy_reference, solve_tensorial_scipy_reference
 from .constants import C_0
 from .models import BoundaryCondition, BoundarySpec, Materials, PmlSpec
@@ -65,7 +66,10 @@ def solve_grid(
     Positive radius places the curvature center at coordinate -R; negative
     radius reverses the bend. The entire grid must satisfy 1 + coordinate/R > 0.
     Material tensors are expressed in the local frame and must follow the bend.
-    Returned fields are physical components at the reference cross-section.
+    Diagonal material components are sampled at their native Yee field sites;
+    transverse node-aligned components omit the final high-boundary node.
+    Returned fields carry component-specific native Yee coordinates at the
+    reference cross-section.
     """
     material_grid = Materials.from_components(
         eps_xx=eps_xx,
@@ -591,12 +595,23 @@ def _field_data_arrays(
         # every component has x/y/z/f/mode_index dimensions.
         values = np.stack(rows, axis=2)[:, :, None, :, :]
         component_coords = dict(coords)
+        for axis, samples in zip(
+            tangential,
+            native_coordinates(
+                component, tuple(axis_names[a] for a in tangential), (x_edges, y_edges)
+            ),
+            strict=True,
+        ):
+            component_coords[axis_names[axis]] = samples
         component_coords["mode_index"] = np.arange(values.shape[-1])
         out[component] = xr.DataArray(
             values,
             dims=dims,
             coords=component_coords,
-            attrs={"normal_dim": axis_names[normal_axis]},
+            attrs={
+                "normal_dim": axis_names[normal_axis],
+                "grid_sampling": "native_yee",
+            },
         )
     return out
 

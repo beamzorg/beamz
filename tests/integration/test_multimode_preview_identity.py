@@ -10,6 +10,7 @@ import beamz as bz
 from beamz.design.discretization import MaterialGrid
 from beamz.design.grid import RectilinearGrid
 from beamz.devices.modes import discrete
+from beamz.devices.modes._sampling import collocate_result
 from beamz.devices.modes.plane import solve_mode_plane_3d
 
 
@@ -105,7 +106,11 @@ def test_default_preview_returns_eigenfields_without_launch_preparation(
     ):
         preview = source.solve_modes(sim)
     assert len(results) == 1
-    result = results[0]
+    result = collocate_result(
+        results[0],
+        preview.transverse_axes,
+        tuple(e / bz.um for e in preview.grid_edges),
+    )
     assert preview.diagnostics[0]["field_representation"] == "solver"
     assert preview.e_fields.shape[-2:] == tuple(len(e) - 1 for e in preview.grid_edges)
     for mode in range(3):

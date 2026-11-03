@@ -12,6 +12,7 @@ from beamz._cache_tokens import cache_token
 from beamz.devices.modes import discrete
 from beamz.devices.modes._symmetry import project_mode_symmetry
 from beamz.devices.modes.plane import solve_modes
+from beamz.devices.modes.result import Result
 from beamz.lattice import component_shape_3d
 
 COMPONENTS = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
@@ -27,13 +28,14 @@ def synthetic_result(edges, skew=0.3):
     fields = {n: np.zeros_like(envelope, dtype=complex) for n in COMPONENTS}
     fields["Ey"] = envelope.astype(complex)
     fields["Hz"] = envelope.astype(complex) / 377
-    return SimpleNamespace(
+    return Result(
         n_complex=xr.DataArray([[2.0 + 0j]], dims=("f", "mode_index")),
         field_components={
             name: xr.DataArray(
                 value.T[..., None, None, None],
                 dims=("y", "z", "x", "f", "mode_index"),
                 coords={"z": z / 1e-6, "y": y / 1e-6},
+                attrs={"grid_sampling": "cell_centres"},
             )
             for name, value in fields.items()
         },
@@ -382,7 +384,7 @@ def test_public_preview_records_immutable_processing_diagnostics(monkeypatch):
     assert data.diagnostics[0]["force_symmetry_applied"]
     assert (
         data.diagnostics[0]["processing_stage"]
-        == "solver_fields_before_yee_interpolation_and_refinement"
+        == "solver_fields_colocated_before_launch_preparation"
     )
     with pytest.raises(TypeError):
         data.diagnostics[0]["force_symmetry_applied"] = False
