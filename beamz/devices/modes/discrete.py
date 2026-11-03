@@ -22,7 +22,11 @@ from beamz.devices._immutable import immutable_snapshot, readonly_array
 
 from ._cache import _SolveCache
 from ._symmetry import material_symmetric, mirror_closed, project_mode_symmetry
-from ._yee import refine_x_mode_at_fixed_beta, validate_x_mode_refinement
+from ._yee import (
+    refine_x_mode_at_fixed_beta,
+    transverse_grid_metrics,
+    validate_x_mode_refinement,
+)
 from .constitutive import require_uniform_normal_spacing
 from .fields import (
     _axis_coordinate,
@@ -669,17 +673,6 @@ def _prepare_discrete_mode(
         if spec.grid is not None
         else spec.resolution
     )
-    transverse_cell_widths = None
-    if spec.grid is not None:
-        transverse_cell_widths = tuple(
-            _component_axis_measure(
-                spec,
-                "Ex",
-                transverse_axis,
-                indices["Ex"][{"z": 0, "y": 1, "x": 2}[transverse_axis]],
-            )
-            for transverse_axis in ("z", "y")
-        )
     k_num = _numeric_wave_number(omega, spec.dt, normal_spacing, selected["neff"])
     boundary_neff = _boundary_refractive_index(spec.scalar_permittivity)
     yee_refinement_eligible = (
@@ -725,6 +718,11 @@ def _prepare_discrete_mode(
         )
         yee_refinement_attempted = False
     if yee_refinement_attempted:
+        metrics = (
+            None
+            if spec.grid is None
+            else transverse_grid_metrics(indices, spec.grid)[0]
+        )
         seed_profiles = {
             name: np.asarray(value, dtype=np.complex128).copy()
             for name, value in profiles.items()
@@ -747,7 +745,7 @@ def _prepare_discrete_mode(
                 resolution=normal_spacing,
                 k_num=seed_k_num,
                 direction_sign=_direction_sign(spec.direction),
-                transverse_cell_widths=transverse_cell_widths,
+                transverse_metrics=metrics,
             )
             yee_refinement_accepted, yee_validation = validate_x_mode_refinement(
                 seed_profiles,
@@ -760,7 +758,7 @@ def _prepare_discrete_mode(
                 resolution=normal_spacing,
                 k_num=candidate_k_num,
                 direction_sign=_direction_sign(spec.direction),
-                transverse_cell_widths=transverse_cell_widths,
+                transverse_metrics=metrics,
                 integration_weights=_profile_integration_weights(
                     spec, candidate, indices
                 ),

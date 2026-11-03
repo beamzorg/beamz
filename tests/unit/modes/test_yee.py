@@ -185,3 +185,54 @@ def test_refinement_validator_treats_electric_overlap_as_diagnostic_by_default()
     assert diagnostics["electric_overlap"] == pytest.approx(0.1)
     assert accepted
     assert not explicitly_rejected
+
+
+def test_refinement_mode_identity_is_invariant_to_eigenvector_scale(monkeypatch):
+    from beamz.devices.modes import _yee
+
+    _shapes, profiles, indices, kwargs = _refinement_fixture()
+    reference, *_ = refine_x_mode_at_fixed_beta(profiles, indices, **kwargs)
+    eigensolve = _yee._converged_shift_invert_eigenpairs
+
+    def rescaled(*args, **kw):
+        values, vectors = eigensolve(*args, **kw)
+        vectors = vectors.copy()
+        overlaps = np.abs(kw["seed"].conj() @ vectors) / np.linalg.norm(vectors, axis=0)
+        # Arbitrary ARPACK scaling must not promote a different eigenmode.
+        other = (int(np.argmax(overlaps)) + 1) % vectors.shape[1]
+        vectors[:, other] *= 1e8
+        return values, vectors
+
+    monkeypatch.setattr(_yee, "_converged_shift_invert_eigenpairs", rescaled)
+    actual, *_ = refine_x_mode_at_fixed_beta(profiles, indices, **kwargs)
+    for fields in (reference, actual):
+        norm = np.linalg.norm(
+            np.concatenate([fields[k].ravel() for k in ("Ex", "Ey", "Ez")])
+        )
+        for name in fields:
+            fields[name] = fields[name] / norm
+    for name in reference:
+        np.testing.assert_allclose(actual[name], reference[name], atol=1e-8, rtol=1e-6)
+
+
+def test_refinement_converges_frequency_before_returning():
+    _shapes, profiles, indices, kwargs = _refinement_fixture()
+    _fields, _residual, ratio, _beta, initial = refine_x_mode_at_fixed_beta(
+        profiles, indices, **kwargs
+    )
+    assert abs(initial - 1) > 1e-4
+    assert abs(ratio - 1) < 1e-8
+
+
+def test_node_curl_metrics_use_actual_primal_and_neighboring_dual_widths():
+    from beamz.design.grid import RectilinearGrid
+    from beamz.devices.modes._yee import transverse_grid_metrics
+
+    edges = np.asarray([0, 1, 3, 7, 15], dtype=float)
+    grid = RectilinearGrid(edges, edges, edges)
+    metrics, _ = transverse_grid_metrics({"Ex": (slice(1, 4), slice(1, 4), 0)}, grid)
+    # Nodes 1,2,3 span cells of width 2 and 4. The outer cells of width
+    # 1 and 8 still contribute to the endpoint dual distances.
+    for primal, dual in metrics:
+        np.testing.assert_array_equal(primal, [2, 4])
+        np.testing.assert_array_equal(dual, [1.5, 3, 6])

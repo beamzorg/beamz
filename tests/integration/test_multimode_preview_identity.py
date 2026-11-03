@@ -367,3 +367,50 @@ def test_preview_and_launch_share_material_window_and_select_wire(
         if term.component == "Ey"
     ]
     assert peaks and all(expected_peak[0] < z < expected_peak[1] for z in peaks)
+
+
+@pytest.mark.parametrize("wavelength_um", [1.9375, 1.823529411764706])
+def test_graded_soi_mode_refinement_tracks_long_wavelength_guided_branch(wavelength_um):
+    """The modal tutorial must not fall back to a continuum seed at band edges."""
+    um = bz.um
+    silicon = bz.Material(permittivity=3.48**2)
+    silica = bz.Material(permittivity=1.45**2)
+    design = bz.Design(background=bz.Material(permittivity=1.0))
+    design += bz.Box(
+        center=(0, 0, -3 * um), size=(bz.inf, bz.inf, 6 * um), material=silica
+    )
+    design += bz.Box(
+        center=(0, 0, 0.11 * um), size=(bz.inf, 0.45 * um, 0.22 * um), material=silicon
+    )
+    frequency = bz.LIGHT_SPEED / (1.55 * um)
+    source = bz.ModeSource(
+        center=(-2 * um, 0, 0),
+        size=(0, 3 * um, 2 * um),
+        direction="+",
+        source_time=bz.GaussianPulse(freq0=frequency, fwidth=frequency / 10),
+        mode_spec=bz.ModeSpec(
+            num_modes=3, target_neff=0.98 * 3.48, min_aperture_fraction=None
+        ),
+    )
+    simulation = bz.Simulation(
+        domain=(8 * um, 7 * um, 6 * um),
+        design=design,
+        grid_spec=bz.GridSpec.auto(
+            wavelength=1.55 * um, min_steps_per_wvl=10, max_scale=1.25
+        ),
+        sources=[source],
+        run_time=1e-15,
+    )
+    modes = source.solve_modes(
+        simulation,
+        freqs=[bz.LIGHT_SPEED / (wavelength_um * um)],
+        field_representation="launch",
+    )
+    diagnostic = modes.diagnostics[0]["modes"][0]
+    assert diagnostic["solver_padding_cells"] == (0, 0)
+    assert not diagnostic["force_symmetry_applied"]
+    assert diagnostic["yee_refinement_accepted"]
+    validation = diagnostic["yee_refinement_validation"]
+    assert validation["magnetic_overlap"] > 0.5
+    assert validation["faraday_residual"] < 5e-8
+    assert validation["ampere_residual"] < 5e-8
