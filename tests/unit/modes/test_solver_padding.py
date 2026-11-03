@@ -25,10 +25,10 @@ def test_padding_requires_integer_counts(value):
 
 
 def test_padding_is_immutable_and_part_of_cache_identity():
-    automatic = ModeSpec()
+    default = ModeSpec()
     zero = ModeSpec(solver_padding_cells=0)
     assert zero.solver_padding_cells == (0, 0)
-    assert cache_token(automatic) != cache_token(zero)
+    assert cache_token(default) == cache_token(zero)
     assert cache_token(zero) != cache_token(ModeSpec(solver_padding_cells=(0, 1)))
     assert ModeSpec(solver_padding_cells=3) == ModeSpec(solver_padding_cells=(3, 3))
 
@@ -36,7 +36,10 @@ def test_padding_is_immutable_and_part_of_cache_identity():
 @pytest.mark.parametrize("axis", ["x", "y", "z"])
 @pytest.mark.parametrize("stretched", [False, True])
 @pytest.mark.parametrize("padding", [(0, 0), (2, 4), (100, 100)])
-def test_padding_counts_actual_cells_and_clips_at_boundaries(axis, stretched, padding):
+@pytest.mark.parametrize("presnapped", [True, False])
+def test_padding_counts_actual_cells_and_clips_at_boundaries(
+    axis, stretched, padding, presnapped
+):
     edges = np.linspace(0, 2e-6, 41)
     if stretched:
         edges = (edges / edges[-1]) ** 1.2 * edges[-1]
@@ -61,7 +64,7 @@ def test_padding_counts_actual_cells_and_clips_at_boundaries(axis, stretched, pa
         plane_index=region.plane_index,
         offset_index=region.companion_index,
         resolution=0.05e-6,
-        snapped_region=region,
+        snapped_region=region if presnapped else None,
         grid=grid,
         aperture_pad_cells=padding,
     )
@@ -75,3 +78,45 @@ def test_padding_counts_actual_cells_and_clips_at_boundaries(axis, stretched, pa
             plane["grid"].axis_edges(name), edges[start : stop + 1] - edges[start]
         )
         assert plane["axis_origins"][name] == edges[start]
+
+
+def test_no_taper_preserves_nondecaying_fields_at_aperture_edges():
+    from beamz.devices.modes.discrete import ModePlaneSpec, _build_profiles
+
+    fields = {
+        prefix + axis: np.ones((12, 12), complex) for prefix in "EH" for axis in "xyz"
+    }
+    request = ModePlaneSpec(
+        scalar_permittivity=np.ones((12, 12)),
+        frequency=2e14,
+        resolution=1.0,
+        dt=None,
+        axis="x",
+        direction="+x",
+        transverse_axes=("z", "y"),
+        grid_shape=(12, 12, 4),
+        center=(2, 6, 6),
+        width=4,
+        height=4,
+        plane_index=1,
+        offset_index=0,
+        aperture_pad_cells=0,
+    )
+    profiles, _, _ = _build_profiles(fields, request)
+    for values in profiles.values():
+        assert np.all(np.abs(values) > 0), (
+            "Preparation must not taper nonzero edge fields"
+        )
+        np.testing.assert_allclose(values, values.flat[0])
+
+
+def test_edge_diagnostic_checks_raw_electric_fields():
+    from beamz.devices.modes.discrete import _mode_edge_fraction
+
+    fields = {"E" + axis: np.zeros((20, 20), complex) for axis in "xyz"}
+    fields["Ey"][10, 10] = 1
+    assert _mode_edge_fraction(fields) == 0
+    fields["Ey"][0, 10] = 1
+    assert _mode_edge_fraction(fields) == 0.5
+    fields["Ey"][:] = 1
+    assert _mode_edge_fraction(fields) == 0.2

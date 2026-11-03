@@ -225,6 +225,6 @@ def test_mode_symmetry_is_explicit_public_opt_in():
 
 
 def test_mode_padding_is_explicit_public_opt_in():
-    assert beamz.ModeSpec().solver_padding_cells is None
+    assert beamz.ModeSpec().solver_padding_cells == (0, 0)
     assert modes.ModeSpec(solver_padding_cells=0).solver_padding_cells == (0, 0)
     assert modes.ModeSpec(solver_padding_cells=(3, 8)).solver_padding_cells == (3, 8)

@@ -218,9 +218,17 @@ def mode_plane_context(*, simulation, plane) -> ModePlaneContext:
 
 
 def solve_mode_plane(
-    *, simulation, plane, mode_spec: ModeSpec | None, freqs, direction=None
+    *,
+    simulation,
+    plane,
+    mode_spec: ModeSpec | None,
+    freqs,
+    direction=None,
+    field_representation: Literal["solver", "launch"] = "solver",
 ) -> ModeData:
     """Solve modal fields on a finite simulation plane."""
+    if field_representation not in {"solver", "launch"}:
+        raise ValueError("field_representation must be 'solver' or 'launch'")
     spec = mode_spec or ModeSpec()
     frequencies = np.asarray(freqs, dtype=float).reshape(-1)
     if frequencies.size == 0:
@@ -240,7 +248,10 @@ def solve_mode_plane(
             spec=spec,
             frequencies=frequencies,
             direction=direction,
+            field_representation=field_representation,
         )
+    if field_representation == "launch":
+        raise ValueError("Prepared launch previews require a 3D simulation")
     context = mode_plane_context(simulation=simulation, plane=plane)
     coordinate_offset = tuple(
         float(value)
@@ -254,7 +265,7 @@ def solve_mode_plane(
         values = mapping.get(component)
         return None if values is None else values[context.crop_slices]
 
-    solve_diagnostics = [{} for _ in frequencies]
+    solve_diagnostics = [{"field_representation": "solver"} for _ in frequencies]
     solved = [
         solve_modes(
             eps=eps_profile,

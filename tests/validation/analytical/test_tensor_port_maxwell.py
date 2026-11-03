@@ -79,6 +79,8 @@ def mode_for(axis="x", direction="+", cells=20, cross=True):
         target_neff=2.0,
         num_modes=3,
         snapped_region=None,
+        # The Maxwell/MPB reference uses the full transverse supercell.
+        solver_padding_cells=cells,
     )
 
 

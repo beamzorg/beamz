@@ -14,6 +14,30 @@ _E_COMPONENTS = ("Ex", "Ey", "Ez")
 _H_COMPONENTS = ("Hx", "Hy", "Hz")
 
 
+def transverse_grid_metrics(indices, grid):
+    """Primal/dual curl distances and volume averages on the actual node indices.
+
+    A mode's Ex samples are transverse nodes, not cell centers. In particular,
+    averaging their dual widths does not recover the derivative's primal width.
+    Neighboring cells outside the aperture still contribute to the dual metric.
+    """
+    distances, averages = [], []
+    for dimension, axis in enumerate(("z", "y")):
+        selector = indices["Ex"][dimension]
+        widths = np.asarray(grid.cell_widths(axis), dtype=float)
+        nodes = np.arange(widths.size + 1)[selector]
+        left_width = widths[np.maximum(nodes - 1, 0)]
+        right_width = widths[np.minimum(nodes, widths.size - 1)]
+        dual = 0.5 * (left_width + right_width)
+        left = left_width / (left_width + right_width)
+        right = 1.0 - left
+        left = np.where(nodes == widths.size, 1.0, left)
+        right = np.where(nodes == 0, 1.0, right)
+        distances.append((widths[nodes[:-1]], dual))
+        averages.append((left, right))
+    return tuple(distances), tuple(averages)
+
+
 def refine_x_mode_at_fixed_beta(
     profiles,
     indices,
@@ -26,7 +50,9 @@ def refine_x_mode_at_fixed_beta(
     k_num,
     direction_sign,
     transverse_cell_widths=None,
+    transverse_metrics=None,
     _correct_beta=True,
+    _remaining_corrections=10,
 ):
     """Refine E at the selected beta, then reconstruct H from Faraday's law."""
     from scipy import sparse
@@ -45,6 +71,7 @@ def refine_x_mode_at_fixed_beta(
         resolution=d,
         delta=delta,
         transverse_cell_widths=transverse_cell_widths,
+        transverse_metrics=transverse_metrics,
     )
     eps, mu = _component_material_vectors(
         out,
@@ -72,7 +99,16 @@ def refine_x_mode_at_fixed_beta(
         seed=seed,
         count=count,
     )
-    overlaps = np.abs(np.conjugate(seed) @ vectors)
+    # Generalized eigenvectors have arbitrary scales. Track both E and H:
+    # a nearby electric-overlap candidate can belong to a different magnetic branch.
+    magnetic_candidates = 1j * (curl_e @ vectors) / (_MU0 * omega_d * mu[:, None])
+    magnetic_seed = np.concatenate([out[name].reshape(-1) for name in _H_COMPONENTS])
+    overlaps = np.abs(np.conjugate(seed) @ vectors) / np.maximum(
+        np.linalg.norm(vectors, axis=0), np.finfo(float).tiny
+    )
+    overlaps *= np.abs(np.conjugate(magnetic_seed) @ magnetic_candidates) / np.maximum(
+        np.linalg.norm(magnetic_candidates, axis=0), np.finfo(float).tiny
+    )
     selected = int(np.argmax(overlaps))
     electric = np.asarray(vectors[:, selected], dtype=np.complex128)
     phase = np.vdot(seed, electric)
@@ -101,7 +137,9 @@ def refine_x_mode_at_fixed_beta(
     eigenvalue = float(np.real(values[selected]))
     frequency_ratio = float(np.sqrt(max(eigenvalue / target, 0.0)))
     frequency_ratio_initial = frequency_ratio
-    if _correct_beta:
+    # A single beta correction can leave a percent-level frequency mismatch.
+    # Retain the selected branch until the discrete frequency converges.
+    if _correct_beta and abs(frequency_ratio - 1.0) > 1e-8:
         q_axis = 2.0 * np.sin(0.5 * float(k_num) * d) / d
         q_probe = 0.98 * q_axis
         delta_probe = -1j * sign * q_probe
@@ -121,24 +159,28 @@ def refine_x_mode_at_fixed_beta(
         q_corrected = np.sqrt(max(q_axis**2 - (eigenvalue - target) / slope, 0.0))
         k_corrected = 2.0 * np.arcsin(np.clip(0.5 * q_corrected * d, -1.0, 1.0)) / d
         if np.isfinite(k_corrected) and k_corrected > 0.0:
-            refined, residual, frequency_ratio, _, _ = refine_x_mode_at_fixed_beta(
-                out,
-                indices,
-                component_permittivity=component_permittivity,
-                component_permeability=component_permeability,
-                omega=omega,
-                dt=dt,
-                resolution=resolution,
-                k_num=k_corrected,
-                direction_sign=direction_sign,
-                transverse_cell_widths=transverse_cell_widths,
-                _correct_beta=False,
+            refined, residual, frequency_ratio, k_refined, _ = (
+                refine_x_mode_at_fixed_beta(
+                    out,
+                    indices,
+                    component_permittivity=component_permittivity,
+                    component_permeability=component_permeability,
+                    omega=omega,
+                    dt=dt,
+                    resolution=resolution,
+                    k_num=k_corrected,
+                    direction_sign=direction_sign,
+                    transverse_cell_widths=transverse_cell_widths,
+                    transverse_metrics=transverse_metrics,
+                    _correct_beta=_remaining_corrections > 1,
+                    _remaining_corrections=_remaining_corrections - 1,
+                )
             )
             return (
                 refined,
                 residual,
                 frequency_ratio,
-                float(k_corrected),
+                float(k_refined),
                 frequency_ratio_initial,
             )
     return out, float(residual), frequency_ratio, float(k_num), frequency_ratio
@@ -201,6 +243,7 @@ def validate_x_mode_refinement(
     k_num,
     direction_sign,
     transverse_cell_widths=None,
+    transverse_metrics=None,
     integration_weights=None,
     minimum_electric_overlap=None,
     minimum_magnetic_overlap=0.5,
@@ -288,6 +331,7 @@ def validate_x_mode_refinement(
         resolution=float(resolution),
         delta=delta,
         transverse_cell_widths=transverse_cell_widths,
+        transverse_metrics=transverse_metrics,
     )
     omega_d = (
         float(omega)

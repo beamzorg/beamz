@@ -18,6 +18,7 @@ from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.constitutive import electric_tensor_coefficients
 
 from ._yee import _yee_curl_operators
+from ._yee import transverse_grid_metrics as transverse_metrics
 
 
 def _average(count):
@@ -44,30 +45,6 @@ def _extend(count, weights=None):
     avg[0, 0] = 1.0
     avg[-1, -1] = 1.0
     return avg.tocsc()
-
-
-def transverse_metrics(indices, grid):
-    """Primal/dual curl distances and volume averages on the actual node indices.
-
-    A mode's Ex samples are transverse nodes, not cell centers. In particular,
-    averaging their dual widths does not recover the derivative's primal width.
-    Neighboring cells outside the aperture still contribute to the dual metric.
-    """
-    distances, averages = [], []
-    for dimension, axis in enumerate(("z", "y")):
-        selector = indices["Ex"][dimension]
-        widths = np.asarray(grid.cell_widths(axis), dtype=float)
-        nodes = np.arange(widths.size + 1)[selector]
-        left_width = widths[np.maximum(nodes - 1, 0)]
-        right_width = widths[np.minimum(nodes, widths.size - 1)]
-        dual = 0.5 * (left_width + right_width)
-        left = left_width / (left_width + right_width)
-        right = 1.0 - left
-        left = np.where(nodes == widths.size, 1.0, left)
-        right = np.where(nodes == 0, 1.0, right)
-        distances.append((widths[nodes[:-1]], dual))
-        averages.append((left, right))
-    return tuple(distances), tuple(averages)
 
 
 def inverse_operator(profiles, indices, tensors, *, beta, spacing, grid=None):

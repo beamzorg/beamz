@@ -33,7 +33,11 @@ def test_straight_guide_reflection_is_independent_of_monitor_stagger(
         size=(np.inf, 0.6e-6, 0.4e-6),
         material=Material(permittivity=4),
     )
-    mode = ModeSpec(num_modes=1, target_neff=1.8, polarization="te")
+    # Isolate CPML/interpolation error from finite mode-solve boundary error.
+    # The solve halo is explicit; source and monitor apertures stay unchanged.
+    mode = ModeSpec(
+        num_modes=1, target_neff=1.8, polarization="te", solver_padding_cells=12
+    )
     source = ModeSource(
         center=(-sign * 1.025e-6, 0, 0),
         size=(0, aperture_um * 1e-6, aperture_um * 1e-6),
