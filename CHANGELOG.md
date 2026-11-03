@@ -2,18 +2,45 @@
 
 ## Unreleased
 
+## v0.6.1 - 2026-11-03
+
 - 2D mode preview, launch and measurement now share aperture bounds, explicit
   padding, target indices and optional confinement. Fixed x-directed previews
   and transverse Yee sampling; removed full-domain launch solves and tapering.
 
 - Mode previews now show solver fields by default, retaining eigensolver sampling
   and normalization. Use `ModeSource.solve_modes(..., field_representation="launch")`
-  to inspect prepared 3D launch fields. Source injection is unchanged.
+  to inspect prepared 3D launch fields. The preview choice does not change injection.
 
 - 3D mode sources, previews, and monitors now solve on their mesh-snapped aperture
   by default, without automatic transverse padding or tapering. Additional solve
   cells require `ModeSpec.solver_padding_cells`; nondecaying raw fields produce
   edge diagnostics and a warning. Aperture-confinement selection is opt-in.
+
+### Additional fixes and maintenance
+
+- Shared multimode candidate selection to prevent duplicate preview modes and
+  repeated eigensolves; improved Yee refinement and rectilinear-grid metrics.
+- Fixed S-parameter interpolation when source and destination frequency grids
+  have different lengths, and simplified complex interpolation and residuals.
+- Consolidated shared ring and circular-bend geometry operations.
+- Updated locked numerical and development dependencies, including JAX/JAXlib
+  0.10.2, and patched msgpack and Tornado security updates.
+- Restricted release-workflow token permissions and refreshed documentation,
+  the mode-source notebook, and regression coverage.
+
+### Migration notes
+
+- Mode solves no longer add automatic transverse padding or apply aperture
+  tapering. Existing simulations may select different modes or produce different
+  numerical results. Enlarge the source/monitor aperture or explicitly set
+  `ModeSpec.solver_padding_cells` and check aperture convergence. Use matching
+  mode specifications for source launch and modal measurement.
+- Default previews retain raw solver sampling and normalization. Request
+  `field_representation="launch"` for prepared 3D launch fields.
+- The optional CUDA component remains version 0.30.0 / ABI 30.
+
+**Full Changelog**: https://github.com/beamzorg/beamz/compare/v0.6.0...v0.6.1
 
 ## v0.6.0 - 2026-10-25
 
