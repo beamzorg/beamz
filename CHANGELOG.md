@@ -23,6 +23,15 @@
   microring add-drop notebook to 15 cells per wavelength with a 600-second budget
   and convergence-based early stopping.
 
+### Migration notes
+
+- Code consuming raw 3D `solve_grid()` fields must use each component's own
+  coordinates rather than assume colocated samples. Port previews already
+  interpolate the native Yee fields onto common cell centres.
+- Recheck selected mode identities and numerical results after upgrading:
+  corrected 3D sampling can change them, and symmetric dielectric ports no longer
+  need forced mirror projection to correct sampling-induced asymmetry.
+
 **Full Changelog**: https://github.com/beamzorg/beamz/compare/v0.6.1...v0.6.2
 
 ## v0.6.1 - 2026-11-03
