@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.6.2 - 2026-11-04
+
 - Corrected native Yee material and field sampling for 3D mode ports. Solver
   results now carry component-specific coordinates; previews colocate fields
   before launch preparation. Symmetric dielectric ports no longer require forced
@@ -20,6 +22,8 @@
   retaining acquired measurements and reporting `wall_time_limit`. Updated the
   microring add-drop notebook to 15 cells per wavelength with a 600-second budget
   and convergence-based early stopping.
+
+**Full Changelog**: https://github.com/beamzorg/beamz/compare/v0.6.1...v0.6.2
 
 ## v0.6.1 - 2026-11-03
 
