@@ -39,6 +39,33 @@ def _points(values: Iterable[Iterable[float]], dimensions: int) -> list[list[flo
     return result
 
 
+def _point(values) -> list[float]:
+    return _points((values,), len(values))[0]
+
+
+def _geometry(kind: str, **fields):
+    encoded = {}
+    for key, value in fields.items():
+        if isinstance(value, tuple):
+            encoded[key] = _point(value)
+        elif hasattr(value, "to_dict"):
+            encoded[key] = value.to_dict()
+        else:
+            encoded[key] = float(value)
+    return {"type": kind, **encoded}
+
+
+def _integer_values(values, name: str, *, numeric_dtype: bool = False):
+    result = np.asarray(values)
+    if np.issubdtype(result.dtype, np.floating):
+        if not np.isfinite(result).all() or np.any(result != np.floor(result)):
+            raise ValueError(f"{name} must be finite integers.")
+    elif not np.issubdtype(result.dtype, np.integer):
+        kind = "integer numeric dtype" if numeric_dtype else "integer dtype"
+        raise TypeError(f"{name} must use an {kind}.")
+    return result
+
+
 @dataclass(frozen=True, slots=True)
 class Polygon:
     exterior: tuple[tuple[float, float], ...]
@@ -59,10 +86,7 @@ class Box:
     def to_dict(self) -> dict[str, Any]:
         return {
             "type": "box",
-            "bounds": {
-                "min": _points((self.minimum,), 3)[0],
-                "max": _points((self.maximum,), 3)[0],
-            },
+            "bounds": {"min": _point(self.minimum), "max": _point(self.maximum)},
         }
 
 
@@ -72,11 +96,7 @@ class Sphere:
     radius: float
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "type": "sphere",
-            "center": _points((self.center,), 3)[0],
-            "radius": float(self.radius),
-        }
+        return _geometry("sphere", center=self.center, radius=self.radius)
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,13 +107,13 @@ class Cylinder:
     z_max: float
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "type": "cylinder",
-            "center": _points((self.center,), 2)[0],
-            "radius": float(self.radius),
-            "z_min": float(self.z_min),
-            "z_max": float(self.z_max),
-        }
+        return _geometry(
+            "cylinder",
+            center=self.center,
+            radius=self.radius,
+            z_min=self.z_min,
+            z_max=self.z_max,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,12 +123,9 @@ class ExtrudedPolygon:
     z_max: float
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "type": "extruded_polygon",
-            "polygon": self.polygon.to_dict(),
-            "z_min": float(self.z_min),
-            "z_max": float(self.z_max),
-        }
+        return _geometry(
+            "extruded_polygon", polygon=self.polygon, z_min=self.z_min, z_max=self.z_max
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,14 +137,33 @@ class TaperedExtrudedPolygon:
     width_to_z: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "type": "tapered_extruded_polygon",
-            "polygon": self.polygon.to_dict(),
-            "z_min": float(self.z_min),
-            "z_max": float(self.z_max),
-            "sidewall_angle_degrees": float(self.sidewall_angle_degrees),
-            "width_to_z": float(self.width_to_z),
-        }
+        return _geometry(
+            "tapered_extruded_polygon",
+            polygon=self.polygon,
+            z_min=self.z_min,
+            z_max=self.z_max,
+            sidewall_angle_degrees=self.sidewall_angle_degrees,
+            width_to_z=self.width_to_z,
+        )
+
+
+def _extruded(
+    polygon: Polygon,
+    z_min: float,
+    z_max: float,
+    *,
+    sidewall_angle_degrees: float = 0.0,
+    width_to_z: float = 0.0,
+):
+    if sidewall_angle_degrees != 0.0:
+        return TaperedExtrudedPolygon(
+            polygon,
+            z_min,
+            z_max,
+            sidewall_angle_degrees=sidewall_angle_degrees,
+            width_to_z=width_to_z,
+        )
+    return ExtrudedPolygon(polygon, z_min, z_max)
 
 
 def _mesh_arrays(vertices: Any, triangles: Any) -> tuple[np.ndarray, np.ndarray]:
@@ -139,11 +175,7 @@ def _mesh_arrays(vertices: Any, triangles: Any) -> tuple[np.ndarray, np.ndarray]
         raise ValueError("Mesh triangles must have shape (M, 3).")
     if not np.isfinite(vertices).all():
         raise ValueError("Mesh vertices must be finite.")
-    if np.issubdtype(triangles.dtype, np.floating):
-        if not np.isfinite(triangles).all() or np.any(triangles != np.floor(triangles)):
-            raise ValueError("Mesh triangle indices must be finite integers.")
-    elif not np.issubdtype(triangles.dtype, np.integer):
-        raise TypeError("Mesh triangle indices must use an integer dtype.")
+    _integer_values(triangles, "Mesh triangle indices")
     if np.any(triangles < 0) or np.any(triangles > np.iinfo(np.uint32).max):
         raise ValueError("Mesh triangle indices must fit in uint32.")
     return vertices, triangles.astype(np.uint32, copy=False)

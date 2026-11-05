@@ -73,6 +73,12 @@ def _raster_sources(kind: str) -> set[str]:
     return {source for target, source, _axis in _SUPPORTS if target in _ACTIVE[kind]}
 
 
+def _key_difference(left, right, message: str) -> None:
+    difference = set(left) - set(right)
+    if difference:
+        raise ValueError(f"{message}: {', '.join(sorted(difference))}.")
+
+
 @dataclass(frozen=True, slots=True, eq=False)
 class MaterialGrid:
     """Immutable cell summaries and optional direct Yee coefficients.
@@ -217,11 +223,7 @@ class MaterialGrid:
             # differencing may differ from it by a few floating-point ulps.
             realized_resolution = resolution
         object.__setattr__(self, "resolution", realized_resolution)
-        unknown_yee = set(self.yee_materials) - set(_YEE_FIELD)
-        if unknown_yee:
-            raise ValueError(
-                f"Unknown Yee material fields: {', '.join(sorted(unknown_yee))}."
-            )
+        _key_difference(self.yee_materials, _YEE_FIELD, "Unknown Yee material fields")
         if self.yee_materials:
             for name, values in self.yee_materials.items():
                 expected = shapes[_YEE_FIELD[name]]
@@ -249,11 +251,9 @@ class MaterialGrid:
                     f"{', '.join(sorted(missing))}. Construct the grid with "
                     "MaterialGrid.from_raster_result() or provide yee_materials."
                 )
-        unknown_tensors = set(self.tensors) - {"epsilon", "mu", "conductivity"}
-        if unknown_tensors:
-            raise ValueError(
-                f"Unknown cell tensors: {', '.join(sorted(unknown_tensors))}."
-            )
+        _key_difference(
+            self.tensors, {"epsilon", "mu", "conductivity"}, "Unknown cell tensors"
+        )
         for name, values in self.tensors.items():
             shape = np.asarray(values).shape
             if (
@@ -262,17 +262,11 @@ class MaterialGrid:
                 or shape[1:] != self.shape
             ):
                 raise ValueError(f"{name} tensor has invalid compact shape {shape}.")
-        unknown_yee_tensors = set(self.yee_tensors) - {
-            "eps_x",
-            "eps_y",
-            "eps_z",
-            "eps_node",
-        }
-        if unknown_yee_tensors:
-            raise ValueError(
-                "Unknown Yee permittivity tensors: "
-                f"{', '.join(sorted(unknown_yee_tensors))}."
-            )
+        _key_difference(
+            self.yee_tensors,
+            {"eps_x", "eps_y", "eps_z", "eps_node"},
+            "Unknown Yee permittivity tensors",
+        )
         if self.yee_tensors:
             for name, values in self.yee_tensors.items():
                 expected = (
@@ -369,11 +363,9 @@ class MaterialGrid:
         kind = "3" if dimensions == 3 else polarization
         component_specs = tuple(row for row in _SUPPORTS if row[0] in _ACTIVE[kind])
         required = {source for _target, source, _axis in component_specs}
-        missing = required - set(support_tensors)
-        if missing:
-            raise ValueError(
-                f"RasterResult omits solver components: {', '.join(sorted(missing))}."
-            )
+        _key_difference(
+            required, support_tensors, "RasterResult omits solver components"
+        )
         grid = RectilinearGrid(*(np.asarray(axis, dtype=float) for axis in edges))
         representative_resolution = (
             grid.minimum_spacing if resolution is None else float(resolution)
@@ -389,12 +381,11 @@ class MaterialGrid:
             if target.startswith("eps_")
         }
         tensors = dict(getattr(result, "tensors", {}))
-        missing_tensors = {"epsilon", "mu", "conductivity"} - set(tensors)
-        if missing_tensors:
-            raise ValueError(
-                "RasterResult omits cell tensors: "
-                f"{', '.join(sorted(missing_tensors))}."
-            )
+        _key_difference(
+            {"epsilon", "mu", "conductivity"},
+            tensors,
+            "RasterResult omits cell tensors",
+        )
         epsilon_tensor = np.asarray(tensors["epsilon"])
         mu_tensor = np.asarray(tensors["mu"])
         conductivity_tensor = np.asarray(tensors["conductivity"])
@@ -557,25 +548,10 @@ def build_material_grid(
 ) -> MaterialGrid:
     """Discretize a design into the immutable solver material grid.
 
-    Parameters
-    ----------
-    design : Design
-        Immutable geometry and material specification to rasterize.
-    resolution : float or RectilinearGrid
-        Uniform spatial cell size or explicit physical cell edges.
-    grid_type : str, default="auto"
-        Dimensionality policy: ``"auto"``, ``"2d"``, or ``"3d"``.
-    force_recompute : bool, default=False
-        Rebuild the grid even when a matching cached discretization exists.
-    progress : bool, default=False
-        Emit rasterization progress when the design supports it.
-    **kwargs
-        Additional rasterizer-specific options.
-
-    Returns
-    -------
-    MaterialGrid
-        Read-only cell summaries and compatible direct Yee coefficients.
+    ``resolution`` is a uniform cell size or a ``RectilinearGrid``. ``grid_type``
+    is ``"auto"``, ``"2d"``, or ``"3d"``. ``force_recompute`` skips a matching
+    cache, and ``progress`` reports rasterization when the design supports it.
+    Extra keywords are rasterizer options.
     """
     return design.rasterize(
         resolution,

@@ -147,6 +147,17 @@ class PoleResidue(Material):
         )
 
 
+def _stack(values, weights):
+    return np.concatenate((np.real(values) * weights[0], np.imag(values) * weights[1]))
+
+
+def _optical_samples(wavelengths, n, k):
+    frequency = LIGHT_SPEED / wavelengths
+    scale = 2 * np.pi * np.sqrt(frequency.min() * frequency.max())
+    omega = 2 * np.pi * frequency / scale
+    return frequency, scale, omega, (n + 1j * k) ** 2
+
+
 def _validate_nk(wavelengths, n, k, *, unique=False):
     wl, n, k = [np.asarray(x, dtype=float) for x in (wavelengths, n, k)]
     if (
@@ -178,10 +189,7 @@ def fit_nk(wavelengths, n, k, *, num_poles=9, weights=(1.0, 1.0), max_nfev=300):
     wl, n, k = _validate_nk(wavelengths, n, k)
     if num_poles < 1 or len(weights) != 2 or min(weights) <= 0:
         raise ValueError("Require positive pole count and residual weights.")
-    f = LIGHT_SPEED / wl
-    scale = 2 * np.pi * np.sqrt(f.min() * f.max())
-    w = 2 * np.pi * f / scale
-    target = (n + 1j * k) ** 2
+    f, scale, w, target = _optical_samples(wl, n, k)
     resonances = np.linspace(w.min() * 0.8, w.max() * 1.3, num_poles)
     if num_poles == 1:
         resonances[:] = w.max() * 1.3
@@ -193,10 +201,7 @@ def fit_nk(wavelengths, n, k, *, num_poles=9, weights=(1.0, 1.0), max_nfev=300):
         )
 
     b = np.c_[np.ones(w.size), basis(resonances, dampings)]
-    amplitudes = nnls(
-        np.r_[b.real * weights[0], b.imag * weights[1]],
-        np.r_[target.real * weights[0], target.imag * weights[1]],
-    )[0]
+    amplitudes = nnls(_stack(b, weights), _stack(target, weights))[0]
     x0 = np.log(
         np.r_[
             max(amplitudes[0], 1.00001),
@@ -213,7 +218,7 @@ def fit_nk(wavelengths, n, k, *, num_poles=9, weights=(1.0, 1.0), max_nfev=300):
     def residual(x):
         e, s, r, g = unpack(x)
         delta = np.sqrt(e + basis(r, g) @ s) - (n + 1j * k)
-        return np.r_[delta.real * weights[0], delta.imag * weights[1]]
+        return _stack(delta, weights)
 
     result = least_squares(
         residual,

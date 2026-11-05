@@ -279,8 +279,8 @@ class _GradedMesher:
         lengths: np.ndarray, caps: np.ndarray, slope: float
     ) -> np.ndarray:
         boundaries = _seed_boundary_caps(caps)
-        _limit_boundaries_forward(boundaries, lengths, caps, slope)
-        _limit_boundaries_backward(boundaries, lengths, caps, slope)
+        _limit_boundaries(boundaries, lengths, caps, slope, forward=True)
+        _limit_boundaries(boundaries, lengths, caps, slope, forward=False)
         return boundaries
 
     @staticmethod
@@ -461,25 +461,20 @@ def _seed_boundary_caps(caps: np.ndarray) -> np.ndarray:
     return boundaries
 
 
-def _limit_boundaries_forward(
-    boundaries: np.ndarray, lengths: np.ndarray, caps: np.ndarray, slope: float
+def _limit_boundaries(
+    boundaries: np.ndarray,
+    lengths: np.ndarray,
+    caps: np.ndarray,
+    slope: float,
+    *,
+    forward: bool,
 ) -> None:
-    for index in range(caps.size):
-        boundaries[index + 1] = min(
-            boundaries[index + 1],
-            caps[index],
-            boundaries[index] + slope * lengths[index],
-        )
-
-
-def _limit_boundaries_backward(
-    boundaries: np.ndarray, lengths: np.ndarray, caps: np.ndarray, slope: float
-) -> None:
-    for index in range(caps.size - 1, -1, -1):
-        boundaries[index] = min(
-            boundaries[index],
-            caps[index],
-            boundaries[index + 1] + slope * lengths[index],
+    indices = range(caps.size) if forward else range(caps.size - 1, -1, -1)
+    for index in indices:
+        source = index if forward else index + 1
+        target = index + 1 if forward else index
+        boundaries[target] = min(
+            boundaries[target], caps[index], boundaries[source] + slope * lengths[index]
         )
 
 

@@ -9,13 +9,12 @@ from beamz._cache_tokens import HashToken, cache_token
 from ..schema import (
     Box,
     Cylinder,
-    ExtrudedPolygon,
     Material,
     Object,
     Polygon,
     Scene,
     Sphere,
-    TaperedExtrudedPolygon,
+    _extruded,
 )
 
 
@@ -200,21 +199,13 @@ def from_beamz(
         elif depth == 0:
             depth = float(design.depth)
         z_max = _high_side(z_min + depth, physical_size[2], padded_size[2])
-        polygon = Polygon(vertices, holes)
-        geometry = (
-            TaperedExtrudedPolygon(
-                polygon,
-                z_min=z_min,
-                z_max=z_max,
+        add(
+            _extruded(
+                Polygon(vertices, holes),
+                z_min,
+                z_max,
                 sidewall_angle_degrees=sidewall,
                 width_to_z=float(getattr(structure, "width_to_z", 0.0) or 0.0),
             )
-            if sidewall != 0.0
-            else ExtrudedPolygon(
-                polygon,
-                z_min=z_min,
-                z_max=z_max,
-            )
         )
-        add(geometry)
     return Scene(tuple(materials), tuple(objects), background_id)

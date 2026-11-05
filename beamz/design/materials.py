@@ -20,6 +20,11 @@ class MaterialProtocol(Protocol):
 _UNSET = object()
 
 
+def _symmetric(packed):
+    xx, yy, zz, xy, xz, yz = packed
+    return ((xx, xy, xz), (xy, yy, yz), (xz, yz, zz))
+
+
 def _tensor(
     value: Any,
     name: str,
@@ -54,8 +59,7 @@ def _tensor(
         )
     if not np.isfinite(packed).all():
         raise ValueError(f"{name} must contain finite values.")
-    xx, yy, zz, xy, xz, yz = packed
-    matrix = np.asarray(((xx, xy, xz), (xy, yy, yz), (xz, yz, zz)))
+    matrix = np.asarray(_symmetric(packed))
     eigenvalues = np.linalg.eigvalsh(matrix)
     scale = max(1.0, float(np.max(np.abs(matrix))))
     tolerance = 64.0 * np.finfo(float).eps * scale
@@ -155,8 +159,7 @@ class Material:
     @property
     def max_permittivity(self) -> float:
         """Return the largest principal relative permittivity."""
-        xx, yy, zz, xy, xz, yz = self._epsilon_r
-        return float(np.linalg.eigvalsh(((xx, xy, xz), (xy, yy, yz), (xz, yz, zz)))[-1])
+        return float(np.linalg.eigvalsh(_symmetric(self._epsilon_r))[-1])
 
     def get_sample(self, x=0, y=0, z=None):
         """Return permittivity, permeability, and conductivity."""
@@ -203,13 +206,24 @@ class Material:
             "permeability": self.permeability,
             "conductivity": self.conductivity,
         }
-        if "epsilon_r" in changes:
-            if "permittivity" in changes:
-                raise TypeError("Pass only one of permittivity or epsilon_r.")
-            values["permittivity"] = changes.pop("epsilon_r")
-        if "mu_r" in changes:
-            if "permeability" in changes:
-                raise TypeError("Pass only one of permeability or mu_r.")
-            values["permeability"] = changes.pop("mu_r")
+        for primary, alias in (
+            ("permittivity", "epsilon_r"),
+            ("permeability", "mu_r"),
+        ):
+            if alias in changes:
+                if primary in changes:
+                    raise TypeError(f"Pass only one of {primary} or {alias}.")
+                values[primary] = changes.pop(alias)
         values.update(changes)
         return type(self)(**values)
+
+
+def _coerce_material(value):
+    return value if isinstance(value, Material) else Material(float(value))
+
+
+def _named_materials(mapping):
+    return {
+        str(name).strip().lower(): _coerce_material(value)
+        for name, value in (mapping or {}).items()
+    }

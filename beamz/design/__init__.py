@@ -11,12 +11,8 @@ from beamz.design.gdsfactory import (
     PortMetadata,
     PreparedComponent,
 )
-from beamz.design.gdsfactory import (
-    Settings as GDSFactorySettings,
-)
-from beamz.design.gdsfactory import (
-    prepare as prepare_gdsfactory,
-)
+from beamz.design.gdsfactory import Settings as GDSFactorySettings
+from beamz.design.gdsfactory import prepare as prepare_gdsfactory
 from beamz.design.grid import (
     AxisGridQuality,
     Grid,

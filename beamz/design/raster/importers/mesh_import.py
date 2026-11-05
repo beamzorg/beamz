@@ -7,7 +7,9 @@ from typing import Any
 
 import numpy as np
 
-from ..schema import Material, Mesh, Object, Scene
+from ..schema import Material, Mesh, Object, Scene, _integer_values
+
+_TETRA_FACES = np.array([[1, 2, 3], [0, 3, 2], [0, 1, 3], [0, 2, 1]])
 
 
 def _cell_indices(
@@ -20,11 +22,7 @@ def _cell_indices(
     result = np.asarray(values)
     if result.ndim != 2 or result.shape[1] != width:
         raise ValueError(f"{cell_type} cells must have exactly {width} vertex indices.")
-    if np.issubdtype(result.dtype, np.floating):
-        if not np.isfinite(result).all() or np.any(result != np.floor(result)):
-            raise ValueError(f"{cell_type} cell indices must be finite integers.")
-    elif not np.issubdtype(result.dtype, np.integer):
-        raise TypeError(f"{cell_type} cell indices must use an integer numeric dtype.")
+    _integer_values(result, f"{cell_type} cell indices", numeric_dtype=True)
     if np.any(result < 0) or np.any(result >= point_count):
         raise ValueError(f"{cell_type} cell index is out of range.")
     return result.astype(np.uint32, copy=False)
@@ -34,12 +32,7 @@ def _cell_tags(values: Any, *, cell_count: int) -> np.ndarray:
     result = np.asarray(values)
     if result.shape != (cell_count,):
         raise ValueError("Gmsh physical tags must match their cell block length.")
-    if np.issubdtype(result.dtype, np.floating):
-        if not np.isfinite(result).all() or np.any(result != np.floor(result)):
-            raise ValueError("Gmsh physical tags must be finite integers.")
-    elif not np.issubdtype(result.dtype, np.integer):
-        raise TypeError("Gmsh physical tags must use an integer numeric dtype.")
-    return result
+    return _integer_values(result, "Gmsh physical tags", numeric_dtype=True)
 
 
 def from_mesh_arrays(
@@ -75,9 +68,17 @@ def _tetra_faces(points: np.ndarray, tetrahedra: np.ndarray) -> np.ndarray:
     )
     if np.any(np.abs(determinant) <= tolerance):
         raise ValueError("Degenerate tetrahedral cells have zero or unresolved volume.")
-    faces = tetrahedra[:, [[1, 2, 3], [0, 3, 2], [0, 1, 3], [0, 2, 1]]].copy()
+    faces = tetrahedra[:, _TETRA_FACES].copy()
     faces[determinant < 0] = faces[determinant < 0, :, ::-1]
     return faces.reshape(-1, 3)
+
+
+def _append_tagged(regions: dict[int, list[np.ndarray]], cells, tags) -> None:
+    if tags is None:
+        regions[0].append(cells)
+        return
+    for tag in np.unique(tags):
+        regions[int(tag)].append(cells[tags == tag])
 
 
 def _tetra_boundary(points: np.ndarray, tetrahedra: np.ndarray) -> np.ndarray:
@@ -173,8 +174,8 @@ def from_mesh(
     }
 
     surface_regions: dict[int, list[np.ndarray]] = defaultdict(list)
-    surface_blocks: list[np.ndarray] = []
-    tetra_blocks: list[tuple[np.ndarray, np.ndarray | None]] = []
+    tetra_blocks: list[np.ndarray] = []
+    tetra_regions: dict[int, list[np.ndarray]] = defaultdict(list)
     physical_data = data.cell_data.get("gmsh:physical", [])
     for index, block in enumerate(data.cells):
         if not len(block.data):
@@ -191,11 +192,7 @@ def from_mesh(
                 if index < len(physical_data)
                 else None
             )
-            if tags is None:
-                surface_blocks.append(triangles)
-            else:
-                for tag in np.unique(tags):
-                    surface_regions[int(tag)].append(triangles[tags == tag])
+            _append_tagged(surface_regions, triangles, tags)
         elif block.type == "tetra":
             tetrahedra = _cell_indices(
                 block.data,
@@ -208,21 +205,15 @@ def from_mesh(
                 if index < len(physical_data)
                 else None
             )
-            tetra_blocks.append((tetrahedra, tags))
+            tetra_blocks.append(tetrahedra)
+            _append_tagged(tetra_regions, tetrahedra, tags)
 
     if tetra_blocks:
-        surface = surface_blocks + [
-            block for blocks in surface_regions.values() for block in blocks
-        ]
+        surface = [block for blocks in surface_regions.values() for block in blocks]
         if surface:
             # Surface cells accompanying a volume mesh must annotate its faces.
             faces = np.concatenate(
-                [
-                    cells[:, [[1, 2, 3], [0, 3, 2], [0, 1, 3], [0, 2, 1]]].reshape(
-                        -1, 3
-                    )
-                    for cells, _ in tetra_blocks
-                ]
+                [cells[:, _TETRA_FACES].reshape(-1, 3) for cells in tetra_blocks]
             )
             keys = np.unique(np.sort(faces, axis=1), axis=0)
             annotations = np.sort(np.concatenate(surface), axis=1)
@@ -230,13 +221,6 @@ def from_mesh(
                 raise ValueError(
                     "Surface cells outside the tetrahedral mesh would be lost; import them separately."
                 )
-        tetra_regions: dict[int, list[np.ndarray]] = defaultdict(list)
-        for tetrahedra, tags in tetra_blocks:
-            if tags is None:
-                tetra_regions[0].append(tetrahedra)
-            else:
-                for tag in np.unique(tags):
-                    tetra_regions[int(tag)].append(tetrahedra[tags == tag])
         regions = {
             tag: [_tetra_boundary(points, np.concatenate(blocks))]
             for tag, blocks in tetra_regions.items()
@@ -244,8 +228,6 @@ def from_mesh(
         physical_dimension = 3
     else:
         regions = surface_regions
-        if surface_blocks:
-            regions[0].extend(surface_blocks)
         physical_dimension = 2
 
     if not regions:

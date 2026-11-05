@@ -32,6 +32,20 @@ def _readonly(value: Any, *, copy: bool = False) -> np.ndarray:
     return array
 
 
+def _compact_tensor(name: str, value: Any, spatial, *, verb: str) -> np.ndarray:
+    array = _readonly(value)
+    if (
+        array.ndim != 4
+        or array.shape[0] not in (1, 3, 6)
+        or array.shape[1:] != tuple(spatial)
+    ):
+        expected = ", ".join(str(item) for item in spatial)
+        raise ValueError(
+            f"{name} {verb} shape {array.shape}; expected compact (1|3|6, {expected})."
+        )
+    return array
+
+
 def _yee_tensor_shapes(
     cell_shape: tuple[int, int, int],
 ) -> dict[str, tuple[int, ...]]:
@@ -110,35 +124,17 @@ class RasterResult:
             raise ValueError(
                 f"Native raster output has unknown fields: {sorted(unknown)}"
             )
-        checked_yee_tensors = {}
-        for name, value in yee_tensors.items():
-            array = _readonly(value)
-            if (
-                array.ndim != 4
-                or array.shape[0] not in (1, 3, 6)
-                or array.shape[1:] != shapes[name]
-            ):
-                raise ValueError(
-                    f"{name} has shape {array.shape}; expected compact "
-                    f"(1|3|6, {', '.join(str(value) for value in shapes[name])})."
-                )
-            checked_yee_tensors[name] = array
+        checked_yee_tensors = {
+            name: _compact_tensor(name, value, shapes[name], verb="has")
+            for name, value in yee_tensors.items()
+        }
         assign(self, "grid_edges", edges)
         assign(self, "smoothing", str(smoothing))
         assign(self, "yee_tensors", MappingProxyType(checked_yee_tensors))
-        checked_tensors = {}
-        for name in _TENSORS:
-            array = _readonly(tensors[name])
-            if (
-                array.ndim != 4
-                or array.shape[0] not in (1, 3, 6)
-                or array.shape[1:] != cell_shape
-            ):
-                raise ValueError(
-                    f"{name} tensor has shape {array.shape}; expected compact "
-                    f"(1|3|6, {cell_shape[0]}, {cell_shape[1]}, {cell_shape[2]})."
-                )
-            checked_tensors[name] = array
+        checked_tensors = {
+            name: _compact_tensor(name, tensors[name], cell_shape, verb="tensor has")
+            for name in _TENSORS
+        }
         assign(self, "tensors", MappingProxyType(checked_tensors))
         assign(self, "diagnostics", MappingProxyType(dict(diagnostics)))
         assign(self, "scene_hash", str(scene_hash))
