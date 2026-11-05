@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from beamz.analysis._plot_canvas import _PLANE_AXES, _UM, _edges_are_uniform
+from beamz.analysis._plot_canvas import (
+    _PLANE_AXES,
+    _UM,
+    _display_extent,
+    _origin_map,
+    _plane_edges_um,
+)
 from beamz.analysis._plot_fields import extract_axis_aligned_slice
 from beamz.analysis.data import AnalysisData
 
@@ -211,9 +217,7 @@ def _overlay_material_slice(
     sample_region=None,
 ):
     vertical, horizontal = _PLANE_AXES[normal]
-    origin_by_axis: dict[str, float] = dict(
-        zip(("x", "y", "z"), map(float, origin), strict=True)
-    )
+    origin_by_axis = _origin_map(origin)
     grid = getattr(simulation.coordinates, "grid", None)
     plot_x_edges = None
     plot_y_edges = None
@@ -225,49 +229,32 @@ def _overlay_material_slice(
             else np.asarray(())
         )
         if materials is not None and eps.ndim == 3:
-            storage_axes = ("z", "y", "x")
             selectors = []
-            for dimension, axis in enumerate(storage_axes):
+            for dimension, axis in enumerate("zyx"):
                 data_origin = int(materials.origin[dimension])
                 if axis == normal:
                     selector = int(sample_region.plane_index) - data_origin
-                    if not 0 <= selector < eps.shape[dimension]:
-                        return None
+                    valid = 0 <= selector < eps.shape[dimension]
                 else:
                     interval = sample_region.axis_interval(axis)
                     if interval is None:
                         return None
                     start = int(interval.start) - data_origin
                     stop = int(interval.stop) - data_origin
-                    if start < 0 or stop > eps.shape[dimension] or stop <= start:
-                        return None
-                    selector = slice(
-                        start,
-                        stop,
-                    )
+                    valid = 0 <= start < stop <= eps.shape[dimension]
+                    selector = slice(start, stop)
+                if not valid:
+                    return None
                 selectors.append(selector)
             eps_slice = eps[tuple(selectors)]
         else:
             eps_slice = None
-        vertical_interval = sample_region.axis_interval(vertical)
-        horizontal_interval = sample_region.axis_interval(horizontal)
-        if vertical_interval is None or horizontal_interval is None:
+        plane = _plane_edges_um(
+            grid, sample_region, vertical, horizontal, origin_by_axis
+        )
+        if plane is None:
             return None
-        x_edges = (
-            grid.axis_edges(horizontal)[
-                horizontal_interval.start : horizontal_interval.stop + 1
-            ]
-            - origin_by_axis[horizontal]
-        ) / _UM
-        y_edges = (
-            grid.axis_edges(vertical)[
-                vertical_interval.start : vertical_interval.stop + 1
-            ]
-            - origin_by_axis[vertical]
-        ) / _UM
-        extent = (x_edges[0], x_edges[-1], y_edges[0], y_edges[-1])
-        if not _edges_are_uniform(x_edges) or not _edges_are_uniform(y_edges):
-            plot_x_edges, plot_y_edges = x_edges, y_edges
+        extent, _x_edges, _y_edges, plot_x_edges, plot_y_edges = plane
     else:
         eps_slice = _field_eps_slice(
             simulation, plane=normal, plane_position=float(position)
@@ -276,28 +263,17 @@ def _overlay_material_slice(
             return None
         shape = np.asarray(eps_slice).shape
         metadata = simulation.coordinates
-        lengths: dict[str, float] = {
-            "x": metadata.width,
-            "y": metadata.height,
-            "z": metadata.depth,
+        stored = {"x": metadata.width, "y": metadata.height, "z": metadata.depth}
+        fallback = {
+            horizontal: shape[1] * simulation.resolution,
+            vertical: shape[0] * simulation.resolution,
         }
-
-        def length(axis, fallback):
-            return float(lengths[axis] or fallback)
-
-        extent = (
-            (0.0 - origin_by_axis[horizontal]) / _UM,
-            (
-                length(horizontal, shape[1] * simulation.resolution)
-                - origin_by_axis[horizontal]
-            )
-            / _UM,
-            (0.0 - origin_by_axis[vertical]) / _UM,
-            (
-                length(vertical, shape[0] * simulation.resolution)
-                - origin_by_axis[vertical]
-            )
-            / _UM,
+        lengths = {
+            axis: float(stored[axis] or fallback[axis])
+            for axis in (horizontal, vertical)
+        }
+        extent = _display_extent(
+            origin_by_axis, horizontal, vertical, lengths, unit=_UM
         )
     if eps_slice is None:
         return None

@@ -13,28 +13,30 @@ from beamz.devices._placement import snap_plane_region_grid
 from beamz.lattice import (
     component_coordinates_3d_um,
     component_coordinates_rectilinear,
+    plane_axes_3d,
     yee_plane_coordinates_3d,
 )
 
 
-def _grid_shape(sim):
+def _solver_view(sim):
     if isinstance(sim, AnalysisData):
-        return sim.coordinates.fields.grid_shape
+        return sim.coordinates.fields, sim.coordinates.grid
     fields = static_fields(sim)
-    shape = getattr(fields, "grid_shape", None)
-    if shape is not None:
-        return tuple(int(v) for v in shape)
-    return tuple(int(v) for v in np.asarray(fields.permittivity).shape)
+    return fields, getattr(fields, "geometry", None)
+
+
+def _grid_shape(sim):
+    fields, _grid = _solver_view(sim)
+    return _analytic_grid_shape(fields, sim)
 
 
 def _analysis_grid(sim):
     if isinstance(sim, AnalysisData):
         return sim.coordinates.grid
     try:
-        fields = static_fields(sim)
+        return _solver_view(sim)[1]
     except TypeError:
         return None
-    return getattr(fields, "geometry", None)
 
 
 def _monitor_projection_phase(component, frequencies, dt):
@@ -148,14 +150,9 @@ def _mode_components_for_port(spec):
 
 def _plane_axes_for_port_axis(axis: str) -> tuple[str, str]:
     axis = str(axis).lower()
-    mapping = {
-        "x": ("z", "y"),
-        "y": ("z", "x"),
-        "z": ("y", "x"),
-    }
     try:
-        return mapping[axis]
-    except KeyError as exc:
+        return plane_axes_3d(axis)
+    except ValueError as exc:
         raise ValueError(f"Unsupported port axis {axis!r}.") from exc
 
 
@@ -169,14 +166,53 @@ def _clamp_monitor_grid_index(idx, limit):
     return max(0, min(int(idx), limit - 1))
 
 
-def _component_shape(sim, component):
+def _component_shape_from(fields, sim, component):
     if isinstance(sim, AnalysisData):
-        return sim.coordinates.fields.component_shapes[component]
-    fields = static_fields(sim)
+        return fields.component_shapes[component]
     shapes = getattr(fields, "component_shapes", None)
     if shapes is not None:
         return tuple(int(v) for v in shapes[component])
     return tuple(int(v) for v in np.asarray(getattr(fields, component)).shape)
+
+
+def _component_shape(sim, component):
+    return _component_shape_from(_solver_view(sim)[0], sim, component)
+
+
+def _analytic_grid_shape(fields, sim):
+    if isinstance(sim, AnalysisData):
+        return fields.grid_shape
+    shape = getattr(fields, "grid_shape", None)
+    if shape is None:
+        shape = np.asarray(fields.permittivity).shape
+    return tuple(int(v) for v in shape)
+
+
+def _component_plane_coordinates(
+    sim, component, selectors, axis, *, analytic_if_uniform=False, view=None
+):
+    fields, grid = _solver_view(sim) if view is None else view
+    analytic = grid is None or (
+        analytic_if_uniform and grid.metric_kind == "isotropic_uniform"
+    )
+    if analytic:
+        shape = _analytic_grid_shape(fields, sim)
+        if analytic_if_uniform:
+            shape = tuple(int(v) for v in shape)
+        coords = {
+            name: values * float(µm)
+            for name, values in component_coordinates_3d_um(
+                component, shape, float(sim.resolution / µm)
+            ).items()
+        }
+    else:
+        coords = component_coordinates_rectilinear(component, grid)
+    axis0, axis1 = _plane_axes_for_port_axis(axis)
+    chosen = dict(zip("zyx", selectors, strict=True))
+    return (
+        np.asarray(coords[axis0][chosen[axis0]], dtype=np.float64),
+        np.asarray(coords[axis1][chosen[axis1]], dtype=np.float64),
+    )
 
 
 def _monitor_common_plane_shape_3d(sim, monitor) -> tuple[int, int]:
@@ -239,26 +275,20 @@ def _monitor_component_plane_coords_3d(
     ):
         return _monitor_analysis_plane_3d(sim, monitor, axis)
 
-    field_shape = _component_shape(sim, component)
-    indices = monitor.get_grid_slice_3d(
-        sim.resolution, sim.resolution, sim.resolution, field_shape
-    )
+    view = _solver_view(sim)
+    field_shape = _component_shape_from(view[0], sim, component)
     indices = tuple(
         _clamp_monitor_grid_index(index, limit)
-        for index, limit in zip(indices, field_shape, strict=True)
+        for index, limit in zip(
+            monitor.get_grid_slice_3d(
+                sim.resolution, sim.resolution, sim.resolution, field_shape
+            ),
+            field_shape,
+            strict=True,
+        )
     )
-    if grid is None:
-        coords = {
-            name: values * float(µm)
-            for name, values in component_coordinates_3d_um(
-                component, _grid_shape(sim), float(sim.resolution / µm)
-            ).items()
-        }
-    else:
-        coords = component_coordinates_rectilinear(component, grid)
-    axis0, axis1 = _plane_axes_for_port_axis(axis)
-    axis_slices: dict[str, Any] = dict(zip(("z", "y", "x"), indices, strict=True))
+    coord0, coord1 = _component_plane_coordinates(
+        sim, component, indices, axis, view=view
+    )
     common0, common1 = _monitor_common_plane_shape_3d(sim, monitor)
-    coord0 = np.asarray(coords[axis0][axis_slices[axis0]], dtype=np.float64)
-    coord1 = np.asarray(coords[axis1][axis_slices[axis1]], dtype=np.float64)
     return coord0[:common0], coord1[:common1]

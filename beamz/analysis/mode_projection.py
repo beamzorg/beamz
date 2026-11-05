@@ -73,18 +73,15 @@ def _monitor_profile_slice(sim, monitor, axis, pad_cells):
         if not points:
             raise ValueError(f"Monitor '{monitor.name}' contains no sample points.")
         plane = int(snapped.plane_index)
-        if axis == "x":
-            profile = perm[:, plane - origin[1]]
-            sample_idx = np.asarray(
-                [point[1] - origin[0] for point in points], dtype=int
-            )
-            transverse_axis, sample_origin = "y", origin[0]
-        else:
-            profile = perm[plane - origin[0], :]
-            sample_idx = np.asarray(
-                [point[0] - origin[1] for point in points], dtype=int
-            )
-            transverse_axis, sample_origin = "x", origin[1]
+        along_x = axis == "x"
+        profile = (
+            perm[:, plane - origin[1]] if along_x else perm[plane - origin[0], :]
+        )
+        point_axis, sample_origin = (1, origin[0]) if along_x else (0, origin[1])
+        sample_idx = np.asarray(
+            [point[point_axis] - sample_origin for point in points], dtype=int
+        )
+        transverse_axis = "y" if along_x else "x"
         window, local_idx, lo, hi = _line_crop(profile, sample_idx, pad_cells)
         edges = np.asarray(grid.axis_edges(transverse_axis))[lo : hi + 1]
         weights = np.asarray(grid.cell_widths(transverse_axis))[
@@ -107,18 +104,22 @@ def _monitor_profile_slice(sim, monitor, axis, pad_cells):
         extended = np.pad(profile, (1, 1), mode="edge")
         return 0.5 * (extended[:-1] + extended[1:])
 
-    if axis == "x":
-        normal = int(
-            np.clip(round(float(np.mean(coordinates[:, 0]))), 0, full_shape[1] - 1)
-        )
-        profile = transverse_material(perm[:, normal - origin[1]])
-        component, limit, sample_origin = 1, full_shape[0], origin[0]
-    else:
-        normal = int(
-            np.clip(round(float(np.mean(coordinates[:, 1]))), 0, full_shape[0] - 1)
-        )
-        profile = transverse_material(perm[normal - origin[0], :])
-        component, limit, sample_origin = 0, full_shape[1], origin[1]
+    along_x = axis == "x"
+    coord_col = 0 if along_x else 1
+    normal_limit = full_shape[1 if along_x else 0]
+    normal = int(
+        np.clip(round(float(np.mean(coordinates[:, coord_col]))), 0, normal_limit - 1)
+    )
+    profile_origin = origin[1 if along_x else 0]
+    column = (
+        perm[:, normal - profile_origin]
+        if along_x
+        else perm[normal - profile_origin, :]
+    )
+    profile = transverse_material(column)
+    component, limit, sample_origin = (
+        (1, full_shape[0], origin[0]) if along_x else (0, full_shape[1], origin[1])
+    )
     sample_idx = np.asarray(
         [
             int(np.clip(point[component], 0, limit - int(not node_sampled)))
@@ -214,12 +215,8 @@ def _build_discrete_port_projection_3d(
     )
     center = tuple(float(value) for value in monitor.center)
     size = tuple(float(value) for value in monitor.size_spec)
-    if axis == "x":
-        width, height = size[1], size[2]
-    elif axis == "y":
-        width, height = size[0], size[2]
-    else:
-        width, height = size[0], size[1]
+    transverse = {"x": (1, 2), "y": (0, 2), "z": (0, 1)}[axis]
+    width, height = size[transverse[0]], size[transverse[1]]
 
     # The scalar raster alone cannot reproduce smoothed or anisotropic Yee
     # coefficients. Use the same retained constitutive data as the source solve.
@@ -444,21 +441,15 @@ def _build_port_projection_2d(
             f"mode_index={spec.mode_index} on port {spec.name!r}."
         )
 
+    def line_profile(field):
+        profile = np.asarray(np.squeeze(field), dtype=np.complex128)
+        if profile.ndim > 1:
+            profile = profile[:, 0]
+        return profile[local_idx]
+
     mode_index = int(spec.mode_index)
-    e_profile = np.asarray(
-        np.squeeze(e_fields[mode_index][parts["e_mode_index"]]),
-        dtype=np.complex128,
-    )
-    h_profile = np.asarray(
-        np.squeeze(h_fields[mode_index][parts["h_mode_index"]]),
-        dtype=np.complex128,
-    )
-    if e_profile.ndim > 1:
-        e_profile = e_profile[:, 0]
-    if h_profile.ndim > 1:
-        h_profile = h_profile[:, 0]
-    e_profile = e_profile[local_idx]
-    h_profile = h_profile[local_idx]
+    e_profile = line_profile(e_fields[mode_index][parts["e_mode_index"]])
+    h_profile = line_profile(h_fields[mode_index][parts["h_mode_index"]])
 
     measure = np.asarray(dl, dtype=float)
     weights = measure if measure.ndim == 0 else measure.reshape(-1)[: e_profile.size]

@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from beamz.analysis._plot_canvas import _PLANE_AXES, _UM
-from beamz.analysis._plot_design import _vertices_2d
+from beamz.analysis._plot_canvas import (
+    _PLANE_AXES,
+    _UM,
+    _display_extent,
+    _origin_map,
+)
+from beamz.analysis._plot_design import _closed_ring_path, _vertices_2d
 from beamz.analysis._plot_fields import AxisSlice
 from beamz.analysis._plot_materials import _layout_color
 from beamz.devices.visualization import visual_spec_from_device
@@ -77,23 +82,19 @@ def _draw_circular_device_overlay(ax, spec, *, normal, origin, color):
 def _draw_parallel_device_footprint(
     ax, *, horizontal, vertical, center, size, origin, color
 ):
-    """Draw the full footprint of a device whose plane faces the section."""
     from matplotlib.patches import Rectangle
 
-    origin_by_axis = dict(zip(("x", "y", "z"), map(float, origin), strict=True))
+    origins = _origin_map(origin)
     indices = {"x": 0, "y": 1, "z": 2}
-    horizontal_index = indices[horizontal]
-    vertical_index = indices[vertical]
-    lower = (
-        (center[horizontal_index] - 0.5 * size[horizontal_index])
-        - origin_by_axis[horizontal],
-        (center[vertical_index] - 0.5 * size[vertical_index])
-        - origin_by_axis[vertical],
-    )
+
+    def lower(axis):
+        index = indices[axis]
+        return (center[index] - 0.5 * size[index] - origins[axis]) / _UM
+
     rectangle = Rectangle(
-        tuple(value / _UM for value in lower),
-        size[horizontal_index] / _UM,
-        size[vertical_index] / _UM,
+        (lower(horizontal), lower(vertical)),
+        size[indices[horizontal]] / _UM,
+        size[indices[vertical]] / _UM,
         facecolor=color,
         edgecolor=color,
         alpha=0.25,
@@ -128,24 +129,25 @@ def _draw_edge_on_device(
         ]
     else:
         return
-    origin_by_axis: dict[str, float] = dict(
-        zip(("x", "y", "z"), map(float, origin), strict=True)
-    )
+    origins = _origin_map(origin)
     indices = {"x": 0, "y": 1, "z": 2}
+
+    def shifted(value, axis):
+        return (float(value) - origins[axis]) / _UM
+
     for horizontal_line, span_axis, fixed_axis, arrow in segments:
         span_index, fixed_index = indices[span_axis], indices[fixed_axis]
         half = 0.5 * size[span_index]
         span = (
-            center[span_index] - half - origin_by_axis[span_axis],
-            center[span_index] + half - origin_by_axis[span_axis],
+            shifted(center[span_index] - half, span_axis),
+            shifted(center[span_index] + half, span_axis),
         )
-        fixed = (center[fixed_index] - origin_by_axis[fixed_axis]) / _UM
-        span = tuple(value / _UM for value in span)
+        fixed = shifted(center[fixed_index], fixed_axis)
         x, y = (span, (fixed, fixed)) if horizontal_line else ((fixed, fixed), span)
         ax.plot(x, y, color=color, lw=2.0)
         if not (source and arrow):
             continue
-        anchor = (center[span_index] - origin_by_axis[span_axis]) / _UM
+        anchor = shifted(center[span_index], span_axis)
         delta = -0.55 if direction.startswith("-") else 0.55
         start_xy = (anchor, fixed) if horizontal_line else (fixed, anchor)
         end_xy = (anchor, fixed + delta) if horizontal_line else (fixed + delta, anchor)
@@ -233,17 +235,13 @@ def overlay_boundaries(ax, extent, thickness, *, edges=None, **style):
 def _layout_slice(normal, position, *, design, origin) -> AxisSlice:
     """Describe a displayed design plane without quantizing it to the grid."""
     vertical, horizontal = _PLANE_AXES[normal]
-    extents: dict[str, float] = {
+    extents = {
         "x": float(design.width),
         "y": float(design.height),
         "z": float(design.depth or 0.0),
     }
-    origin_by_axis: dict[str, float] = dict(zip(("x", "y", "z"), origin, strict=True))
-    extent = (
-        -float(origin_by_axis[horizontal]) / _UM,
-        (extents[horizontal] - float(origin_by_axis[horizontal])) / _UM,
-        -float(origin_by_axis[vertical]) / _UM,
-        (extents[vertical] - float(origin_by_axis[vertical])) / _UM,
+    extent = _display_extent(
+        _origin_map(origin), horizontal, vertical, extents, unit=_UM
     )
     return AxisSlice(
         values=np.empty((0, 0)),
@@ -314,46 +312,34 @@ def _line_segments(geometry):
 def _path_patch(ax, geometry, *, normal, origin, facecolor):
     """Draw a Shapely polygon as an antialiased vector patch in a layout plane."""
     from matplotlib.patches import PathPatch
-    from matplotlib.path import Path
 
     vertical, horizontal = _PLANE_AXES[normal]
-    origin_by_axis: dict[str, float] = dict(zip(("x", "y", "z"), origin, strict=True))
-    axis_index: dict[str, int] = {"x": 0, "y": 1, "z": 2}
-    h_index = axis_index[horizontal]
-    v_index = axis_index[vertical]
+    origins = _origin_map(origin)
+    axis_index = {"x": 0, "y": 1, "z": 2}
+    column = (
+        (axis_index[horizontal], axis_index[vertical]) if normal == "z" else (0, 1)
+    )
     patches = []
     for polygon in _polygon_geometries(geometry):
-        coords = []
-        codes = []
+        rings = []
         for ring in (polygon.exterior, *polygon.interiors):
             ring_coords = np.asarray(ring.coords[:-1], dtype=float)
             if ring_coords.shape[0] < 3:
                 continue
-            if normal == "z":
-                transformed = np.column_stack(
+            # Non-z sections arrive as x/z polygons already in horizontal/vertical order.
+            rings.append(
+                np.column_stack(
                     (
-                        (ring_coords[:, h_index] - origin_by_axis[horizontal]) / _UM,
-                        (ring_coords[:, v_index] - origin_by_axis[vertical]) / _UM,
+                        (ring_coords[:, column[0]] - origins[horizontal]) / _UM,
+                        (ring_coords[:, column[1]] - origins[vertical]) / _UM,
                     )
                 )
-            else:
-                # xz sections arrive as x/z polygons, whose two coordinates are
-                # already in the horizontal/vertical order for a y-normal view.
-                transformed = np.column_stack(
-                    (
-                        (ring_coords[:, 0] - origin_by_axis[horizontal]) / _UM,
-                        (ring_coords[:, 1] - origin_by_axis[vertical]) / _UM,
-                    )
-                )
-            coords.extend(transformed)
-            codes.extend(
-                (Path.MOVETO, *(Path.LINETO,) * (len(transformed) - 1), Path.CLOSEPOLY)
             )
-            coords.append(transformed[0])
-        if not coords:
+        path = _closed_ring_path(rings)
+        if path is None:
             continue
         patch = PathPatch(
-            Path(np.asarray(coords), np.asarray(codes)),
+            path,
             facecolor=facecolor,
             # Filled structures use painter's order. An edge stroke would leave
             # a light seam when a later structure overlaps an earlier one.
@@ -384,20 +370,13 @@ def _draw_sphere_slice(ax, structure, *, normal, position, origin, facecolor):
     if squared_radius < 0.0:
         return None
     radius = float(np.sqrt(squared_radius))
-    if normal == "z":
-        horizontal, vertical = "x", "y"
-        coordinates = center[0], center[1]
-    elif normal == "y":
-        horizontal, vertical = "x", "z"
-        coordinates = center[0], center[2]
-    else:
-        horizontal, vertical = "y", "z"
-        coordinates = center[1], center[2]
-    origin_by_axis = dict(zip(("x", "y", "z"), origin, strict=True))
+    vertical, horizontal = _PLANE_AXES[normal]
+    origins = _origin_map(origin)
+    center_index = {"x": 0, "y": 1, "z": 2}
     patch = Circle(
         (
-            (coordinates[0] - origin_by_axis[horizontal]) / _UM,
-            (coordinates[1] - origin_by_axis[vertical]) / _UM,
+            (center[center_index[horizontal]] - origins[horizontal]) / _UM,
+            (center[center_index[vertical]] - origins[vertical]) / _UM,
         ),
         radius / _UM,
         facecolor=facecolor,
@@ -432,25 +411,23 @@ def _draw_structure_slice(
             facecolor=facecolor,
         )
     if isinstance(structure, Box):
-        lower = structure.lower
-        upper = structure.upper
-        if normal == "z" and lower[2] <= position <= upper[2]:
-            return _path_patch(
-                ax,
-                _rectangle_geometry(lower[0], upper[0], lower[1], upper[1]),
-                normal=normal,
-                origin=origin,
-                facecolor=facecolor,
-            )
-        if normal == "y" and lower[1] <= position <= upper[1]:
-            return _path_patch(
-                ax,
-                _rectangle_geometry(lower[0], upper[0], lower[2], upper[2]),
-                normal=normal,
-                origin=origin,
-                facecolor=facecolor,
-            )
-        return ()
+        axes = {"z": (2, 0, 1), "y": (1, 0, 2)}.get(normal)
+        lower, upper = structure.lower, structure.upper
+        if axes is None or not lower[axes[0]] <= position <= upper[axes[0]]:
+            return ()
+        _fixed, horizontal_axis, vertical_axis = axes
+        return _path_patch(
+            ax,
+            _rectangle_geometry(
+                lower[horizontal_axis],
+                upper[horizontal_axis],
+                lower[vertical_axis],
+                upper[vertical_axis],
+            ),
+            normal=normal,
+            origin=origin,
+            facecolor=facecolor,
+        )
 
     geometry = _planar_structure_geometry(structure)
     if geometry is None:

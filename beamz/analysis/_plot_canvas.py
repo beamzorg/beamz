@@ -5,14 +5,16 @@ from __future__ import annotations
 import numpy as np
 
 from beamz._helpers import get_si_scale_and_label
+from beamz.analysis._coordinates import (
+    _PLANE_AXES as _PLANE_AXES,
+)
+from beamz.analysis._coordinates import (
+    _STORAGE_AXIS,
+    _XYZ_INDEX,
+)
 
 _UM = 1e-6
-_AXIS_INDEX: dict[str, int] = {"z": 0, "y": 1, "x": 2}
-_PLANE_AXES: dict[str, tuple[str, str]] = {
-    "x": ("z", "y"),
-    "y": ("z", "x"),
-    "z": ("y", "x"),
-}
+_AXIS_INDEX = _STORAGE_AXIS
 _DESIGN_EXTENT: dict[str, str] = {
     "x": "width",
     "y": "height",
@@ -51,6 +53,47 @@ def _index_from_position(position, *, step, count, default):
         return int(default)
     idx = int(round(float(position) / max(float(step), 1e-30)))
     return int(np.clip(idx, 0, int(count) - 1))
+
+
+def _origin_map(origin) -> dict[str, float]:
+    return dict(zip("xyz", map(float, origin), strict=True))
+
+
+def _display_extent(origins, horizontal, vertical, lengths, *, unit=1.0):
+    def span(axis):
+        origin = float(origins[axis])
+        return -origin / unit, (float(lengths[axis]) - origin) / unit
+
+    return (*span(horizontal), *span(vertical))
+
+
+def _region_edges_um(grid, region, axis, origin):
+    interval = region.axis_interval(axis)
+    if interval is None:
+        return None
+    edges = np.asarray(grid.axis_edges(axis), dtype=float)
+    return (edges[interval.start : interval.stop + 1] - float(origin)) / _UM
+
+
+def _plane_edges_um(grid, region, vertical, horizontal, origins):
+    """Return extent, grid edges, and plot edges when spacing is nonuniform."""
+    x_edges = _region_edges_um(grid, region, horizontal, origins[horizontal])
+    y_edges = _region_edges_um(grid, region, vertical, origins[vertical])
+    if x_edges is None or y_edges is None:
+        return None
+    extent = (x_edges[0], x_edges[-1], y_edges[0], y_edges[-1])
+    uniform = _edges_are_uniform(x_edges) and _edges_are_uniform(y_edges)
+    plot_x, plot_y = (None, None) if uniform else (x_edges, y_edges)
+    return extent, x_edges, y_edges, plot_x, plot_y
+
+
+def _shifted_grid_edges(grid, origin, axes):
+    return {
+        axis: np.asarray(grid.axis_edges(axis))
+        - grid.origin[_XYZ_INDEX[axis]]
+        - origin[_XYZ_INDEX[axis]]
+        for axis in axes
+    }
 
 
 def _simulation_origin(sim):
