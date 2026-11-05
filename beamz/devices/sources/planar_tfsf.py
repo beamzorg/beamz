@@ -592,15 +592,14 @@ def advance_incident_h_3d(fields, state, dt, *, resolution: float):
         else curl_e_to_h_3d_metric(ex, ey, ez, grid)
     )
     return {
-        "Hx": np.asarray(
-            advance_h_field(hx, curl_hx, fields.sigma_m_hx, dt),
-        ),
-        "Hy": np.asarray(
-            advance_h_field(hy, curl_hy, fields.sigma_m_hy, dt),
-        ),
-        "Hz": np.asarray(
-            advance_h_field(hz, curl_hz, fields.sigma_m_hz, dt),
-        ),
+        name: np.asarray(advance_h_field(field, curl, sigma, dt))
+        for name, field, curl, sigma in zip(
+            _H_COMPONENTS_3D,
+            (hx, hy, hz),
+            (curl_hx, curl_hy, curl_hz),
+            (fields.sigma_m_hx, fields.sigma_m_hy, fields.sigma_m_hz),
+            strict=True,
+        )
     }
 
 
@@ -662,21 +661,16 @@ def advance_incident_e_3d(
         )
         return dict(zip(("Ex", "Ey", "Ez"), map(np.asarray, updated), strict=True))
     return {
-        "Ex": np.asarray(
-            advance_e_field(
-                ex, curl_hx, fields.sig_x, fields.eps_x, dt, fields.region_x
-            ),
-        ),
-        "Ey": np.asarray(
-            advance_e_field(
-                ey, curl_hy, fields.sig_y, fields.eps_y, dt, fields.region_y
-            ),
-        ),
-        "Ez": np.asarray(
-            advance_e_field(
-                ez, curl_hz, fields.sig_z, fields.eps_z, dt, fields.region_z
-            ),
-        ),
+        name: np.asarray(advance_e_field(field, curl, sigma, eps, dt, region))
+        for name, field, curl, sigma, eps, region in zip(
+            _E_COMPONENTS_3D,
+            (ex, ey, ez),
+            (curl_hx, curl_hy, curl_hz),
+            (fields.sig_x, fields.sig_y, fields.sig_z),
+            (fields.eps_x, fields.eps_y, fields.eps_z),
+            (fields.region_x, fields.region_y, fields.region_z),
+            strict=True,
+        )
     }
 
 

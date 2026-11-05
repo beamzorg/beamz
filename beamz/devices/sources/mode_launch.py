@@ -311,6 +311,14 @@ def _plan_2d_entries(
     )
 
 
+def _require_lossless_mode_materials(fields):
+    if np.any(np.asarray(fields.conductivity) != 0.0):
+        raise ValueError(
+            "ModeSource does not yet support conductive material profiles; the "
+            "mode solve would not match lossy FDTD propagation."
+        )
+
+
 def _plan_2d_mode_source(
     source: ModeSource,
     fields,
@@ -325,11 +333,7 @@ def _plan_2d_mode_source(
             f"ModeSource polarization {requested!r} does not match the "
             f"Simulation polarization {polarization!r}."
         )
-    if np.any(np.asarray(fields.conductivity) != 0.0):
-        raise ValueError(
-            "ModeSource does not yet support conductive material profiles; the "
-            "mode solve would not match lossy FDTD propagation."
-        )
+    _require_lossless_mode_materials(fields)
     _require_cell_mode_materials(
         getattr(fields, "material_grid", None),
         operation="2D ModeSource",
@@ -445,11 +449,7 @@ def _plan_3d_mode_source(
     dt: float | None,
     grid=None,
 ) -> Mode3DLaunchPlan:
-    if np.any(np.asarray(fields.conductivity) != 0.0):
-        raise ValueError(
-            "ModeSource does not yet support conductive material profiles; the "
-            "mode solve would not match lossy FDTD propagation."
-        )
+    _require_lossless_mode_materials(fields)
     permittivity = np.asarray(fields.permittivity)
     nz, ny, nx = permittivity.shape
     axis = source.axis

@@ -230,34 +230,38 @@ def snap_rectilinear_edge_interval(
     )
 
 
+def _aligned_line(start, end, tolerance):
+    """Return ``(normal, center, varying bounds, tangential axis)`` for an axis-aligned line."""
+    x0, y0, x1, y1 = (float(value) for value in (*start[:2], *end[:2]))
+    if abs(x0 - x1) <= tolerance:
+        return "x", 0.5 * (x0 + x1), (y0, y1), "y"
+    if abs(y0 - y1) <= tolerance:
+        return "y", 0.5 * (y0 + y1), (x0, x1), "x"
+    return None
+
+
 def snap_axis_aligned_line_region_grid(
     start: tuple[float, ...],
     end: tuple[float, ...],
     grid,
 ) -> SnappedRegion | None:
     """Snap a 2D line using realized x/y cell edges."""
-    x0, y0 = float(start[0]), float(start[1])
-    x1, y1 = float(end[0]), float(end[1])
-    tolerance = 1e-12 * max(*map(abs, (x0, x1, y0, y1)), grid.minimum_spacing, 1.0)
-    if abs(x0 - x1) <= tolerance:
-        index, coordinate = snap_rectilinear_cell_center(0.5 * (x0 + x1), grid.x_edges)
-        return SnappedRegion(
-            2,
-            "x",
-            index,
-            coordinate,
-            {"y": snap_rectilinear_edge_interval(y0, y1, grid.y_edges)},
-        )
-    if abs(y0 - y1) <= tolerance:
-        index, coordinate = snap_rectilinear_cell_center(0.5 * (y0 + y1), grid.y_edges)
-        return SnappedRegion(
-            2,
-            "y",
-            index,
-            coordinate,
-            {"x": snap_rectilinear_edge_interval(x0, x1, grid.x_edges)},
-        )
-    return None
+    tolerance = 1e-12 * max(
+        *map(abs, (*start[:2], *end[:2])), grid.minimum_spacing, 1.0
+    )
+    aligned = _aligned_line(start, end, tolerance)
+    if aligned is None:
+        return None
+    normal, center, (lo, hi), tangential = aligned
+    edges = {"x": grid.x_edges, "y": grid.y_edges}
+    index, coordinate = snap_rectilinear_cell_center(center, edges[normal])
+    return SnappedRegion(
+        2,
+        normal,
+        index,
+        coordinate,
+        {tangential: snap_rectilinear_edge_interval(lo, hi, edges[tangential])},
+    )
 
 
 def snap_plane_region_grid(*, center, size, plane_normal: str, grid) -> SnappedRegion:
@@ -282,6 +286,23 @@ def snap_plane_region_grid(*, center, size, plane_normal: str, grid) -> SnappedR
             edges[tangential],
         )
     return SnappedRegion(3, axis, plane_index, plane_coord, intervals)
+
+
+def _launch_companion(plane_index: int, direction_sign: float, count: int) -> int:
+    limit = max(int(count) - 2, 0)
+    if direction_sign > 0.0:
+        return max(0, int(plane_index) - 1)
+    return min(limit, int(plane_index) + 1)
+
+
+def _mode_transverse_extents(axis: str, width: float, height: float | None):
+    span = float(width if height is None else height)
+    width = float(width)
+    return {
+        "x": (("y", width), ("z", span)),
+        "y": (("x", width), ("z", span)),
+        "z": (("x", width), ("y", span)),
+    }[axis]
 
 
 def snap_centered_extent(
@@ -318,37 +339,19 @@ def snap_mode_source_region(
     plane_index, plane_coord = snap_cell_center(
         center[_axis_pos(axis)], resolution, counts[axis]
     )
-
-    companion_max = max(counts[axis] - 2, 0)
-    if direction_sign > 0.0:
-        companion_index = max(0, plane_index - 1)
-    else:
-        companion_index = min(companion_max, plane_index + 1)
+    companion_index = _launch_companion(plane_index, direction_sign, counts[axis])
     companion_coord = (float(companion_index) + 1.0) * float(resolution)
 
     intervals: dict[str, SnappedInterval] = {}
-    if axis in ("x", "y"):
-        transverse = "y" if axis == "x" else "x"
+    for transverse, extent in _mode_transverse_extents(axis, width, height):
+        if not is_3d and transverse == "z":
+            continue
+        if transverse == "z" and len(center) <= 2:
+            coord = 0.5 * counts["z"] * float(resolution)
+        else:
+            coord = float(center[_axis_pos(transverse)])
         intervals[transverse] = snap_centered_extent(
-            center[_axis_pos(transverse)], width, resolution, counts[transverse]
-        )
-        if is_3d:
-            z_center = (
-                center[2] if len(center) > 2 else 0.5 * counts["z"] * float(resolution)
-            )
-            intervals["z"] = snap_centered_extent(
-                z_center,
-                float(height if height is not None else width),
-                resolution,
-                counts["z"],
-            )
-    else:
-        intervals["x"] = snap_centered_extent(center[0], width, resolution, counts["x"])
-        intervals["y"] = snap_centered_extent(
-            center[1],
-            float(height if height is not None else width),
-            resolution,
-            counts["y"],
+            coord, extent, resolution, counts[transverse]
         )
 
     return SnappedRegion(
@@ -379,21 +382,10 @@ def snap_mode_source_region_grid(
         center[_axis_pos(axis)], edges[axis]
     )
     counts = {name: int(values.size - 1) for name, values in edges.items()}
-    companion_max = max(counts[axis] - 2, 0)
-    companion_index = (
-        max(0, plane_index - 1)
-        if direction_sign > 0.0
-        else min(companion_max, plane_index + 1)
-    )
+    companion_index = _launch_companion(plane_index, direction_sign, counts[axis])
     companion_coord = float(edges[axis][companion_index + 1])
-
-    extents = {
-        "x": {"y": float(width), "z": float(height if height is not None else width)},
-        "y": {"x": float(width), "z": float(height if height is not None else width)},
-        "z": {"x": float(width), "y": float(height if height is not None else width)},
-    }[axis]
     intervals = {}
-    for transverse, extent in extents.items():
+    for transverse, extent in _mode_transverse_extents(axis, width, height):
         if not is_3d and transverse == "z":
             continue
         coord = float(center[_axis_pos(transverse)])
@@ -425,29 +417,22 @@ def snap_axis_aligned_line_region(
             "A 2D line region requires two coordinates and a rank-2 shape."
         )
     ny, nx = shape
-    x0, y0 = float(start[0]), float(start[1])
-    x1, y1 = float(end[0]), float(end[1])
-    tol = 1e-9 * max(abs(dx), abs(dy), 1.0)
-
-    if abs(x0 - x1) <= tol:
-        plane_index, plane_coord = snap_cell_center(0.5 * (x0 + x1), dx, nx)
-        return SnappedRegion(
-            ndim=2,
-            normal_axis="x",
-            plane_index=int(plane_index),
-            plane_coord=float(plane_coord),
-            intervals={"y": snap_edge_interval(y0, y1, dy, ny)},
-        )
-    if abs(y0 - y1) <= tol:
-        plane_index, plane_coord = snap_cell_center(0.5 * (y0 + y1), dy, ny)
-        return SnappedRegion(
-            ndim=2,
-            normal_axis="y",
-            plane_index=int(plane_index),
-            plane_coord=float(plane_coord),
-            intervals={"x": snap_edge_interval(x0, x1, dx, nx)},
-        )
-    return None
+    aligned = _aligned_line(start, end, 1e-9 * max(abs(dx), abs(dy), 1.0))
+    if aligned is None:
+        return None
+    normal, center, (lo, hi), tangential = aligned
+    step = {"x": float(dx), "y": float(dy)}
+    count = {"x": nx, "y": ny}
+    plane_index, plane_coord = snap_cell_center(center, step[normal], count[normal])
+    return SnappedRegion(
+        ndim=2,
+        normal_axis=normal,
+        plane_index=int(plane_index),
+        plane_coord=float(plane_coord),
+        intervals={
+            tangential: snap_edge_interval(lo, hi, step[tangential], count[tangential])
+        },
+    )
 
 
 def snap_plane_region(
@@ -470,41 +455,19 @@ def snap_plane_region(
     steps = {"x": float(dx), "y": float(dy), "z": float(dz)}
     axis = str(plane_normal).lower()
 
+    origin = {name: float(value) for name, value in zip(_AXES, start, strict=True)}
+    tangential = [name for name in _AXES if name != axis]
     if end is None:
-        x0, y0, z0 = (float(v) for v in start)
-        span0, span1 = (
-            (float(size[0]), float(size[1])) if size is not None else (0.0, 0.0)
-        )
-        if axis == "x":
-            plane_pos = x0
-            bounds = {
-                "y": (y0, y0 + span0),
-                "z": (z0, z0 + span1),
-            }
-        elif axis == "y":
-            plane_pos = y0
-            bounds = {
-                "x": (x0, x0 + span0),
-                "z": (z0, z0 + span1),
-            }
-        else:
-            plane_pos = z0
-            bounds = {
-                "x": (x0, x0 + span0),
-                "y": (y0, y0 + span1),
-            }
+        spans = (float(size[0]), float(size[1])) if size is not None else (0.0, 0.0)
+        plane_pos = origin[axis]
+        bounds = {
+            name: (origin[name], origin[name] + span)
+            for name, span in zip(tangential, spans, strict=True)
+        }
     else:
-        x0, y0, z0 = (float(v) for v in start)
-        x1, y1, z1 = (float(v) for v in end)
-        if axis == "x":
-            plane_pos = 0.5 * (x0 + x1)
-            bounds = {"y": (y0, y1), "z": (z0, z1)}
-        elif axis == "y":
-            plane_pos = 0.5 * (y0 + y1)
-            bounds = {"x": (x0, x1), "z": (z0, z1)}
-        else:
-            plane_pos = 0.5 * (z0 + z1)
-            bounds = {"x": (x0, x1), "y": (y0, y1)}
+        far = {name: float(value) for name, value in zip(_AXES, end, strict=True)}
+        plane_pos = 0.5 * (origin[axis] + far[axis])
+        bounds = {name: (origin[name], far[name]) for name in tangential}
 
     plane_index, plane_coord = snap_cell_center(plane_pos, steps[axis], counts[axis])
     intervals = {
@@ -521,49 +484,28 @@ def snap_plane_region(
 
 
 def line_region_points(region: SnappedRegion) -> list[tuple[int, int]]:
-    if region.normal_axis == "x":
-        interval = region.axis_interval("y")
-        if interval is None:
-            return []
-        return [
-            (int(region.plane_index), int(y_idx))
-            for y_idx in range(int(interval.start), int(interval.stop))
-        ]
-    interval = region.axis_interval("x")
+    tangential = "y" if region.normal_axis == "x" else "x"
+    interval = region.axis_interval(tangential)
     if interval is None:
         return []
-    return [
-        (int(x_idx), int(region.plane_index))
-        for x_idx in range(int(interval.start), int(interval.stop))
-    ]
+    fixed = int(region.plane_index)
+    varying = range(int(interval.start), int(interval.stop))
+    if region.normal_axis == "x":
+        return [(fixed, int(index)) for index in varying]
+    return [(int(index), fixed) for index in varying]
 
 
 def plane_region_slices(
     region: SnappedRegion,
 ) -> tuple[int | slice, int | slice, int | slice]:
-    if region.normal_axis == "x":
-        y_interval = region.axis_interval("y")
-        z_interval = region.axis_interval("z")
-        return (
-            z_interval.as_slice() if z_interval is not None else slice(0, 0),
-            y_interval.as_slice() if y_interval is not None else slice(0, 0),
-            int(region.plane_index),
-        )
-    if region.normal_axis == "y":
-        x_interval = region.axis_interval("x")
-        z_interval = region.axis_interval("z")
-        return (
-            z_interval.as_slice() if z_interval is not None else slice(0, 0),
-            int(region.plane_index),
-            x_interval.as_slice() if x_interval is not None else slice(0, 0),
-        )
-    x_interval = region.axis_interval("x")
-    y_interval = region.axis_interval("y")
-    return (
-        int(region.plane_index),
-        y_interval.as_slice() if y_interval is not None else slice(0, 0),
-        x_interval.as_slice() if x_interval is not None else slice(0, 0),
-    )
+    def slot(axis: str):
+        if axis == region.normal_axis:
+            return int(region.plane_index)
+        interval = region.axis_interval(axis)
+        return interval.as_slice() if interval is not None else slice(0, 0)
+
+    z, y, x = (slot(axis) for axis in ("z", "y", "x"))
+    return z, y, x
 
 
 def np_round_half_even(value: float) -> int:

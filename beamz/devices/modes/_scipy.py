@@ -169,6 +169,20 @@ def solve_diagonal_scipy_reference(**kwargs) -> SparseSolveResult:
     return _solve_scipy_reference(False, **kwargs)
 
 
+def _reconstructed_modes(modes, direction, components):
+    """Apply the output convention and package one reconstructed mode list."""
+    n_complex: list[complex] = []
+    mode_fields: list[_ModeFields] = []
+    residuals: list[float] = []
+    for mode_n, vector, residual in modes:
+        ex, ey, ez, hx, hy, hz = components(mode_n, vector)
+        _apply_output_field_convention(hx, hy, hz, ez, direction)
+        n_complex.append(mode_n)
+        residuals.append(residual)
+        mode_fields.append(_ModeFields(ex=ex, ey=ey, ez=ez, hx=hx, hy=hy, hz=hz))
+    return n_complex, mode_fields, residuals
+
+
 def _reconstruct_diagonal_modes(
     modes: list[tuple[complex, np.ndarray, float]],
     *,
@@ -185,37 +199,24 @@ def _reconstruct_diagonal_modes(
     inv_mu_zz = sparse.diags(1.0 / mu_tensor[2, 2, :], format="csc")
     dxf, dxb, dyf, dyb = derivatives
 
-    n_complex: list[complex] = []
-    mode_fields: list[_ModeFields] = []
-    sorted_residuals: list[float] = []
-    for mode_n, vector, residual in modes:
-        # The eigenvector stores Ex then Ey in flattened cell order.
-        ex = vector[:n].copy()
-        ey = vector[n:].copy()
+    def components(mode_n, vector):
+        # The eigenvector stores Ex then Ey. Transverse H is Q / n_eff.
+        ex, ey = vector[:n].copy(), vector[n:].copy()
         denom = complex(-mode_n.imag, mode_n.real)
-
-        # Magnetic transverse components come from the Q operator divided by the
-        # effective-index factor.
         h_field = operators["qmat"] @ vector
         hx = np.asarray(h_field[:n] / denom, dtype=np.complex128)
         hy = np.asarray(h_field[n:] / denom, dtype=np.complex128)
-
-        # Longitudinal H follows from the curl of transverse E.
-        hz_source = dxf @ ey - dyf @ ex
-        hz = np.asarray(inv_mu_zz @ hz_source, dtype=np.complex128)
-
-        # Longitudinal E follows from the curl of the material electric block.
+        hz = np.asarray(inv_mu_zz @ (dxf @ ey - dyf @ ex), dtype=np.complex128)
         h_partial = np.asarray(
             (operators["q_ep"] @ vector) / denom, dtype=np.complex128
         )
-        ez_source = dxb @ h_partial[n:] - dyb @ h_partial[:n]
-        ez = np.asarray(inv_eps_zz @ ez_source, dtype=np.complex128)
+        ez = np.asarray(
+            inv_eps_zz @ (dxb @ h_partial[n:] - dyb @ h_partial[:n]),
+            dtype=np.complex128,
+        )
+        return ex, ey, ez, hx, hy, hz
 
-        _apply_output_field_convention(hx, hy, hz, ez, direction)
-        n_complex.append(mode_n)
-        sorted_residuals.append(residual)
-        mode_fields.append(_ModeFields(ex=ex, ey=ey, ez=ez, hx=hx, hy=hy, hz=hz))
-    return n_complex, mode_fields, sorted_residuals
+    return _reconstructed_modes(modes, direction, components)
 
 
 def solve_tensorial_scipy_reference(**kwargs) -> SparseSolveResult:
@@ -336,30 +337,25 @@ def _reconstruct_tensorial_modes(
     inv_mu_zz = sparse.diags(1.0 / mu_tensor[2, 2, :], format="csc")
     dxf, dxb, dyf, dyb = derivatives
 
-    n_complex: list[complex] = []
-    mode_fields: list[_ModeFields] = []
-    sorted_residuals: list[float] = []
-    for mode_n, vector, residual in modes:
-        # The first-order eigenvector stores transverse E followed by transverse H.
-        ex = vector[:n].copy()
-        ey = vector[n : 2 * n].copy()
-        hx = vector[2 * n : 3 * n].copy()
-        hy = vector[3 * n : 4 * n].copy()
-
-        # Longitudinal fields include off-diagonal material coupling through the
-        # z-row of the tensor.
-        hz_source = (
-            dxf @ ey - dyf @ ex - mu_tensor[2, 0, :] * hx - mu_tensor[2, 1, :] * hy
+    def components(_mode_n, vector):
+        # Transverse E, then transverse H. Longitudinal fields keep z-row coupling.
+        ex, ey = vector[:n].copy(), vector[n : 2 * n].copy()
+        hx, hy = vector[2 * n : 3 * n].copy(), vector[3 * n : 4 * n].copy()
+        hz = np.asarray(
+            inv_mu_zz
+            @ (dxf @ ey - dyf @ ex - mu_tensor[2, 0, :] * hx - mu_tensor[2, 1, :] * hy),
+            dtype=np.complex128,
         )
-        hz = np.asarray(inv_mu_zz @ hz_source, dtype=np.complex128)
-
-        ez_source = (
-            dxb @ hy - dyb @ hx - eps_tensor[2, 0, :] * ex - eps_tensor[2, 1, :] * ey
+        ez = np.asarray(
+            inv_eps_zz
+            @ (
+                dxb @ hy
+                - dyb @ hx
+                - eps_tensor[2, 0, :] * ex
+                - eps_tensor[2, 1, :] * ey
+            ),
+            dtype=np.complex128,
         )
-        ez = np.asarray(inv_eps_zz @ ez_source, dtype=np.complex128)
+        return ex, ey, ez, hx, hy, hz
 
-        _apply_output_field_convention(hx, hy, hz, ez, direction)
-        n_complex.append(mode_n)
-        sorted_residuals.append(residual)
-        mode_fields.append(_ModeFields(ex=ex, ey=ey, ez=ez, hx=hx, hy=hy, hz=hz))
-    return n_complex, mode_fields, sorted_residuals
+    return _reconstructed_modes(modes, direction, components)
