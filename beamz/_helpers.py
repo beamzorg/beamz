@@ -51,19 +51,7 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 
 def get_si_scale_and_label(value):
-    """Choose a readable SI length scale for a value in metres.
-
-    Parameters
-    ----------
-    value : float
-        Representative physical length in metres.
-
-    Returns
-    -------
-    tuple of (float, str)
-        Multiplicative scale and unit label among millimetres, micrometres,
-        nanometres, and picometres.
-    """
+    """Return a multiplicative scale and unit label for a length in metres."""
     if value >= 1e-3:
         return 1e3, "mm"
     if value >= 1e-6:
@@ -83,32 +71,7 @@ def calc_optimal_fdtd_params(
     height=None,
     depth=None,
 ):
-    """Estimate stable uniform spatial and temporal FDTD steps.
-
-    Parameters
-    ----------
-    wavelength : float
-        Minimum vacuum wavelength of interest in metres.
-    n_max : float
-        Maximum refractive index in the simulation.
-    dims : int, default=2
-        Number of simulated spatial dimensions.
-    safety_factor : float, default=0.999
-        Fraction of the dimensional Courant limit.
-    points_per_wavelength : int, default=10
-        Minimum cells per wavelength inside the highest-index material.
-    width : float, optional
-        Domain x extent in metres, used only for grid-size diagnostics.
-    height : float, optional
-        Domain y extent in metres, used only for grid-size diagnostics.
-    depth : float, optional
-        Domain z extent in metres, used only for 3D grid-size diagnostics.
-
-    Returns
-    -------
-    tuple of (float, float)
-        Uniform spatial resolution in metres and time step in seconds.
-    """
+    """Estimate uniform FDTD resolution in metres and time step in seconds."""
     resolution = wavelength / (n_max * points_per_wavelength)
     dt = safety_factor * resolution / (LIGHT_SPEED * np.sqrt(float(dims)))
     if width and height:
@@ -132,28 +95,7 @@ def dxdt(
     points_per_wavelength=10,
     **kwargs,
 ):
-    """Return the recommended FDTD spatial and temporal steps.
-
-    Parameters
-    ----------
-    wavelength : float
-        Minimum vacuum wavelength of interest in metres.
-    n_max : float, default=1.0
-        Maximum refractive index in the simulation.
-    dims : int, default=2
-        Number of simulated spatial dimensions.
-    safety_factor : float, default=0.999
-        Fraction of the dimensional Courant limit.
-    points_per_wavelength : int, default=10
-        Minimum cells per wavelength in the highest-index material.
-    **kwargs
-        Optional domain dimensions forwarded for grid-size diagnostics.
-
-    Returns
-    -------
-    tuple of (float, float)
-        Spatial resolution in metres and time step in seconds.
-    """
+    """Return the recommended FDTD spatial and temporal steps."""
     return calc_optimal_fdtd_params(
         wavelength=wavelength,
         n_max=n_max,
@@ -165,15 +107,7 @@ def dxdt(
 
 
 def display_status(status: str, status_type: str = "info") -> None:
-    """Log a compact status message.
-
-    Parameters
-    ----------
-    status : str
-        Human-readable message.
-    status_type : {"info", "success", "warning", "error"}, default="info"
-        Logging level category.
-    """
+    """Log a compact status message."""
     level = {"success": "info", "warning": "warning", "error": "error"}.get(
         status_type, "info"
     )
@@ -199,9 +133,7 @@ class PlainProgress:
 
     @property
     def _output(self) -> TextIO:
-        import sys
-
-        return self._file if self._file is not None else sys.stdout
+        return _status_stream(self._file)
 
     def __enter__(self) -> PlainProgress:
         return self
@@ -245,29 +177,31 @@ class PlainProgress:
         isatty = getattr(self._output, "isatty", None)
         return bool(self._inline and callable(isatty) and isatty())
 
-    def _write_line(self, message: str) -> None:
+    def _emit(self, message: str, *, newline: bool) -> None:
         if not self._enabled:
             return
         if self._can_inline():
-            self._output.write(f"\r{_STATUS_MARKER}{message}\n")
+            ending = "\n" if newline else ""
+            self._output.write(f"\r{_STATUS_MARKER}{message}{ending}")
             self._output.flush()
-        else:
+        elif newline:
             self._output.write(f"{_STATUS_MARKER}{message}\n")
+
+    def _write_line(self, message: str) -> None:
+        self._emit(message, newline=True)
 
     def _write_progress(self, description: str, *, completed: int, total: int) -> None:
         if not self._enabled:
             return
-        message = _format_progress_message(
-            completed,
-            total,
-            label=description.rstrip("."),
-            unit="items",
-        )
         if self._can_inline():
-            self._output.write(f"\r{_STATUS_MARKER}{message}")
-            self._output.flush()
+            self._emit(
+                _format_progress_message(
+                    completed, total, label=description.rstrip("."), unit="items"
+                ),
+                newline=False,
+            )
         elif completed == 0:
-            self._output.write(f"{_STATUS_MARKER}{description}\n")
+            self._emit(description, newline=True)
 
 
 def _format_progress_message(
@@ -286,11 +220,15 @@ def _format_progress_message(
     return f"{label}: [{bar}] {pct:.0f}% ({safe_completed}/{safe_total} {unit})"
 
 
-def _print_inline_status(message: str, *, file: TextIO | None = None) -> None:
-    """Write one dependency-free status message to the active terminal line."""
+def _status_stream(file: TextIO | None) -> TextIO:
     import sys
 
-    output = file if file is not None else sys.stdout
+    return sys.stdout if file is None else file
+
+
+def _print_inline_status(message: str, *, file: TextIO | None = None) -> None:
+    """Write one dependency-free status message to the active terminal line."""
+    output = _status_stream(file)
     output.write(f"\r{_STATUS_MARKER}{message}")
     output.flush()
 
@@ -303,29 +241,18 @@ def _print_inline_progress(
     unit: str = "steps",
     file: TextIO | None = None,
 ) -> None:
-    import sys
-
-    output = file if file is not None else sys.stdout
+    output = _status_stream(file)
     message = _format_progress_message(completed, total, label=label, unit=unit)
     output.write(f"\r{_STATUS_MARKER}{message}")
     output.flush()
 
 
 def _finish_inline_progress(*, file: TextIO | None = None) -> None:
-    import sys
-
-    output = file if file is not None else sys.stdout
+    output = _status_stream(file)
     output.write("\n")
     output.flush()
 
 
 def create_plain_progress(*, enabled: bool = False) -> PlainProgress:
-    """Create the dependency-free command-line progress reporter.
-
-    Returns
-    -------
-    PlainProgress
-        Context manager supporting task creation and incremental updates. It is
-        silent unless ``enabled=True``.
-    """
+    """Create a command-line progress reporter, silent unless ``enabled=True``."""
     return PlainProgress(enabled=enabled)
