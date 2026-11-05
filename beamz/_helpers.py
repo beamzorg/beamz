@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import TextIO
+from types import TracebackType
+from typing import Literal, SupportsFloat, SupportsIndex, TextIO, TypedDict, Unpack
 
 import numpy as np
 
@@ -13,7 +14,7 @@ _STATUS_MARKER = "* "
 _LOGGER = logging.getLogger(__name__)
 
 
-def positive_float(value, *, name: str) -> float:
+def positive_float(value: SupportsFloat | SupportsIndex | str, *, name: str) -> float:
     """Return a positive finite float or raise a field-specific error."""
     try:
         value = float(value)
@@ -24,7 +25,7 @@ def positive_float(value, *, name: str) -> float:
     return value
 
 
-def positive_integer(value, *, name: str) -> int:
+def positive_integer(value: int | np.integer, *, name: str) -> int:
     """Return a positive integer without silently truncating other numbers."""
     if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
         raise ValueError(f"{name} must be a positive integer.")
@@ -50,7 +51,9 @@ def env_bool(name: str, default: bool = False) -> bool:
     )
 
 
-def get_si_scale_and_label(value):
+def get_si_scale_and_label(
+    value: float,
+) -> tuple[float, Literal["mm", "um", "nm", "pm"]]:
     """Choose a readable SI length scale for a value in metres.
 
     Parameters
@@ -74,15 +77,15 @@ def get_si_scale_and_label(value):
 
 
 def calc_optimal_fdtd_params(
-    wavelength,
-    n_max,
-    dims=2,
-    safety_factor=0.999,
-    points_per_wavelength=10,
-    width=None,
-    height=None,
-    depth=None,
-):
+    wavelength: float,
+    n_max: float,
+    dims: int = 2,
+    safety_factor: float = 0.999,
+    points_per_wavelength: int = 10,
+    width: float | None = None,
+    height: float | None = None,
+    depth: float | None = None,
+) -> tuple[float, float]:
     """Estimate stable uniform spatial and temporal FDTD steps.
 
     Parameters
@@ -124,14 +127,20 @@ def calc_optimal_fdtd_params(
     return resolution, dt
 
 
+class _FDTDDomainKwargs(TypedDict, total=False):
+    width: float | None
+    height: float | None
+    depth: float | None
+
+
 def dxdt(
-    wavelength,
-    n_max=1.0,
-    dims=2,
-    safety_factor=0.999,
-    points_per_wavelength=10,
-    **kwargs,
-):
+    wavelength: float,
+    n_max: float = 1.0,
+    dims: int = 2,
+    safety_factor: float = 0.999,
+    points_per_wavelength: int = 10,
+    **kwargs: Unpack[_FDTDDomainKwargs],
+) -> tuple[float, float]:
     """Return the recommended FDTD spatial and temporal steps.
 
     Parameters
@@ -190,7 +199,7 @@ class _PlainTask:
 class PlainProgress:
     def __init__(
         self, *, file: TextIO | None = None, inline: bool = True, enabled: bool = False
-    ):
+    ) -> None:
         self._file = file
         self._inline = inline
         self._enabled = bool(enabled)
@@ -206,7 +215,12 @@ class PlainProgress:
     def __enter__(self) -> PlainProgress:
         return self
 
-    def __exit__(self, exc_type, exc, _tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        _tb: TracebackType | None,
+    ) -> None:
         status = "failed" if exc_type is not None else "done"
         for task in self._tasks.values():
             if task.total is None:

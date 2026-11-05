@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import fields, is_dataclass, replace
 from types import MappingProxyType
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 import numpy as np
 
@@ -58,7 +58,14 @@ def immutable_snapshot(value: Any) -> Any:
     return readonly_array(arr)
 
 
-def canonical_tuple(value: Any, *, dtype=float) -> tuple:
+_Converted = TypeVar("_Converted")
+
+
+def canonical_tuple(
+    value: Iterable[Any] | None,
+    *,
+    dtype: Callable[[Any], _Converted] = float,
+) -> tuple[_Converted, ...]:
     if value is None:
         return ()
     return tuple(dtype(v) for v in value)
