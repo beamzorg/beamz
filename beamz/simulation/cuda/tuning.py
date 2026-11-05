@@ -28,6 +28,7 @@ import jax
 import numpy as np
 
 from beamz.simulation import _cuda_abi as abi
+from beamz.simulation.observe import monitors_support_packed_dft
 
 _SCHEMA = 2
 _AXES = ((0, 1, 2), (1, 2, 0), (2, 0, 1))
@@ -426,15 +427,7 @@ def _eligible(program):
         return False
     if not all(s.is_slab for s in program.sources):
         return False
-    return all(
-        m.recorder_index < 0
-        and not m.accumulate_power
-        and not m.accumulate_frequency
-        and m.dft_enabled
-        and m.freq_count > 0
-        and m.dft_point_count > 0
-        for m in program.monitors
-    )
+    return monitors_support_packed_dft(program.monitors)
 
 
 def _state_hashes(state):

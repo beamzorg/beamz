@@ -251,14 +251,14 @@ class SimulationState(NamedTuple):
         """
 
         empty2 = jnp.zeros((0, 0), dtype=jnp.float32)
+        # Copies keep the compiled lattice reusable when JAX donates runtime buffers.
+        copied = {
+            phase + axis: _copy_initial_field(getattr(fields, phase.upper() + axis))
+            for phase in "eh"
+            for axis in "xyz"
+        }
         return cls(
-            # Copies keep the compiled lattice reusable when JAX donates runtime buffers.
-            ex=_copy_initial_field(fields.Ex),
-            ey=_copy_initial_field(fields.Ey),
-            ez=_copy_initial_field(fields.Ez),
-            hx=_copy_initial_field(fields.Hx),
-            hy=_copy_initial_field(fields.Hy),
-            hz=_copy_initial_field(fields.Hz),
+            **copied,
             cpml_psi_h_terms=(),
             cpml_psi_e_terms=(),
             powers=empty2,

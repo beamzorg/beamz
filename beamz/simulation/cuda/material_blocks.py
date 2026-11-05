@@ -9,7 +9,7 @@ never approximated. The three components share a coefficient pool.
 import jax.numpy as jnp
 import numpy as np
 
-BLOCK_SIZE = 32
+from beamz.simulation.material_blocks import BLOCK_SIZE, block_pool_indices
 
 
 def differentiable_coefficients(coeffs, state):
@@ -26,8 +26,7 @@ def differentiable_coefficients(coeffs, state):
         field = getattr(state, "e" + c)
         linear = jnp.arange(field.size, dtype=jnp.int32)
         if codes.ndim == 2:
-            header = codes.reshape(-1)[linear >> 5]
-            index = jnp.where(header < 0, ~header, header + (linear & 31))
+            index = block_pool_indices(codes, field.size)
         else:
             word = codes.astype(jnp.uint32)[linear >> 2]
             index = (word >> (8 * (linear & 3))) & 255

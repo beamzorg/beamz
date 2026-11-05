@@ -17,14 +17,11 @@ def sample_material(grid, component, shape):
         pairs, bounds = [], []
         for axis, key, n in zip("zyx", region, grid.shape, strict=True):
             hi = np.clip(np.arange(key.start, key.stop), 0, n - 1)
-            lo = (
-                np.clip(hi - 1, 0, n - 1)
-                if component.startswith("E") and offsets[axis] == 0
-                else hi
-            )
             # At the high boundary both bracketing cells clamp to the last voxel.
             if component.startswith("E") and offsets[axis] == 0:
                 lo = np.clip(np.arange(key.start, key.stop) - 1, 0, n - 1)
+            else:
+                lo = hi
             if not hi.size:
                 return np.empty(tuple(s.stop - s.start for s in region), np.float32)
             start = int(min(lo.min(), hi.min()))
@@ -75,43 +72,45 @@ def build_region_materials(fields):
     return MaterialCoefficients(**data)
 
 
-def electric_coefficients(shape, sigma, epsilon, dt):
+def _lossy_coefficients(shape, alpha, drive, *values, lossless=False):
     # Match the eager FP32 coefficient algebra, including its rounding order.
-    def alpha(s, e):
-        return s * np.float32(dt) / (np.float32(2 * EPS_0) * e)
-
+    one = np.float32(1)
     decay = mapped_material(
         shape,
-        lambda s, e: (np.float32(1) - alpha(s, e)) / (np.float32(1) + alpha(s, e)),
-        sigma,
-        epsilon,
+        lambda *args: (one - alpha(*args)) / (one + alpha(*args)),
+        *values,
     )
-    if sigma.ndim == 0 and float(sigma) == 0:
+    if lossless:
         decay = np.asarray(1, np.float32)
     source = mapped_material(
         shape,
-        lambda s, e: (
-            (np.float32(dt) / (np.float32(EPS_0) * e)) / (np.float32(1) + alpha(s, e))
-        ),
-        sigma,
-        epsilon,
+        lambda *args: drive(*args) / (one + alpha(*args)),
+        *values,
     )
     return decay, source
+
+
+def electric_coefficients(shape, sigma, epsilon, dt):
+    def alpha(s, e):
+        return s * np.float32(dt) / (np.float32(2 * EPS_0) * e)
+
+    return _lossy_coefficients(
+        shape,
+        alpha,
+        lambda s, e: np.float32(dt) / (np.float32(EPS_0) * e),
+        sigma,
+        epsilon,
+        lossless=sigma.ndim == 0 and float(sigma) == 0,
+    )
 
 
 def magnetic_coefficients(sigma, dt):
     def alpha(s):
         return s * np.float32(dt) / np.float32(2 * MU_0)
 
-    return (
-        mapped_material(
-            sigma.shape,
-            lambda s: (np.float32(1) - alpha(s)) / (np.float32(1) + alpha(s)),
-            sigma,
-        ),
-        mapped_material(
-            sigma.shape,
-            lambda s: np.float32(dt / MU_0) / (np.float32(1) + alpha(s)),
-            sigma,
-        ),
+    return _lossy_coefficients(
+        sigma.shape,
+        alpha,
+        lambda _s: np.float32(dt / MU_0),
+        sigma,
     )

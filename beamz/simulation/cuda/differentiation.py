@@ -22,7 +22,14 @@ from beamz.simulation.cuda.runtime import (
     run_source_group_steps,
 )
 from beamz.simulation.execute import compiled_source_batches, forward_step
-from beamz.simulation.observe import update_monitors
+from beamz.simulation.observe import monitors_support_packed_dft, update_monitors
+
+_COEFFICIENT_LEAVES = frozenset(
+    f"{phase}_{kind}_{axis}"
+    for phase in ("e", "h")
+    for kind in ("decay", "source")
+    for axis in "xyz"
+)
 
 
 @jax.tree_util.register_static
@@ -58,6 +65,47 @@ def _materialize_cotangents(cotangents, values):
     )
 
 
+def _inexact_flags(primal_inputs):
+    flags = jax.tree.map(
+        lambda primal: (
+            bool(primal.perturbed) and jnp.issubdtype(primal.value.dtype, jnp.inexact)
+        ),
+        primal_inputs,
+    )
+    state_flags, coeff_flags, source_flags, clock_flags = flags
+    coeff_flags = coeff_flags._replace(
+        **{
+            name: False
+            for name in coeff_flags._fields
+            if name not in _COEFFICIENT_LEAVES
+        }
+    )
+    return state_flags, coeff_flags, source_flags, clock_flags
+
+
+def _pullback_active(inputs, columns, cotangents, body):
+    leaves, tree = jax.tree.flatten(inputs)
+    active = tuple(
+        value for value, flag in zip(leaves, columns.flags, strict=True) if flag
+    )
+
+    def linearize(variables):
+        iterator = iter(variables)
+        restored = tree.unflatten(
+            [
+                next(iterator) if flag else jax.lax.stop_gradient(value)
+                for value, flag in zip(leaves, columns.flags, strict=True)
+            ]
+        )
+        return body(*restored)
+
+    _, pullback = jax.vjp(linearize, active)
+    gradients = iter(pullback(cotangents)[0])
+    return (
+        tree.unflatten([next(gradients) if flag else None for flag in columns.flags]),
+    )
+
+
 def build_native_step(program, context, update_kernel, split_dft, pack_dft):
     """Return a differentiable native step, or None for unsupported recorders."""
     if context.config.backend != "cuda_streamed" or bool(
@@ -67,15 +115,7 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
     batches = compiled_source_batches(program.sources)
     if any(rest for _group, rest in batches.values()):
         return None
-    if any(
-        mon.recorder_index >= 0
-        or mon.accumulate_power
-        or mon.accumulate_frequency
-        or not mon.dft_enabled
-        or mon.freq_count <= 0
-        or mon.dft_point_count <= 0
-        for mon in program.monitors
-    ):
+    if not monitors_support_packed_dft(program.monitors):
         return None
     keys = tuple(batches)
     templates = tuple(batches[key][0] for key in keys)
@@ -145,31 +185,13 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
 
     def step_forward(primal_inputs):
         values = jax.tree.map(lambda primal: primal.value, primal_inputs)
-        flags = jax.tree.map(
-            lambda primal: (
-                bool(primal.perturbed)
-                and jnp.issubdtype(primal.value.dtype, jnp.inexact)
-            ),
-            primal_inputs,
-        )
-        state_flags, coeff_flags, _, clock_flags = flags
-        clock_active = clock_flags[0]
         # CUDA consumes precomputed decay/source coefficients. Other physical
         # planner leaves have zero columns in this timestep's Jacobian.
-        used_coefficients = {
-            f"{phase}_{kind}_{axis}"
-            for phase in ("e", "h")
-            for kind in ("decay", "source")
-            for axis in "xyz"
-        }
-        coeff_flags = coeff_flags._replace(
-            **{
-                name: False
-                for name in coeff_flags._fields
-                if name not in used_coefficients
-            }
+        state_flags, coeff_flags, source_flags, clock_flags = _inexact_flags(
+            primal_inputs
         )
-        flags = (state_flags, coeff_flags, flags[2], clock_flags)
+        clock_active = clock_flags[0]
+        flags = (state_flags, coeff_flags, source_flags, clock_flags)
         # Keep observation arithmetic outside the opaque FFI during tape replay.
         # It is linear in accumulated DFT state; XLA can remove its unused
         # primals while retaining the exact source/monitor transpose.
@@ -188,7 +210,6 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
             out.hy,
             out.hz,
         )
-        old, coeffs, sources, clock = values
         h_source = any(getattr(coeff_flags, f"h_source_{axis}") for axis in "xyz")
         e_source = any(getattr(coeff_flags, f"e_source_{axis}") for axis in "xyz")
         e_decay = any(getattr(coeff_flags, f"e_decay_{axis}") for axis in "xyz")
@@ -240,19 +261,8 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
 
     def step_backward(residuals, cotangents):
         inputs, known, columns = residuals
-        leaves, tree = jax.tree.flatten(inputs)
-        active = tuple(
-            value for value, flag in zip(leaves, columns.flags, strict=True) if flag
-        )
 
-        def linearize(variables):
-            iterator = iter(variables)
-            state, coeffs, sources, clock = tree.unflatten(
-                [
-                    next(iterator) if flag else jax.lax.stop_gradient(value)
-                    for value, flag in zip(leaves, columns.flags, strict=True)
-                ]
-            )
+        def body(state, coeffs, sources, clock):
             ctx, _groups = restore_context(sources)
             return forward_step(
                 state,
@@ -265,13 +275,8 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
                 + (clock[1] + 1).astype(jnp.float32) * ctx.dt_scalar,
             )
 
-        _, pullback = jax.vjp(linearize, active)
-        cotangents = _materialize_cotangents(cotangents, known)
-        gradients = iter(pullback(cotangents)[0])
-        return (
-            tree.unflatten(
-                [next(gradients) if flag else None for flag in columns.flags]
-            ),
+        return _pullback_active(
+            inputs, columns, _materialize_cotangents(cotangents, known), body
         )
 
     native_step.defvjp(step_forward, step_backward, symbolic_zeros=True)
@@ -417,28 +422,8 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
 
         def chunk_forward(primal_inputs):
             values = jax.tree.map(lambda primal: primal.value, primal_inputs)
-            flags = jax.tree.map(
-                lambda primal: (
-                    bool(primal.perturbed)
-                    and jnp.issubdtype(primal.value.dtype, jnp.inexact)
-                ),
-                primal_inputs,
-            )
             # Only the native decay/source leaves participate in this map.
-            used = {
-                f"{phase}_{kind}_{axis}"
-                for phase in ("e", "h")
-                for kind in ("decay", "source")
-                for axis in "xyz"
-            }
-            flags = (
-                flags[0],
-                flags[1]._replace(
-                    **{name: False for name in flags[1]._fields if name not in used}
-                ),
-                flags[2],
-                flags[3],
-            )
+            flags = _inexact_flags(primal_inputs)
             return native_forward(values, nsteps), (
                 values,
                 _Columns(tuple(jax.tree.leaves(flags))),
@@ -446,8 +431,7 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
 
         def chunk_backward(residuals, cotangents):
             inputs, columns = residuals
-            leaves, tree = jax.tree.flatten(inputs)
-            flags = tree.unflatten(list(columns.flags))
+            flags = jax.tree.structure(inputs).unflatten(list(columns.flags))
             if (
                 not any(jax.tree.leaves(flags[2]))
                 and not any(jax.tree.leaves(flags[3]))
@@ -458,18 +442,8 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
                 )
             ):
                 return (material_backward(inputs, cotangents, flags, nsteps),)
-            active = tuple(
-                value for value, flag in zip(leaves, columns.flags, strict=True) if flag
-            )
 
-            def replay(variables):
-                iterator = iter(variables)
-                state, coeffs, sources, clock = tree.unflatten(
-                    [
-                        next(iterator) if flag else jax.lax.stop_gradient(value)
-                        for value, flag in zip(leaves, columns.flags, strict=True)
-                    ]
-                )
+            def replay(state, coeffs, sources, clock):
                 initial_step = state.current_step
 
                 def body(carry, _unused):
@@ -487,14 +461,11 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
 
                 return jax.lax.scan(body, state, xs=None, length=nsteps)[0]
 
-            _, pullback = jax.vjp(replay, active)
-            gradients = iter(
-                pullback(_materialize_cotangents(cotangents, inputs[0]))[0]
-            )
-            return (
-                tree.unflatten(
-                    [next(gradients) if flag else None for flag in columns.flags]
-                ),
+            return _pullback_active(
+                inputs,
+                columns,
+                _materialize_cotangents(cotangents, inputs[0]),
+                replay,
             )
 
         native_chunk.defvjp(chunk_forward, chunk_backward, symbolic_zeros=True)
