@@ -17,6 +17,23 @@ _VOLUME_EDGES = (*_PLANAR_EDGES, "front", "back")
 _AXES = ("x", "y", "z")
 
 
+def _freeze_graded_absorber(spec, *, name: str, allow_missing_thickness: bool) -> None:
+    _validate_absorber_parameters(spec)
+    if spec.thickness is None and allow_missing_thickness:
+        thickness = None
+    else:
+        thickness = float(spec.thickness)
+        if not np.isfinite(thickness) or thickness < 0.0:
+            raise ValueError(f"{name} thickness must be a non-negative finite value.")
+    object.__setattr__(spec, "edges", normalize_edges(spec.edges))
+    object.__setattr__(spec, "thickness", thickness)
+    object.__setattr__(
+        spec, "sigma_max", None if spec.sigma_max is None else float(spec.sigma_max)
+    )
+    object.__setattr__(spec, "m", int(spec.m))
+    object.__setattr__(spec, "target_reflection", float(spec.target_reflection))
+
+
 def _validate_absorber_parameters(spec) -> None:
     for name in ("sigma_max", "alpha_max"):
         value = getattr(spec, name)
@@ -31,17 +48,28 @@ def _validate_absorber_parameters(spec) -> None:
         raise ValueError("target_reflection must lie strictly between 0 and 1.")
 
 
+def _normalize_names(values, allowed, *, invalid, empty=None, unique=None):
+    """Freeze ``"all"`` or a sequence of names drawn from ``allowed``."""
+    if isinstance(values, str) and values.lower() == "all":
+        return "all"
+    items = sorted(values) if isinstance(values, set) else values
+    items = items if isinstance(items, (list, tuple)) else (items,)
+    normalized = tuple(str(item).lower() for item in items)
+    unknown = set(normalized).difference(allowed)
+    if unknown:
+        raise ValueError(invalid.format(sorted(unknown)))
+    if empty is not None and not normalized:
+        raise ValueError(empty)
+    if unique is not None and len(set(normalized)) != len(normalized):
+        raise ValueError(unique)
+    return normalized
+
+
 def normalize_edges(edges: BoundaryEdges) -> BoundaryEdges:
     """Validate and freeze an edge selection while retaining the ``"all"`` sentinel."""
-    if isinstance(edges, str) and edges.lower() == "all":
-        return "all"
-    values = sorted(edges) if isinstance(edges, set) else edges
-    values = values if isinstance(values, (list, tuple)) else (values,)
-    normalized = tuple(str(edge).lower() for edge in values)
-    invalid = set(normalized).difference(_VOLUME_EDGES)
-    if invalid:
-        raise ValueError(f"Unsupported boundary edges: {sorted(invalid)}")
-    return normalized
+    return _normalize_names(
+        edges, _VOLUME_EDGES, invalid="Unsupported boundary edges: {}"
+    )
 
 
 def edges_for_dimension(edges: BoundaryEdges, is_3d: bool) -> tuple[str, ...]:
@@ -149,24 +177,20 @@ class PML(_EdgeBoundary):
     target_reflection: float = 1e-6
 
     def __post_init__(self) -> None:
-        _validate_absorber_parameters(self)
-        thickness = None if self.thickness is None else float(self.thickness)
-        if thickness is not None and (not np.isfinite(thickness) or thickness < 0.0):
-            raise ValueError("PML thickness must be a non-negative finite value.")
+        _freeze_graded_absorber(self, name="PML", allow_missing_thickness=True)
         formulation = str(self.formulation).lower()
         if formulation not in {"sponge", "cpml"}:
             raise ValueError(
                 f"Unsupported boundary formulation {self.formulation!r}. "
                 "Expected one of: 'sponge', 'cpml'."
             )
-        object.__setattr__(self, "edges", normalize_edges(self.edges))
-        object.__setattr__(self, "thickness", thickness)
-        object.__setattr__(self, "sigma_max", None if self.sigma_max is None else float(self.sigma_max))  # fmt: skip
-        object.__setattr__(self, "m", int(self.m))
         object.__setattr__(self, "formulation", formulation)
         object.__setattr__(self, "kappa_max", float(self.kappa_max))
-        object.__setattr__(self, "alpha_max", None if self.alpha_max is None else float(self.alpha_max))  # fmt: skip
-        object.__setattr__(self, "target_reflection", float(self.target_reflection))
+        object.__setattr__(
+            self,
+            "alpha_max",
+            None if self.alpha_max is None else float(self.alpha_max),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,15 +234,7 @@ class Absorber(_EdgeBoundary):
     target_reflection: float = 1e-6
 
     def __post_init__(self) -> None:
-        _validate_absorber_parameters(self)
-        thickness = float(self.thickness)
-        if not np.isfinite(thickness) or thickness < 0.0:
-            raise ValueError("Absorber thickness must be a non-negative finite value.")
-        object.__setattr__(self, "edges", normalize_edges(self.edges))
-        object.__setattr__(self, "thickness", thickness)
-        object.__setattr__(self, "sigma_max", None if self.sigma_max is None else float(self.sigma_max))  # fmt: skip
-        object.__setattr__(self, "m", int(self.m))
-        object.__setattr__(self, "target_reflection", float(self.target_reflection))
+        _freeze_graded_absorber(self, name="Absorber", allow_missing_thickness=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,21 +263,17 @@ class Periodic(_Replaceable):
     axes: BoundaryAxes = "all"
 
     def __post_init__(self) -> None:
-        axes = self.axes
-        if isinstance(axes, str) and axes.lower() == "all":
-            object.__setattr__(self, "axes", "all")
-            return
-        values = sorted(axes) if isinstance(axes, set) else axes
-        values = values if isinstance(values, (list, tuple)) else (values,)
-        normalized = tuple(str(axis).lower() for axis in values)
-        invalid = set(normalized).difference(_AXES)
-        if invalid:
-            raise ValueError(f"Unsupported periodic axes: {sorted(invalid)}")
-        if not normalized:
-            raise ValueError("Periodic axes cannot be empty.")
-        if len(set(normalized)) != len(normalized):
-            raise ValueError("Periodic axes must be unique.")
-        object.__setattr__(self, "axes", normalized)
+        object.__setattr__(
+            self,
+            "axes",
+            _normalize_names(
+                self.axes,
+                _AXES,
+                invalid="Unsupported periodic axes: {}",
+                empty="Periodic axes cannot be empty.",
+                unique="Periodic axes must be unique.",
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)

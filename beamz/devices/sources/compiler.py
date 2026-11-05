@@ -479,6 +479,71 @@ def _validate_plane_wave_background(source, ctx, component, index, *, active=Non
         )
 
 
+def _require_transverse_span(source, grid, normal_id, message):
+    for axis_id in range(3):
+        if axis_id == normal_id:
+            continue
+        edges = grid.axis_edges("xyz"[axis_id])
+        half = source.size[axis_id] / 2
+        if (
+            source.center[axis_id] - half > edges[0] + 1e-12
+            or source.center[axis_id] + half < edges[-1] - 1e-12
+        ):
+            raise ValueError(message)
+
+
+def _interior_plane_index(edges, center, message):
+    edges = np.asarray(edges)
+    index = int(np.argmin(abs(edges - center)))
+    if not 1 <= index < len(edges) - 1:
+        raise ValueError(message)
+    return index, edges
+
+
+def _sheet_impedance_and_area(source, grid, transverse):
+    impedance = np.sqrt(MU_0 / EPS_0) / source.background_index
+    area = np.prod([np.ptp(grid.axis_edges("xyz"[axis])) for axis in transverse])
+    return impedance, area
+
+
+def _append_tangential_sheet(
+    entries,
+    ctx,
+    *,
+    kind,
+    vector,
+    index,
+    spacing,
+    waveform,
+    amplitude,
+    impedance,
+    launched_power,
+    values_for,
+):
+    for axis_id, factor in enumerate(np.asarray(vector, dtype=float)):
+        if abs(factor) < 1e-14:
+            continue
+        component = kind + "xyz"[axis_id]
+        target = getattr(ctx.fields, component)
+        material = np.asarray(component_material_at(ctx.fields, component, index))
+        coefficient = (
+            amplitude * ctx.dt / (MU_0 * spacing)
+            if kind == "H"
+            else amplitude * ctx.dt / (impedance * EPS_0 * material * spacing)
+        )
+        entries.append(
+            _injection_entry(
+                component=component,
+                timing=kind.lower(),
+                index=index,
+                values=values_for(component, target, factor * coefficient),
+                waveform=waveform,
+                target_shape=tuple(target.shape),
+                launched_power=float(launched_power),
+            )
+        )
+
+
 @lower_source.register
 def _lower_plane_wave_source(source: PlaneWaveSource, ctx: SourceLoweringContext):
     """Normal-incidence TF/SF sheet with physical primal/dual spacings.
@@ -510,22 +575,17 @@ def _lower_plane_wave_source(source: PlaneWaveSource, ctx: SourceLoweringContext
     axis_id = _AXES.index(axis)
     array_axis = _INDEX_AXES.index(axis)
     transverse = [i for i in range(3) if i != axis_id]
-    for i in transverse:
-        edges = grid.axis_edges(_AXES[i])
-        lo, hi = (
-            source.center[i] - source.size[i] / 2,
-            source.center[i] + source.size[i] / 2,
-        )
-        if lo > edges[0] + 1e-12 or hi < edges[-1] - 1e-12:
-            raise ValueError(
-                "Rectilinear PlaneWaveSource must cover the full transverse domain."
-            )
-    edges = np.asarray(grid.axis_edges(axis))
-    k = int(np.argmin(abs(edges - source.center[axis_id])))
-    if not 1 <= k < len(edges) - 1:
-        raise ValueError(
-            "PlaneWaveSource must be inside the grid, away from its walls."
-        )
+    _require_transverse_span(
+        source,
+        grid,
+        axis_id,
+        "Rectilinear PlaneWaveSource must cover the full transverse domain.",
+    )
+    k, edges = _interior_plane_index(
+        grid.axis_edges(axis),
+        source.center[axis_id],
+        "PlaneWaveSource must be inside the grid, away from its walls.",
+    )
     h_index = k - 1 if sign > 0 else k
     h_coordinate = 0.5 * (edges[h_index] + edges[h_index + 1])
     primal = edges[h_index + 1] - edges[h_index]
@@ -535,8 +595,7 @@ def _lower_plane_wave_source(source: PlaneWaveSource, ctx: SourceLoweringContext
         source.pol_angle
     ) * _unit_vector(t2)
     h_hat = np.cross(sign * _unit_vector(axis), e_hat)
-    impedance = np.sqrt(MU_0 / EPS_0) / source.background_index
-    area = np.prod([np.ptp(grid.axis_edges(_AXES[i])) for i in transverse])
+    impedance, area = _sheet_impedance_and_area(source, grid, transverse)
     amplitude = np.sqrt(2 * source.power * impedance / area)
     entries = []
     for kind, vector, plane_index, spacing, incident_coordinate, offset in (
@@ -557,32 +616,27 @@ def _lower_plane_wave_source(source: PlaneWaveSource, ctx: SourceLoweringContext
             total_steps=ctx.total_steps,
             offset_fn=lambda t, dt, shift=offset - delay: t + shift,
         )
-        for i, factor in enumerate(vector):
-            if abs(factor) < 1e-14:
-                continue
-            component = kind + _AXES[i]
-            target = getattr(ctx.fields, component)
-            index = [slice(None)] * 3
-            index[array_axis] = slice(plane_index, plane_index + 1)
-            index = tuple(index)
-            material = np.asarray(component_material_at(ctx.fields, component, index))
+        index = [slice(None)] * 3
+        index[array_axis] = slice(plane_index, plane_index + 1)
+        index = tuple(index)
+
+        def values_for(component, target, scaled, index=index):
             _validate_plane_wave_background(source, ctx, component, index)
-            coefficient = (
-                amplitude * ctx.dt / (MU_0 * spacing)
-                if kind == "H"
-                else amplitude * ctx.dt / (impedance * EPS_0 * material * spacing)
-            )
-            entries.append(
-                _injection_entry(
-                    component=component,
-                    timing=kind.lower(),
-                    index=index,
-                    values=np.broadcast_to(factor * coefficient, target[index].shape),
-                    waveform=TemporalWaveform(jnp.asarray(values, dtype=jnp.float32)),
-                    target_shape=tuple(target.shape),
-                    launched_power=float(source.power),
-                )
-            )
+            return np.broadcast_to(scaled, target[index].shape)
+
+        _append_tangential_sheet(
+            entries,
+            ctx,
+            kind=kind,
+            vector=vector,
+            index=index,
+            spacing=spacing,
+            waveform=TemporalWaveform(jnp.asarray(values, dtype=jnp.float32)),
+            amplitude=amplitude,
+            impedance=impedance,
+            launched_power=source.power,
+            values_for=values_for,
+        )
     return CompiledInjectionPlan(tuple(entries))
 
 
@@ -892,37 +946,33 @@ def gaussian_spatial_profile(
 
     sigma_grid = source.width / resolution
     radius_grid = int(np.ceil(4 * sigma_grid))
-
     if is_3d:
         x0, y0, z0 = source.position
         nz, ny, nx = ez_shape
-        cx, cy, cz = (int(round(c / resolution)) for c in (x0, y0, z0))
-        x0i, x1i = max(0, cx - radius_grid), min(nx, cx + radius_grid + 1)
-        y0i, y1i = max(0, cy - radius_grid), min(ny, cy + radius_grid + 1)
-        z0i, z1i = max(0, cz - radius_grid), min(nz, cz + radius_grid + 1)
-        idx = (slice(z0i, z1i), slice(y0i, y1i), slice(x0i, x1i))
-        z, y, x = jnp.meshgrid(
-            (jnp.arange(z0i, z1i) + 0.5) * resolution,
-            (jnp.arange(y0i, y1i) + 0.5) * resolution,
-            (jnp.arange(x0i, x1i) + 0.5) * resolution,
-            indexing="ij",
-        )
-        distance_sq = (x - x0) ** 2 + (y - y0) ** 2 + (z - z0) ** 2
+        ordered = ((z0, nz), (y0, ny), (x0, nx))
+        offset, indexing, index_order = 0.5, "ij", (0, 1, 2)
     else:
         x0, y0 = source.position[:2]
         ny, nx = ez_shape
-        cx, cy = int(round(x0 / resolution)), int(round(y0 / resolution))
-        x0i, x1i = max(0, cx - radius_grid), min(nx, cx + radius_grid + 1)
-        y0i, y1i = max(0, cy - radius_grid), min(ny, cy + radius_grid + 1)
-        idx = (slice(y0i, y1i), slice(x0i, x1i))
+        ordered = ((x0, nx), (y0, ny))
         offset = 0.0 if plane_2d == "xy" else 0.5
-        x, y = jnp.meshgrid(
-            (jnp.arange(x0i, x1i) + offset) * resolution,
-            (jnp.arange(y0i, y1i) + offset) * resolution,
-            indexing="xy",
-        )
+        indexing, index_order = "xy", (1, 0)
+    spans = []
+    samples = []
+    for center, count in ordered:
+        cell = int(round(center / resolution))
+        start, stop = max(0, cell - radius_grid), min(count, cell + radius_grid + 1)
+        spans.append((start, stop))
+        samples.append((jnp.arange(start, stop) + offset) * resolution)
+    idx = tuple(slice(*spans[i]) for i in index_order)
+    mesh = jnp.meshgrid(*samples, indexing=indexing)
+    # Keep the historical x-then-y-then-z sum so float32 profiles stay bitwise.
+    if is_3d:
+        z, y, x = mesh
+        distance_sq = (x - x0) ** 2 + (y - y0) ** 2 + (z - z0) ** 2
+    else:
+        x, y = mesh
         distance_sq = (x - x0) ** 2 + (y - y0) ** 2
-
     return idx, jnp.exp(-distance_sq / (2 * source.width**2))
 
 

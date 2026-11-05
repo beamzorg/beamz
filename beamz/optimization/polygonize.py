@@ -211,22 +211,7 @@ def density_to_shapely_geometry(
 
 
 def shapely_geometry_to_polygons(geometry, *, material, min_area=0.0):
-    """Convert Shapely geometry into BEAMZ polygon structures.
-
-    Parameters
-    ----------
-    geometry : shapely.Geometry
-        Polygon, multipolygon, or geometry collection to convert.
-    material : Material
-        Material assigned to every returned structure.
-    min_area : float, default=0
-        Minimum retained exterior and hole area in square metres.
-
-    Returns
-    -------
-    list of Polygon
-        Immutable BEAMZ polygons with interior rings represented as holes.
-    """
+    """Convert Shapely polygons into BeamZ polygons, dropping rings below ``min_area``."""
     polygons = []
     min_area = float(max(0.0, min_area))
     for polygon in _iter_shapely_polygons(geometry):

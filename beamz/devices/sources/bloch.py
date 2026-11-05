@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from beamz.const import EPS_0, LIGHT_SPEED, MU_0
-from beamz.lattice import component_axis_offsets_3d, component_material_at
+from beamz.const import LIGHT_SPEED
+from beamz.lattice import component_axis_offsets_3d
 
 
 def lower_bloch_plane_wave(source, ctx):
@@ -11,7 +11,10 @@ def lower_bloch_plane_wave(source, ctx):
     from .compiler import (
         CompiledInjectionPlan,
         TemporalWaveform,
-        _injection_entry,
+        _append_tangential_sheet,
+        _interior_plane_index,
+        _require_transverse_span,
+        _sheet_impedance_and_area,
         _validate_plane_wave_background,
     )
     from .time import sample_source_waveforms
@@ -35,15 +38,12 @@ def lower_bloch_plane_wave(source, ctx):
     array_axis = 2 - normal_id
     sign = 1 if source.direction[0] == "+" else -1
     transverse = [i for i in range(3) if i != normal_id]
-    for i in transverse:
-        edges = grid.axis_edges("xyz"[i])
-        if (
-            source.center[i] - source.size[i] / 2 > edges[0] + 1e-12
-            or source.center[i] + source.size[i] / 2 < edges[-1] - 1e-12
-        ):
-            raise ValueError(
-                "Oblique PlaneWaveSource must span the full transverse domain."
-            )
+    _require_transverse_span(
+        source,
+        grid,
+        normal_id,
+        "Oblique PlaneWaveSource must span the full transverse domain.",
+    )
     omega = 2 * np.pi * frequency
     magnitude = omega * source.background_index / LIGHT_SPEED
     wavevector = np.asarray(source.transverse_wavevector)
@@ -64,16 +64,14 @@ def lower_bloch_plane_wave(source, ctx):
     # Surface equivalence currents use only tangential incident E/H components.
     currents_e = -sign * np.cross(normal, hhat)
     currents_h = sign * np.cross(normal, ehat)
-    edges = np.asarray(grid.axis_edges("xyz"[normal_id]))
-    k = int(np.argmin(abs(edges - source.center[normal_id])))
-    if not 1 <= k < len(edges) - 1:
-        raise ValueError(
-            "Plane-wave injection sheet must be inside the grid, away from its walls."
-        )
+    k, edges = _interior_plane_index(
+        grid.axis_edges("xyz"[normal_id]),
+        source.center[normal_id],
+        "Plane-wave injection sheet must be inside the grid, away from its walls.",
+    )
     hi = k - 1 if sign > 0 else k
     h_coordinate = 0.5 * (edges[hi] + edges[hi + 1])
-    impedance = np.sqrt(MU_0 / EPS_0) / source.background_index
-    area = np.prod([np.ptp(grid.axis_edges("xyz"[i])) for i in transverse])
+    impedance, area = _sheet_impedance_and_area(source, grid, transverse)
     cosine = abs(khat[normal_id])
     amplitude = np.sqrt(2 * source.power * impedance / (area * cosine))
     entries = []
@@ -97,15 +95,11 @@ def lower_bloch_plane_wave(source, ctx):
             total_steps=ctx.total_steps,
             offset_fn=lambda t, dt, shift=offset - delay: t + shift,
         )
-        for i, factor in enumerate(current):
-            if abs(factor) < 1e-14:
-                continue
-            component = kind + "xyz"[i]
-            target = getattr(ctx.fields, component)
-            index = [slice(None)] * 3
-            index[array_axis] = slice(plane, plane + 1)
-            index = tuple(index)
-            material = np.asarray(component_material_at(ctx.fields, component, index))
+        index = [slice(None)] * 3
+        index[array_axis] = slice(plane, plane + 1)
+        index = tuple(index)
+
+        def values_for(component, target, scaled, index=index):
             _validate_plane_wave_background(source, ctx, component, index)
             # E currents sample incident H, and H currents sample incident E.
             # Their transverse offsets coincide for each tangential component.
@@ -123,20 +117,19 @@ def lower_bloch_plane_wave(source, ctx):
                 phase += source.transverse_wavevector[ti] * (
                     coordinates.reshape(shape) - source.center[ti]
                 )
-            coefficient = (
-                amplitude * ctx.dt / (MU_0 * spacing)
-                if kind == "H"
-                else amplitude * ctx.dt / (impedance * EPS_0 * material * spacing)
-            )
-            entries.append(
-                _injection_entry(
-                    component=component,
-                    timing=kind.lower(),
-                    index=index,
-                    values=factor * coefficient * np.exp(1j * phase),
-                    waveform=TemporalWaveform(signal, quadrature),
-                    target_shape=tuple(target.shape),
-                    launched_power=float(source.power),
-                )
-            )
+            return scaled * np.exp(1j * phase)
+
+        _append_tangential_sheet(
+            entries,
+            ctx,
+            kind=kind,
+            vector=current,
+            index=index,
+            spacing=spacing,
+            waveform=TemporalWaveform(signal, quadrature),
+            amplitude=amplitude,
+            impedance=impedance,
+            launched_power=source.power,
+            values_for=values_for,
+        )
     return CompiledInjectionPlan(tuple(entries))
