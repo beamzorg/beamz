@@ -74,6 +74,10 @@ def _structure_bounds(
     return cast(AxisValues, (*lower, z)), cast(AxisValues, (*upper, z + depth))
 
 
+def _usable_size(value) -> bool:
+    return value is not None and np.isfinite(value) and float(value) > 0.0
+
+
 def _feature_sizes(
     structure: Any,
 ) -> tuple[float | None, float | None, float | None]:
@@ -81,19 +85,13 @@ def _feature_sizes(
     if semantic is not None:
         return cast(
             tuple[float | None, float | None, float | None],
-            tuple(
-                value
-                if value is None
-                else (float(value) if np.isfinite(value) and value > 0.0 else None)
-                for value in semantic
-            ),
+            tuple(float(value) if _usable_size(value) else None for value in semantic),
         )
     width = getattr(structure, "width", None)
     height = getattr(structure, "height", None)
     depth = getattr(structure, "depth", None)
     return tuple(
-        value if value is not None and np.isfinite(value) and value > 0.0 else None
-        for value in (width, height, depth)
+        value if _usable_size(value) else None for value in (width, height, depth)
     )  # type: ignore[return-value]
 
 

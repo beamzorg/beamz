@@ -46,23 +46,23 @@ def _realize_uniform_grid(
             context="uniform spacing preflight",
             minimum_spacing=spacing,
         )
-    if float(design.depth) > 0.0:
-        return RectilinearGrid.uniform(
-            (0.0, 0.0, 0.0),
-            (nx * spacing, ny * spacing, nz * spacing),
-            (nx, ny, nz),
-        )
-    return RectilinearGrid.uniform(
-        (0.0, 0.0, 0.0),
-        (nx * spacing, ny * spacing, 1.0),
-        (nx, ny, 1),
-    )
+    if dimensions == 3:
+        return _uniform_covering(nx, ny, spacing, nz, nz * spacing)
+    return _uniform_covering(nx, ny, spacing, 1, 1.0)
 
 
 def _uniform_cell_count(extent: float, spacing: float) -> int:
-    ratio = float(extent) / spacing
+    ratio = float(extent) / float(spacing)
     tolerance = 16.0 * np.finfo(float).eps * max(1.0, abs(ratio))
     return max(1, math.ceil(ratio - tolerance))
+
+
+def _uniform_covering(nx: int, ny: int, spacing: float, nz: int, z_max: float):
+    return RectilinearGrid.uniform(
+        (0.0, 0.0, 0.0),
+        (nx * spacing, ny * spacing, z_max),
+        (nx, ny, nz),
+    )
 
 
 def _lower_bound_cells(coords: np.ndarray, limits: np.ndarray) -> int:

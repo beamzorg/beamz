@@ -73,6 +73,23 @@ def _positive(name, value, *, allow_zero=False):
     return value
 
 
+def _annulus_radii(inner_radius, outer_radius):
+    inner = _positive("inner_radius", inner_radius)
+    outer = _positive("outer_radius", outer_radius)
+    if outer <= inner:
+        raise ValueError(
+            f"outer_radius ({outer}) must be greater than inner_radius ({inner})"
+        )
+    return inner, outer
+
+
+def _round_frame(structure):
+    position = _position(structure.position, structure.z)
+    inner, outer = _annulus_radii(structure.inner_radius, structure.outer_radius)
+    depth = _positive("depth", structure.depth, allow_zero=True)
+    return position, inner, outer, depth, int(structure.points)
+
+
 def _normalize_common(structure):
     """Normalize fields shared by public immutable structure specs."""
     field_names = structure.__dataclass_fields__
@@ -207,6 +224,25 @@ class PlanarStructure(Structure):
                 _rotate(path, angle_rad, axis, center) for path in self.interiors
             ),
         )
+
+
+class _Annulus(PlanarStructure):
+    """Isotropic in-plane scaling shared by rings and circular bends."""
+
+    __slots__ = ()
+
+    def scale(self, s_x, s_y=None, s_z=None):
+        if s_y is not None and not np.isclose(float(s_x), float(s_y)):
+            return PlanarStructure.scale(self, s_x, s_y, s_z)
+        factor = float(s_x)
+        return self.updated_copy(
+            inner_radius=self.inner_radius * factor,
+            outer_radius=self.outer_radius * factor,
+        )
+
+    def _mesh_feature_sizes(self):
+        wall = self.outer_radius - self.inner_radius
+        return wall, wall, self.depth or None
 
 
 @dataclass(frozen=True, eq=False, slots=True)
@@ -346,7 +382,7 @@ class Circle(PlanarStructure):
 
 
 @dataclass(frozen=True, eq=False, slots=True)
-class Ring(PlanarStructure):
+class Ring(_Annulus):
     position: Any = (0.0, 0.0)
     inner_radius: float = 1.0
     outer_radius: float = 2.0
@@ -362,15 +398,7 @@ class Ring(PlanarStructure):
     interiors: tuple = field(init=False)
 
     def __post_init__(self):
-        position = _position(self.position, self.z)
-        inner = _positive("inner_radius", self.inner_radius)
-        outer = _positive("outer_radius", self.outer_radius)
-        if outer <= inner:
-            raise ValueError(
-                f"outer_radius ({outer}) must be greater than inner_radius ({inner})"
-            )
-        depth = _positive("depth", self.depth, allow_zero=True)
-        points = int(self.points)
+        position, inner, outer, depth, points = _round_frame(self)
         outer_vertices = _circle_vertices(position, outer, points)
         inner_vertices = tuple(reversed(_circle_vertices(position, inner, points)))
         for name, value in (
@@ -386,21 +414,9 @@ class Ring(PlanarStructure):
             object.__setattr__(self, name, value)
         _normalize_common(self)
 
-    def scale(self, s_x, s_y=None, s_z=None):
-        if s_y is not None and not np.isclose(float(s_x), float(s_y)):
-            return PlanarStructure.scale(self, s_x, s_y, s_z)
-        return self.updated_copy(
-            inner_radius=self.inner_radius * float(s_x),
-            outer_radius=self.outer_radius * float(s_x),
-        )
-
-    def _mesh_feature_sizes(self):
-        wall = self.outer_radius - self.inner_radius
-        return wall, wall, self.depth or None
-
 
 @dataclass(frozen=True, eq=False, slots=True)
-class CircularBend(PlanarStructure):
+class CircularBend(_Annulus):
     position: Any = (0.0, 0.0)
     inner_radius: float = 1.0
     outer_radius: float = 2.0
@@ -418,15 +434,7 @@ class CircularBend(PlanarStructure):
     interiors: tuple = field(init=False, default=())
 
     def __post_init__(self):
-        position = _position(self.position, self.z)
-        inner = _positive("inner_radius", self.inner_radius)
-        outer = _positive("outer_radius", self.outer_radius)
-        if outer <= inner:
-            raise ValueError(
-                f"outer_radius ({outer}) must be greater than inner_radius ({inner})"
-            )
-        depth = _positive("depth", self.depth, allow_zero=True)
-        points = int(self.points)
+        position, inner, outer, depth, points = _round_frame(self)
         if points < 2:
             raise ValueError(f"points must be at least 2, got {points}")
         theta = np.linspace(0.0, np.radians(float(self.angle)), points) + np.radians(
@@ -475,18 +483,6 @@ class CircularBend(PlanarStructure):
         ):
             return self.updated_copy(rotation=(self.rotation + float(angle)) % 360.0)
         return PlanarStructure.rotate(self, angle, axis, point)
-
-    def scale(self, s_x, s_y=None, s_z=None):
-        if s_y is not None and not np.isclose(float(s_x), float(s_y)):
-            return PlanarStructure.scale(self, s_x, s_y, s_z)
-        return self.updated_copy(
-            inner_radius=self.inner_radius * float(s_x),
-            outer_radius=self.outer_radius * float(s_x),
-        )
-
-    def _mesh_feature_sizes(self):
-        wall = self.outer_radius - self.inner_radius
-        return wall, wall, self.depth or None
 
 
 @dataclass(frozen=True, eq=False, slots=True)

@@ -85,6 +85,46 @@ def rasterize_regions(
     )
 
 
+_COEFFICIENT = {
+    "epsilon": "permittivity",
+    "mu": "permeability",
+    "conductivity": "conductivity",
+}
+
+
+def _coefficient(material, name: str) -> float:
+    return float(getattr(material, _COEFFICIENT[name.split("_")[0]]))
+
+
+def _index_window(edges, lower, upper, guard_cells: int) -> tuple[int, int]:
+    first = max(0, int(np.searchsorted(edges, lower, side="right")) - 1 - guard_cells)
+    last = min(
+        len(edges) - 1, int(np.searchsorted(edges, upper, side="left")) + guard_cells
+    )
+    return first, last
+
+
+def _storage_shape(local_shape, region, grid) -> tuple[int, ...]:
+    local_counts = tuple(end - start for start, end in region)
+    global_counts = tuple(len(edges) - 1 for edges in grid.edges)
+    expanded = tuple(
+        global_count + local_count - region_count
+        for global_count, local_count, region_count in zip(
+            global_counts[::-1], local_shape[1:], local_counts[::-1], strict=True
+        )
+    )
+    return (local_shape[0], *expanded)
+
+
+def _subgrid(grid, region):
+    return Grid(
+        *(
+            edges[start : end + 1]
+            for edges, (start, end) in zip(grid.edges, region, strict=True)
+        )
+    )
+
+
 def geometry_bounds(geometry) -> tuple[np.ndarray, np.ndarray]:
     if isinstance(geometry, Box):
         return np.asarray(geometry.minimum), np.asarray(geometry.maximum)
@@ -109,13 +149,7 @@ def occupied_region(scene, grid, guard_cells: int = 2) -> tuple[tuple[int, int],
     bounds_max = np.max(upper, axis=0)
     region = []
     for edges, minimum, maximum in zip(grid.edges, bounds_min, bounds_max, strict=True):
-        first = max(
-            0, int(np.searchsorted(edges, minimum, side="right")) - 1 - guard_cells
-        )
-        last = min(
-            len(edges) - 1,
-            int(np.searchsorted(edges, maximum, side="left")) + guard_cells,
-        )
+        first, last = _index_window(edges, minimum, maximum, guard_cells)
         if first >= last:
             raise ValueError("Scene object is outside the raster grid")
         region.append((first, last))
@@ -140,15 +174,9 @@ def _promote_components(array: np.ndarray, count: int) -> np.ndarray:
 def padded_array(
     local: np.ndarray, region: tuple[tuple[int, int], ...], grid, fill: float
 ) -> np.ndarray:
-    local_counts = tuple(end - start for start, end in region)
-    global_counts = tuple(len(edges) - 1 for edges in grid.edges)
-    full_shape = (local.shape[0],) + tuple(
-        global_count + local_count - region_count
-        for global_count, local_count, region_count in zip(
-            global_counts[::-1], local.shape[1:], local_counts[::-1], strict=True
-        )
+    full = _isotropic_array(
+        _storage_shape(local.shape, region, grid), fill, local.dtype
     )
-    full = _isotropic_array(full_shape, fill, local.dtype)
     x, y, z = region
     full[
         :,
@@ -163,8 +191,6 @@ def _tile_y_bounds(scene, x_min: float, x_max: float) -> tuple[float, float] | N
     """Conservative y bounds of objects crossing an x strip."""
     from shapely.geometry import Polygon as ShapelyPolygon
     from shapely.geometry import box as shapely_box
-
-    from beamz.design.raster import Box, ExtrudedPolygon, Mesh
 
     intervals = []
     for obj in scene.objects:
@@ -203,18 +229,11 @@ def _tile_y_bounds(scene, x_min: float, x_max: float) -> tuple[float, float] | N
 
 def rasterize_tiled_x(scene, grid, options, tile_cells: int, guard_cells: int = 2):
     """Raster x strips with a tight y range, then fill the known background."""
-    from beamz.design.raster import Grid, compile_scene
-
     if tile_cells < 1:
         raise ValueError("tile_cells must be positive")
     occupied = occupied_region(scene, grid, guard_cells=guard_cells)
     z_region = occupied[2]
     background = scene.materials[scene.background_material]
-    fill_values = {
-        "epsilon": float(background.permittivity),
-        "mu": float(background.permeability),
-        "conductivity": float(background.conductivity),
-    }
     compiled = compile_scene(scene)
     tensors = {}
     yee_tensors = {}
@@ -234,23 +253,11 @@ def rasterize_tiled_x(scene, grid, options, tile_cells: int, guard_cells: int = 
         )
         if y_bounds is None:
             continue
-        y_start = max(
-            0,
-            int(np.searchsorted(grid.y_edges, y_bounds[0], side="right"))
-            - 1
-            - guard_cells,
-        )
-        y_stop = min(
-            len(grid.y_edges) - 1,
-            int(np.searchsorted(grid.y_edges, y_bounds[1], side="left")) + guard_cells,
+        y_start, y_stop = _index_window(
+            grid.y_edges, y_bounds[0], y_bounds[1], guard_cells
         )
         region = (local_x, (y_start, y_stop), z_region)
-        local_grid = Grid(
-            *(
-                edges[start : end + 1]
-                for edges, (start, end) in zip(grid.edges, region, strict=True)
-            )
-        )
+        local_grid = _subgrid(grid, region)
         started = perf_counter()
         local = compiled.rasterize(local_grid, options=options)
         native_seconds += perf_counter() - started
@@ -263,20 +270,9 @@ def rasterize_tiled_x(scene, grid, options, tile_cells: int, guard_cells: int = 
         ):
             for name, local_array in getattr(local, group_name).items():
                 if name not in destination:
-                    local_counts = tuple(end - start for start, end in region)
-                    global_counts = tuple(len(edges) - 1 for edges in grid.edges)
-                    global_shape = (local_array.shape[0],) + tuple(
-                        global_count + local_count - region_count
-                        for global_count, local_count, region_count in zip(
-                            global_counts[::-1],
-                            local_array.shape[1:],
-                            local_counts[::-1],
-                            strict=True,
-                        )
-                    )
                     destination[name] = _isotropic_array(
-                        global_shape,
-                        fill_values[name.split("_")[0]],
+                        _storage_shape(local_array.shape, region, grid),
+                        _coefficient(background, name),
                         local_array.dtype,
                     )
                 component_count = max(destination[name].shape[0], local_array.shape[0])
@@ -329,8 +325,6 @@ def rasterize_split_substrate(
     guard_cells: int = 2,
 ):
     """Raster a remote, full-width substrate interface apart from the device."""
-    from beamz.design.raster import Box, Grid, Scene, compile_scene
-
     if substrate_object is None or not any(
         obj is substrate_object for obj in scene.objects
     ):
@@ -373,23 +367,14 @@ def rasterize_split_substrate(
         raise ValueError("Substrate and core regions overlap")
 
     def raster_local(part_scene, region):
-        local_grid = Grid(
-            *(
-                edges[start : end + 1]
-                for edges, (start, end) in zip(grid.edges, region, strict=True)
-            )
-        )
         started = perf_counter()
-        result = compile_scene(part_scene).rasterize(local_grid, options=options)
+        result = compile_scene(part_scene).rasterize(
+            _subgrid(grid, region), options=options
+        )
         return result, perf_counter() - started
 
     if core_tile_cells:
-        core_grid = Grid(
-            *(
-                edges[start : end + 1]
-                for edges, (start, end) in zip(grid.edges, core_region, strict=True)
-            )
-        )
+        core_grid = _subgrid(grid, core_region)
         started = perf_counter()
         core, core_tiles = rasterize_tiled_x(
             core_scene, core_grid, options, core_tile_cells, guard_cells
@@ -417,26 +402,8 @@ def rasterize_split_substrate(
             material_name = name.split("_")[0]
             component_count = max(core_array.shape[0], lower_array.shape[0])
             template = _promote_components(core_array, component_count)
-            fill = float(
-                getattr(
-                    background,
-                    {
-                        "epsilon": "permittivity",
-                        "mu": "permeability",
-                        "conductivity": "conductivity",
-                    }[material_name],
-                )
-            )
-            silicon_value = float(
-                getattr(
-                    silicon,
-                    {
-                        "epsilon": "permittivity",
-                        "mu": "permeability",
-                        "conductivity": "conductivity",
-                    }[material_name],
-                )
-            )
+            fill = _coefficient(background, material_name)
+            silicon_value = _coefficient(silicon, material_name)
             global_array = padded_array(template, core_region, grid, fill)
             substrate_start = substrate_region[2][0]
             global_array[:, :substrate_start] = _isotropic_array(

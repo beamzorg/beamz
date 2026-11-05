@@ -5,14 +5,9 @@ from typing import Any, cast
 
 import numpy as np
 
-from ..schema import (
-    ExtrudedPolygon,
-    Material,
-    Object,
-    Polygon,
-    Scene,
-    TaperedExtrudedPolygon,
-)
+from beamz.design.materials import _named_materials
+
+from ..schema import Material, Object, Polygon, Scene, _extruded
 
 _BUILTIN_MATERIALS_NEAR_1550_NM = {
     "air": Material(1.0),
@@ -192,14 +187,7 @@ def from_gdsfactory(
     material_lookup = dict(
         _BUILTIN_MATERIALS_NEAR_1550_NM if use_builtin_materials else {}
     )
-    material_lookup.update(
-        {
-            str(name).strip().lower(): (
-                value if isinstance(value, Material) else Material(float(value))
-            )
-            for name, value in (material_map or {}).items()
-        }
-    )
+    material_lookup.update(_named_materials(material_map))
 
     polygons = _polygons_by_layer(component)
     materials = [background]
@@ -246,26 +234,24 @@ def from_gdsfactory(
                     )
                     for offset in _offset_polygon(polygon, low_bias):
                         geometries.append(
-                            ExtrudedPolygon(offset, segment_min, segment_max)
-                            if low_bias == high_bias
-                            else TaperedExtrudedPolygon(
+                            _extruded(
                                 offset,
                                 segment_min,
                                 segment_max,
-                                sidewall_angle_degrees=float(angle),
+                                sidewall_angle_degrees=(
+                                    0.0 if low_bias == high_bias else float(angle)
+                                ),
                             )
                         )
             else:
                 geometries = [
-                    TaperedExtrudedPolygon(
+                    _extruded(
                         polygon,
                         z_min,
                         z_max,
                         sidewall_angle_degrees=sidewall,
                         width_to_z=float(getattr(level, "width_to_z", 0.0) or 0.0),
                     )
-                    if sidewall != 0.0
-                    else ExtrudedPolygon(polygon, z_min, z_max)
                 ]
             for geometry in geometries:
                 objects.append(

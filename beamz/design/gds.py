@@ -14,7 +14,7 @@ import numpy as np
 
 from beamz.const import µm
 from beamz.design.core import Design
-from beamz.design.materials import Material
+from beamz.design.materials import Material, _named_materials
 from beamz.design.structures import Box, Polygon, Rectangle
 from beamz.devices.ports import Port
 
@@ -106,10 +106,6 @@ def _polygons_on_layer(component: Any, layer: Layer) -> tuple[np.ndarray, ...]:
     return polygons
 
 
-def _material(value: Material | float) -> Material:
-    return value if isinstance(value, Material) else Material(float(value))
-
-
 def _stack_layers(
     layer_stack: Any,
     *,
@@ -124,12 +120,7 @@ def _stack_layers(
         "oxide": Material(float(n_clad) ** 2),
         "air": Material(1.0),
     }
-    materials.update(
-        {
-            str(name).strip().lower(): _material(value)
-            for name, value in (material_map or {}).items()
-        }
-    )
+    materials.update(_named_materials(material_map))
 
     layers = []
     for name, level in getattr(layer_stack, "layers", {}).items():

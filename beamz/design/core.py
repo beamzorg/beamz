@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 from shapely.geometry import Polygon as ShapelyPolygon
@@ -14,6 +14,7 @@ from beamz.design.structures import (
 )
 
 _DEFAULT_DOMAIN_SIZE = object()
+_DESIGN_FIELDS = ("width", "height", "depth", "background", "structures")
 
 
 def _material_key(material):
@@ -138,18 +139,30 @@ class Design:
         structures=(),
     ):
         """Create a design domain with specified dimensions and background material."""
-        width_is_default = width is _DEFAULT_DOMAIN_SIZE
-        height_is_default = height is _DEFAULT_DOMAIN_SIZE
-        depth_is_default = depth is _DEFAULT_DOMAIN_SIZE
         background_arg = background
-        if width_is_default:
-            width = 4 * µm
-        if height_is_default:
-            height = 4 * µm
-        if depth_is_default:
-            depth = 0
-        explicit_size = not (
-            width_is_default and height_is_default and depth_is_default
+        size_inputs = (
+            ("width", width, 4 * µm, False),
+            ("height", height, 4 * µm, False),
+            ("depth", depth, 0, True),
+        )
+        explicit_size = any(
+            value is not _DEFAULT_DOMAIN_SIZE for _, value, _, _ in size_inputs
+        )
+        resolved = {}
+        for name, value, default, allow_zero in size_inputs:
+            number = float(default if value is _DEFAULT_DOMAIN_SIZE else value)
+            if (
+                not np.isfinite(number)
+                or number < 0
+                or (number == 0 and not allow_zero)
+            ):
+                kind = "non-negative" if allow_zero else "positive"
+                raise ValueError(f"Design {name} must be finite and {kind}.")
+            resolved[name] = number
+        width, height, depth = (
+            resolved["width"],
+            resolved["height"],
+            resolved["depth"],
         )
         if (
             background_arg is not None
@@ -163,16 +176,6 @@ class Design:
             material = Material(permittivity=1.0, permeability=1.0, conductivity=0.0)
         if not isinstance(material, MaterialProtocol):
             raise TypeError("Design background must satisfy MaterialProtocol.")
-
-        width = float(cast(float, width))
-        height = float(cast(float, height))
-        depth = float(cast(float, depth))
-        if not np.isfinite(width) or width <= 0:
-            raise ValueError("Design width must be finite and positive.")
-        if not np.isfinite(height) or height <= 0:
-            raise ValueError("Design height must be finite and positive.")
-        if not np.isfinite(depth) or depth < 0:
-            raise ValueError("Design depth must be finite and non-negative.")
 
         normalized_structures = tuple(structures)
         for structure in normalized_structures:
@@ -209,7 +212,7 @@ class Design:
 
     def canonical_spec(self):
         """Return the immutable values defining physical cache identity."""
-        return self.width, self.height, self.depth, self.background, self.structures
+        return tuple(getattr(self, name) for name in _DESIGN_FIELDS)
 
     def __eq__(self, other):
         if not isinstance(other, Design):
@@ -229,23 +232,11 @@ class Design:
 
     def updated_copy(self, **changes):
         """Return a design with domain, background, or structures replaced."""
-        unknown = set(changes) - {
-            "width",
-            "height",
-            "depth",
-            "background",
-            "structures",
-        }
+        unknown = set(changes) - set(_DESIGN_FIELDS)
         if unknown:
             names = ", ".join(sorted(unknown))
             raise TypeError(f"Unknown Design field(s): {names}.")
-        values = {
-            "width": self.width,
-            "height": self.height,
-            "depth": self.depth,
-            "background": self.background,
-            "structures": self.structures,
-        }
+        values = {name: getattr(self, name) for name in _DESIGN_FIELDS}
         values.update(changes)
         result = type(self)(**values)
         if not ({"width", "height", "depth"} & changes.keys()):

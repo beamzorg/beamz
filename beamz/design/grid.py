@@ -159,8 +159,6 @@ class RectilinearGrid:
             not np.isfinite(value) or value <= 0.0 for value in spacings
         ):
             raise ValueError("Grid spacing must contain three positive finite values.")
-        spacing_x, spacing_y, spacing_z = spacings
-        spacings = (spacing_x, spacing_y, spacing_z)
         lower = tuple(float(value) for value in origin)
         if len(lower) != 3 or not np.all(np.isfinite(lower)):
             raise ValueError("Grid origin must contain three finite coordinates.")
@@ -309,31 +307,22 @@ class RectilinearGrid:
     ) -> int:
         edges = self.axis_edges(axis)
         coordinate = float(coordinate)
+        last = edges.size - 1
+
+        def clipped(side: str, shift: int = 0) -> int:
+            found = int(np.searchsorted(edges, coordinate, side=side)) + shift
+            return int(np.clip(found, 0, last))
+
         if snap == "lower":
-            return int(
-                np.clip(
-                    np.searchsorted(edges, coordinate, side="right") - 1,
-                    0,
-                    edges.size - 1,
-                )
-            )
+            return clipped("right", -1)
         if snap == "upper":
-            return int(
-                np.clip(
-                    np.searchsorted(edges, coordinate, side="left"), 0, edges.size - 1
-                )
-            )
+            return clipped("left")
         if snap != "nearest":
             raise ValueError(f"Unknown grid snapping rule {snap!r}.")
-        upper = int(
-            np.clip(np.searchsorted(edges, coordinate, side="left"), 0, edges.size - 1)
-        )
+        upper = clipped("left")
         lower = max(0, upper - 1)
-        return (
-            lower
-            if abs(coordinate - edges[lower]) <= abs(edges[upper] - coordinate)
-            else upper
-        )
+        nearer = abs(coordinate - edges[lower]) <= abs(edges[upper] - coordinate)
+        return lower if nearer else upper
 
     def cell_volume(self) -> np.ndarray:
         dx, dy, dz = (self.cell_widths(axis) for axis in _AXES)

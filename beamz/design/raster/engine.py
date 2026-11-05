@@ -12,6 +12,8 @@ from pathlib import Path
 
 import numpy as np
 
+from beamz.design.materials import _symmetric
+
 from . import _native  # type: ignore[attr-defined]
 from .result import RasterResult
 from .schema import _CACHE_SCHEMA_VERSION, _ENGINE_VERSION, Grid, Scene
@@ -75,8 +77,7 @@ def staircase_materials(scene: Scene, options: RasterOptions) -> tuple[int, ...]
                 frequency = sum(material.frequency_range) / 2
             minimum = float(np.real(material.eps_model(frequency)))
         else:
-            xx, yy, zz, xy, xz, yz = material.epsilon_r
-            minimum = np.linalg.eigvalsh(((xx, xy, xz), (xy, yy, yz), (xz, yz, zz)))[0]
+            minimum = np.linalg.eigvalsh(_symmetric(material.epsilon_r))[0]
         if minimum < 1:
             metals.append(index)
     return tuple(metals)
