@@ -7,18 +7,17 @@ from typing import Any
 
 import numpy as np
 
-from beamz.analysis._coordinates import monitor_plane_coordinates_3d
-from beamz.lattice import (
-    component_coordinates_2d_um,
-    component_coordinates_3d_um,
-    component_coordinates_rectilinear,
-    coordinates_in_public_frame,
-    plane_axes_3d,
+from beamz.analysis._coordinates import (
+    _STORAGE_AXIS,
+    _public_component_coordinates,
+    _sample_extent,
+    monitor_plane_coordinates_3d,
 )
+from beamz.lattice import plane_axes_3d
 from beamz.simulation.results import MonitorResults, SimulationResults
 
 _UM = 1e-6
-_AXIS_INDEX = {"z": 0, "y": 1, "x": 2}
+_AXIS_INDEX = _STORAGE_AXIS
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,18 +82,34 @@ def _select_recording(results, *, monitor_name, field) -> MonitorResults:
     return matches[0]
 
 
-def _axis_extent(values, *, fallback_step):
-    coordinates = np.asarray(values, dtype=float)
-    if coordinates.size == 0:
-        raise ValueError("Recorded field coordinates are empty.")
-    step = (
-        float(np.nanmedian(np.diff(coordinates)))
-        if coordinates.size > 1
-        else float(fallback_step)
-    )
+def _display_coordinates(metadata, field, *, is_3d):
+    coords = _public_component_coordinates(metadata, field, is_3d=is_3d)
+    return {axis: values / _UM for axis, values in coords.items()}
+
+
+def _video_extent(coordinates, horizontal, vertical, resolution_um):
     return (
-        float(coordinates[0] - 0.5 * step),
-        float(coordinates[-1] + 0.5 * step),
+        *_sample_extent(coordinates[horizontal], fallback_step=resolution_um),
+        *_sample_extent(coordinates[vertical], fallback_step=resolution_um),
+    )
+
+
+def _video_frame(
+    frames,
+    times,
+    coordinates,
+    horizontal,
+    vertical,
+    resolution_um,
+    slice_label=None,
+):
+    return _VideoData(
+        frames,
+        times,
+        _video_extent(coordinates, horizontal, vertical, resolution_um),
+        horizontal,
+        vertical,
+        slice_label,
     )
 
 
@@ -138,11 +153,11 @@ def _slice_recorder_video(
             - offset_by_axis[vertical],
         )
     else:
-        x_extent = _axis_extent(
+        x_extent = _sample_extent(
             coord1 / _UM - offset_by_axis[horizontal],
             fallback_step=resolution_um,
         )
-        y_extent = _axis_extent(
+        y_extent = _sample_extent(
             coord0 / _UM - offset_by_axis[vertical],
             fallback_step=resolution_um,
         )
@@ -175,8 +190,6 @@ def _volume_recorder_video(
     *,
     plane,
     index,
-    offsets_um,
-    offset_by_axis,
     resolution_um,
 ):
     if frames.ndim != 4:
@@ -193,44 +206,21 @@ def _volume_recorder_video(
         )
     selected_index %= frames.shape[frame_axis]
     frames = np.take(frames, selected_index, axis=frame_axis)
-    local_coordinates = (
-        {
-            axis: values / _UM
-            for axis, values in component_coordinates_rectilinear(
-                field, metadata.grid
-            ).items()
-        }
-        if metadata.grid is not None
-        else component_coordinates_3d_um(
-            field,
-            metadata.fields.grid_shape,
-            resolution_um,
-        )
-    )
-    coordinates = coordinates_in_public_frame(local_coordinates, offsets_um)
+    coordinates = _display_coordinates(metadata, field, is_3d=True)
     vertical, horizontal = plane_axes_3d(normal)
-    x_extent = _axis_extent(
-        coordinates[horizontal],
-        fallback_step=resolution_um,
-    )
-    y_extent = _axis_extent(
-        coordinates[vertical],
-        fallback_step=resolution_um,
-    )
     position_um = coordinates[normal][selected_index]
-    return _VideoData(
+    return _video_frame(
         frames,
         times,
-        (*x_extent, *y_extent),
+        coordinates,
         horizontal,
         vertical,
+        resolution_um,
         f"{normal}={position_um:.3g} um",
     )
 
 
-def _domain_recorder_video(
-    metadata, frames, times, field, offset_by_axis, resolution_um, offsets_um
-):
+def _domain_recorder_video(metadata, frames, times, field, resolution_um):
     if frames.ndim != 3:
         raise ValueError(f"Full-domain 2D frames must have rank 3, got {frames.shape}.")
     vertical, horizontal = {
@@ -238,40 +228,13 @@ def _domain_recorder_video(
         "xz": ("z", "x"),
         "yz": ("z", "y"),
     }[metadata.plane_2d]
-    local_coordinates = (
-        {
-            axis: values / _UM
-            for axis, values in component_coordinates_rectilinear(
-                field,
-                metadata.grid,
-                plane=metadata.plane_2d,
-                polarization=metadata.polarization_2d,
-            ).items()
-        }
-        if metadata.grid is not None
-        else component_coordinates_2d_um(
-            field,
-            metadata.fields.grid_shape,
-            resolution_um,
-            metadata.plane_2d,
-            metadata.polarization_2d,
-        )
-    )
-    coordinates = coordinates_in_public_frame(local_coordinates, offsets_um)
-    x_extent = _axis_extent(
-        coordinates[horizontal],
-        fallback_step=resolution_um,
-    )
-    y_extent = _axis_extent(
-        coordinates[vertical],
-        fallback_step=resolution_um,
-    )
-    return _VideoData(
+    return _video_frame(
         frames,
         times,
-        (*x_extent, *y_extent),
+        _display_coordinates(metadata, field, is_3d=False),
         horizontal,
         vertical,
+        resolution_um,
     )
 
 
@@ -284,12 +247,16 @@ def _video_data(results, recording, *, field, plane, index):
             f"Recorder {recording.monitor.name!r} has no complete {field!r} frames."
         )
 
-    offsets_um = tuple(value / _UM for value in metadata.coordinate_offset)
-    offset_by_axis = dict(zip("xyz", offsets_um, strict=True))
     resolution_um = metadata.resolution / _UM
     monitor = recording.monitor
-
     if getattr(monitor, "region", "domain") == "slice":
+        offset_by_axis = dict(
+            zip(
+                "xyz",
+                (value / _UM for value in metadata.coordinate_offset),
+                strict=True,
+            )
+        )
         return _slice_recorder_video(
             metadata,
             recording,
@@ -307,19 +274,9 @@ def _video_data(results, recording, *, field, plane, index):
             field,
             plane=plane,
             index=index,
-            offsets_um=offsets_um,
-            offset_by_axis=offset_by_axis,
             resolution_um=resolution_um,
         )
-    return _domain_recorder_video(
-        metadata,
-        frames,
-        times,
-        field,
-        offset_by_axis,
-        resolution_um,
-        offsets_um,
-    )
+    return _domain_recorder_video(metadata, frames, times, field, resolution_um)
 
 
 def _color_limits(frames, cmap_limits, *, vmin, vmax):
@@ -369,12 +326,10 @@ def _dynamic_limits(frame, *, vmin, vmax):
 
 def _format_time(value):
     magnitude = abs(float(value))
-    if magnitude < 1e-12:
-        return f"{value * 1e15:.2f} fs"
-    if magnitude < 1e-9:
-        return f"{value * 1e12:.2f} ps"
-    if magnitude < 1e-6:
-        return f"{value * 1e9:.2f} ns"
+    scales = ((1e-12, 1e15, "fs"), (1e-9, 1e12, "ps"), (1e-6, 1e9, "ns"))
+    for limit, scale, unit in scales:
+        if magnitude < limit:
+            return f"{value * scale:.2f} {unit}"
     return f"{value:.3g} s"
 
 

@@ -14,6 +14,7 @@ from beamz.analysis._plot_canvas import (
     _figure_axes,
     _maybe_show,
     _pyplot,
+    _shifted_grid_edges,
     _simulation_origin,
 )
 from beamz.analysis._plot_design import _draw_boundaries, plot_design
@@ -61,16 +62,43 @@ def _cross_section_arrays(
     return (xy, xz), material_cmap, norm
 
 
+def _section_axes(figsize, width_ratios, *, constrained=False):
+    fig, axes = _pyplot().subplots(
+        1,
+        2,
+        figsize=figsize,
+        gridspec_kw={"width_ratios": width_ratios} if width_ratios else None,
+        constrained_layout=constrained,
+    )
+    return fig, list(np.ravel(axes))
+
+
+def _apply_section_limits(axes, xlim, ylim, zlim):
+    if xlim is not None:
+        axes[0].set_xlim(*xlim)
+        axes[1].set_xlim(*xlim)
+    if ylim is not None:
+        axes[0].set_ylim(*ylim)
+    if zlim is not None:
+        axes[1].set_ylim(*zlim)
+
+
+def _label_layout_slices(axes, slices, *, ylim=False):
+    for ax, item in zip(axes, slices, strict=True):
+        labels = {
+            "title": f"cross section at {item.normal}={item.position / _UM:.2f} (um)",
+            "xlabel": f"{item.horizontal} (um)",
+            "ylabel": f"{item.vertical} (um)",
+            "xlim": item.extent[:2],
+        }
+        if ylim:
+            labels["ylim"] = item.extent[2:]
+        ax.set(**labels)
+
+
 def _label_cross_sections(fig, axes, images, slices, *, categorical, lengths):
     if categorical:
-        for ax, item in zip(axes, slices, strict=True):
-            ax.set(
-                title=f"cross section at {item.normal}={item.position / _UM:.2f} (um)",
-                xlabel=f"{item.horizontal} (um)",
-                ylabel=f"{item.vertical} (um)",
-            )
-        axes[0].set_xlim(slices[0].extent[:2])
-        axes[1].set_xlim(slices[1].extent[:2])
+        _label_layout_slices(axes, slices)
         return
     for ax, image, item in zip(axes, images, slices, strict=True):
         ax.set_title(f"{item.normal} slice {item.index}")
@@ -147,13 +175,7 @@ def _plot_simulation_slices(
         cmap=cmap,
     )
 
-    fig, axes = _pyplot().subplots(
-        1,
-        2,
-        figsize=figsize,
-        gridspec_kw={"width_ratios": width_ratios} if width_ratios else None,
-    )
-    axes = list(np.ravel(axes))
+    fig, axes = _section_axes(figsize, width_ratios)
     images = [
         plot_field_view(
             ax,
@@ -198,13 +220,7 @@ def _plot_simulation_slices(
         categorical=categorical,
         lengths=lengths,
     )
-    if xlim is not None:
-        axes[0].set_xlim(*xlim)
-        axes[1].set_xlim(*xlim)
-    if ylim is not None:
-        axes[0].set_ylim(*ylim)
-    if zlim is not None:
-        axes[1].set_ylim(*zlim)
+    _apply_section_limits(axes, xlim, ylim, zlim)
     fig.tight_layout()
     _maybe_show(fig, show=show)
     return fig, axes
@@ -262,14 +278,7 @@ def _plot_3d_geometry_cross_sections(
         _layout_slice("z", z, design=design, origin=origin),
         _layout_slice("y", y, design=design, origin=origin),
     )
-    fig, axes = _pyplot().subplots(
-        1,
-        2,
-        figsize=figsize,
-        gridspec_kw={"width_ratios": width_ratios} if width_ratios else None,
-        constrained_layout=True,
-    )
-    axes = list(np.ravel(axes))
+    fig, axes = _section_axes(figsize, width_ratios, constrained=True)
     colors = _layout_material_colors(design)
     for ax, item in zip(axes, slices, strict=True):
         physical_position = item.position + float(
@@ -294,24 +303,12 @@ def _plot_3d_geometry_cross_sections(
         source_markers=source_markers,
         monitor_markers=monitor_markers,
     )
-    for ax, item in zip(axes, slices, strict=True):
-        ax.set(
-            title=f"cross section at {item.normal}={item.position / _UM:.2f} (um)",
-            xlabel=f"{item.horizontal} (um)",
-            ylabel=f"{item.vertical} (um)",
-            xlim=item.extent[:2],
-            ylim=item.extent[2:],
-        )
+    _label_layout_slices(axes, slices, ylim=True)
+    for ax in axes:
         ax.grid(False)
     axes[0].set_aspect("equal", adjustable="box")
     axes[1].set_aspect("auto")
-    if xlim is not None:
-        axes[0].set_xlim(*xlim)
-        axes[1].set_xlim(*xlim)
-    if ylim is not None:
-        axes[0].set_ylim(*ylim)
-    if zlim is not None:
-        axes[1].set_ylim(*zlim)
+    _apply_section_limits(axes, xlim, ylim, zlim)
     _maybe_show(fig, show=show)
     return fig, axes
 
@@ -377,10 +374,7 @@ def _permittivity_plane(sim, *, x, y, z):
     eps = np.real(np.asarray(materials.permittivity))
     grid = materials.grid
     origin = _simulation_origin(sim)
-    edges = {
-        axis: np.asarray(grid.axis_edges(axis)) - grid.origin[index] - origin[index]
-        for index, axis in enumerate(("x", "y", "z"))
-    }
+    edges = _shifted_grid_edges(grid, origin, "xyz")
     selected = [
         (axis, value)
         for axis, value in (("x", x), ("y", y), ("z", z))
@@ -469,16 +463,14 @@ def plot_simulation_permittivity(
 def _draw_2d_material_grid(ax, sim, local_origin):
     materials = sim._material_grid()
     grid = materials.grid
-    edges = [
-        (np.asarray(grid.axis_edges(axis)) - grid.origin[i] - local_origin[i]) / _UM
-        for i, axis in enumerate(("x", "y"))
-    ]
+    edges = _shifted_grid_edges(grid, local_origin, "xy")
+    edges = {axis: values / _UM for axis, values in edges.items()}
     cmap, norm = _material_cmap()
     plot_field_view(
         ax,
         _material_category_array(materials.permittivity),
-        x_edges=edges[0],
-        y_edges=edges[1],
+        x_edges=edges["x"],
+        y_edges=edges["y"],
         cmap=cmap,
         norm=norm,
     )

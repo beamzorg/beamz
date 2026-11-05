@@ -7,13 +7,16 @@ from typing import Any
 
 import numpy as np
 
+from beamz.analysis._coordinates import _sample_extent
 from beamz.analysis._plot_canvas import (
     _AXIS_INDEX,
     _PLANE_AXES,
     _add_field_colorbar,
+    _display_extent,
     _figure_axes,
     _index_from_position,
     _maybe_show,
+    _origin_map,
 )
 
 
@@ -58,9 +61,7 @@ def extract_axis_aligned_slice(
     if array.ndim != 3 or normal not in _PLANE_AXES:
         raise ValueError("Axis-aligned slices require a 3D array and x, y, or z axis.")
     axis_index = _AXIS_INDEX[normal]
-    origin_by_axis: dict[str, float] = dict(
-        zip(("x", "y", "z"), map(float, origin), strict=True)
-    )
+    origin_by_axis = _origin_map(origin)
     absolute_position = position
     if position is not None and display_position:
         absolute_position = float(position) + origin_by_axis[normal]
@@ -78,11 +79,8 @@ def extract_axis_aligned_slice(
             name: array.shape[_AXIS_INDEX[name]] * float(step)
             for name in ("x", "y", "z")
         }
-    extent = (
-        (0.0 - origin_by_axis[horizontal]) / unit,
-        (float(lengths[horizontal]) - origin_by_axis[horizontal]) / unit,
-        (0.0 - origin_by_axis[vertical]) / unit,
-        (float(lengths[vertical]) - origin_by_axis[vertical]) / unit,
+    extent = _display_extent(
+        origin_by_axis, horizontal, vertical, lengths, unit=unit
     )
     shown_position = (
         float(position)
@@ -226,10 +224,7 @@ def _coord_extent_um(da, *, sim=None):
         if coord.size == 0:
             return (0.0, 1.0)
         values = (coord - float(offset_by_dim.get(dim, 0.0))) / 1e-6
-        if values.size == 1:
-            return (float(values[0] - 0.5), float(values[0] + 0.5))
-        step = float(np.nanmedian(np.diff(values)))
-        return (float(values[0] - 0.5 * step), float(values[-1] + 0.5 * step))
+        return _sample_extent(values, fallback_step=1.0)
 
     x0, x1 = axis_extent(x_dim)
     y0, y1 = axis_extent(y_dim)

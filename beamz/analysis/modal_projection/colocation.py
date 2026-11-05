@@ -7,22 +7,19 @@ from typing import Any
 
 import numpy as np
 
-from beamz.analysis.data import AnalysisData, static_fields
-from beamz.const import µm
 from beamz.devices.modes.fields import _normalize_profiles
-from beamz.lattice import (
-    component_coordinates_3d_um,
-    component_coordinates_rectilinear,
-    normal_plane_wave_transfer,
+from beamz.lattice import normal_plane_wave_transfer
+
+from .geometry import (
+    _component_plane_coordinates,
+    _monitor_component_plane_coords_3d,
 )
 
-from .geometry import _monitor_component_plane_coords_3d, _plane_axes_for_port_axis
 
-
-def _interp_complex(sample_at, source_at, values):
-    return np.interp(sample_at, source_at, np.real(values)) + 1j * np.interp(
-        sample_at, source_at, np.imag(values)
-    )
+def _interp_complex(sample_at, source_at, values, **interp):
+    real = np.interp(sample_at, source_at, np.real(values), **interp)
+    imag = np.interp(sample_at, source_at, np.imag(values), **interp)
+    return real + 1j * imag
 
 
 def _interpolate_plane_matrix_2d(
@@ -131,30 +128,9 @@ def _colocate_field_components_to_projection_3d(
 
 
 def _component_index_plane_coords_3d(sim, component, index, axis):
-    if isinstance(sim, AnalysisData):
-        grid_shape = sim.coordinates.fields.grid_shape
-        grid = sim.coordinates.grid
-    else:
-        fields = static_fields(sim)
-        grid = getattr(fields, "geometry", None)
-        grid_shape = getattr(fields, "grid_shape", None)
-        if grid_shape is None:
-            grid_shape = np.asarray(fields.permittivity).shape
-    if grid is None or grid.metric_kind == "isotropic_uniform":
-        coords = {
-            name: values * float(µm)
-            for name, values in component_coordinates_3d_um(
-                component,
-                tuple(int(v) for v in grid_shape),
-                float(sim.resolution / µm),
-            ).items()
-        }
-    else:
-        coords = component_coordinates_rectilinear(component, grid)
-    axis0, axis1 = _plane_axes_for_port_axis(axis)
-    axis_indices = {"z": index[0], "y": index[1], "x": index[2]}
-    coord0 = np.asarray(coords[axis0][axis_indices[axis0]], dtype=np.float64)
-    coord1 = np.asarray(coords[axis1][axis_indices[axis1]], dtype=np.float64)
+    coord0, coord1 = _component_plane_coordinates(
+        sim, component, index, axis, analytic_if_uniform=True
+    )
     return coord0.reshape(-1), coord1.reshape(-1)
 
 

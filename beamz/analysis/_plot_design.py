@@ -34,32 +34,39 @@ def _vertices_2d(vertices):
     return [(float(v[0]), float(v[1])) for v in vertices or ()]
 
 
+def _closed_ring_path(rings):
+    from matplotlib.path import Path
+
+    coords, codes = [], []
+    for ring in rings:
+        ring = np.asarray(ring, dtype=float)
+        if ring.shape[0] < 3:
+            continue
+        coords.extend(ring)
+        codes.extend(
+            (Path.MOVETO, *(Path.LINETO,) * (ring.shape[0] - 1), Path.CLOSEPOLY)
+        )
+        coords.append(ring[0])
+    if not coords:
+        return None
+    return Path(np.asarray(coords, dtype=float), np.asarray(codes))
+
+
 def _draw_polygon(ax, structure, *, index=0, fill=True, alpha=None, edgecolor="black"):
     vertices = _vertices_2d(getattr(structure, "vertices", ()))
     if len(vertices) < 3:
         return None
 
     from matplotlib.patches import PathPatch
-    from matplotlib.path import Path
 
-    coords = []
-    codes = []
-    for path in [
-        vertices,
-        *[_vertices_2d(p) for p in getattr(structure, "interiors", ())],
-    ]:
-        if len(path) < 3:
-            continue
-        coords.append(path[0])
-        codes.append(Path.MOVETO)
-        coords.extend(path[1:])
-        codes.extend([Path.LINETO] * (len(path) - 1))
-        coords.append(path[0])
-        codes.append(Path.CLOSEPOLY)
-
+    path = _closed_ring_path(
+        [vertices, *[_vertices_2d(p) for p in getattr(structure, "interiors", ())]]
+    )
+    if path is None:
+        return None
     facecolor = _material_color(structure, index) if fill else "none"
     patch = PathPatch(
-        Path(np.asarray(coords), np.asarray(codes)),
+        path,
         facecolor=facecolor,
         edgecolor=edgecolor,
         linewidth=1.0,

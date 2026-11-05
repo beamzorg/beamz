@@ -6,14 +6,16 @@ import numpy as np
 
 from beamz.analysis._coordinates import monitor_plane_coordinates_3d
 from beamz.analysis._plot_canvas import (
+    _PLANE_AXES,
     _UM,
     _add_field_colorbar,
     _coordinate_extent,
-    _edges_are_uniform,
     _field_colorbar_label,
     _field_display_scale_and_units,
     _figure_axes,
     _maybe_show,
+    _origin_map,
+    _plane_edges_um,
     _simulation_origin,
 )
 from beamz.analysis._plot_fields import (
@@ -152,10 +154,6 @@ def _dft_plane_extent(
     resolution,
 ):
     """Return the image extent and, when needed, rectilinear plot and grid edges."""
-    plot_x_edges = None
-    plot_y_edges = None
-    grid_x_edges = None
-    grid_y_edges = None
     grid = getattr(coordinate_context, "grid", None)
     if grid is None:
         extent = _coordinate_extent(
@@ -165,23 +163,12 @@ def _dft_plane_extent(
             origin1=origin_by_axis[axis1],
             fallback_step=resolution,
         )
-        return extent, plot_x_edges, plot_y_edges, grid_x_edges, grid_y_edges
-    interval0 = sample_region.axis_interval(axis0)
-    interval1 = sample_region.axis_interval(axis1)
-    if interval0 is None or interval1 is None:
+        return extent, None, None, None, None
+    plane = _plane_edges_um(grid, sample_region, axis0, axis1, origin_by_axis)
+    if plane is None:
         raise ValueError("A 3D DFT monitor is missing a tangential grid interval.")
-    edges0 = grid.axis_edges(axis0)
-    edges1 = grid.axis_edges(axis1)
-    x_edges = (
-        edges1[interval1.start : interval1.stop + 1] - origin_by_axis[axis1]
-    ) / _UM
-    y_edges = (
-        edges0[interval0.start : interval0.stop + 1] - origin_by_axis[axis0]
-    ) / _UM
-    extent = (x_edges[0], x_edges[-1], y_edges[0], y_edges[-1])
-    if not _edges_are_uniform(x_edges) or not _edges_are_uniform(y_edges):
-        plot_x_edges, plot_y_edges = x_edges, y_edges
-    return extent, plot_x_edges, plot_y_edges, x_edges, y_edges
+    extent, x_edges, y_edges, plot_x, plot_y = plane
+    return extent, plot_x, plot_y, x_edges, y_edges
 
 
 def _draw_cell_edges(ax, x_edges, y_edges, *, color, linewidth, alpha):
@@ -249,10 +236,9 @@ def plot_dft_field(
     if not getattr(monitor, "is_3d", False):
         raise ValueError("plot_dft_field expects a 3D plane monitor.")
     axis = str(getattr(monitor, "plane_normal", "z")).lower()
-    plane_axes = {"x": ("z", "y"), "y": ("z", "x"), "z": ("y", "x")}
-    if axis not in plane_axes:
+    if axis not in _PLANE_AXES:
         raise ValueError("DFT field monitor plane_normal must be one of x, y, or z.")
-    axis0, axis1 = plane_axes[axis]
+    axis0, axis1 = _PLANE_AXES[axis]
 
     f_idx, freqs = _dft_frequency(data, frequency, frequency_index)
 
@@ -274,8 +260,7 @@ def plot_dft_field(
 
     if origin is None:
         origin = _simulation_origin(coordinate_context)
-    ox, oy, oz = (float(v) for v in origin)
-    origin_by_axis = {"x": ox, "y": oy, "z": oz}
+    origin_by_axis = _origin_map(origin)
     extent, plot_x_edges, plot_y_edges, grid_x_edges, grid_y_edges = _dft_plane_extent(
         coordinate_context,
         sample_region,
@@ -602,8 +587,9 @@ def plot_mode_field_components(
     else:
         axes = np.asarray(ax, dtype=object).reshape(shape)
         fig = axes.flat[0].figure
-    component_index = {name: idx for idx, name in enumerate(("Ex", "Ey", "Ez"))}
-    component_index.update({name: idx for idx, name in enumerate(("Hx", "Hy", "Hz"))})
+    component_index = {
+        f"{kind}{axis}": idx for kind in "EH" for idx, axis in enumerate("xyz")
+    }
     grid_edges = getattr(modes, "grid_edges", None)
     transverse_axes = getattr(modes, "transverse_axes", None)
     neffs = []

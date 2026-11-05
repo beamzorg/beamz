@@ -8,6 +8,7 @@ from beamz.analysis import mode_projection as _mp
 from beamz.analysis.data import analysis_inputs
 from beamz.analysis.modal_projection.colocation import (
     _colocate_field_components_to_projection_3d,
+    _interp_complex,
 )
 from beamz.analysis.modal_projection.diagnostics import (
     _modal_projection_reconstruction_residual,
@@ -142,9 +143,9 @@ def _resample_complex_matrix(freq_src, values_src, freq_dst):
         return src
     out = np.empty((len(freq_dst), src.shape[1]), dtype=np.complex128)
     for col in range(src.shape[1]):
-        re = np.interp(freq_dst, freq_src, np.real(src[:, col]), left=0.0, right=0.0)
-        im = np.interp(freq_dst, freq_src, np.imag(src[:, col]), left=0.0, right=0.0)
-        out[:, col] = re + 1j * im
+        out[:, col] = _interp_complex(
+            freq_dst, freq_src, src[:, col], left=0.0, right=0.0
+        )
     return out
 
 
@@ -607,12 +608,9 @@ def _modal_dft_flux_diagnostics(inputs, port_map, waves, frequencies):
         incident_selector, scattered_selector = _wave_selectors(
             spec, is_3d=bool(data and data.is_3d)
         )
-        if scattered_selector == "plus":
-            selected_power = p_plus
-            rejected_power = p_minus
-        else:
-            selected_power = p_minus
-            rejected_power = p_plus
+        selected_power, rejected_power = (
+            (p_plus, p_minus) if scattered_selector == "plus" else (p_minus, p_plus)
+        )
         selected_modal_net = selected_power - rejected_power
 
         def _flux_for_monitor(monitor_name):
