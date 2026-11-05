@@ -52,6 +52,14 @@ def _checkpoint_interval(value, num_steps):
     return min(interval, num_steps)
 
 
+def _scan_remainder(state, total, interval, scan, finish):
+    chunks, remainder = divmod(total, interval)
+    out = jax.lax.scan(scan, state, xs=None, length=chunks)[0]
+    if remainder:
+        out = finish(out, remainder)
+    return out
+
+
 def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=None):
     """Return ``run(state, coefficients, source_amplitudes=None)`` for ``jax.grad``.
 
@@ -188,6 +196,15 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
         if interval == 0:
             return pack_dft(jax.lax.scan(step, state, xs=None, length=cfg.num_steps)[0])
 
+        def advance(chunk, carry):
+            return chunk(
+                carry,
+                coefficients,
+                ctx,
+                observation_origin,
+                carry.current_step - initial_step,
+            )
+
         if native_step is not None:
             # One native forward graph per checkpoint. Its custom VJP retains
             # the boundary state, replays the local trajectory, and applies the
@@ -195,41 +212,35 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
             native_chunk = native_step.for_steps(interval)
 
             def chunk(carry, _unused):
-                return native_chunk(
-                    carry,
-                    coefficients,
-                    ctx,
-                    observation_origin,
-                    carry.current_step - initial_step,
-                ), None
+                return advance(native_chunk, carry), None
 
-            chunks, tail = divmod(cfg.num_steps, interval)
-            out = jax.lax.scan(chunk, state, xs=None, length=chunks)[0]
-            if tail:
-                out = native_step.for_steps(tail)(
-                    out,
-                    coefficients,
-                    ctx,
-                    observation_origin,
-                    out.current_step - initial_step,
-                )
-            return pack_dft(out)
+            def finish(carry, remainder):
+                return advance(native_step.for_steps(remainder), carry)
+
+            return pack_dft(
+                _scan_remainder(state, cfg.num_steps, interval, chunk, finish)
+            )
 
         def chunk(carry, _unused):
             return jax.lax.scan(step, carry, xs=None, length=interval)[0], None
 
-        # Only chunk boundary states survive the forward pass. The backward pass
-        # replays a chunk and retains its local trajectory, then releases it.
-        chunks, tail = divmod(cfg.num_steps, interval)
-        out = jax.lax.scan(
-            jax.checkpoint(chunk, prevent_cse=False), state, xs=None, length=chunks
-        )[0]
-        if tail:
-            out = jax.checkpoint(
-                lambda carry: jax.lax.scan(step, carry, xs=None, length=tail)[0],
+        def finish(carry, remainder):
+            # Only chunk boundary states survive the forward pass. The backward
+            # pass replays a chunk and retains its local trajectory, then releases it.
+            return jax.checkpoint(
+                lambda value: jax.lax.scan(step, value, xs=None, length=remainder)[0],
                 prevent_cse=False,
-            )(out)
-        return pack_dft(out)
+            )(carry)
+
+        return pack_dft(
+            _scan_remainder(
+                state,
+                cfg.num_steps,
+                interval,
+                jax.checkpoint(chunk, prevent_cse=False),
+                finish,
+            )
+        )
 
     return jax.jit(run)
 

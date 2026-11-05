@@ -10,6 +10,13 @@ import numpy as np
 BLOCK_SIZE = 32
 
 
+def block_pool_indices(headers, size):
+    """Map sample indices to a 32-wide constant-block pool."""
+    linear = jnp.arange(size, dtype=jnp.int32)
+    header = jnp.asarray(headers).reshape(-1)[linear >> 5]
+    return jnp.where(header < 0, ~header, header + (linear & 31))
+
+
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class MaterialBlocks:
@@ -55,9 +62,7 @@ class MaterialBlocks:
             return jnp.asarray(self.values)[jnp.asarray(self.headers)].reshape(
                 self.shape
             )
-        linear = jnp.arange(self.size, dtype=jnp.int32)
-        header = jnp.asarray(self.headers)[linear >> 5]
-        index = jnp.where(header < 0, ~header, header + (linear & 31))
+        index = block_pool_indices(self.headers, self.size)
         return jnp.asarray(self.values)[index].reshape(self.shape)
 
 

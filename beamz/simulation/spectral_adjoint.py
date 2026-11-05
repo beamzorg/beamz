@@ -235,19 +235,21 @@ class SpectralAdjoint:
                 cpml_psi_h_terms=values[nfields : nfields + nhpsi],
                 cpml_psi_e_terms=values[nfields + nhpsi :],
             )
+
+            def constrain(current, prefix):
+                names = tuple(prefix + axis for axis in "xyz")
+                updated = kernels.apply_post_source_boundaries(
+                    tuple(getattr(current, name) for name in names),
+                    tuple(
+                        getattr(ctx.boundary.metallic, f"{name}_mask") for name in names
+                    ),
+                )
+                return current._replace(**dict(zip(names, updated, strict=True)))
+
             state = kernel.update_h(state, ctx, coefficients)
-            metallic = ctx.boundary.metallic
-            hx, hy, hz = kernels.apply_post_source_boundaries(
-                (state.hx, state.hy, state.hz),
-                (metallic.hx_mask, metallic.hy_mask, metallic.hz_mask),
-            )
-            state = state._replace(hx=hx, hy=hy, hz=hz)
+            state = constrain(state, "h")
             state = kernel.update_e(state, ctx, coefficients)
-            ex, ey, ez = kernels.apply_post_source_boundaries(
-                (state.ex, state.ey, state.ez),
-                (metallic.ex_mask, metallic.ey_mask, metallic.ez_mask),
-            )
-            state = state._replace(ex=ex, ey=ey, ez=ez)
+            state = constrain(state, "e")
             fields = tuple(getattr(state, name) for name in self.names)
             values = fields + state.cpml_psi_h_terms + state.cpml_psi_e_terms
             return tuple(v * scale for v, scale in zip(values, scales, strict=True))

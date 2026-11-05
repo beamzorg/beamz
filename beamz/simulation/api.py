@@ -7,7 +7,6 @@ from collections import OrderedDict
 from collections.abc import Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
-from importlib import import_module
 from typing import Any, Literal
 
 import numpy as np
@@ -80,15 +79,11 @@ from beamz.simulation.preparation_trace import trace_preparation
 from beamz.simulation.results import MonitorResults as MonitorResults
 from beamz.simulation.results import SimulationResults as SimulationResults
 from beamz.simulation.results import SimulationRun as SimulationRun
+from beamz.simulation.results import _analysis_function
 
 _MONITOR_TYPES = (FieldMonitor, FieldRecorder, FluxMonitor, ModeMonitor)
 _MAX_MATERIAL_GRIDS = 4
 _MATERIAL_GRID_CACHE = OrderedDict()
-
-
-def _analysis_function(module: str, name: str):
-    """Resolve analysis lazily so solver imports remain dependency-safe."""
-    return getattr(import_module(f"beamz.analysis.{module}"), name)
 
 
 def _design_depth(design) -> float:
@@ -247,17 +242,9 @@ def _prepare_design(design, *, domain, size, background, grid_spec, resolution, 
     sim_size = _normalize_domain(domain, size)
     if design is not None and not isinstance(design, Design):
         raise TypeError("Simulation design must be a canonical Design.")
-    if design is not None and sim_size is None:
-        resolution, grid, time, use_realized_grid = _resolve_design_time_and_grid(
-            design,
-            grid_spec=grid_spec,
-            resolution=resolution,
-            time=time,
-            run_time=run_time,
-            require_uniform_grid=require_uniform_grid,
-        )
-        return design, resolution, grid, time, (0.0, 0.0, 0.0), use_realized_grid
-    if design is not None and not design._centered_coordinates:
+    # Keep an existing design's coordinates unless an explicit size asks for a
+    # centered-coordinate conversion into the positive domain.
+    if design is not None and (sim_size is None or not design._centered_coordinates):
         resolution, grid, time, use_realized_grid = _resolve_design_time_and_grid(
             design,
             grid_spec=grid_spec,

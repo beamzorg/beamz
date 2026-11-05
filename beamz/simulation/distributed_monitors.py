@@ -9,7 +9,8 @@ import numpy as np
 from jax.sharding import PartitionSpec as P
 
 from beamz.lattice import sampling_coordinates
-from beamz.simulation.distributed import _shard_map as _shard_map
+from beamz.simulation.distributed import _scan_boundary, _shard_map
+from beamz.simulation.observe import monitors_support_packed_dft
 
 _AXIS = "fdtd"
 
@@ -18,16 +19,7 @@ def supported(program):
     return (
         program.config.is_3d
         and program.sharding.layout.enabled
-        and bool(program.monitors)
-        and all(
-            mon.dft_enabled
-            and mon.freq_count > 0
-            and mon.dft_point_count > 0
-            and not mon.accumulate_power
-            and not mon.accumulate_frequency
-            and mon.recorder_index < 0
-            for mon in program.monitors
-        )
+        and monitors_support_packed_dft(program.monitors, require_any=True)
     )
 
 
@@ -44,15 +36,7 @@ def scan_local_dft(state, program, *, assemble=False):
             None, :
         ]
 
-    def collect(value):
-        return jax.lax.psum(value[0], _AXIS)
-
-    convert = _shard_map()(
-        collect if assemble else distribute,
-        mesh=program.sharding.mesh,
-        in_specs=P(_AXIS) if assemble else P(),
-        out_specs=P() if assemble else P(_AXIS),
-    )
+    convert = _scan_boundary(program.sharding.mesh, assemble, distribute)
     return state._replace(
         dft_vec_re=convert(state.dft_vec_re),
         dft_vec_im=convert(state.dft_vec_im),

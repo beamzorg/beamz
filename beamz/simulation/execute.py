@@ -100,35 +100,34 @@ def _axis_integration_weights(edges, offset: float, count: int) -> np.ndarray:
     return out
 
 
+def _integration_volume(program: CompiledProgram, offsets, shape):
+    geometry = program.grid.geometry
+    axes = ("z", "y", "x") if len(shape) == 3 else ("y", "x")
+    volume = None
+    for index, axis in enumerate(axes):
+        weights = _axis_integration_weights(
+            getattr(geometry, f"{axis}_edges"), offsets[axis], shape[index]
+        )
+        volume = weights if volume is None else volume[..., None] * weights
+    return jnp.asarray(volume)
+
+
 def _component_integration_weights(program: CompiledProgram, component: str):
     """Return physical integration weights on one native Yee support."""
     shape = tuple(int(value) for value in getattr(program.grid, component).shape)
-    geometry = program.grid.geometry
     if program.config.is_3d:
         from beamz.lattice import component_axis_offsets_3d
 
         offsets = component_axis_offsets_3d(component)
-        z = _axis_integration_weights(geometry.z_edges, offsets["z"], shape[0])
-        y = _axis_integration_weights(geometry.y_edges, offsets["y"], shape[1])
-        x = _axis_integration_weights(geometry.x_edges, offsets["x"], shape[2])
-        return jnp.asarray(z[:, None, None] * y[None, :, None] * x[None, None, :])
-    y_offset, x_offset = _COMPONENT_OFFSETS_2D[component]
-    y = _axis_integration_weights(geometry.y_edges, y_offset, shape[0])
-    x = _axis_integration_weights(geometry.x_edges, x_offset, shape[1])
-    return jnp.asarray(y[:, None] * x[None, :])
+    else:
+        y_offset, x_offset = _COMPONENT_OFFSETS_2D[component]
+        offsets = {"y": y_offset, "x": x_offset}
+    return _integration_volume(program, offsets, shape)
 
 
 def _node_integration_weights(program: CompiledProgram, shape: tuple[int, ...]):
     """Return physical integration weights on the shared Yee-node support."""
-    geometry = program.grid.geometry
-    if program.config.is_3d:
-        z = _axis_integration_weights(geometry.z_edges, 0.0, shape[0])
-        y = _axis_integration_weights(geometry.y_edges, 0.0, shape[1])
-        x = _axis_integration_weights(geometry.x_edges, 0.0, shape[2])
-        return jnp.asarray(z[:, None, None] * y[None, :, None] * x[None, None, :])
-    y = _axis_integration_weights(geometry.y_edges, 0.0, shape[0])
-    x = _axis_integration_weights(geometry.x_edges, 0.0, shape[1])
-    return jnp.asarray(y[:, None] * x[None, :])
+    return _integration_volume(program, {"z": 0.0, "y": 0.0, "x": 0.0}, shape)
 
 
 def _energy_terms(program: CompiledProgram):
@@ -559,6 +558,47 @@ def _known_primal_backward(_residuals, cotangent):
 _known_primal.defvjp(_known_primal_forward, _known_primal_backward)
 
 
+def _inject_sources(state, ctx, program, phase):
+    cfg = ctx.config
+    return apply_source_phase(
+        state,
+        state.current_step,
+        ctx.source_batches,
+        phase,
+        dense_single_slab=cfg.source_single_slab_dense,
+        sharding_plan=program.sharding,
+        local_single_owner=cfg.backend == "cuda_streamed",
+    )
+
+
+def _constrain_components(state, ctx, prefix):
+    names = tuple(prefix + axis for axis in "xyz")
+    metallic = ctx.boundary.metallic
+    updated = update_runtime.apply_post_source_boundaries(
+        tuple(getattr(state, name) for name in names),
+        tuple(getattr(metallic, f"{name}_mask") for name in names),
+        components=tuple(prefix.upper() + axis for axis in "xyz"),
+        periodic_axes=ctx.boundary.periodic_axes,
+        periodic_phases=ctx.boundary.periodic_phases,
+        material_shape=ctx.boundary.material_shape,
+        logical_shapes=ctx.boundary.logical_component_shapes,
+    )
+    return state._replace(**dict(zip(names, updated, strict=True)))
+
+
+def _use_known_fields(state, known_fields, prefix):
+    if known_fields is None:
+        return state
+    return state._replace(
+        **{
+            prefix + axis: _known_primal(
+                getattr(state, prefix + axis), getattr(known_fields, prefix + axis)
+            )
+            for axis in "xyz"
+        }
+    )
+
+
 def forward_step(
     carry,
     *,
@@ -571,43 +611,17 @@ def forward_step(
 ):
     """Advance one compiled timestep."""
     cfg = ctx.config
-    metallic = ctx.boundary.metallic
 
     # 1. Pre-E sources precede H because their waveform is normalized at this leapfrog
     # phase; the selected kernel then advances the canonical magnetic fields.
-    state = apply_source_phase(
-        carry,
-        carry.current_step,
-        ctx.source_batches,
-        "pre_e",
-        dense_single_slab=cfg.source_single_slab_dense,
-        sharding_plan=program.sharding,
-        local_single_owner=cfg.backend == "cuda_streamed",
-    )
+    state = _inject_sources(carry, ctx, program, "pre_e")
     if ctx.boundary.periodic_axes:
-        ex, ey, ez = update_runtime.apply_post_source_boundaries(
-            (state.ex, state.ey, state.ez),
-            (metallic.ex_mask, metallic.ey_mask, metallic.ez_mask),
-            components=("Ex", "Ey", "Ez"),
-            periodic_axes=ctx.boundary.periodic_axes,
-            periodic_phases=ctx.boundary.periodic_phases,
-            material_shape=ctx.boundary.material_shape,
-            logical_shapes=ctx.boundary.logical_component_shapes,
-        )
-        state = state._replace(ex=ex, ey=ey, ez=ez)
+        state = _constrain_components(state, ctx, "e")
     state = update_kernel.update_h(state, ctx, coeffs)
 
     # 2. H-phase sources may overwrite constrained cells, so reapply the compiled masks
     # before E consumes the half-step magnetic fields.
-    state = apply_source_phase(
-        state,
-        state.current_step,
-        ctx.source_batches,
-        "h",
-        dense_single_slab=cfg.source_single_slab_dense,
-        sharding_plan=program.sharding,
-        local_single_owner=cfg.backend == "cuda_streamed",
-    )
+    state = _inject_sources(state, ctx, program, "h")
     kernel_owns_pec = (
         cfg.backend in {"cuda_streamed", "cuda_mstep"}
         and not cfg.sharding.enabled
@@ -626,58 +640,20 @@ def forward_step(
             state, ctx.source_batches, program.sharding
         )
     if not kernel_owns_pec:
-        hx, hy, hz = update_runtime.apply_post_source_boundaries(
-            (state.hx, state.hy, state.hz),
-            (metallic.hx_mask, metallic.hy_mask, metallic.hz_mask),
-            components=("Hx", "Hy", "Hz"),
-            periodic_axes=ctx.boundary.periodic_axes,
-            periodic_phases=ctx.boundary.periodic_phases,
-            material_shape=ctx.boundary.material_shape,
-            logical_shapes=ctx.boundary.logical_component_shapes,
-        )
-        state = state._replace(hx=hx, hy=hy, hz=hz)
-    if known_fields is not None:
-        state = state._replace(
-            **{
-                name: _known_primal(getattr(state, name), getattr(known_fields, name))
-                for name in ("hx", "hy", "hz")
-            }
-        )
+        state = _constrain_components(state, ctx, "h")
+    state = _use_known_fields(state, known_fields, "h")
 
     # 3. Advance E, inject its sources, and restore its masks before observation.
     old_e_state = state
     state = update_kernel.update_e(state, ctx, coeffs)
-    state = apply_source_phase(
-        state,
-        state.current_step,
-        ctx.source_batches,
-        "e",
-        dense_single_slab=cfg.source_single_slab_dense,
-        sharding_plan=program.sharding,
-        local_single_owner=cfg.backend == "cuda_streamed",
-    )
+    state = _inject_sources(state, ctx, program, "e")
     from beamz.simulation.dispersion import update_dispersion
 
     if program.dispersion is not None:
         state = update_dispersion(old_e_state, state, program.dispersion)
     if not kernel_owns_pec:
-        ex, ey, ez = update_runtime.apply_post_source_boundaries(
-            (state.ex, state.ey, state.ez),
-            (metallic.ex_mask, metallic.ey_mask, metallic.ez_mask),
-            components=("Ex", "Ey", "Ez"),
-            periodic_axes=ctx.boundary.periodic_axes,
-            periodic_phases=ctx.boundary.periodic_phases,
-            material_shape=ctx.boundary.material_shape,
-            logical_shapes=ctx.boundary.logical_component_shapes,
-        )
-        state = state._replace(ex=ex, ey=ey, ez=ez)
-    if known_fields is not None:
-        state = state._replace(
-            **{
-                name: _known_primal(getattr(state, name), getattr(known_fields, name))
-                for name in ("ex", "ey", "ez")
-            }
-        )
+        state = _constrain_components(state, ctx, "e")
+    state = _use_known_fields(state, known_fields, "e")
 
     # 4. Observe only fully constrained end-of-step fields, then advance both clocks.
     # Derive the default from the absolute source index, retaining explicit
@@ -808,14 +784,8 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
     source_groups_supported = bool(program.sources) and all(
         not rest for _group, rest in source_batches.values()
     )
-    graph_monitors_supported = bool(program.monitors) and all(
-        monitor.recorder_index < 0
-        and not monitor.accumulate_power
-        and not monitor.accumulate_frequency
-        and monitor.dft_enabled
-        and monitor.freq_count > 0
-        and monitor.dft_point_count > 0
-        for monitor in program.monitors
+    graph_monitors_supported = monitor_runtime.monitors_support_packed_dft(
+        program.monitors, require_any=True
     )
     packed_graph_monitors = None
     if (
@@ -1395,6 +1365,20 @@ def program_is_compiled(
     ) is not None
 
 
+_REPLICATED_EXECUTION_FIELDS = (
+    *monitor_runtime.MONITOR_FIELDS,
+    "t",
+    "current_step",
+)
+
+
+def _placed_execution(program, state):
+    state = sharding_runtime.prepare_state(
+        program, state, replicated_fields=_REPLICATED_EXECUTION_FIELDS
+    )
+    return state, sharding_runtime.place_tree(program, program.coefficients)
+
+
 def run_program(
     program: CompiledProgram,
     state: SimulationState,
@@ -1402,12 +1386,7 @@ def run_program(
     donate_state: bool = False,
 ) -> SimulationState:
     """Place state and coefficients, then execute the program's cached scan."""
-    state = sharding_runtime.prepare_state(
-        program,
-        state,
-        replicated_fields=(*monitor_runtime.MONITOR_FIELDS, "t", "current_step"),
-    )
-    coeffs = sharding_runtime.place_tree(program, program.coefficients)
+    state, coeffs = _placed_execution(program, state)
     cache = execution_cache(program)
     compiled_scan = (
         cache.compiled_scan_donating if donate_state else cache.compiled_scan
@@ -1449,12 +1428,7 @@ def compile_program_execution(
     donate_state: bool = False,
 ) -> None:
     """Compile and cache a program executable without advancing its state."""
-    state = sharding_runtime.prepare_state(
-        program,
-        state,
-        replicated_fields=(*monitor_runtime.MONITOR_FIELDS, "t", "current_step"),
-    )
-    coeffs = sharding_runtime.place_tree(program, program.coefficients)
+    state, coeffs = _placed_execution(program, state)
     _compiled_program_execution(program, state, coeffs, donate_state=donate_state)
 
 
@@ -1588,12 +1562,7 @@ def _run_program_state_timed(
 ) -> tuple[SimulationState, float]:
     """Run a ready executable and measure only its device-complete execution."""
     state = runtime_inputs(program, state, monitor_steps=monitor_steps)
-    state = sharding_runtime.prepare_state(
-        program,
-        state,
-        replicated_fields=(*monitor_runtime.MONITOR_FIELDS, "t", "current_step"),
-    )
-    coeffs = sharding_runtime.place_tree(program, program.coefficients)
+    state, coeffs = _placed_execution(program, state)
     executable = _compiled_program_execution(
         program, state, coeffs, donate_state=donate_state
     )
@@ -1620,6 +1589,31 @@ def _print_performance(performance: SimulationPerformance) -> None:
     print(f"GCUPS: {performance.gcups:.3f}")
 
 
+def _simulation_run(
+    simulation,
+    program,
+    state,
+    *,
+    store_full_materials,
+    performance,
+    report_performance,
+):
+    results = SimulationResults.from_run(
+        simulation,
+        runtime_fields=program.grid,
+        monitor_results=_decode_monitor_results(simulation, program, state),
+        completed_steps=int(state.current_step),
+        store_full_materials=store_full_materials,
+        source_launch_powers=_compiled_source_launch_powers(
+            program, len(simulation.sources)
+        ),
+        performance=performance,
+    )
+    if performance is not None and report_performance:
+        _print_performance(performance)
+    return SimulationRun(results=results, state=state)
+
+
 def compiled_xla_memory_analysis(
     program: CompiledProgram,
     state: SimulationState,
@@ -1627,12 +1621,9 @@ def compiled_xla_memory_analysis(
     monitor_steps: int,
 ) -> dict:
     """Return backend memory data for the exact placed program and state."""
-    state = sharding_runtime.prepare_state(
-        program,
-        runtime_inputs(program, state, monitor_steps=monitor_steps),
-        replicated_fields=(*monitor_runtime.MONITOR_FIELDS, "t", "current_step"),
+    state, coeffs = _placed_execution(
+        program, runtime_inputs(program, state, monitor_steps=monitor_steps)
     )
-    coeffs = sharding_runtime.place_tree(program, program.coefficients)
     cache = execution_cache(program)
     compiled_scan = cache.compiled_scan or build_program_scan(program)
     compiled = compiled_scan.lower(
@@ -1696,20 +1687,14 @@ def run_simulation_program(
         if runtime_s is not None
         else None
     )
-    results = SimulationResults.from_run(
+    return _simulation_run(
         simulation,
-        runtime_fields=program.grid,
-        monitor_results=_decode_monitor_results(simulation, program, state),
-        completed_steps=int(state.current_step),
+        program,
+        state,
         store_full_materials=store_full_materials,
-        source_launch_powers=_compiled_source_launch_powers(
-            program, len(simulation.sources)
-        ),
         performance=stats,
+        report_performance=report_performance,
     )
-    if stats is not None and report_performance:
-        _print_performance(stats)
-    return SimulationRun(results=results, state=state)
 
 
 _PROGRESS_CHUNK_COUNT = 20
@@ -1803,20 +1788,14 @@ def run_simulation_with_progress(
         if performance
         else None
     )
-    results = SimulationResults.from_run(
+    return _simulation_run(
         simulation,
-        runtime_fields=program.grid,
-        monitor_results=_decode_monitor_results(simulation, program, state),
-        completed_steps=int(state.current_step),
+        program,
+        state,
         store_full_materials=store_full_materials,
-        source_launch_powers=_compiled_source_launch_powers(
-            program, len(simulation.sources)
-        ),
         performance=stats,
+        report_performance=report_performance,
     )
-    if stats is not None and report_performance:
-        _print_performance(stats)
-    return SimulationRun(results=results, state=state)
 
 
 def run_until_terminated(

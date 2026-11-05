@@ -445,69 +445,40 @@ def _ffi_phase(
     return tuple(outputs[: 3 + len(terms)])
 
 
-def update_h(state, ctx, coeffs) -> SimulationState:
-    """Advance the three magnetic fields and optional CPML memory on CUDA."""
-    target = abi.CUDA_STREAMED_TARGET
-    terms = ctx.boundary.cpml.h_terms
-    materials = (
-        coeffs.h_decay_x,
-        coeffs.h_decay_y,
-        coeffs.h_decay_z,
-        coeffs.h_source_x,
-        coeffs.h_source_y,
-        coeffs.h_source_z,
-    )
-    outputs = _ffi_phase(
-        target,
-        _PHASE_H,
-        (state.hx, state.hy, state.hz),
-        (state.ex, state.ey, state.ez),
-        materials,
-        terms,
-        state.cpml_psi_h_terms,
-        _phase_metrics(ctx, _PHASE_H),
-        metric_kind=_metric_kind_code(ctx),
-        dt=ctx.dt,
-        resolution=ctx.resolution,
-        cuda_flags=ctx.config.cuda_flags,
-        metallic_edges=ctx.boundary.cpml.metallic_edges,
-        differentiable=ctx.differentiable,
-    )
-    return state._replace(
-        hx=outputs[0],
-        hy=outputs[1],
-        hz=outputs[2],
-        cpml_psi_h_terms=outputs[3:],
+def _phase_materials(coeffs, prefix):
+    return tuple(
+        getattr(coeffs, f"{prefix}_{kind}_{axis}")
+        for kind in ("decay", "source")
+        for axis in "xyz"
     )
 
 
-def update_e(state, ctx, coeffs) -> SimulationState:
-    """Advance the three electric fields and optional CPML memory on CUDA."""
-    target = abi.CUDA_STREAMED_TARGET
-    terms = ctx.boundary.cpml.e_terms
+def _phase_fields(owner, prefix):
+    return tuple(getattr(owner, prefix + axis) for axis in "xyz")
+
+
+def _bind_aliases(aliases, spans):
+    for source, destination, count in spans:
+        aliases.update({source + index: destination + index for index in range(count)})
+
+
+def _update_phase(state, ctx, coeffs, phase):
+    prefix, source = ("h", "e") if phase == _PHASE_H else ("e", "h")
     tensor_payload = None
-    if coeffs.e_inverse_offdiagonal.size:
+    if phase == _PHASE_E and coeffs.e_inverse_offdiagonal.size:
         from .tensor import coefficients, payload
 
         tensor_payload = payload(ctx, coeffs)
         coeffs = coefficients(ctx, coeffs)
-    materials = (
-        coeffs.e_decay_x,
-        coeffs.e_decay_y,
-        coeffs.e_decay_z,
-        coeffs.e_source_x,
-        coeffs.e_source_y,
-        coeffs.e_source_z,
-    )
     outputs = _ffi_phase(
-        target,
-        _PHASE_E,
-        (state.ex, state.ey, state.ez),
-        (state.hx, state.hy, state.hz),
-        materials,
-        terms,
-        state.cpml_psi_e_terms,
-        _phase_metrics(ctx, _PHASE_E),
+        abi.CUDA_STREAMED_TARGET,
+        phase,
+        _phase_fields(state, prefix),
+        _phase_fields(state, source),
+        _phase_materials(coeffs, prefix),
+        getattr(ctx.boundary.cpml, f"{prefix}_terms"),
+        getattr(state, f"cpml_psi_{prefix}_terms"),
+        _phase_metrics(ctx, phase),
         metric_kind=_metric_kind_code(ctx),
         dt=ctx.dt,
         resolution=ctx.resolution,
@@ -517,88 +488,62 @@ def update_e(state, ctx, coeffs) -> SimulationState:
         tensor_payload=tensor_payload,
     )
     return state._replace(
-        ex=outputs[0],
-        ey=outputs[1],
-        ez=outputs[2],
-        cpml_psi_e_terms=outputs[3:],
+        **{prefix + axis: outputs[index] for index, axis in enumerate("xyz")},
+        **{f"cpml_psi_{prefix}_terms": outputs[3:]},
+    )
+
+
+def update_h(state, ctx, coeffs) -> SimulationState:
+    """Advance the three magnetic fields and optional CPML memory on CUDA."""
+    return _update_phase(state, ctx, coeffs, _PHASE_H)
+
+
+def update_e(state, ctx, coeffs) -> SimulationState:
+    """Advance the three electric fields and optional CPML memory on CUDA."""
+    return _update_phase(state, ctx, coeffs, _PHASE_E)
+
+
+def _cpml_payload(state, ctx, coeffs, prefix):
+    terms = getattr(ctx.boundary.cpml, f"{prefix}_terms")
+    return (
+        *_phase_materials(coeffs, prefix),
+        _term_metadata(terms),
+        *(value for term in terms for value in (term.a, term.b, term.inv_kappa)),
+        *getattr(state, f"cpml_psi_{prefix}_terms"),
     )
 
 
 def _cpml_graph_io(state, ctx, coeffs):
     fields = _fields(state)
-    h_terms = ctx.boundary.cpml.h_terms
-    e_terms = ctx.boundary.cpml.e_terms
-    h_materials = (
-        coeffs.h_decay_x,
-        coeffs.h_decay_y,
-        coeffs.h_decay_z,
-        coeffs.h_source_x,
-        coeffs.h_source_y,
-        coeffs.h_source_z,
-    )
-    e_materials = (
-        coeffs.e_decay_x,
-        coeffs.e_decay_y,
-        coeffs.e_decay_z,
-        coeffs.e_source_x,
-        coeffs.e_source_y,
-        coeffs.e_source_z,
-    )
-    h_payload = (
-        *h_materials,
-        _term_metadata(h_terms),
-        *(value for term in h_terms for value in (term.a, term.b, term.inv_kappa)),
-        *state.cpml_psi_h_terms,
-    )
-    e_payload = (
-        *e_materials,
-        _term_metadata(e_terms),
-        *(value for term in e_terms for value in (term.a, term.b, term.inv_kappa)),
-        *state.cpml_psi_e_terms,
-    )
     arguments = (
         *fields,
-        *h_payload,
-        *e_payload,
+        *_cpml_payload(state, ctx, coeffs, "h"),
+        *_cpml_payload(state, ctx, coeffs, "e"),
         *_phase_metrics(ctx, _PHASE_H),
         *_phase_metrics(ctx, _PHASE_E),
     )
     result_values = (*fields, *state.cpml_psi_h_terms, *state.cpml_psi_e_terms)
     aliases = {index: index for index in range(_FIELD_COUNT)}
-    aliases.update(
-        {
-            _CPML_H_PSI_INPUT + index: _FIELD_COUNT + index
-            for index in range(_CPML_TERM_COUNT)
-        }
-    )
-    aliases.update(
-        {
-            _CPML_E_PSI_INPUT + index: _FIELD_COUNT + _CPML_TERM_COUNT + index
-            for index in range(_CPML_TERM_COUNT)
-        }
+    _bind_aliases(
+        aliases,
+        (
+            (_CPML_H_PSI_INPUT, _FIELD_COUNT, _CPML_TERM_COUNT),
+            (
+                _CPML_E_PSI_INPUT,
+                _FIELD_COUNT + _CPML_TERM_COUNT,
+                _CPML_TERM_COUNT,
+            ),
+        ),
     )
     return arguments, result_values, aliases
 
 
 def _yee_graph_io(state, ctx, coeffs):
     fields = _fields(state)
-    materials = (
-        coeffs.h_decay_x,
-        coeffs.h_decay_y,
-        coeffs.h_decay_z,
-        coeffs.h_source_x,
-        coeffs.h_source_y,
-        coeffs.h_source_z,
-        coeffs.e_decay_x,
-        coeffs.e_decay_y,
-        coeffs.e_decay_z,
-        coeffs.e_source_x,
-        coeffs.e_source_y,
-        coeffs.e_source_z,
-    )
     arguments = (
         *fields,
-        *materials,
+        *_phase_materials(coeffs, "h"),
+        *_phase_materials(coeffs, "e"),
         *_phase_metrics(ctx, _PHASE_H),
         *_phase_metrics(ctx, _PHASE_E),
     )
@@ -663,31 +608,22 @@ def _temporal_cpml_graph_io(state, ctx, coeffs, temporal_steps=1):
     psi_workspace = tuple(jnp.empty_like(value) for value in psi)
     result_values = (*fields, *workspace, *psi, *psi_workspace)
     aliases = {index: index for index in range(_FIELD_COUNT)}
-    aliases.update(
-        {
-            _TEMPORAL_FIELD_WORKSPACE_INPUT + index: _FIELD_COUNT + index
-            for index in range(_FIELD_COUNT)
-        }
-    )
-    aliases.update(
-        {
-            _CPML_H_PSI_INPUT + index: 2 * _FIELD_COUNT + index
-            for index in range(_CPML_TERM_COUNT)
-        }
-    )
-    aliases.update(
-        {
-            _CPML_E_PSI_INPUT + index: 2 * _FIELD_COUNT + _CPML_TERM_COUNT + index
-            for index in range(_CPML_TERM_COUNT)
-        }
-    )
-    aliases.update(
-        {
-            _TEMPORAL_PSI_WORKSPACE_INPUT + index: 2 * _FIELD_COUNT
-            + 2 * _CPML_TERM_COUNT
-            + index
-            for index in range(2 * _CPML_TERM_COUNT)
-        }
+    _bind_aliases(
+        aliases,
+        (
+            (_TEMPORAL_FIELD_WORKSPACE_INPUT, _FIELD_COUNT, _FIELD_COUNT),
+            (_CPML_H_PSI_INPUT, 2 * _FIELD_COUNT, _CPML_TERM_COUNT),
+            (
+                _CPML_E_PSI_INPUT,
+                2 * _FIELD_COUNT + _CPML_TERM_COUNT,
+                _CPML_TERM_COUNT,
+            ),
+            (
+                _TEMPORAL_PSI_WORKSPACE_INPUT,
+                2 * _FIELD_COUNT + 2 * _CPML_TERM_COUNT,
+                2 * _CPML_TERM_COUNT,
+            ),
+        ),
     )
     arguments = (*arguments, *workspace, *psi_workspace)
     if temporal_steps == 2:
@@ -698,6 +634,22 @@ def _temporal_cpml_graph_io(state, ctx, coeffs, temporal_steps=1):
         arguments = (*arguments, *pair_fields)
         result_values = (*result_values, *pair_fields)
     return arguments, result_values, aliases
+
+
+def _native_arguments(state, ctx, coeffs, plan):
+    if plan.uses_temporal_fields:
+        return _temporal_cpml_graph_io(state, ctx, coeffs, plan.temporal_steps)
+    return _graph_io(state, ctx, coeffs)
+
+
+def _commit_native_fields(state, ctx, outputs, plan, nsteps):
+    if plan.uses_temporal_fields:
+        return _replace_temporal_cpml_outputs(
+            state, outputs, nsteps, plan.temporal_steps
+        )
+    if ctx.boundary.cpml.enabled:
+        return _replace_graph_outputs(state, outputs)
+    return _replace_fields(state, outputs)
 
 
 def _replace_temporal_cpml_outputs(state, outputs, nsteps, temporal_steps=1):
@@ -844,14 +796,7 @@ def _temporal_cpml_fields_supported(ctx, coeffs, nsteps: int) -> bool:
         or _uniform_cpml_thickness(ctx) <= 0
     ):
         return False
-    h_values = (
-        coeffs.h_decay_x,
-        coeffs.h_decay_y,
-        coeffs.h_decay_z,
-        coeffs.h_source_x,
-        coeffs.h_source_y,
-        coeffs.h_source_z,
-    )
+    h_values = _phase_materials(coeffs, "h")
     e_sources = (coeffs.e_source_x, coeffs.e_source_y, coeffs.e_source_z)
     return all(value.ndim == 0 for value in h_values) and all(
         value.size > 0
@@ -870,20 +815,7 @@ def _temporal_yee_supported(ctx, coeffs, nsteps: int) -> bool:
         or _metallic_edge_mask(ctx.boundary.cpml.metallic_edges) != 63
     ):
         return False
-    values = (
-        coeffs.h_decay_x,
-        coeffs.h_decay_y,
-        coeffs.h_decay_z,
-        coeffs.h_source_x,
-        coeffs.h_source_y,
-        coeffs.h_source_z,
-        coeffs.e_decay_x,
-        coeffs.e_decay_y,
-        coeffs.e_decay_z,
-        coeffs.e_source_x,
-        coeffs.e_source_y,
-        coeffs.e_source_z,
-    )
+    values = (*_phase_materials(coeffs, "h"), *_phase_materials(coeffs, "e"))
     return all(value.ndim in (0, 3) for value in values)
 
 
@@ -994,29 +926,14 @@ def run_source_group_steps(state, ctx, coeffs, groups, nsteps: int) -> Simulatio
     plan = _native_schedule_plan(
         state, ctx, coeffs, nsteps, kind="source", groups=groups
     )
-    use_temporal_cpml = plan.uses_temporal_fields
-    arguments, result_values, aliases = (
-        _temporal_cpml_graph_io(state, ctx, coeffs, plan.temporal_steps)
-        if use_temporal_cpml
-        else _graph_io(state, ctx, coeffs)
-    )
-    call = _ffi_call(abi.CUDA_PROGRAM_TARGET, result_values, aliases)
-    outputs = call(
+    arguments, result_values, aliases = _native_arguments(state, ctx, coeffs, plan)
+    outputs = _ffi_call(abi.CUDA_PROGRAM_TARGET, result_values, aliases)(
         *arguments,
         *source_arguments,
         state.current_step,
         **_program_attributes(ctx, nsteps, plan),
     )
-    if use_temporal_cpml:
-        return _replace_temporal_cpml_outputs(
-            state,
-            outputs,
-            nsteps,
-            plan.temporal_steps,
-        )
-    if ctx.boundary.cpml.enabled:
-        return _replace_graph_outputs(state, outputs)
-    return _replace_fields(state, outputs)
+    return _commit_native_fields(state, ctx, outputs, plan, nsteps)
 
 
 def pack_dft_monitors(monitors):
@@ -1044,28 +961,21 @@ def pack_dft_monitors(monitors):
             constant_values=fill,
         )
 
-    indices = jnp.stack(
-        tuple(
-            jnp.stack(
-                tuple(
-                    pad_plan(value, max_points, max_neighbors)
-                    for value in monitor.dft_flat_idx
+    def stacked(name, dtype):
+        return jnp.stack(
+            tuple(
+                jnp.stack(
+                    tuple(
+                        pad_plan(value, max_points, max_neighbors)
+                        for value in getattr(monitor, name)
+                    )
                 )
+                for monitor in monitors
             )
-            for monitor in monitors
-        )
-    ).astype(jnp.int32)
-    weights = jnp.stack(
-        tuple(
-            jnp.stack(
-                tuple(
-                    pad_plan(value, max_points, max_neighbors)
-                    for value in monitor.dft_weights
-                )
-            )
-            for monitor in monitors
-        )
-    ).astype(jnp.float32)
+        ).astype(dtype)
+
+    indices = stacked("dft_flat_idx", jnp.int32)
+    weights = stacked("dft_weights", jnp.float32)
     frequencies = jnp.stack(
         tuple(
             jnp.pad(
@@ -1275,12 +1185,7 @@ def run_program_steps(
         groups=groups,
         monitor_count=int(packed_monitors[0].shape[0]),
     )
-    use_temporal_cpml = plan.uses_temporal_fields
-    arguments, result_values, aliases = (
-        _temporal_cpml_graph_io(state, ctx, coeffs, plan.temporal_steps)
-        if use_temporal_cpml
-        else _graph_io(state, ctx, coeffs)
-    )
+    arguments, result_values, aliases = _native_arguments(state, ctx, coeffs, plan)
     arguments = (*arguments, *source_arguments)
     arguments, result_values, aliases, state_output_count, _ = _monitor_io(
         state,
@@ -1312,17 +1217,7 @@ def run_program_steps(
         *arguments,
         **_program_attributes(ctx, nsteps, plan),
     )
-    if use_temporal_cpml:
-        next_state = _replace_temporal_cpml_outputs(
-            state,
-            outputs,
-            nsteps,
-            plan.temporal_steps,
-        )
-    elif ctx.boundary.cpml.enabled:
-        next_state = _replace_graph_outputs(state, outputs)
-    else:
-        next_state = _replace_fields(state, outputs)
+    next_state = _commit_native_fields(state, ctx, outputs, plan, nsteps)
     return _replace_dft(next_state, outputs, state_output_count)
 
 
@@ -1338,37 +1233,15 @@ def run_steps(state, ctx, coeffs, nsteps: int) -> SimulationState:
         return run_source_group_steps(
             state, ctx, coeffs, (None,) * _SOURCE_GROUP_COUNT, nsteps
         )
-    fields = _fields(state)
-    if ctx.boundary.cpml.enabled:
-        arguments, result_values, aliases = _cpml_graph_io(state, ctx, coeffs)
-        call = _ffi_call(abi.CUDA_PROGRAM_TARGET, result_values, aliases)
-        outputs = call(
-            *arguments,
-            **_program_attributes(ctx, nsteps, plan),
-        )
-        return _replace_graph_outputs(state, outputs)
-    materials = (
-        coeffs.h_decay_x,
-        coeffs.h_decay_y,
-        coeffs.h_decay_z,
-        coeffs.h_source_x,
-        coeffs.h_source_y,
-        coeffs.h_source_z,
-        coeffs.e_decay_x,
-        coeffs.e_decay_y,
-        coeffs.e_decay_z,
-        coeffs.e_source_x,
-        coeffs.e_source_y,
-        coeffs.e_source_z,
-    )
     if plan.layout == abi.PROGRAM_LAYOUT_YEE_TEMPORAL:
+        fields = _fields(state)
         workspace = tuple(jnp.empty_like(value) for value in fields)
-        call = _ffi_call(
+        materials = (*_phase_materials(coeffs, "h"), *_phase_materials(coeffs, "e"))
+        outputs = _ffi_call(
             abi.CUDA_PROGRAM_TARGET,
             (*fields, *workspace),
             {index: index for index in range(2 * _FIELD_COUNT)},
-        )
-        outputs = call(
+        )(
             *fields,
             *workspace,
             *materials,
@@ -1377,16 +1250,10 @@ def run_steps(state, ctx, coeffs, nsteps: int) -> SimulationState:
             **_program_attributes(ctx, nsteps, plan),
         )
         return _replace_fields(state, outputs)
-    call = _ffi_call(
-        abi.CUDA_PROGRAM_TARGET,
-        fields,
-        {index: index for index in range(_FIELD_COUNT)},
+    arguments, result_values, aliases = _graph_io(state, ctx, coeffs)
+    outputs = _ffi_call(abi.CUDA_PROGRAM_TARGET, result_values, aliases)(
+        *arguments, **_program_attributes(ctx, nsteps, plan)
     )
-    outputs = call(
-        *fields,
-        *materials,
-        *_phase_metrics(ctx, _PHASE_H),
-        *_phase_metrics(ctx, _PHASE_E),
-        **_program_attributes(ctx, nsteps, plan),
-    )
+    if ctx.boundary.cpml.enabled:
+        return _replace_graph_outputs(state, outputs)
     return _replace_fields(state, outputs)

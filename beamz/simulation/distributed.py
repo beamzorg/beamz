@@ -51,6 +51,20 @@ def exchange_halos(value, *, axis, num_devices, lower=True, upper=True):
     return jnp.concatenate((low, value, high), axis=axis)
 
 
+def _scan_boundary(mesh, assemble, distribute):
+    """Move a rank-local vector across a scan boundary, or reduce it back."""
+
+    def collect(value):
+        return jax.lax.psum(value[0], _MESH_AXIS)
+
+    return _shard_map()(
+        collect if assemble else distribute,
+        mesh=mesh,
+        in_specs=P(_MESH_AXIS) if assemble else P(),
+        out_specs=P() if assemble else P(_MESH_AXIS),
+    )
+
+
 def _owned_psi(value, term, *, axis, origin, extent, logical_shape):
     """Keep only this rank's physical recurrence entries; neutralize padding."""
     mask = jnp.asarray(True)
@@ -85,8 +99,6 @@ def scan_local_cpml(state, program, *, assemble=False):
     """
     plan = program.sharding
     axis = plan.layout.axis
-    shard_map = _shard_map()
-
     updates = {}
     for phase in ("h", "e"):
         name = f"cpml_psi_{phase}_terms"
@@ -118,15 +130,6 @@ def scan_local_cpml(state, program, *, assemble=False):
                 )
                 return owned[None, ...]
 
-            def collect(value):
-                return jax.lax.psum(value[0], _MESH_AXIS)
-
-            convert = shard_map(
-                collect if assemble else distribute,
-                mesh=plan.mesh,
-                in_specs=P(_MESH_AXIS) if assemble else P(),
-                out_specs=P() if assemble else P(_MESH_AXIS),
-            )
-            values.append(convert(value))
+            values.append(_scan_boundary(plan.mesh, assemble, distribute)(value))
         updates[name] = tuple(values)
     return state._replace(**updates)

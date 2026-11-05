@@ -158,6 +158,20 @@ def source_field_amplitude_normalization(normalization):
     return np.asarray(value, dtype=np.complex128).reshape(-1)
 
 
+def monitors_support_packed_dft(monitors, *, require_any=False):
+    """Return whether every monitor is a packed vector DFT."""
+    ready = all(
+        monitor.recorder_index < 0
+        and not monitor.accumulate_power
+        and not monitor.accumulate_frequency
+        and monitor.dft_enabled
+        and monitor.freq_count > 0
+        and monitor.dft_point_count > 0
+        for monitor in monitors
+    )
+    return bool(monitors) and ready if require_any else ready
+
+
 def monitor_frequencies(monitor):
     recorded = np.asarray(monitor.dft_frequencies, dtype=float).reshape(-1)
     return recorded if recorded.size else np.asarray(monitor.monitor.freqs, dtype=float)
@@ -208,18 +222,14 @@ def monitor_dft_flux(monitor):
     def field(name):
         return _optional_flux_component(monitor, name)
 
-    if axis == "x":
-        component = field("Ey") * np.conjugate(field("Hz")) - field(
-            "Ez"
-        ) * np.conjugate(field("Hy"))
-    elif axis == "y":
-        component = field("Ez") * np.conjugate(field("Hx")) - field(
-            "Ex"
-        ) * np.conjugate(field("Hz"))
-    else:
-        component = field("Ex") * np.conjugate(field("Hy")) - field(
-            "Ey"
-        ) * np.conjugate(field("Hx"))
+    tangential = {
+        "x": (("Ey", "Hz"), ("Ez", "Hy")),
+        "y": (("Ez", "Hx"), ("Ex", "Hz")),
+    }.get(axis, (("Ex", "Hy"), ("Ey", "Hx")))
+    (first, first_h), (second, second_h) = tangential
+    component = field(first) * np.conjugate(field(first_h)) - field(
+        second
+    ) * np.conjugate(field(second_h))
 
     integration_weights = np.asarray(
         getattr(monitor, "integration_weights", ()), dtype=float
@@ -463,6 +473,9 @@ def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any
         if specs
         else 0
     )
+    lengths = tuple(
+        int(np.ceil(recorder_steps / spec.record_interval)) for spec in recorder_specs
+    )
     # 3. Initialize scalar phase recurrence at 1+0i and every accumulated quantity at zero.
     values = (
         jnp.zeros((n, max_records), dtype=jnp.float32),
@@ -476,31 +489,13 @@ def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any
         jnp.zeros((dft_value_count,), dtype=dft_dtype),
         jnp.zeros((dft_weight_count,), dtype=dft_dtype),
         tuple(
-            jnp.zeros(
-                (
-                    int(np.ceil(recorder_steps / spec.record_interval)),
-                    *shape,
-                ),
-                dtype=program.grid.Ex.dtype,
-            )
-            for spec in recorder_specs
+            jnp.zeros((length, *shape), dtype=program.grid.Ex.dtype)
+            for spec, length in zip(recorder_specs, lengths, strict=True)
             for shape in spec.field_shapes
         ),
-        tuple(
-            jnp.zeros(
-                (int(np.ceil(recorder_steps / spec.record_interval)),),
-                dtype=jnp.int32,
-            )
-            for spec in recorder_specs
-        ),
-        tuple(
-            jnp.zeros(
-                (int(np.ceil(recorder_steps / spec.record_interval)),),
-                dtype=jnp.float32,
-            )
-            for spec in recorder_specs
-        ),
-        tuple(jnp.zeros((), dtype=jnp.int32) for _ in recorder_specs),
+        tuple(jnp.zeros((length,), dtype=jnp.int32) for length in lengths),
+        tuple(jnp.zeros((length,), dtype=jnp.float32) for length in lengths),
+        tuple(jnp.zeros((), dtype=jnp.int32) for _ in lengths),
     )
     return dict(zip(MONITOR_FIELDS, values, strict=True))
 
@@ -616,6 +611,15 @@ def _accumulate_dft(
     return d_re, d_im, d_w
 
 
+def _store_frame(buffer, should_record, slot, value):
+    return jax.lax.cond(
+        should_record,
+        lambda buffer, slot=slot, value=value: buffer.at[slot].set(value),
+        lambda buffer: buffer,
+        buffer,
+    )
+
+
 def _record_fields(program, state, abs_step, t_phys, fields):
     """Update every compiled FieldRecorder and return replacement state members."""
     recorded_fields = list(state.recorded_fields)
@@ -652,25 +656,14 @@ def _record_fields(program, state, abs_step, t_phys, fields):
                 if flat_idx.size
                 else fields[component][tuple(slice(0, size) for size in shape)]
             )
-            recorded_fields[buffer_index] = jax.lax.cond(
-                should_record,
-                lambda buffer, value=value * sign, slot=slot: buffer.at[slot].set(
-                    value
-                ),
-                lambda buffer: buffer,
-                recorded_fields[buffer_index],
+            recorded_fields[buffer_index] = _store_frame(
+                recorded_fields[buffer_index], should_record, slot, value * sign
             )
-        recorded_steps[recorder_index] = jax.lax.cond(
-            should_record,
-            lambda buffer, slot=slot: buffer.at[slot].set(abs_step + 1),
-            lambda buffer: buffer,
-            recorded_steps[recorder_index],
+        recorded_steps[recorder_index] = _store_frame(
+            recorded_steps[recorder_index], should_record, slot, abs_step + 1
         )
-        recorded_times[recorder_index] = jax.lax.cond(
-            should_record,
-            lambda buffer, slot=slot: buffer.at[slot].set(t_phys),
-            lambda buffer: buffer,
-            recorded_times[recorder_index],
+        recorded_times[recorder_index] = _store_frame(
+            recorded_times[recorder_index], should_record, slot, t_phys
         )
         recorded_counts[recorder_index] = count + should_record.astype(jnp.int32)
     return {
