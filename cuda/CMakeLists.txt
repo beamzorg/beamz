@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
-project(beamz_cuda LANGUAGES CXX CUDA)
+project(beamz_cuda LANGUAGES CXX)
+
+# One source tree, two GPU platforms. CUDA spelling is the source dialect;
+# src/gpu_runtime.h and src/gpu_device.h map it onto HIP.
+set(BEAMZ_GPU_PLATFORM "CUDA" CACHE STRING "GPU platform to build for: CUDA or HIP")
+set_property(CACHE BEAMZ_GPU_PLATFORM PROPERTY STRINGS CUDA HIP)
 
 option(
   BEAMZ_CUDA_FAST_MATH
@@ -8,6 +13,8 @@ option(
 )
 set(BEAMZ_CUDA_ARCHITECTURES "80;86;89;90" CACHE STRING
     "CUDA architectures to compile (use 90 for an H100-only build)")
+set(BEAMZ_HIP_ARCHITECTURES "gfx1100" CACHE STRING
+    "HIP architectures to compile (RDNA, wave32, only)")
 
 find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module)
 find_package(nanobind CONFIG REQUIRED)
@@ -19,11 +26,7 @@ execute_process(
   COMMAND_ERROR_IS_FATAL ANY
 )
 
-nanobind_add_module(
-  _cuda
-  NB_STATIC
-  src/extension.cc
-  src/ffi_handler.cc
+set(BEAMZ_GPU_SOURCES
   src/graph.cu
   src/io.cu
   src/program.cu
@@ -31,22 +34,70 @@ nanobind_add_module(
   src/adjoint.cu
   src/sharded.cu
 )
-target_compile_features(_cuda PRIVATE cxx_std_17)
-target_include_directories(_cuda PRIVATE "${JAX_FFI_INCLUDE}" src)
-set_target_properties(
-  _cuda
-  PROPERTIES
-    CUDA_STANDARD 17
-    CUDA_STANDARD_REQUIRED ON
-    CUDA_ARCHITECTURES "${BEAMZ_CUDA_ARCHITECTURES}"
-    CUDA_SEPARABLE_COMPILATION ON
-)
-target_compile_options(
-  _cuda
-  PRIVATE
-    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr;-lineinfo>
-)
-if(BEAMZ_CUDA_FAST_MATH)
-  target_compile_options(_cuda PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>)
+
+if(BEAMZ_GPU_PLATFORM STREQUAL "CUDA")
+  enable_language(CUDA)
+  set(BEAMZ_EXTENSION_NAME _cuda)
+elseif(BEAMZ_GPU_PLATFORM STREQUAL "HIP")
+  foreach(arch IN LISTS BEAMZ_HIP_ARCHITECTURES)
+    if(arch MATCHES "^gfx9")
+      message(FATAL_ERROR
+        "BeamZ HIP kernels assume 32-wide waves; ${arch} (CDNA/GCN) runs wave64")
+    endif()
+  endforeach()
+  set(CMAKE_HIP_ARCHITECTURES "${BEAMZ_HIP_ARCHITECTURES}")
+  enable_language(HIP)
+  find_package(hip CONFIG REQUIRED)
+  set_source_files_properties(${BEAMZ_GPU_SOURCES} PROPERTIES LANGUAGE HIP)
+  set(BEAMZ_EXTENSION_NAME _hip)
+else()
+  message(FATAL_ERROR "BEAMZ_GPU_PLATFORM must be CUDA or HIP, not ${BEAMZ_GPU_PLATFORM}")
 endif()
-install(TARGETS _cuda LIBRARY DESTINATION beamz)
+
+nanobind_add_module(
+  ${BEAMZ_EXTENSION_NAME}
+  NB_STATIC
+  src/extension.cc
+  src/ffi_handler.cc
+  ${BEAMZ_GPU_SOURCES}
+)
+target_compile_features(${BEAMZ_EXTENSION_NAME} PRIVATE cxx_std_17)
+target_include_directories(${BEAMZ_EXTENSION_NAME} PRIVATE "${JAX_FFI_INCLUDE}" src)
+target_compile_definitions(
+  ${BEAMZ_EXTENSION_NAME} PRIVATE BEAMZ_EXTENSION_NAME=${BEAMZ_EXTENSION_NAME}
+)
+
+if(BEAMZ_GPU_PLATFORM STREQUAL "CUDA")
+  set_target_properties(
+    ${BEAMZ_EXTENSION_NAME}
+    PROPERTIES
+      CUDA_STANDARD 17
+      CUDA_STANDARD_REQUIRED ON
+      CUDA_ARCHITECTURES "${BEAMZ_CUDA_ARCHITECTURES}"
+      CUDA_SEPARABLE_COMPILATION ON
+  )
+  target_compile_options(
+    ${BEAMZ_EXTENSION_NAME}
+    PRIVATE
+      $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr;-lineinfo>
+  )
+  if(BEAMZ_CUDA_FAST_MATH)
+    target_compile_options(
+      ${BEAMZ_EXTENSION_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>)
+  endif()
+else()
+  set_target_properties(
+    ${BEAMZ_EXTENSION_NAME}
+    PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON
+  )
+  target_compile_definitions(${BEAMZ_EXTENSION_NAME} PRIVATE BEAMZ_PLATFORM_HIP)
+  # hip-clang contracts a*b+c by default; the kernels pin rounding explicitly
+  # and must agree with the CUDA build and JAX.
+  target_compile_options(
+    ${BEAMZ_EXTENSION_NAME}
+    PRIVATE $<$<COMPILE_LANGUAGE:HIP>:-ffp-contract=off>
+  )
+  target_link_libraries(${BEAMZ_EXTENSION_NAME} PRIVATE hip::host)
+endif()
+
+install(TARGETS ${BEAMZ_EXTENSION_NAME} LIBRARY DESTINATION beamz)

@@ -62,8 +62,15 @@ def test_private_cuda_component_version_matches_abi_schema():
     assert 'name = "beamz-cuda-component"' in wheel_config
     assert "Private :: Do Not Upload" in wheel_config
     assert '"beamz==' not in wheel_config
-    assert re.search(r"nanobind_add_module\(\s*_cuda\b", cmake_config)
-    assert "install(TARGETS _cuda LIBRARY DESTINATION beamz)" in cmake_config
+    # One CMake project builds beamz._cuda (default) or beamz._hip.
+    assert 'set(BEAMZ_GPU_PLATFORM "CUDA" CACHE STRING' in cmake_config
+    assert "set(BEAMZ_EXTENSION_NAME _cuda)" in cmake_config
+    assert "set(BEAMZ_EXTENSION_NAME _hip)" in cmake_config
+    assert re.search(r"nanobind_add_module\(\s*\$\{BEAMZ_EXTENSION_NAME\}", cmake_config)
+    assert (
+        "install(TARGETS ${BEAMZ_EXTENSION_NAME} LIBRARY DESTINATION beamz)"
+        in cmake_config
+    )
     assert schema["abi_version"] == abi.CUDA_ABI_VERSION
 
 

@@ -1,4 +1,4 @@
-#include <cuda_runtime_api.h>
+#include "gpu_runtime.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -484,9 +484,9 @@ __global__ void AccumulateDftGroups(DftFields fields,
               &phase_cos);
     }
   }
-  window = __shfl_sync(0xffffffff, window, 0);
-  phase_sin = __shfl_sync(0xffffffff, phase_sin, 0);
-  phase_cos = __shfl_sync(0xffffffff, phase_cos, 0);
+  window = __shfl_sync(BEAMZ_FULL_LANE_MASK, window, 0);
+  phase_sin = __shfl_sync(BEAMZ_FULL_LANE_MASK, phase_sin, 0);
+  phase_cos = __shfl_sync(BEAMZ_FULL_LANE_MASK, phase_cos, 0);
   if (window == 0.0f) return;
   if (point >= point_count) return;
   if (component == 0 && point == 0) {

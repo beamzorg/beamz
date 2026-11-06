@@ -38,6 +38,11 @@ ExecutionBackend = Literal[
 ResolvedBackend = Literal["jax", "cuda_streamed", "cuda_mstep"]
 
 _EXTENSION_MODULE = "beamz._cuda"
+# The same native sources build for AMD GPUs through HIP as beamz._hip.
+_HIP_EXTENSION_MODULE = "beamz._hip"
+# XLA platform names for FFI registration, keyed by the extension's
+# ``__gpu_platform__``. Extensions predating the attribute are CUDA builds.
+_XLA_PLATFORMS = {"cuda": "CUDA", "rocm": "ROCM"}
 _REGISTERED_MODULE: ModuleType | None = None
 _DEFAULT_CUDA_GRAPH_CACHE_CAPACITY = 32
 _MAX_CUDA_GRAPH_CACHE_CAPACITY = 4096
@@ -140,6 +145,7 @@ class CudaBackendStatus:
     gpu_devices: tuple[str, ...]
     compute_capabilities: tuple[int, ...]
     reason: str | None = None
+    gpu_platform: str = "cuda"
 
     def as_dict(self) -> dict[str, object]:
         """Return stable diagnostics suitable for logs and bug reports."""
@@ -151,6 +157,7 @@ class CudaBackendStatus:
             "gpu_devices": self.gpu_devices,
             "compute_capabilities": self.compute_capabilities,
             "reason": self.reason,
+            "gpu_platform": self.gpu_platform,
         }
 
 
@@ -180,8 +187,31 @@ def normalize_backend(backend: str | None) -> ExecutionBackend:
         ) from exc
 
 
+def _gpu_platform() -> str:
+    """``"rocm"`` when JAX's GPU client is ROCm, else ``"cuda"``."""
+    for device in _gpu_devices():
+        client = getattr(device, "client", None)
+        # e.g. "PJRT C API\nrocm 70200" or "PJRT C API\ncuda 13000".
+        version = str(getattr(client, "platform_version", "")).lower()
+        if any(line.strip().startswith("rocm") for line in version.splitlines()):
+            return "rocm"
+        break
+    return "cuda"
+
+
+def _extension_module_name() -> str:
+    return _HIP_EXTENSION_MODULE if _gpu_platform() == "rocm" else _EXTENSION_MODULE
+
+
 def _load_extension() -> ModuleType:
-    return importlib.import_module(_EXTENSION_MODULE)
+    return importlib.import_module(_extension_module_name())
+
+
+def _extension_platform(extension: ModuleType) -> str:
+    platform = str(getattr(extension, "__gpu_platform__", "cuda"))
+    if platform not in _XLA_PLATFORMS:
+        raise CudaBackendUnavailable(f"unknown native GPU platform {platform!r}")
+    return platform
 
 
 def _gpu_devices():
@@ -198,6 +228,9 @@ def _compute_capability(device) -> int:
         capability = stats.get("compute_capability")
     if isinstance(capability, tuple):
         return int(capability[0]) * 10 + int(capability[1])
+    if isinstance(capability, str) and capability.startswith("gfx"):
+        # ROCm reports the AMD ISA name; NVIDIA capability gates never apply.
+        return 0
     if isinstance(capability, str):
         parts = capability.replace("sm_", "").split(".")
         return int(parts[0]) * 10 + int(parts[1]) if len(parts) == 2 else int(parts[0])
@@ -239,6 +272,7 @@ def register_cuda_ffi_targets(module: ModuleType | None = None) -> tuple[str, ..
     if _REGISTERED_MODULE is extension:
         return tuple(sorted(_validated_registrations(extension)))
     registrations = _validated_registrations(extension)
+    platform = _XLA_PLATFORMS[_extension_platform(extension)]
     # Older JAXLIB releases lack this optional enum. Keep its lookup inside
     # CUDA registration so portable imports do not require CUDA-era APIs.
     from jaxlib import xla_client
@@ -246,7 +280,7 @@ def register_cuda_ffi_targets(module: ModuleType | None = None) -> tuple[str, ..
     target_traits = getattr(xla_client, "CustomCallTargetTraits", None)
     supports_registration_traits = target_traits is not None
     for name, capsule in registrations.items():
-        options = {"platform": "CUDA", "api_version": 1}
+        options = {"platform": platform, "api_version": 1}
         if target_traits is not None and supports_registration_traits:
             options["traits"] = (
                 target_traits.COMMAND_BUFFER_COMPATIBLE
@@ -268,7 +302,7 @@ def register_cuda_ffi_targets(module: ModuleType | None = None) -> tuple[str, ..
             # capture contract; retain compatibility without hiding other errors.
             supports_registration_traits = False
             jax.ffi.register_ffi_target(
-                str(name), capsule, platform="CUDA", api_version=1
+                str(name), capsule, platform=platform, api_version=1
             )
     _REGISTERED_MODULE = extension
     return tuple(sorted(str(name) for name in registrations))
@@ -293,6 +327,7 @@ def cuda_backend_status(*, register: bool = True) -> CudaBackendStatus:
     try:
         extension = _load_extension()
         registrations = _validated_registrations(extension)
+        gpu_platform = _extension_platform(extension)
         targets = (
             register_cuda_ffi_targets(extension)
             if register
@@ -306,7 +341,7 @@ def cuda_backend_status(*, register: bool = True) -> CudaBackendStatus:
             (),
             device_names,
             capabilities,
-            f"optional beamz._cuda extension is unavailable: {exc}",
+            f"optional {_extension_module_name()} extension is unavailable: {exc}",
         )
     version = str(getattr(extension, "__version__", "unknown"))
     return CudaBackendStatus(
@@ -316,6 +351,7 @@ def cuda_backend_status(*, register: bool = True) -> CudaBackendStatus:
         targets,
         device_names,
         capabilities,
+        gpu_platform=gpu_platform,
     )
 
 
@@ -326,6 +362,9 @@ def resolve_backend(backend: str | None) -> ResolvedBackend:
         return "jax"
     status = cuda_backend_status()
     if requested == "auto" and not status.available:
+        return "jax"
+    if requested == "auto" and status.gpu_platform != "cuda":
+        # The HIP build is opt-in until it is tuned and validated on AMD.
         return "jax"
     if not status.available:
         raise CudaBackendUnavailable(

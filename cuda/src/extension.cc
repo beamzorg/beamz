@@ -7,8 +7,19 @@
 namespace nb = nanobind;
 using namespace beamz::cuda::abi;
 
-NB_MODULE(_cuda, module) {
+// CMake names the module _cuda or _hip. NB_MODULE pastes its first argument,
+// so expand the definition through one extra macro level first.
+#define BEAMZ_NB_MODULE(name, variable) NB_MODULE(name, variable)
+
+#if defined(BEAMZ_PLATFORM_HIP)
+constexpr const char* kGpuPlatform = "rocm";
+#else
+constexpr const char* kGpuPlatform = "cuda";
+#endif
+
+BEAMZ_NB_MODULE(BEAMZ_EXTENSION_NAME, module) {
   module.attr("__version__") = kComponentVersion;
+  module.attr("__gpu_platform__") = kGpuPlatform;
   module.attr("__abi_version__") = kAbiVersion;
   module.def("registrations", []() {
     nb::dict registrations;

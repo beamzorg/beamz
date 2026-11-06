@@ -112,7 +112,7 @@ MstepStages(float *shared, const FusedYeePhase &h, const FusedYeePhase &e,
 }
 
 template <bool Packed, bool ScalarH, int X, int Y>
-__global__ __launch_bounds__(MstepTile<X,Y>::threads) void MstepColumnCore(
+__global__ __launch_bounds__((MstepTile<X,Y>::threads)) void MstepColumnCore(
     const __grid_constant__ FusedYeePhase h,
     const __grid_constant__ FusedYeePhase e,
     const __grid_constant__ PairFieldOutputs final,
@@ -260,7 +260,7 @@ MstepPackedStage(float *shared, const MstepPackedCoreView &v,
 }
 
 template <int X, int Y>
-__global__ __launch_bounds__(MstepTile<X,Y>::threads, 1) void MstepPackedColumnCore(
+__global__ BEAMZ_LAUNCH_BOUNDS((MstepTile<X,Y>::threads), 1) void MstepPackedColumnCore(
     const MstepPackedCoreView v, const int *masks, const int *bounds, int ntx, int segment) {
   const int ox = blockIdx.x * X, oy = blockIdx.y * Y;
   const int shift = ((oy % 16) / 8) * 2 + (ox % 32) / 16;
@@ -318,17 +318,17 @@ __global__ __launch_bounds__(MstepTile<X,Y>::threads, 1) void MstepPackedColumnC
 #pragma unroll
       for (int c = 0; c < 3; ++c) {
         const auto &f = v.input[3 + c];
-        __pipeline_memcpy_async(&MstepPackedInput<X,Y>(shared, c, p + 2, wy, wx),
-                                f.data + next_input[c], sizeof(float));
+        BEAMZ_ASYNC_COPY_F32((&MstepPackedInput<X,Y>(shared, c, p + 2, wy, wx)),
+                             (f.data + next_input[c]));
       }
-      __pipeline_commit();
+      BEAMZ_ASYNC_COMMIT();
     }
     if (wave >= 2)
       MstepPackedStage<X,Y,2>(shared, v, hc, l2, p - 1, owned, old_h, final_h);
     if (wave >= 3)
       MstepPackedStage<X,Y,3>(shared, v, hc, l3, p - 1, owned, final_e, final_h);
     if (wave + 1 < waves) {
-      __pipeline_wait_prior(0);
+      BEAMZ_ASYNC_WAIT_ALL();
       __syncthreads();
 #pragma unroll
       for (int c = 0; c < 3; ++c) {

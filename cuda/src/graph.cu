@@ -76,8 +76,8 @@ void ReportGraphCacheStatsLocked(const GraphCache& cache) {
 }
 
 void DestroyGraphEntry(GraphCacheEntry entry) {
-  if (entry.completion != nullptr) cudaEventDestroy(entry.completion);
-  if (entry.executable != nullptr) cudaGraphExecDestroy(entry.executable);
+  if (entry.completion != nullptr) (void)cudaEventDestroy(entry.completion);
+  if (entry.executable != nullptr) (void)cudaGraphExecDestroy(entry.executable);
 }
 
 // Evict one completed least-recently-used entry at a time. An oversubscribed
@@ -338,8 +338,8 @@ cudaError_t BeamzLaunchGraph(cudaStream_t stream, const std::string& key,
     error = cudaGraphLaunch(executable, stream);
   }
   if (!cache_enabled && executable != nullptr) {
-    cudaGraphExecDestroy(executable);
+    (void)cudaGraphExecDestroy(executable);
   }
-  if (graph != nullptr) cudaGraphDestroy(graph);
+  if (graph != nullptr) (void)cudaGraphDestroy(graph);
   return error;
 }

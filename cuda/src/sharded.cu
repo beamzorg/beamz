@@ -1,4 +1,4 @@
-#include <cuda_runtime_api.h>
+#include "gpu_runtime.h"
 
 #include "sharded_schedule.h"
 #include "sharded_uniform.h"

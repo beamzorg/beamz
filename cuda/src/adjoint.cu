@@ -1,6 +1,6 @@
 // Exact first-order transpose of the streamed Yee/CPML phase. Inputs and
 // cotangents are read-only: reverse-mode residuals must survive recomputation.
-#include <cuda_runtime_api.h>
+#include "gpu_runtime.h"
 
 #include <cstdint>
 #include <initializer_list>
@@ -14,14 +14,15 @@ namespace {
 __device__ __forceinline__ void WarpAdd(float* address, float gradient) {
   // Live lanes are contiguous: only x support bounds can split a 32-wide
   // warp for y/z profiles. A one-entry x absorber profile has one live lane.
-  const unsigned mask = __activemask();
+  const beamz_lane_mask mask = __activemask();
   const int lane = threadIdx.x & 31;
   #pragma unroll
   for (int offset = 16; offset > 0; offset >>= 1) {
     const float other = __shfl_down_sync(mask, gradient, offset);
-    if (lane + offset < 32 && (mask & (1u << (lane + offset)))) gradient += other;
+    if (lane + offset < 32 && (mask & (beamz_lane_mask{1} << (lane + offset))))
+      gradient += other;
   }
-  if (lane == __ffs(mask) - 1) atomicAdd(address, gradient);
+  if (lane == beamz_first_lane(mask) - 1) atomicAdd(address, gradient);
 }
 
 int64_t Elements(const BeamzBuffer& value) {

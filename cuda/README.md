@@ -98,6 +98,63 @@ registers it lazily; `backend="cuda_streamed"` requests it explicitly. The first
 release supports float32 3D grids. `auto` retains JAX for multi-GPU and 2D
 simulations; only the explicitly selected CPML recurrence state may use BF16.
 
+## AMD GPUs (HIP)
+
+The same sources build for AMD GPUs as `beamz._hip`. CUDA spelling is the
+source dialect. Two prelude headers absorb the platform, in the way Futhark's
+HIP backend reuses its CUDA prelude:
+
+- `src/gpu_runtime.h` aliases every CUDA runtime name the component uses onto
+  its HIP twin. Add a name there before using a new runtime API.
+- `src/gpu_device.h` gives neutral names where CUDA and HIP disagree:
+  `BEAMZ_GPU_COMPILER` and `BEAMZ_DEVICE_COMPILE` (instead of `__CUDACC__` and
+  `__CUDA_ARCH__`, which hip-clang never defines), `beamz_bf16`,
+  `beamz_lane_mask` (64-bit on HIP), `BEAMZ_LAUNCH_BOUNDS(threads, min_blocks)`
+  (HIP reads the second argument differently and drops it), and
+  `BEAMZ_ASYNC_COPY_F32` (a synchronous copy on HIP).
+
+`tests/unit/test_cuda_portability.py` rejects platform-specific spellings
+outside the preludes. Launch-bound arguments containing template commas need
+parentheses, because HIP's `__launch_bounds__` is a macro.
+
+Build with ROCm in an environment holding JAX's ROCm plugin:
+
+```console
+cmake -S cuda -B build-hip -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DBEAMZ_GPU_PLATFORM=HIP -DBEAMZ_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_HIP_COMPILER=/opt/rocm/lib/llvm/bin/clang++ \
+  -DPython_EXECUTABLE="$(which python)" -Dnanobind_DIR="$(python -m nanobind --cmake_dir)"
+cmake --build build-hip
+cp build-hip/_hip*.so beamz/
+```
+
+HIP device code compiles with `-ffp-contract=off`; the kernels pin their
+rounding and must agree with the CUDA build and JAX. Only RDNA (wave32)
+architectures are accepted: warp reductions assume 32 lanes, so CMake and
+`gpu_device.h` reject `gfx9*` (CDNA) targets.
+
+BeamZ loads `beamz._hip` when JAX's GPU client is ROCm and registers its FFI
+targets for XLA's `ROCM` platform. `backend="auto"` keeps JAX on AMD; request
+`backend="cuda_streamed"` (or `"cuda"`, `"cuda_mstep"`) explicitly. AMD GPUs
+take the conservative schedule: the tuned paths are gated on SM86 and
+environment overrides remain available for experiments.
+
+Realistic workload (mode source, 12-cell CPML on all faces, two field monitors
+with three frequencies, binary material), 256 steps, median of 5 warm samples,
+GCUPS, measured 2026-11-06 with the Futhark branch's backend benchmark. RX 7600 XT
+(RDNA3, 288 GB/s, ROCm 7.2, JAX 0.9.1, untuned) beside a Quadro RTX 5000
+(Turing, 448 GB/s, CUDA 13.4, JAX 0.9.0, SM75 build):
+
+| Shape (z×y×x) | AMD JAX | AMD streamed | AMD mstep | NVIDIA JAX | NVIDIA streamed | NVIDIA mstep |
+|---|---:|---:|---:|---:|---:|---:|
+| 64×96×128 | 1.45 | 1.55 | 1.47 | 1.34 | 2.11 | 1.82 |
+| 96×160×256 | 1.31 | 1.90 | 1.95 | 1.46 | 2.57 | 2.58 |
+| 128×256×512 | 1.17 | 2.14 | 2.43 | 1.61 | 2.69 | 3.32 |
+
+The HIP build passes the same hardware parity suite as CUDA, with an identical set
+of pre-existing failures on both platforms. Run AMD suites only when the card
+does not drive a display: a faulting kernel resets the GPU.
+
 ## Streamed and multistep schedules
 
 `backend="cuda"` uses one CUDA component (**0.30.0 / ABI 30**) with two schedules.
