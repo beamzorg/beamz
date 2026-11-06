@@ -8,6 +8,7 @@
 
 #include "kernels.h"
 #include "launch.h"
+#include "boundary.h"
 
 namespace {
 
@@ -107,11 +108,11 @@ __device__ __forceinline__ float Difference(const BeamzLaunch& launch, int input
     if (high[axis] >= value.dims[axis]) *has_high = *has_low = false;
   } else if (coord == 0) {
     *has_low = false;
-    *has_high = (launch.metallic_edges & (1 << (2 * axis))) != 0;
+    *has_high = beamz::cuda::boundary::DerivativeFactor(launch.metallic_edges, launch.magnetic_edges, axis, false) != 0;
   } else if (coord == value.dims[axis]) {
     *has_high = false;
     low[axis]--;
-    *has_low = (launch.metallic_edges & (1 << (2 * axis + 1))) != 0;
+    *has_low = beamz::cuda::boundary::DerivativeFactor(launch.metallic_edges, launch.magnetic_edges, axis, true) != 0;
   } else {
     low[axis]--;
   }
@@ -120,8 +121,14 @@ __device__ __forceinline__ float Difference(const BeamzLaunch& launch, int input
     const auto& metric = launch.metrics[axis];
     *scale = static_cast<const float*>(metric.data)[metric.rank == 0 ? 0 : coord];
   }
-  return (*has_high ? Read(value, high) : 0.0f) -
-         (*has_low ? Read(value, low) : 0.0f);
+  float factor = 1.0f;
+  if constexpr (Phase == 1) {
+    if (coord == 0 || coord == value.dims[axis])
+      factor = beamz::cuda::boundary::DerivativeFactor(
+          launch.metallic_edges, launch.magnetic_edges, axis, coord != 0);
+  }
+  return factor * ((*has_high ? Read(value, high) : 0.0f) -
+                   (*has_low ? Read(value, low) : 0.0f));
 }
 
 __device__ __forceinline__ int CotangentBank(const BeamzAdjointLaunch& launch) {
@@ -196,12 +203,17 @@ __device__ __forceinline__ float GatherTerm(const BeamzAdjointLaunch& launch,
     if (p[axis] + 1 < source.dims[axis])
       gradient -= DifferenceCotangent<Phase, Term>(launch, p);
   } else {
-    if (p[axis] > 0 || (phase.metallic_edges & (1 << (2 * axis))))
-      gradient += DifferenceCotangent<Phase, Term>(launch, p);
-    if (p[axis] + 1 < source.dims[axis] ||
-        (phase.metallic_edges & (1 << (2 * axis + 1)))) {
+    const float low_factor = p[axis] > 0 ? 1.0f :
+        beamz::cuda::boundary::DerivativeFactor(
+            phase.metallic_edges, phase.magnetic_edges, axis, false);
+    const float high_factor = p[axis] + 1 < source.dims[axis] ? 1.0f :
+        beamz::cuda::boundary::DerivativeFactor(
+            phase.metallic_edges, phase.magnetic_edges, axis, true);
+    if (low_factor)
+      gradient += low_factor * DifferenceCotangent<Phase, Term>(launch, p);
+    if (high_factor) {
       neighbor[axis]++;
-      gradient -= DifferenceCotangent<Phase, Term>(launch, neighbor);
+      gradient -= high_factor * DifferenceCotangent<Phase, Term>(launch, neighbor);
     }
   }
   return gradient;

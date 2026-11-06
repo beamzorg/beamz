@@ -110,6 +110,63 @@ class PEC:
 
 
 @dataclass(frozen=True, slots=True)
+class PMC:
+    """Request a perfect magnetic conductor on selected domain faces.
+
+    ``edges`` accepts ``"all"``, a face name, or a sequence of face names,
+    with the same conventions as :class:`PEC`. ``thickness`` is a compatibility
+    field and is always zero. Use ``updated_copy`` to replace fields immutably.
+
+    PMC imposes zero tangential H and normal electric displacement at the wall.
+    On the staggered Yee lattice these components lie half a cell from the
+    wall: odd reflection supplies their virtual exterior samples rather than
+    zeroing interior samples. Tangential E and normal H are even. In a
+    homogeneous isotropic medium the reflected electric wave has phase +1.
+
+    Examples
+    --------
+    >>> boundary = PMC(edges=("top", "bottom"))
+
+    Notes
+    -----
+    Supported by JAX in 2D TM/TE and 3D, and by CUDA in 3D, including
+    stretched grids and mixed PEC/PMC/absorbing faces. Automatic backend
+    selection follows the usual device and dimensionality requirements.
+    """
+
+    edges: BoundaryEdges = "all"
+    thickness: float = 0.0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "edges", normalize_edges(self.edges))
+        object.__setattr__(self, "thickness", 0.0)
+
+    def updated_copy(self, **changes):
+        """Return a new validated, immutable magnetic-wall specification.
+
+        Parameters
+        ----------
+        **changes : object
+            Dataclass fields to replace.
+
+        Returns
+        -------
+        PMC
+            New immutable boundary specification.
+
+        Raises
+        ------
+        TypeError or ValueError
+            If a field is unknown or a replacement is invalid.
+        """
+        return replace(self, **changes)
+
+    def _get_edges_for_dimensionality(self, is_3d):
+        """Resolve face names using the same convention as PEC."""
+        return list(edges_for_dimension(self.edges, bool(is_3d)))
+
+
+@dataclass(frozen=True, slots=True)
 class PML:
     """Request a graded absorbing layer on selected domain edges.
 
@@ -371,7 +428,7 @@ class Bloch(Periodic):
         object.__setattr__(self, "wavevector", vector)
 
 
-Boundary = PEC | PML | Absorber | Periodic | Bloch
+Boundary = PEC | PMC | PML | Absorber | Periodic | Bloch
 
 
 def bloch_wavevector(boundaries, *, is_3d: bool, plane_2d: str = "xy"):
@@ -468,7 +525,7 @@ def validate_boundary_compatibility(
         )
     if conflicts:
         raise ValueError(
-            "Periodic axes cannot also use PEC, PML, or Absorber faces; "
+            "Periodic axes cannot also use PEC, PMC, PML, or Absorber faces; "
             f"conflicting edges: {sorted(conflicts)}."
         )
 
@@ -477,10 +534,11 @@ def normalize_boundaries(boundaries) -> tuple[Boundary, ...]:
     """Freeze boundary input and preserve Beamz's historical all-PEC default."""
     resolved = tuple(boundaries) if boundaries else (PEC(),)
     if not all(
-        isinstance(boundary, (PEC, PML, Absorber, Periodic)) for boundary in resolved
+        isinstance(boundary, (PEC, PMC, PML, Absorber, Periodic))
+        for boundary in resolved
     ):
         raise TypeError(
-            "boundaries must contain only PEC, PML, Absorber, or Periodic specifications"
+            "boundaries must contain only PEC, PMC, PML, Absorber, or Periodic specifications"
         )
     return resolved
 
@@ -490,6 +548,7 @@ __all__ = [
     "Boundary",
     "Bloch",
     "PEC",
+    "PMC",
     "PML",
     "Periodic",
     "active_physical_axes",

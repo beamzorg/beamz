@@ -66,8 +66,10 @@ def _metallic_edge_mask(edges: frozenset[str]) -> int:
     return sum(1 << index for index, name in enumerate(order) if name in edges)
 
 
-def _boundary_code(edges: frozenset[str], terms=()) -> int:
-    """Pack PEC faces and a CPML thickness safe for every supplied phase.
+def _boundary_code(
+    edges: frozenset[str], terms=(), *, magnetic_edges=frozenset()
+) -> int:
+    """Pack PEC/PMC faces and a CPML thickness safe for every supplied phase.
 
     A non-zero CPML thickness selects a CUDA specialization which deliberately
     skips the per-term packed-slab descriptor.  It is therefore valid only when
@@ -82,7 +84,15 @@ def _boundary_code(edges: frozenset[str], terms=()) -> int:
             for term in terms
         ):
             thickness = first
-    return _metallic_edge_mask(edges) | (thickness << 8)
+    if thickness > abi.BOUNDARY_CPML_THICKNESS_MASK:
+        raise ValueError("CUDA CPML thickness exceeds the boundary-code limit")
+    if edges & magnetic_edges:
+        raise ValueError("CUDA boundary faces cannot be both PEC and PMC")
+    return (
+        _metallic_edge_mask(edges)
+        | (thickness << 8)
+        | (_metallic_edge_mask(magnetic_edges) << abi.BOUNDARY_PMC_SHIFT)
+    )
 
 
 def _term_metadata(terms) -> jnp.ndarray:
@@ -287,10 +297,18 @@ def reverse_material_step(
         dt=np.float32(ctx.dt),
         resolution=np.float32(ctx.resolution),
         boundary_code_h=np.int32(
-            _boundary_code(ctx.boundary.cpml.metallic_edges, h_terms)
+            _boundary_code(
+                ctx.boundary.cpml.metallic_edges,
+                h_terms,
+                magnetic_edges=ctx.boundary.cpml.magnetic_edges,
+            )
         ),
         boundary_code_e=np.int32(
-            _boundary_code(ctx.boundary.cpml.metallic_edges, e_terms)
+            _boundary_code(
+                ctx.boundary.cpml.metallic_edges,
+                e_terms,
+                magnetic_edges=ctx.boundary.cpml.magnetic_edges,
+            )
         ),
         metric_kind=_metric_kind_code(ctx),
         e_gradient_mask=np.int32(
@@ -361,6 +379,7 @@ def _program_attributes(ctx, nsteps: int, plan: NativeSchedulePlan):
             _boundary_code(
                 ctx.boundary.cpml.metallic_edges,
                 (*ctx.boundary.cpml.h_terms, *ctx.boundary.cpml.e_terms),
+                magnetic_edges=ctx.boundary.cpml.magnetic_edges,
             )
         ),
         "metric_kind": _metric_kind_code(ctx),
@@ -393,6 +412,7 @@ def _ffi_phase(
     cuda_flags,
     metallic_edges,
     differentiable=False,
+    magnetic_edges=frozenset(),
     shard_geometry=None,
     shard_halos=(),
     tensor_payload=None,
@@ -428,7 +448,9 @@ def _ffi_phase(
         nterms=np.int32(len(terms)),
         dt=np.float32(dt),
         resolution=np.float32(resolution),
-        boundary_code=np.int32(_boundary_code(metallic_edges, terms)),
+        boundary_code=np.int32(
+            _boundary_code(metallic_edges, terms, magnetic_edges=magnetic_edges)
+        ),
         metric_kind=np.int32(metric_kind),
     )
     if differentiable:
@@ -472,6 +494,7 @@ def update_h(state, ctx, coeffs) -> SimulationState:
         cuda_flags=ctx.config.cuda_flags,
         metallic_edges=ctx.boundary.cpml.metallic_edges,
         differentiable=ctx.differentiable,
+        magnetic_edges=ctx.boundary.cpml.magnetic_edges,
     )
     return state._replace(
         hx=outputs[0],
@@ -514,6 +537,7 @@ def update_e(state, ctx, coeffs) -> SimulationState:
         cuda_flags=ctx.config.cuda_flags,
         metallic_edges=ctx.boundary.cpml.metallic_edges,
         differentiable=ctx.differentiable,
+        magnetic_edges=ctx.boundary.cpml.magnetic_edges,
         tensor_payload=tensor_payload,
     )
     return state._replace(
@@ -793,7 +817,7 @@ def _uniform_cpml_thickness(ctx) -> int:
             (*ctx.boundary.cpml.h_terms, *ctx.boundary.cpml.e_terms),
         )
         >> 8
-    )
+    ) & abi.BOUNDARY_CPML_THICKNESS_MASK
 
 
 def _packed_e_material(coeffs) -> bool:

@@ -575,6 +575,17 @@ def metric_adjacent_difference(array, axis, inverse_distance):
     )
 
 
+def magnetic_boundary_ghost(sample, edge, metallic_edges, magnetic_edges=frozenset()):
+    """Reflect a tangential H sample across a physical domain face.
+
+    PMC uses odd reflection at the wall between interior and ghost samples.
+    Preserve the existing PEC and open-face closures for other boundaries.
+    """
+    if edge in magnetic_edges:
+        return -sample
+    return jnp.zeros_like(sample) if edge in metallic_edges else sample
+
+
 def _pad_with_boundary_ghosts(
     array,
     axis,
@@ -583,6 +594,7 @@ def _pad_with_boundary_ghosts(
     logical_size: int | None = None,
     periodic: bool = False,
     periodic_phase=1.0,
+    magnetic_edges=frozenset(),
 ):
     logical_size = int(array.shape[axis]) if logical_size is None else int(logical_size)
     if logical_size <= 0 or logical_size > int(array.shape[axis]):
@@ -595,9 +607,6 @@ def _pad_with_boundary_ghosts(
     storage_region = [slice(None)] * array.ndim
     storage_region[axis] = slice(logical_size, None)
     storage_padding = array[tuple(storage_region)]
-    shape = list(physical.shape)
-    shape[axis] = 1
-    zero = jnp.zeros(tuple(shape), dtype=array.dtype)
     low_edge, high_edge = (("front", "back"), ("bottom", "top"), ("left", "right"))[
         axis
     ]
@@ -605,15 +614,17 @@ def _pad_with_boundary_ghosts(
         low = jnp.take(physical, jnp.array([logical_size - 1]), axis) / periodic_phase
         high = jnp.take(physical, jnp.array([0]), axis) * periodic_phase
     else:
-        low = (
-            zero
-            if low_edge in metallic_edges
-            else jnp.take(physical, jnp.array([0]), axis)
+        low = magnetic_boundary_ghost(
+            jnp.take(physical, jnp.array([0]), axis),
+            low_edge,
+            metallic_edges,
+            magnetic_edges,
         )
-        high = (
-            zero
-            if high_edge in metallic_edges
-            else jnp.take(physical, jnp.array([logical_size - 1]), axis)
+        high = magnetic_boundary_ghost(
+            jnp.take(physical, jnp.array([logical_size - 1]), axis),
+            high_edge,
+            metallic_edges,
+            magnetic_edges,
         )
     return jnp.concatenate((low, physical, high, storage_padding), axis=axis)
 
@@ -627,6 +638,7 @@ def build_h_boundary_views_for_e_3d(
     logical_shapes=None,
     periodic_axes=frozenset(),
     periodic_phases=(),
+    magnetic_edges=frozenset(),
 ):
     """Create the six ghost-padded H views consumed by the 3D E curl."""
     return {
@@ -634,6 +646,7 @@ def build_h_boundary_views_for_e_3d(
             field,
             axis,
             metallic_edges,
+            magnetic_edges=magnetic_edges,
             logical_size=(
                 None if logical_shapes is None else logical_shapes[component][axis]
             ),

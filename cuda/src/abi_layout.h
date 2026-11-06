@@ -7,8 +7,8 @@
 
 namespace beamz::cuda::abi {
 
-inline constexpr int32_t kAbiVersion = 30;
-inline constexpr char kComponentVersion[] = "0.30.0";
+inline constexpr int32_t kAbiVersion = 31;
+inline constexpr char kComponentVersion[] = "0.31.0";
 inline constexpr char kStreamedTarget[] = "beamz_cuda_streamed";
 inline constexpr char kShardedTarget[] = "beamz_cuda_sharded";
 inline constexpr char kProgramTarget[] = "beamz_cuda_program";
@@ -93,6 +93,8 @@ inline constexpr size_t kTemporalFieldWorkspaceInput = 74;
 inline constexpr size_t kTemporalPsiWorkspaceInput = 80;
 inline constexpr size_t kMonitorElapsedStepsInput = 15;
 inline constexpr size_t kMstepPlanBufferCount = 5;
+inline constexpr size_t kBoundaryPmcShift = 24;
+inline constexpr size_t kBoundaryCpmlThicknessMask = 65535;
 
 }  // namespace beamz::cuda::abi
 

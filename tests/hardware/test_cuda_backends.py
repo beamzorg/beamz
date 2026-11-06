@@ -1268,3 +1268,83 @@ def test_sharded_streamed_extended_features(axis, profile):
         sharding=dict(axis=axis, num_devices=2, backend="gpu"),
     ).state
     _assert_state_close(reference, actual)
+
+
+@pytest.mark.parametrize("case", ["pmc", "mixed", "cpml", "stretched"])
+def test_streamed_pmc_matches_jax_with_continuation(case):
+    """Small magnetic-wall parity checks, including both faces of every axis."""
+    from beamz.design import RectilinearGrid
+    from tests.unit.test_cuda_sharding import seed_state
+
+    shape = (5, 7, 9)
+    dx = 0.1 * bz.um
+    axes = [np.arange(n + 1) * dx for n in shape[::-1]]
+    if case == "stretched":
+        axes = [edges * (1 + 0.03 * np.arange(edges.size)) for edges in axes]
+    boundaries = [bz.PMC()]
+    if case == "mixed":
+        boundaries.append(bz.PEC(edges=("front", "top", "right")))
+    if case == "cpml":
+        boundaries.append(
+            bz.PML(edges=("front", "top", "right"), thickness=dx, formulation="cpml")
+        )
+    materials = MaterialGrid(
+        np.ones(shape, np.float32),
+        np.float32(0),
+        np.float32(1),
+        dx,
+        shape,
+        grid=RectilinearGrid(*axes),
+    )
+    simulation = bz.Simulation(
+        material_grid=materials, time=np.arange(9) * 2e-17, boundaries=boundaries
+    )
+    state = seed_state(simulation)
+    reference = simulation.advance(
+        state=_copy_state(state), num_steps=8, backend="jax", performance=False
+    ).state
+    first = simulation.advance(
+        state=_copy_state(state),
+        num_steps=5,
+        backend="cuda_streamed",
+        performance=False,
+    ).state
+    actual = simulation.advance(
+        state=first, num_steps=3, backend="cuda_streamed", performance=False
+    ).state
+    _assert_state_close(reference, actual)
+
+
+@pytest.mark.parametrize("axes", ["012", "120", "201"])
+@pytest.mark.parametrize("temporal_steps", ["1", "2"])
+@pytest.mark.parametrize("padding", ["none", "32x8"])
+def test_streamed_pmc_cpml_storage_and_temporal_parity(
+    axes, temporal_steps, padding, monkeypatch
+):
+    """A 990-cell case exercises streamed/temporal CPML and cyclic storage."""
+    from tests.unit.test_cuda_sharding import seed_state
+
+    monkeypatch.setenv("BEAMZ_CUDA_STORAGE_AXES", axes)
+    monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", temporal_steps)
+    monkeypatch.setenv("BEAMZ_CUDA_FIELD_PADDING", padding)
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", "1")
+    dx = 0.1 * bz.um
+    # Keep absorbing material profiles and close their outer faces with PMC so
+    # every derivative uses the uniform-CPML path with magnetic boundary ghosts.
+    simulation = bz.Simulation(
+        domain=(11 * dx, 10 * dx, 9 * dx),
+        resolution=dx,
+        time=np.arange(6) * 2e-17,
+        boundaries=[bz.PML(thickness=dx, formulation="cpml"), bz.PMC()],
+    )
+    state = seed_state(simulation)
+    reference = simulation.advance(
+        state=_copy_state(state), num_steps=5, backend="jax", performance=False
+    ).state
+    actual = simulation.advance(
+        state=_copy_state(state),
+        num_steps=5,
+        backend="cuda_streamed",
+        performance=False,
+    ).state
+    _assert_state_close(reference, actual)

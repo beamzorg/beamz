@@ -215,6 +215,12 @@ def wrap_program_call(original, axes):
         cpml = replace(
             old_cpml,
             metallic_edges=new_edges,
+            magnetic_edges=frozenset(
+                faces[new][side]
+                for new, old in enumerate(axes)
+                for side in range(2)
+                if faces[old][side] in old_cpml.magnetic_edges
+            ),
             h_terms=boundary_terms(old_cpml.h_terms),
             e_terms=boundary_terms(old_cpml.e_terms),
         )
@@ -395,13 +401,14 @@ def wrap_sharded_phase(original, axes):
                 )
             )
         faces = (("front", "back"), ("bottom", "top"), ("left", "right"))
-        old_edges = kwargs["metallic_edges"]
-        kwargs["metallic_edges"] = frozenset(
-            faces[new][side]
-            for new, old in enumerate(axes)
-            for side in range(2)
-            if faces[old][side] in old_edges
-        )
+        for key in ("metallic_edges", "magnetic_edges"):
+            old_edges = kwargs.get(key, frozenset())
+            kwargs[key] = frozenset(
+                faces[new][side]
+                for new, old in enumerate(axes)
+                for side in range(2)
+                if faces[old][side] in old_edges
+            )
         geometry = kwargs["shard_geometry"]
         # Origin and return-curl mode are unchanged. Axis and component shapes
         # rotate with the fields; normal-first storage makes the new axis zero.
