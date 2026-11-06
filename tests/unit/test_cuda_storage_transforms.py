@@ -335,3 +335,42 @@ def test_plan_metadata_without_cpml_or_sources(axes, monitor):
     if axes == (0, 1, 2):
         assert cpml is program.boundary.cpml
         assert sources is groups
+
+
+@pytest.mark.parametrize(
+    "axes,components", [((1, 2, 0), (2, 0, 1)), ((2, 0, 1), (1, 2, 0))]
+)
+def test_rotated_native_boundary_expands_constant_block_materials(axes, components):
+    """Block headers follow the unrotated order; the native call needs dense values."""
+    from beamz.simulation.cuda.material_blocks import pack_material_blocks
+
+    program, state, context = _program_and_state(cpml=True)
+    rng = np.random.default_rng(3)
+    dense = {}
+    for c in "xyz":
+        value = np.full(getattr(state, "e" + c).shape, 0.5, np.float32)
+        value[:1] = 0.25
+        value.ravel()[5:40] = rng.random(35, dtype=np.float32)
+        dense[c] = value
+    packed = pack_material_blocks(tuple(dense.values()), max_bytes=1e12)
+    assert packed is not None
+    pools, headers = packed
+    assert all(np.ndim(h) == 2 for h in headers)
+    coeffs = program.coefficients._replace(
+        **{f"e_decay_{c}": pool for c, pool in zip("xyz", pools, strict=True)},
+        **{f"e_source_{c}": h for c, h in zip("xyz", headers, strict=True)},
+    )
+    seen = []
+
+    def native(s, ctx, material, groups, monitors, nsteps):
+        seen.append(material)
+        return s
+
+    wrap_program_call(native, axes)(state, context, coeffs, (None,) * 9, None, 3)
+    (material,) = seen
+    for c, old in enumerate(components):
+        np.testing.assert_array_equal(
+            getattr(material, "e_source_" + "xyz"[c]),
+            dense["xyz"[old]].transpose(axes),
+        )
+        assert float(getattr(material, "e_decay_" + "xyz"[c])) == 1.0
