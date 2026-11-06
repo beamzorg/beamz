@@ -5,6 +5,14 @@ from beamz.analysis.adapters import (
     monitor_to_xarray,
     to_xarray,
 )
+from beamz.analysis.far_field import (
+    FarFieldData,
+    FarFieldProjection,
+    FarFieldSurface,
+    SurfaceFieldData,
+    near_field_box,
+    near_to_far,
+)
 from beamz.analysis.sparameters import SParameterResult, s_parameters
 from beamz.analysis.video import save_field_video
 from beamz.simulation.observe import (
@@ -15,6 +23,12 @@ from beamz.simulation.observe import (
 )
 
 __all__ = [
+    "FarFieldData",
+    "FarFieldProjection",
+    "FarFieldSurface",
+    "SurfaceFieldData",
+    "near_field_box",
+    "near_to_far",
     "ModeMonitorData",
     "SParameterResult",
     "SourceNormalization",

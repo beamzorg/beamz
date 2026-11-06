@@ -7,9 +7,10 @@ import jax.numpy as jnp
 import numpy as np
 from jax.core import Tracer
 
-from beamz.devices.monitors import ModeMonitor
+from beamz.devices.monitors import FieldMonitor, ModeMonitor
 from beamz.simulation.api import Simulation
 
+from ._validation import execution_backend
 from .problem import TopologyProblem
 from .region import Specification, TopologyDesignRegion
 from .topology import TopologySpec
@@ -17,6 +18,13 @@ from .topology import TopologySpec
 
 @dataclass(frozen=True)
 class InverseDesign(Specification):
+    """Inverse design with modal/radiation outputs and selectable execution.
+
+    ``backend`` selects the FDTD engine; ``gradient_backend`` selects the
+    derivative method. Native ``backend='cuda'`` requires
+    ``gradient_backend='autodiff'`` and the existing FP32 single-GPU runtime.
+    """
+
     simulation: Simulation
     design_region: TopologyDesignRegion
     output_monitor_names: tuple[str, ...] | None = None
@@ -26,13 +34,15 @@ class InverseDesign(Specification):
     adjoint_source_grouping: str = field(
         default="frequency", metadata={"beamz_cache": False}
     )
+    backend: str = "jax"
     _problem: TopologyProblem = field(init=False, repr=False, compare=False)
     _slices: tuple = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
+        execution_backend(self.backend, self.gradient_backend)
         sim, region = self.simulation, self.design_region
         center = np.asarray(region.center) + np.asarray(sim.coordinate_offset)
-        shape = sim.compile(backend="jax").grid.material_grid.shape
+        shape = sim.compile(backend=self.backend).grid.material_grid.shape
         ndim = len(shape)
         if region.parameterization == "volumetric" and ndim != 3:
             raise ValueError("Volumetric design regions require a 3D simulation.")
@@ -62,9 +72,15 @@ class InverseDesign(Specification):
         names = (
             tuple(names)
             if names is not None
-            else tuple(m.name for m in sim.monitors if isinstance(m, ModeMonitor))
+            else tuple(
+                m.name
+                for m in sim.monitors
+                if isinstance(m, (ModeMonitor, FieldMonitor))
+            )
         )
-        available = {m.name for m in sim.monitors if isinstance(m, ModeMonitor)}
+        available = {
+            m.name for m in sim.monitors if isinstance(m, (ModeMonitor, FieldMonitor))
+        }
         if (
             not names
             or not all(isinstance(n, str) for n in names)
@@ -72,7 +88,7 @@ class InverseDesign(Specification):
             or not set(names) <= available
         ):
             raise ValueError(
-                "output_monitor_names must select unique existing ModeMonitor names."
+                "output_monitor_names must select unique existing ModeMonitor/FieldMonitor names."
             )
         topology = TopologySpec(
             design=sim.design,
@@ -91,6 +107,7 @@ class InverseDesign(Specification):
             adjoint_decay_tolerance=self.adjoint_decay_tolerance,
             checkpoint_interval=self.checkpoint_interval,
             adjoint_source_grouping=self.adjoint_source_grouping,
+            backend=self.backend,
         )
         object.__setattr__(self, "output_monitor_names", names)
         object.__setattr__(self, "_problem", problem)
@@ -196,7 +213,7 @@ class InverseDesign(Specification):
         return design
 
     def to_simulation_data(self, params, *, beta=None):
-        """Run either backend and return trace-preserving modal amplitudes."""
+        """Run either backend and return differentiable modal or surface fields."""
         return self._problem.simulation_data(
             self._density(params, beta=beta), monitor_names=self.output_monitor_names
         )
