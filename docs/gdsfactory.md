@@ -59,6 +59,34 @@ The first release supports axis-aligned optical ports, fundamental TE-like
 mode 1, and local 3D FDTD. Use `setup.simulation_for(...)` plus
 `Simulation.updated_copy(...)` to make non-default numerical choices explicit.
 
+## Physical stack import
+
+Use the same preparation API with explicit process geometry and materials:
+
+```pycon
+>>> setup = prepare(component, layer_stack=stack, material_map=materials,
+...                 settings=Settings(xy_padding=2e-6, z_padding=1e-6))
+```
+
+To inspect or reuse physical geometry, call `import_component(component,
+layer_stack=stack, material_map=materials)` first, then `prepare(geometry,
+settings=settings)`. Both forms apply padding and port extensions in prepare.
+Cached masks and process values remain unchanged; repeated preparation does not
+accumulate padding. Reimport to use layout edits; use native Simulation for an
+edited Design. `geometry.report` describes levels and port associations, and
+`geometry.source_origin` translates local coordinates to the original stack.
+
+Optional `fill_levels=("box", "clad")` supports older PDK background definitions;
+newer background metadata/exclusions work automatically. Use `port_levels={"o1":
+"upper"}` for ambiguous vertical ports. Explicit metre-valued bounds are an
+alternative to padding and require `Settings(xy_padding=0, z_padding=0)`.
+
+Stacks require material_map. Continuous sidewall reference heights, scalar bias,
+height profiles and downward extrusion are supported. Tuple bias and conflicting
+nonzero sidewall/profile inputs fail explicitly. Callable profiles use a sampled
+1 nm error estimate at the default scale. Process values are nominal. No-stack
+defaults match between entry points: n_core=3.47 and 1 µm cladding above/below.
+
 ## Export geometry
 
 `export_gds` accepts metre-valued `precision` and an optional mapping from

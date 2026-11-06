@@ -6,9 +6,11 @@ before calling its public functions.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
+from functools import partial
 from pathlib import Path
-from typing import Any, Literal, Mapping
+from typing import Any, Callable, Literal, Mapping
 
 import numpy as np
 
@@ -19,6 +21,13 @@ from beamz.design.structures import Box, Polygon, Rectangle
 from beamz.devices.ports import Port
 
 Layer = tuple[int, int]
+
+
+@dataclass(frozen=True, slots=True)
+class _ImportSource:
+    render: Callable[..., ImportedComponent]
+    bounds: Any
+    design: Design
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,12 +44,21 @@ class ImportedComponent:
         Name reported by the source layout component.
     world_origin
         Translation from local design coordinates to centered world coordinates.
+    source_origin
+        Add this metre-valued translation to local coordinates to recover the
+        original layout/LayerStack frame.
+    report
+        Immutable per-level statuses, source z bounds, effective mesh orders,
+        profile policy and associated optical ports. Empty in simple mode.
     """
 
     design: Design
     ports: tuple[Port, ...]
     component_name: str
     world_origin: tuple[float, float, float]
+    source_origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    report: tuple[Mapping[str, Any], ...] = ()
+    _source: _ImportSource | None = field(default=None, repr=False, compare=False)
 
     def port(self, name: str) -> Port:
         """Return a port by name."""
@@ -52,16 +70,6 @@ class ImportedComponent:
 
 
 @dataclass(frozen=True, slots=True)
-class _StackLayer:
-    name: str
-    zmin: float
-    zmax: float
-    material: Material
-    sidewall_angle: float = 0.0
-    width_to_z: float = 0.0
-
-
-@dataclass(frozen=True, slots=True)
 class _VerticalProfile:
     depth: float
     core_zmin: float
@@ -70,7 +78,6 @@ class _VerticalProfile:
     active_zmax: float
     world_z_origin: float
     background: Material
-    layers: tuple[_StackLayer, ...] = ()
     sidewall_angle: float = 0.0
     width_to_z: float = 0.0
 
@@ -118,133 +125,18 @@ def _polygons_on_layer(component: Any, layer: Layer) -> tuple[np.ndarray, ...]:
     return polygons
 
 
-def _material(value: Material | float) -> Material:
-    return value if isinstance(value, Material) else Material(float(value))
-
-
-def _stack_layers(
-    layer_stack: Any,
-    *,
-    n_core: float,
-    n_clad: float,
-    material_map: Mapping[str, Material | float] | None,
-) -> tuple[_StackLayer, ...]:
-    materials: dict[str, Material] = {
-        "si": Material(float(n_core) ** 2),
-        "silicon": Material(float(n_core) ** 2),
-        "sio2": Material(float(n_clad) ** 2),
-        "oxide": Material(float(n_clad) ** 2),
-        "air": Material(1.0),
-    }
-    materials.update(
-        {
-            str(name).strip().lower(): _material(value)
-            for name, value in (material_map or {}).items()
-        }
-    )
-
-    layers = []
-    for name, level in getattr(layer_stack, "layers", {}).items():
-        material = materials.get(str(getattr(level, "material", "")).lower())
-        if material is None or str(name).lower() == "substrate":
-            continue
-        zmin = float(level.zmin) * µm
-        zmax = zmin + float(level.thickness) * µm
-        if zmax <= zmin:
-            continue
-        layers.append(
-            _StackLayer(
-                name=str(name),
-                zmin=zmin,
-                zmax=zmax,
-                material=material,
-                sidewall_angle=float(getattr(level, "sidewall_angle", 0.0) or 0.0),
-                width_to_z=float(getattr(level, "width_to_z", 0.0) or 0.0),
-            )
-        )
-    return tuple(layers)
-
-
-def _vertical_profile(
-    *,
-    n_core: float,
-    n_clad: float,
-    core_thickness: float,
-    clad_below: float,
-    clad_above: float,
-    z_padding: float,
-    layer_stack: Any | None,
-    material_map: Mapping[str, Material | float] | None,
-) -> _VerticalProfile:
-    if layer_stack is None:
-        core_zmin = float(z_padding) + float(clad_below)
-        core_zmax = core_zmin + float(core_thickness)
-        depth = core_zmax + float(clad_above) + float(z_padding)
-        return _VerticalProfile(
-            depth=depth,
-            core_zmin=core_zmin,
-            core_zmax=core_zmax,
-            active_zmin=float(z_padding),
-            active_zmax=depth - float(z_padding),
-            world_z_origin=-core_zmin,
-            background=Material(float(n_clad) ** 2),
-        )
-
-    layers = _stack_layers(
-        layer_stack,
-        n_core=n_core,
-        n_clad=n_clad,
-        material_map=material_map,
-    )
-    if not layers:
-        raise ValueError("The supplied layer stack has no recognized optical layers.")
-
-    core_epsilon = float(n_core) ** 2
-    core_candidates = [
-        layer
-        for layer in layers
-        if layer.name.lower() == "core"
-        or np.isclose(layer.material.permittivity, core_epsilon)
-    ]
-    if not core_candidates:
-        raise ValueError(
-            "The supplied layer stack has no core layer. Add its material to "
-            "material_map or use the simple core_thickness/cladding inputs."
-        )
-    core = min(
-        core_candidates,
-        key=lambda item: (
-            item.name.lower() != "core",
-            abs((item.zmax - item.zmin) - float(core_thickness)),
-        ),
-    )
-    stack_zmin = min(layer.zmin for layer in layers)
-    stack_zmax = max(layer.zmax for layer in layers)
-    z_offset = float(z_padding) - stack_zmin
-    shifted_layers = tuple(
-        _StackLayer(
-            name=layer.name,
-            zmin=layer.zmin + z_offset,
-            zmax=layer.zmax + z_offset,
-            material=layer.material,
-            sidewall_angle=layer.sidewall_angle,
-            width_to_z=layer.width_to_z,
-        )
-        for layer in layers
-        if not np.isclose(layer.material.permittivity, core_epsilon)
-    )
-    depth = stack_zmax - stack_zmin + 2.0 * float(z_padding)
+def _vertical_profile(*, core_thickness, clad_below, clad_above, z_padding, n_clad):
+    core_zmin = float(z_padding) + float(clad_below)
+    core_zmax = core_zmin + float(core_thickness)
+    depth = core_zmax + float(clad_above) + float(z_padding)
     return _VerticalProfile(
         depth=depth,
-        core_zmin=core.zmin + z_offset,
-        core_zmax=core.zmax + z_offset,
+        core_zmin=core_zmin,
+        core_zmax=core_zmax,
         active_zmin=float(z_padding),
         active_zmax=depth - float(z_padding),
-        world_z_origin=-z_offset,
-        background=Material(1.0),
-        layers=shifted_layers,
-        sidewall_angle=core.sidewall_angle,
-        width_to_z=core.width_to_z,
+        world_z_origin=-core_zmin,
+        background=Material(float(n_clad) ** 2),
     )
 
 
@@ -257,20 +149,27 @@ def _component_ports(
 ) -> tuple[dict[str, Any], ...]:
     ports = []
     for port in component.ports:
+        if getattr(port, "port_type", "optical") != "optical":
+            continue
         orientation = float(port.orientation) % 360.0
+        if not np.isfinite(orientation):
+            raise ValueError(f"Port {port.name!r} orientation must be finite.")
         rounded = int(round(orientation / 90.0) * 90) % 360
-        try:
-            direction = {180: "+x", 0: "-x", 90: "-y", 270: "+y"}[rounded]
-        except KeyError as exc:
+        if not np.isclose(
+            (orientation - rounded + 180) % 360 - 180, 0, atol=1e-6, rtol=0
+        ):
             raise ValueError(
                 f"Port {port.name!r} has unsupported orientation {orientation}; "
                 "BeamZ requires axis-aligned ports."
-            ) from exc
+            )
+        direction = {180: "+x", 0: "-x", 90: "-y", 270: "+y"}[rounded]
+        info = component.kcl.layout.get_info(port.layer)
         center_um = getattr(port, "dcenter", port.center)
         width_um = getattr(port, "dwidth", port.width)
         ports.append(
             {
                 "name": str(port.name),
+                "layer": (info.layer, info.datatype),
                 "center": (
                     (float(center_um[0]) - xmin_um) * µm + float(xy_padding),
                     (float(center_um[1]) - ymin_um) * µm + float(xy_padding),
@@ -349,15 +248,204 @@ def _beamz_ports(
     return tuple(result)
 
 
+def _local_ports(ports, origin):
+    return tuple(
+        dict(port, center=tuple(np.subtract(port["center"], origin))) for port in ports
+    )
+
+
+def _extend_stack_polygon(polygon, ports, bounds):
+    """Continue each intersecting process footprint through a port datum.
+
+    Union before tapering keeps longitudinal seams out of the physical geometry
+    and continues slab/cladding footprints along with the port's core.
+    """
+    from shapely.geometry import LineString, box
+    from shapely.geometry import Polygon as ShapelyPolygon
+    from shapely.ops import unary_union
+
+    from .raster.importers.gdsfactory import _shapely_polygons
+
+    area = ShapelyPolygon(polygon.exterior, polygon.holes)
+    additions = [area]
+    for port in ports:
+        x, y = port["source_center"]
+        axis = 0 if port["direction"].endswith("x") else 1
+        plane = (x, y)[axis]
+        if plane < area.bounds[axis] or plane > area.bounds[axis + 2]:
+            continue
+        # Only take a cross section at the actual datum; never bridge a gap.
+        line = LineString(
+            [(plane, bounds[0][1]), (plane, bounds[1][1])]
+            if axis == 0
+            else [(bounds[0][0], plane), (bounds[1][0], plane)]
+        )
+        section = area.intersection(line)
+        edge = bounds[0][axis] if port["direction"].startswith("+") else bounds[1][axis]
+        for part in getattr(section, "geoms", (section,)):
+            if part.geom_type != "LineString" or part.is_empty:
+                continue
+            start, stop = sorted((plane, edge))
+            if start == stop:
+                continue
+            low, high = part.bounds[1 - axis], part.bounds[3 - axis]
+            if high > low:
+                additions.append(
+                    box(start, low, stop, high)
+                    if axis == 0
+                    else box(low, start, high, stop)
+                )
+    return _shapely_polygons(unary_union(additions))
+
+
+def _import_stack(
+    name,
+    levels,
+    ports,
+    *,
+    material_map,
+    bounds,
+    port_levels,
+    xy_padding,
+    z_padding,
+    extend_ports,
+    port_overlap,
+    unify,
+):
+    from .raster.importers.gdsfactory import _resolve_levels
+    from .raster.schema import ExtrudedPolygon, TaperedExtrudedPolygon
+
+    scene, report, bounds = _resolve_levels(
+        levels,
+        material_map=material_map,
+        bounds=bounds,
+        _padding=(xy_padding, z_padding),
+    )
+    origin = np.asarray(bounds[0])
+    extent = np.subtract(bounds[1], origin)
+    raw_ports = _local_ports(ports, origin[:2])
+    levels = {level.name: level for level in levels}
+    port_levels = dict(port_levels or {})
+    if set(port_levels) - {p["name"] for p in raw_ports}:
+        raise ValueError("port_levels contains unknown optical port names.")
+    ports, selected = [], []
+    associations = {}
+    for port in raw_ports:
+        candidates = [
+            entry
+            for entry in report
+            if entry["status"] == "included"
+            and (port["layer"] in levels[entry["name"]].port_layers)
+        ]
+        if port["name"] in port_levels:
+            candidates = [
+                entry
+                for entry in report
+                if entry["status"] == "included"
+                and entry["name"] == port_levels[port["name"]]
+            ]
+        if not candidates:
+            raise ValueError(
+                f"Port {port['name']!r} has no physical level; set port_levels."
+            )
+        # Overlapping core/slab levels share a port: the winning level supplies
+        # its datum. Vertically separated levels require an explicit selection.
+        if max(entry["z_bounds"][0] for entry in candidates) >= min(
+            entry["z_bounds"][1] for entry in candidates
+        ):
+            raise ValueError(
+                f"Port {port['name']!r} maps to multiple heights; set port_levels."
+            )
+        entry = min(reversed(candidates), key=lambda entry: entry["mesh_order"])
+        associations.setdefault(entry["name"], []).append(port["name"])
+        z = np.mean(entry["z_bounds"]) - origin[2]
+        x, y = port["center"]
+        if not (0 <= x <= extent[0] and 0 <= y <= extent[1] and 0 <= z <= extent[2]):
+            raise ValueError(f"Port {port['name']!r} lies outside bounds.")
+        profile = _VerticalProfile(
+            depth=extent[2],
+            core_zmin=entry["z_bounds"][0] - origin[2],
+            core_zmax=entry["z_bounds"][1] - origin[2],
+            active_zmin=0,
+            active_zmax=extent[2],
+            world_z_origin=origin[2],
+            background=scene.materials[scene.background_material],
+        )
+        ports.extend(_beamz_ports((port,), profile))
+        selected.append({**port, "source_center": (x + origin[0], y + origin[1])})
+    frame = Design(
+        width=extent[0],
+        height=extent[1],
+        depth=extent[2],
+        background=scene.materials[scene.background_material],
+    )
+    structures = []
+    objects_by_id = {obj.id: obj for obj in scene.objects}
+    for entry in sorted(
+        (r for r in report if r["status"] == "included"),
+        key=lambda r: objects_by_id[r["object_ids"][0]].priority,
+    ):
+        group = []
+        for object_id in entry["object_ids"]:
+            obj = objects_by_id[object_id]
+            geometry = obj.geometry
+            assert isinstance(geometry, (ExtrudedPolygon, TaperedExtrudedPolygon))
+            footprints = (
+                _extend_stack_polygon(geometry.polygon, selected, bounds)
+                if extend_ports and not levels[entry["name"]].background
+                else [geometry.polygon]
+            )
+            for polygon in footprints:
+                z = geometry.z_min - origin[2]
+
+                def ring(points, z=z):
+                    return tuple((x - origin[0], y - origin[1], z) for x, y in points)
+
+                group.append(
+                    Polygon(
+                        vertices=ring(polygon.exterior),
+                        interiors=tuple(ring(h) for h in polygon.holes),
+                        z=z,
+                        depth=geometry.z_max - geometry.z_min,
+                        material=scene.materials[obj.material_id],
+                        sidewall_angle=getattr(geometry, "sidewall_angle_degrees", 0),
+                        width_to_z=getattr(geometry, "width_to_z", 0),
+                    )
+                )
+        # Unify only within a process level: merging across priorities changes ownership.
+        design = frame.updated_copy(structures=group)
+        structures.extend(design.unified_polygons().structures if unify else group)
+    design = frame.updated_copy(structures=structures)
+    from types import MappingProxyType
+
+    report = tuple(
+        MappingProxyType(
+            {
+                **entry,
+                "ports": tuple(associations.get(entry["name"], ())),
+            }
+        )
+        for entry in report
+    )
+    return ImportedComponent(
+        design,
+        tuple(ports),
+        name,
+        (-0.5 * design.width, -0.5 * design.height, float(origin[2])),
+        (float(origin[0]), float(origin[1]), float(origin[2])),
+        report,
+    )
+
+
 def import_component(
     component: Any = "mmi1x2",
     *,
     layer: Layer = (1, 0),
-    n_core: float = 2.0,
+    n_core: float = 3.47,
     n_clad: float = 1.44,
     core_thickness: float = 0.22e-6,
-    clad_below: float = 0.5e-6,
-    clad_above: float = 0.5e-6,
+    clad_below: float = 1.0e-6,
+    clad_above: float = 1.0e-6,
     xy_padding: float = 0.0,
     z_padding: float = 0.0,
     extend_ports: bool = False,
@@ -366,6 +454,9 @@ def import_component(
     layer_stack: Any | None = None,
     material_map: Mapping[str, Material | float] | None = None,
     unify: bool = True,
+    bounds: tuple[Sequence[float], Sequence[float]] | None = None,
+    fill_levels: Sequence[str] = (),
+    port_levels: Mapping[str, str] | None = None,
 ) -> ImportedComponent:
     """Convert a gdsfactory component or active-PDK cell into a BeamZ design.
 
@@ -386,7 +477,8 @@ def import_component(
     core_thickness, clad_below, clad_above
         Simple vertical geometry in metres, used when ``layer_stack`` is absent.
     xy_padding, z_padding
-        Domain padding in metres.
+        Legacy geometry-view padding in metres. For simulation preparation,
+        specify padding once through gdsfactory.Settings instead.
     extend_ports
         Extend imported waveguides from their port planes to the domain edges.
     port_overlap
@@ -397,23 +489,130 @@ def import_component(
         Optional explicit gdsfactory PDK layer stack.
     material_map
         Mapping from PDK material names to BeamZ materials or permittivities.
+        Required with layer_stack. Supplied objects are preserved, including
+        tensors and dispersion; process material names are never guessed.
+    bounds
+        Optional ((xmin, ymin, zmin), (xmax, ymax, zmax)) crop in metres in the
+        source stack frame. Mutually exclusive with padding. Source taper
+        references are retained outside the crop.
+    fill_levels
+        Names of levels to fill across the domain, including older PDKs without
+        background metadata. Background exclusions remain holes.
+    port_levels
+        Explicit port-name to physical-level mapping when several heights share
+        a mask. Overlapping core/slab levels otherwise use mesh-order priority.
     unify
-        Merge compatible touching polygons after import.
+        Merge compatible touching polygons within each physical level. Levels
+        retain their separate priority. Port extension continues full footprints;
+        port_overlap is only needed by the simple no-stack extrusion.
     """
+    for name, value in (
+        ("xy_padding", xy_padding),
+        ("z_padding", z_padding),
+        ("port_overlap", port_overlap),
+    ):
+        if not np.isfinite(value) or value < 0:
+            raise ValueError(f"{name} must be finite and nonnegative.")
+    if bounds is not None:
+        from .raster.importers.gdsfactory import _validate_bounds
+
+        bounds = _validate_bounds(bounds)
+        if xy_padding or z_padding:
+            raise ValueError("Choose bounds or padding, not both.")
     component = _resolve_component(component, settings)
-    polygons = _polygons_on_layer(component, layer)
+    if layer_stack is not None:
+        if material_map is None:
+            raise ValueError("layer_stack requires an explicit material_map.")
+        from .raster.importers.gdsfactory import _read_stack
+
+        render = partial(
+            _import_stack,
+            str(component.name),
+            _read_stack(component, layer_stack, fill_levels=fill_levels),
+            _component_ports(component, xmin_um=0, ymin_um=0, xy_padding=0),
+            material_map=dict(material_map),
+            port_levels=dict(port_levels or {}),
+            unify=unify,
+        )
+    else:
+        if material_map is not None:
+            raise ValueError(
+                "material_map requires layer_stack; use n_core/n_clad for simple extrusion."
+            )
+        if bounds is not None or fill_levels or port_levels:
+            raise ValueError("bounds, fill_levels and port_levels require layer_stack.")
+        render = partial(
+            _import_simple,
+            str(component.name),
+            _polygons_on_layer(component, layer),
+            _component_ports(component, xmin_um=0, ymin_um=0, xy_padding=0),
+            n_core=n_core,
+            n_clad=n_clad,
+            core_thickness=core_thickness,
+            clad_below=clad_below,
+            clad_above=clad_above,
+            unify=unify,
+        )
+
+    return _render_import(
+        render,
+        xy_padding=xy_padding,
+        z_padding=z_padding,
+        bounds=bounds,
+        overlap=port_overlap,
+        extend_ports=extend_ports,
+    )
+
+
+def _render_import(
+    render, *, xy_padding, z_padding, bounds=None, overlap=0.0, extend_ports=True
+):
+    from .raster.importers.gdsfactory import _validate_bounds
+
+    bounds = _validate_bounds(bounds)
+    if bounds is not None and (xy_padding or z_padding):
+        raise ValueError(
+            "Choose bounds or padding, not both; use zero padding with explicit bounds."
+        )
+    result = render(
+        xy_padding=xy_padding,
+        z_padding=z_padding,
+        bounds=bounds,
+        port_overlap=overlap,
+        extend_ports=extend_ports,
+    )
+    return replace(result, _source=_ImportSource(render, bounds, result.design))
+
+
+def _import_simple(
+    name,
+    polygons,
+    ports,
+    *,
+    n_core,
+    n_clad,
+    core_thickness,
+    clad_below,
+    clad_above,
+    xy_padding,
+    z_padding,
+    extend_ports,
+    port_overlap,
+    unify,
+    bounds,
+):
+    if bounds is not None:
+        raise ValueError("bounds requires layer_stack.")
+
     points = np.vstack(polygons)
     xmin_um, ymin_um = np.min(points, axis=0)
     xmax_um, ymax_um = np.max(points, axis=0)
     profile = _vertical_profile(
-        n_core=n_core,
         n_clad=n_clad,
         core_thickness=core_thickness,
         clad_below=clad_below,
         clad_above=clad_above,
         z_padding=z_padding,
-        layer_stack=layer_stack,
-        material_map=material_map,
     )
     design = Design(
         width=float(xmax_um - xmin_um) * µm + 2.0 * float(xy_padding),
@@ -421,15 +620,6 @@ def import_component(
         depth=profile.depth,
         background=profile.background,
     )
-    for stack_layer in profile.layers:
-        design += Rectangle(
-            position=(0.0, 0.0, stack_layer.zmin),
-            width=design.width,
-            height=design.height,
-            depth=stack_layer.zmax - stack_layer.zmin,
-            material=stack_layer.material,
-        )
-
     core_material = Material(float(n_core) ** 2)
     for points_um in polygons:
         vertices = tuple(
@@ -449,11 +639,8 @@ def import_component(
             width_to_z=profile.width_to_z,
         )
 
-    raw_ports = _component_ports(
-        component,
-        xmin_um=float(xmin_um),
-        ymin_um=float(ymin_um),
-        xy_padding=xy_padding,
+    raw_ports = _local_ports(
+        ports, (float(xmin_um) * µm - xy_padding, float(ymin_um) * µm - xy_padding)
     )
     design = _extend_ports(
         design,
@@ -468,10 +655,15 @@ def import_component(
     return ImportedComponent(
         design=design,
         ports=_beamz_ports(raw_ports, profile),
-        component_name=str(component.name),
+        component_name=name,
         world_origin=(
             -0.5 * design.width,
             -0.5 * design.height,
+            profile.world_z_origin,
+        ),
+        source_origin=(
+            float(xmin_um) * µm - xy_padding,
+            float(ymin_um) * µm - xy_padding,
             profile.world_z_origin,
         ),
     )
