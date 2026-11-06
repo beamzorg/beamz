@@ -242,22 +242,22 @@ def _compute_capability(device) -> int:
 
 
 def _validated_registrations(extension: ModuleType) -> dict[str, object]:
+    module = getattr(extension, "__name__", "native extension")
     abi_version = getattr(extension, "__abi_version__", None)
     if abi_version != CUDA_ABI_VERSION:
         raise CudaBackendUnavailable(
-            "beamz._cuda ABI mismatch: "
+            f"{module} ABI mismatch: "
             f"runtime requires v{CUDA_ABI_VERSION}, extension provides "
             f"{abi_version!r}"
         )
     registrations = extension.registrations()
     if not isinstance(registrations, dict) or not registrations:
-        raise CudaBackendUnavailable("beamz._cuda exposes no FFI registrations")
+        raise CudaBackendUnavailable(f"{module} exposes no FFI registrations")
     targets = {str(name) for name in registrations}
     missing = sorted(CUDA_STREAMED_TARGETS - targets)
     if missing:
         raise CudaBackendUnavailable(
-            "beamz._cuda is missing required streamed FFI targets: "
-            + ", ".join(missing)
+            f"{module} is missing required streamed FFI targets: " + ", ".join(missing)
         )
     from ._cuda_abi import CUDA_MSTEP_TARGET
 
@@ -322,7 +322,7 @@ def cuda_backend_status(*, register: bool = True) -> CudaBackendStatus:
             (),
             device_names,
             capabilities,
-            "JAX has no visible CUDA devices",
+            "JAX has no visible GPU devices",
         )
     try:
         extension = _load_extension()
@@ -368,8 +368,10 @@ def resolve_backend(backend: str | None) -> ResolvedBackend:
         return "jax"
     if not status.available:
         raise CudaBackendUnavailable(
-            f"CUDA execution backend was requested but is unavailable: {status.reason}. "
-            "Build BeamZ's optional CUDA component, or use backend='jax'."
+            f"backend={requested!r} was requested but is unavailable: "
+            f"{status.reason}. The cuda_* backends run BeamZ's optional native "
+            "component (beamz._cuda on NVIDIA, beamz._hip on AMD); build it, "
+            "or use backend='jax'."
         )
     has_streamed = CUDA_STREAMED_TARGETS.issubset(status.targets)
     if requested == "cuda_mstep":
@@ -377,17 +379,19 @@ def resolve_backend(backend: str | None) -> ResolvedBackend:
 
         if not has_streamed or CUDA_MSTEP_TARGET not in status.targets:
             raise CudaBackendUnavailable(
-                "cuda_mstep target is missing from the CUDA component"
+                f"cuda_mstep target is missing from {_extension_module_name()}"
             )
         return "cuda_mstep"
     if requested == "cuda_streamed":
         if not has_streamed:
             raise CudaBackendUnavailable(
-                "cuda_streamed target is missing from the beamz._cuda extension"
+                f"cuda_streamed target is missing from {_extension_module_name()}"
             )
         return "cuda_streamed"
     if has_streamed:
         return "cuda_streamed"
     if requested == "auto":
         return "jax"
-    raise CudaBackendUnavailable("beamz._cuda has no compatible execution target")
+    raise CudaBackendUnavailable(
+        f"{_extension_module_name()} has no compatible execution target"
+    )

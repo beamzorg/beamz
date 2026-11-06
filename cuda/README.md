@@ -114,8 +114,22 @@ HIP backend reuses its CUDA prelude:
   `BEAMZ_ASYNC_COPY_F32` (a synchronous copy on HIP).
 
 `tests/unit/test_cuda_portability.py` rejects platform-specific spellings
-outside the preludes. Launch-bound arguments containing template commas need
-parentheses, because HIP's `__launch_bounds__` is a macro.
+outside the preludes and checks that every `cuda*` name in the sources has a
+HIP alias. Launch-bound arguments containing template commas need parentheses,
+because HIP's `__launch_bounds__` is a macro.
+
+Differences the preludes absorb, for whoever adds the next runtime call:
+
+- CUDA 12's three-argument `cudaGraphInstantiate` is HIP's
+  `hipGraphInstantiateWithFlags`.
+- `hipFuncSetAttribute` takes `const void*`, not a kernel symbol; a template
+  wrapper casts.
+- HIP's `*_sync` warp builtins take 64-bit lane masks.
+- `__float2bfloat16` already rounds to nearest even, like CUDA's `_rn`.
+- HIP compiles device code without relocatable device code (`-fgpu-rdc`), so
+  every device symbol must live in the translation unit that uses it.
+- ROCm's PJRT `platform_version` spans two lines (`"PJRT C API\nrocm 70200"`);
+  platform detection checks every line.
 
 Build with ROCm in an environment holding JAX's ROCm plugin:
 
@@ -129,13 +143,20 @@ cp build-hip/_hip*.so beamz/
 ```
 
 HIP device code compiles with `-ffp-contract=off`; the kernels pin their
-rounding and must agree with the CUDA build and JAX. Only RDNA (wave32)
-architectures are accepted: warp reductions assume 32 lanes, so CMake and
-`gpu_device.h` reject `gfx9*` (CDNA) targets.
+rounding and must agree with the CUDA build and JAX.
+
+The kernels do not assume a wave width. ROCm no longer exposes it to the
+preprocessor, so width-dependent code branches on `BEAMZ_WAVE32`
+(`warpSize == 32`, folded to a constant during code generation, as in HIP's
+own `*_sync` builtins). Only RDNA (wave32) has run on hardware, so CMake
+rejects 64-wide targets, `gfx9*` (GCN/CDNA) and `-mwavefrontsize64`, unless
+`-DBEAMZ_HIP_ALLOW_WAVE64=ON`.
 
 BeamZ loads `beamz._hip` when JAX's GPU client is ROCm and registers its FFI
 targets for XLA's `ROCM` platform. `backend="auto"` keeps JAX on AMD; request
-`backend="cuda_streamed"` (or `"cuda"`, `"cuda_mstep"`) explicitly. AMD GPUs
+`backend="cuda_streamed"` (or `"cuda"`, `"cuda_mstep"`) explicitly. The
+`cuda_*` backend names are historical and select the native component on
+either vendor. AMD GPUs
 take the conservative schedule: the tuned paths are gated on SM86 and
 environment overrides remain available for experiments.
 

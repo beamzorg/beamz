@@ -75,6 +75,26 @@ def test_cuda_sources_use_platform_preludes():
     assert not violations, "\n".join(violations)
 
 
+def test_cuda_runtime_names_have_hip_aliases():
+    """Every CUDA runtime name in the sources is aliased for HIP builds.
+
+    A missing alias compiles on CUDA and breaks only the HIP build.
+    """
+    runtime = (SOURCE_DIR / "gpu_runtime.h").read_text()
+    hip_branch = runtime.split("#if defined(BEAMZ_PLATFORM_HIP)", 1)[1]
+    hip_branch = hip_branch.split("#else", 1)[0]
+    aliased = set(re.findall(r"^#define (cuda\w+)", hip_branch, re.MULTILINE))
+    used = {}
+    for pattern in ("*.cu", "*.cuh", "*.h", "*.cc"):
+        for path in SOURCE_DIR.glob(pattern):
+            if path.name in PRELUDES:
+                continue
+            for name in re.findall(r"\bcuda[A-Z]\w*", path.read_text()):
+                used.setdefault(name, path.name)
+    missing = sorted(f"{used[name]}: {name}" for name in set(used) - aliased)
+    assert not missing, "\n".join(missing)
+
+
 def test_platform_preludes_exist():
     for name in PRELUDES:
         assert (SOURCE_DIR / name).is_file(), name
