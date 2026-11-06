@@ -174,6 +174,13 @@ def test_streamed_temporal_pair_io_variants(io, pair_tile, monkeypatch):
     monkeypatch.setenv("BEAMZ_CUDA_FIELD_PADDING", "32x8")
     monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "2")
     monkeypatch.setenv("BEAMZ_CUDA_PAIR_TILE", pair_tile)
+    # The pair tile is read natively at launch, so variants share one traced
+    # program; drop it so this test's plan is recorded at trace time.
+    from beamz.simulation.compile import clear_program_cache
+    from beamz.simulation.execute import clear_execution_cache
+
+    clear_program_cache()
+    clear_execution_cache()
     plans = []
     choose = runtime._native_schedule_plan
 
