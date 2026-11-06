@@ -12,6 +12,12 @@
 namespace {
 
 __device__ __forceinline__ void WarpAdd(float* address, float gradient) {
+  if (!BEAMZ_WAVE32) {
+    // 64-wide waves span two 32-wide block rows, so live lanes need not be
+    // contiguous: add per lane.
+    atomicAdd(address, gradient);
+    return;
+  }
   // Live lanes are contiguous: only x support bounds can split a 32-wide
   // warp for y/z profiles. A one-entry x absorber profile has one live lane.
   const beamz_lane_mask mask = __activemask();

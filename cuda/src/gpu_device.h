@@ -25,15 +25,17 @@
 #include <hip/hip_runtime.h>
 #include <hip/hip_bf16.h>
 
-#if defined(BEAMZ_DEVICE_COMPILE) && defined(__GFX9__)
-// Warp reductions and lane masks assume 32-wide waves (RDNA). CDNA's 64-wide
-// waves need width-generic code first.
-#error "BeamZ HIP kernels support wave32 (RDNA) targets only"
-#endif
+// Wave width is a target property (gfx9 and -mwavefrontsize64 run 64 lanes)
+// that ROCm no longer exposes to the preprocessor. warpSize folds to a
+// constant during code generation, so width-dependent code branches on this
+// like HIP's own *_sync builtins do.
+#define BEAMZ_WAVE32 (warpSize == 32)
 
 // CUDA has no grid-constant concept on AMD: kernel arguments already live in
 // a read-only kernarg segment.
+#ifndef __grid_constant__
 #define __grid_constant__
+#endif
 
 typedef __hip_bfloat16 beamz_bf16;
 // The float -> __bf16 conversion rounds to nearest even, like CUDA's _rn.
@@ -41,9 +43,10 @@ __host__ __device__ inline beamz_bf16 beamz_float_to_bf16_rn(float value) {
   return __float2bfloat16(value);
 }
 
-// HIP's *_sync builtins take 64-bit lane masks.
+// HIP's *_sync builtins take 64-bit lane masks and ignore the upper half on
+// wave32, so one full mask fits every wave width.
 typedef unsigned long long beamz_lane_mask;
-#define BEAMZ_FULL_LANE_MASK 0xffffffffull
+#define BEAMZ_FULL_LANE_MASK (~0ull)
 __device__ inline int beamz_first_lane(beamz_lane_mask mask) {
   return __ffsll(mask);
 }
@@ -70,6 +73,7 @@ __host__ __device__ __forceinline__ beamz_bf16 beamz_float_to_bf16_rn(
   return __float2bfloat16_rn(value);
 }
 
+#define BEAMZ_WAVE32 true
 typedef unsigned beamz_lane_mask;
 #define BEAMZ_FULL_LANE_MASK 0xffffffffu
 __device__ __forceinline__ int beamz_first_lane(beamz_lane_mask mask) {

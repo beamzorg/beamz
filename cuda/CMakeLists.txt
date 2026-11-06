@@ -14,7 +14,9 @@ option(
 set(BEAMZ_CUDA_ARCHITECTURES "80;86;89;90" CACHE STRING
     "CUDA architectures to compile (use 90 for an H100-only build)")
 set(BEAMZ_HIP_ARCHITECTURES "gfx1100" CACHE STRING
-    "HIP architectures to compile (RDNA, wave32, only)")
+    "HIP architectures to compile")
+option(BEAMZ_HIP_ALLOW_WAVE64
+    "Allow 64-wide wave targets (gfx9, -mwavefrontsize64), unvalidated" OFF)
 
 find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module)
 find_package(nanobind CONFIG REQUIRED)
@@ -39,12 +41,20 @@ if(BEAMZ_GPU_PLATFORM STREQUAL "CUDA")
   enable_language(CUDA)
   set(BEAMZ_EXTENSION_NAME _cuda)
 elseif(BEAMZ_GPU_PLATFORM STREQUAL "HIP")
-  foreach(arch IN LISTS BEAMZ_HIP_ARCHITECTURES)
-    if(arch MATCHES "^gfx9")
-      message(FATAL_ERROR
-        "BeamZ HIP kernels assume 32-wide waves; ${arch} (CDNA/GCN) runs wave64")
+  # Kernels are wave-width agnostic, but only wave32 (RDNA) has run on
+  # hardware. gfx9 (GCN/CDNA) and -mwavefrontsize64 build 64-wide waves.
+  if(NOT BEAMZ_HIP_ALLOW_WAVE64)
+    foreach(arch IN LISTS BEAMZ_HIP_ARCHITECTURES)
+      if(arch MATCHES "^gfx9")
+        message(FATAL_ERROR "${arch} runs 64-wide waves, which BeamZ has not "
+          "validated on hardware; set BEAMZ_HIP_ALLOW_WAVE64=ON to build anyway")
+      endif()
+    endforeach()
+    if(CMAKE_HIP_FLAGS MATCHES "wavefrontsize64")
+      message(FATAL_ERROR "-mwavefrontsize64 builds 64-wide waves, which BeamZ "
+        "has not validated on hardware; set BEAMZ_HIP_ALLOW_WAVE64=ON to build anyway")
     endif()
-  endforeach()
+  endif()
   set(CMAKE_HIP_ARCHITECTURES "${BEAMZ_HIP_ARCHITECTURES}")
   enable_language(HIP)
   find_package(hip CONFIG REQUIRED)
@@ -91,6 +101,10 @@ else()
     PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON
   )
   target_compile_definitions(${BEAMZ_EXTENSION_NAME} PRIVATE BEAMZ_PLATFORM_HIP)
+  # No -fgpu-rdc, unlike CUDA_SEPARABLE_COMPILATION above: every device symbol
+  # is defined in the translation unit that uses it (headers hold inline device
+  # code; there is no extern __device__/__constant__), so whole-program device
+  # compilation suffices. A cross-unit device reference fails to build here.
   # hip-clang contracts a*b+c by default; the kernels pin rounding explicitly
   # and must agree with the CUDA build and JAX.
   target_compile_options(
