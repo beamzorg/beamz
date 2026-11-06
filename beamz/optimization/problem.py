@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
+from typing import cast
 
 import jax
 import jax.numpy as jnp
@@ -76,6 +78,7 @@ class TopologyProblem:
         adjoint_decay_tolerance=1e-4,
         adjoint_source_grouping="frequency",
         output_monitor_names=None,
+        sharding=None,
     ):
         if gradient_backend not in ("autodiff", "adjoint"):
             raise ValueError("gradient_backend must be 'autodiff' or 'adjoint'.")
@@ -110,13 +113,32 @@ class TopologyProblem:
             else tuple((name, None) for name in output_monitor_names or ())
         )
         self.checkpoint_interval = checkpoint_interval
-        self.program = simulation.compile(backend="jax")
+        self.program = simulation.compile(backend="jax", sharding=sharding)
+        if self.program.sharding.layout.enabled and gradient_backend != "autodiff":
+            raise ValueError("Sharded topology requires gradient_backend='autodiff'.")
         self._validate()
-        self._mask = jnp.asarray(topology.region_mask)
-        self._base_eps = jnp.asarray(self.program.grid.material_grid.permittivity)
-        self._initial = initial_program_state(
-            self.program, t=float(simulation.time[0]), current_step=0
-        )
+        array = np.asarray if self.program.sharding.layout.enabled else jnp.asarray
+        self._mask = array(topology.region_mask)
+        self._base_eps = array(self.program.grid.material_grid.permittivity)
+        self._distributed_solver = None
+        if self.program.sharding.layout.enabled:
+            from beamz.simulation.differentiation import DifferentiableSimulation
+            from beamz.simulation.distributed_differentiation import place_parameter
+
+            self._distributed_solver = DifferentiableSimulation(
+                self.program,
+                t0=float(simulation.time[0]),
+                checkpoint_interval=checkpoint_interval,
+            )
+            self._mask = place_parameter(self.program, topology.region_mask)
+            self._base_eps = place_parameter(
+                self.program, np.asarray(self.program.grid.permittivity)
+            )
+            self._initial = self._distributed_solver.initial_state
+        else:
+            self._initial = initial_program_state(
+                self.program, t=float(simulation.time[0]), current_step=0
+            )
         empty_results = SimulationResults.from_run(
             simulation,
             runtime_fields=self.program.grid,
@@ -137,11 +159,19 @@ class TopologyProblem:
             term.bind_spectrum(empty_results, self.program, cache)
             for term in (() if objective is None else objective.terms)
         ]
-        scan = build_scan(self.program, checkpoint_interval=checkpoint_interval)
+        scan = (
+            self._distributed_solver.run_coefficients
+            if self._distributed_solver is not None
+            else build_scan(self.program, checkpoint_interval=checkpoint_interval)
+        )
 
         def simulate(density, beta):
             eps = self._permittivity(density, beta)
             coefficients = topology_coefficients(self.program, eps, self._mask)
+            if self._distributed_solver is not None:
+                coefficients = self._distributed_solver.coefficients(
+                    tuple(getattr(coefficients, f"e_permittivity_{a}") for a in "xyz")
+                )
             return scan(self._initial, coefficients)
 
         def evaluate(density, beta):
@@ -201,11 +231,17 @@ class TopologyProblem:
             self._modal_data_bindings[names] = bind_modal_data(
                 self._binding_results, self.program, names
             )
-        values = jnp.asarray(density, dtype=jnp.float32)
-        if values.shape != self.topology.region_mask.shape:
+        values = (
+            jnp.asarray(density, dtype=jnp.float32)
+            if isinstance(density, Tracer)
+            else self._density(density)
+        )
+        if values.shape not in (self.topology.region_mask.shape, self._mask.shape):
             raise ValueError("Density must match the topology mask shape.")
-        if not isinstance(values, Tracer):
-            values = self._density(values)
+        if isinstance(values, Tracer) and self._distributed_solver is not None:
+            from beamz.simulation.distributed_differentiation import place_parameter
+
+            values = place_parameter(self.program, values)
         if self._spectral_adjoint is None:
             state = self._simulate(values, jnp.asarray(beta, dtype=jnp.float32))
         else:
@@ -236,9 +272,8 @@ class TopologyProblem:
                 tuple("xyz" if program.config.is_3d else "xy")
             )
             != "isotropic_uniform"
-            or program.sharding.layout.enabled
         ):
-            raise ValueError("TopologyProblem requires an unsharded uniform grid.")
+            raise ValueError("TopologyProblem requires a uniform grid.")
         if sim.design != spec.design:
             raise ValueError(
                 "TopologySpec.design must match the base simulation design."
@@ -392,10 +427,17 @@ class TopologyProblem:
                 raise ValueError("The design region must not overlap the absorber.")
 
     def _physical_density(self, density, beta):
+        options = self.topology._transform_options
+        if self._distributed_solver is not None:
+            from beamz.simulation.distributed_differentiation import place_parameter
+
+            for name in ("mask", "fixed_structure_mask", "fixed_solid", "fixed_void"):
+                if options[name] is not None:
+                    options[name] = place_parameter(self.program, options[name])
         return transform_density(
             jnp.where(self._mask, density, 0.0),
             beta=beta,
-            **self.topology._transform_options,
+            **options,
         )
 
     def _permittivity(self, density, beta):
@@ -409,6 +451,16 @@ class TopologyProblem:
 
     def _density(self, density):
         density = np.asarray(density, dtype=np.float32)
+        if self._distributed_solver is not None:
+            check_density(
+                density,
+                density.shape
+                if density.shape == self._mask.shape
+                else self.topology.region_mask.shape,
+            )
+            return cast(
+                jax.Array, self._distributed_solver.prepare_permittivity(density)
+            )
         check_density(density, self.topology.region_mask.shape)
         return jnp.asarray(density)
 
@@ -435,6 +487,10 @@ class TopologyProblem:
         """Return the scalar objective and the selected backend's density gradient."""
         value, gradient = self._value_and_grad(self._density(density), self._beta(beta))
         value, gradient = float(value), np.asarray(gradient)
+        if self._distributed_solver is not None:
+            gradient = gradient[
+                tuple(slice(0, n) for n in self.topology.region_mask.shape)
+            ]
         if not np.isfinite(value) or not np.isfinite(gradient).all():
             raise FloatingPointError(
                 "Nonfinite objective/gradient; check FDTD stability and source spectrum."
@@ -477,7 +533,7 @@ class TopologyProblem:
             self._physical_density(
                 self._density(result.final_params), self._beta(result.beta)
             )
-        )
+        )[tuple(slice(0, n) for n in self.topology.region_mask.shape)]
 
     def _check_result(self, result):
         if result.fingerprint != self.fingerprint:
@@ -532,7 +588,14 @@ class TopologyProblem:
             beta = self.topology.beta(0, num_steps)
             result = TopologyResult(
                 self,
-                (_readonly_array(density, float),),
+                (
+                    _readonly_array(
+                        np.asarray(density)[
+                            tuple(slice(0, n) for n in self.topology.region_mask.shape)
+                        ],
+                        float,
+                    ),
+                ),
                 self.topology._optimizer().init(density),
                 initial_objective=self.value(density, beta=beta),
                 fingerprint=self.fingerprint,
@@ -545,10 +608,29 @@ class TopologyProblem:
             return (value, (value, 0.0)), gradient
 
         def update(params, state, gradient):
+            if self._distributed_solver is not None:
+                params = self._density(params)
+                gradient = self._distributed_solver.prepare_permittivity(gradient)
+                updated, state, change = distributed_update(params, state, gradient)
+                return (
+                    np.asarray(updated)[
+                        tuple(slice(0, n) for n in self.topology.region_mask.shape)
+                    ],
+                    state,
+                    float(change),
+                )
             state, change = self.topology.apply_parameter_gradient(
                 TopologyState(params, state), gradient
             )
             return state.density, state.optimizer_state, change
+
+        @jax.jit
+        def distributed_update(params, state, gradient):
+            changes, state = self.topology._optimizer().update(
+                -cast(jax.Array, jnp.where(self._mask, gradient, 0)), state, params
+            )
+            updated = jnp.clip(params + cast(jax.Array, changes), 0, 1)
+            return updated, state, jnp.max(jnp.abs(updated - params))
 
         return _optimize(
             result,
@@ -564,13 +646,23 @@ class TopologyProblem:
         )
 
     def load(self, path):
-        return load_result(
+        result = load_result(
             path,
             design=self,
             fingerprint=self.fingerprint,
             optimizer=self.topology._optimizer(),
             shape=self.topology.region_mask.shape,
+            prepare_parameters=self._density
+            if self._distributed_solver is not None
+            else None,
         )
+        if self._distributed_solver is not None:
+            from beamz.simulation.sharding import place_tree
+
+            result = replace(
+                result, optimizer_state=place_tree(self.program, result.optimizer_state)
+            )
+        return result
 
     def material_simulation(self, density, *, beta=1.0):
         """Create an ordinary simulation with the identical density material map."""

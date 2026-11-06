@@ -163,7 +163,16 @@ class InverseDesignResult:
 TopologyResult = InverseDesignResult
 
 
-def load_result(path, *, design, fingerprint, optimizer, shape, schedule=None):
+def load_result(
+    path,
+    *,
+    design,
+    fingerprint,
+    optimizer,
+    shape,
+    schedule=None,
+    prepare_parameters=None,
+):
     """Restore against a known design and optimizer; never deserialize code."""
     with np.load(path, allow_pickle=False) as saved:
         meta = json.loads(str(saved["metadata"]))
@@ -200,9 +209,14 @@ def load_result(path, *, design, fingerprint, optimizer, shape, schedule=None):
             )
         ) or not np.isfinite(grads).all():
             raise ValueError("Invalid checkpoint gradient shape or values.")
+        parameters = (
+            prepare_parameters(params[-1])
+            if prepare_parameters is not None
+            else jax.numpy.asarray(params[-1], dtype=jax.numpy.float32)
+        )
         state = load_optimizer_state(
             saved,
-            optimizer.init(jax.numpy.asarray(params[-1], dtype=jax.numpy.float32)),
+            optimizer.init(parameters),
             count=meta["leaf_count"],
             prefix="opt_",
         )

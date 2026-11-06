@@ -16,13 +16,13 @@ _CURL = (((2, 1), (1, 0)), ((0, 0), (2, 2)), ((1, 2), (0, 1)))
 _EDGES = (("front", "back"), ("bottom", "top"), ("left", "right"))
 
 
-def supported(program):
+def supported(program, *, differentiable=False):
     return (
         program.config.backend == "jax"
         and program.config.is_3d
         and program.sharding.layout.enabled
         and program.config.metric_kind == "isotropic_uniform"
-        and program.boundary.cpml.enabled
+        and (program.boundary.cpml.enabled or differentiable)
         and not program.coefficients.e_inverse_offdiagonal.size
     )
 
@@ -34,8 +34,12 @@ def _phase(state, ctx, coeffs, *, phase):
     prefix, other = ("h", "e") if phase == 0 else ("e", "h")
     targets = tuple(getattr(state, prefix + c) for c in "xyz")
     sources = tuple(getattr(state, other + c) for c in "xyz")
+    native_coefficients = ctx.config.backend != "jax"
     sigmas = tuple(
-        getattr(coeffs, f"{prefix}_{'sigma_m' if phase == 0 else 'conductivity'}_{c}")
+        getattr(
+            coeffs,
+            f"{prefix}_{'decay' if native_coefficients else 'sigma_m' if phase == 0 else 'conductivity'}_{c}",
+        )
         for c in "xyz"
     )
     scales = tuple(getattr(coeffs, f"{prefix}_source_{c}") for c in "xyz")
@@ -138,6 +142,9 @@ def _phase(state, ctx, coeffs, *, phase):
                         allowed = allowed | (coordinate == source_stop)
                     derivative = cast(jax.Array, jnp.where(allowed, derivative, 0))
                 term_index = 2 * component + which
+                if not terms:
+                    curl = curl + (1 if which == 0 else -1) * derivative
+                    continue
                 term = terms[term_index]
                 memory = (
                     memories[term_index][0]
@@ -175,8 +182,12 @@ def _phase(state, ctx, coeffs, *, phase):
                     next_memory[None, ...] if term.axis == axis else next_memory
                 )
             signed_curl = -curl if phase == 0 else curl
-            next_field = target + materials[3 + component] * (
-                signed_curl - materials[component] * target
+            next_field = (
+                materials[component] * target + materials[3 + component] * signed_curl
+                if native_coefficients
+                else target
+                + materials[3 + component]
+                * (signed_curl - materials[component] * target)
             )
             fields.append(jnp.where(valid & ~constrained, next_field, 0))
         return (*fields, *next_memories)
