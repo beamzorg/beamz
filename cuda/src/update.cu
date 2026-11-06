@@ -1740,6 +1740,14 @@ cudaError_t EnqueueMstepTile(cudaStream_t stream, const BeamzLaunch &h,
     scalar_h &= h.inputs[6 + c].rank == 0;
   }
   if (e.inputs[9].element_type == kBeamzS32) {
+    // The lean core decodes only 8-bit codes (four per word). Constant-block
+    // storage (rank-2 int32 headers, one per 32 samples) indexes a much
+    // shorter array: decoding it as codes reads far past its end. Those
+    // materials take the general column kernel, which handles both layouts.
+    bool byte_codes = true;
+    for (int c = 0; c < 3; ++c) byte_codes &= e.inputs[9 + c].rank != 2;
+    if (scalar_h && !byte_codes)
+      return LaunchMstepColumn<true, true, X, Y>(stream, h, e, final, masks, bounds, segment);
     if (scalar_h) {
       MstepPackedCoreView v{};
       v.min_y = v.min_x = std::numeric_limits<int>::max();
