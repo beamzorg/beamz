@@ -83,6 +83,28 @@ def mstep_plan_inputs(program, groups, monitors):
     return stored_shapes, cpml, stored_groups, indices
 
 
+def _expand_material_blocks(coeffs, state):
+    """Replace rank-2 constant-block E coefficients with dense exact values."""
+    from .material_blocks import differentiable_coefficients
+
+    blocked = {
+        c
+        for c in "xyz"
+        if getattr(coeffs, "e_source_" + c).dtype == jnp.int32
+        and getattr(coeffs, "e_source_" + c).ndim == 2
+    }
+    if not blocked:
+        return coeffs
+    expanded = differentiable_coefficients(coeffs, state)
+    return coeffs._replace(
+        **{
+            f"e_{kind}_{c}": getattr(expanded, f"e_{kind}_{c}")
+            for c in blocked
+            for kind in ("decay", "source")
+        }
+    )
+
+
 def _permute_monitor_arena(values, counts, components):
     """Move six component blocks without materializing a per-value index table."""
     if not counts.size:
@@ -229,6 +251,11 @@ def wrap_program_call(original, axes):
                 }
             ),
         )
+        # Schedules share prepared coefficients (see _preparation_key), so a
+        # rotated run can receive the streamed path's constant-block encoding.
+        # Its 32-sample blocks follow the unrotated order and cannot be
+        # transposed in place: expand them to exact dense values first.
+        coeffs = _expand_material_blocks(coeffs, state)
         material = {
             name: transpose(
                 getattr(coeffs, name[:-1] + "xyz"[components["xyz".index(name[-1])]])
