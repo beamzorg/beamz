@@ -3,7 +3,7 @@
 
 #include "sharded_cell.h"
 
-#ifdef __CUDACC__
+#ifdef BEAMZ_GPU_COMPILER
 #define BEAMZ_SCHEDULE __host__ __device__ inline
 #else
 #define BEAMZ_SCHEDULE inline

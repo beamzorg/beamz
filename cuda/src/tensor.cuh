@@ -1,7 +1,7 @@
 // Included after UpdateComponent: reuse exactly the streamed curl and CPML
 // arithmetic, then apply the reciprocal shared-node constitutive correction.
 template <bool Cpml, int MetricKind, bool Packed = false>
-__global__ void TensorElectricUpdate(BeamzLaunch launch, BeamzTensorLaunch tensor) {
+__global__ void TensorElectricUpdate(BEAMZ_ARG(BeamzLaunch) launch, BEAMZ_ARG(BeamzTensorLaunch) tensor) {
   const int x = blockIdx.x * blockDim.x + threadIdx.x;
   const int y = blockIdx.y * blockDim.y + threadIdx.y;
   const int z = blockIdx.z * blockDim.z + threadIdx.z;
@@ -80,7 +80,7 @@ __device__ __forceinline__ void AddTensorComponent(
       launch.dt_over_eps * cross;
 }
 
-__global__ void AddTensorCorrection(BeamzLaunch launch, BeamzTensorLaunch tensor) {
+__global__ void AddTensorCorrection(BEAMZ_ARG(BeamzLaunch) launch, BEAMZ_ARG(BeamzTensorLaunch) tensor) {
   const int x = blockIdx.x * blockDim.x + threadIdx.x;
   const int y = blockIdx.y * blockDim.y + threadIdx.y;
   const int z = blockIdx.z * blockDim.z + threadIdx.z;
@@ -94,22 +94,22 @@ void EnqueueTensorElectric(cudaStream_t stream, const BeamzLaunch& launch,
                           dim3 blocks, dim3 threads) {
   const bool packed = launch.inputs[9].element_type == kBeamzS32;
   if (launch.nterms && packed)
-    TensorElectricUpdate<true, MetricKind, true><<<blocks, threads, 0, stream>>>(
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, TensorElectricUpdate<true, MetricKind, true>)(
         launch, *launch.tensor);
   else if (packed)
-    TensorElectricUpdate<false, MetricKind, true><<<blocks, threads, 0, stream>>>(
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, TensorElectricUpdate<false, MetricKind, true>)(
         launch, *launch.tensor);
   else if (launch.nterms)
-    TensorElectricUpdate<true, MetricKind><<<blocks, threads, 0, stream>>>(
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, TensorElectricUpdate<true, MetricKind>)(
         launch, *launch.tensor);
   else
-    TensorElectricUpdate<false, MetricKind><<<blocks, threads, 0, stream>>>(
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, TensorElectricUpdate<false, MetricKind>)(
         launch, *launch.tensor);
   const auto& cross = launch.tensor->cross;
   const dim3 correction_blocks(
       (cross.dims[2] + threads.x - 1) / threads.x,
       (cross.dims[1] + threads.y - 1) / threads.y,
       (cross.dims[0] + threads.z - 1) / threads.z);
-  AddTensorCorrection<<<correction_blocks, threads, 0, stream>>>(
+  BEAMZ_LAUNCH(correction_blocks, threads, 0, stream, AddTensorCorrection)(
       launch, *launch.tensor);
 }

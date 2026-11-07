@@ -112,12 +112,12 @@ MstepStages(float *shared, const FusedYeePhase &h, const FusedYeePhase &e,
 }
 
 template <bool Packed, bool ScalarH, int X, int Y>
-__global__ __launch_bounds__(MstepTile<X,Y>::threads) void MstepColumnCore(
-    const __grid_constant__ FusedYeePhase h,
-    const __grid_constant__ FusedYeePhase e,
-    const __grid_constant__ PairFieldOutputs final,
-    const __grid_constant__ BeamzBuffer masks,
-    const __grid_constant__ BeamzBuffer bounds, int segment) {
+__global__ __launch_bounds__((MstepTile<X,Y>::threads)) void MstepColumnCore(
+    BEAMZ_GRID_ARG(FusedYeePhase) h,
+    BEAMZ_GRID_ARG(FusedYeePhase) e,
+    BEAMZ_GRID_ARG(PairFieldOutputs) final,
+    BEAMZ_GRID_ARG(BeamzBuffer) masks,
+    BEAMZ_GRID_ARG(BeamzBuffer) bounds, int segment) {
   const int ox = blockIdx.x * X, oy = blockIdx.y * Y;
   const int shift = ((oy % 16) / 8) * 2 + (ox % 32) / 16;
   const int mask = static_cast<const int *>(masks.data)[(oy / 16) * masks.dims[1] + ox / 32] >> shift;
@@ -135,7 +135,7 @@ __global__ __launch_bounds__(MstepTile<X,Y>::threads) void MstepColumnCore(
       hc.source[c] = static_cast<const float *>(h.inputs[9 + c].data)[0];
     }
   }
-  extern __shared__ float shared[];
+  BEAMZ_DYNAMIC_SHARED(float, shared);
   for (int wave = 0; wave < zt - zb + 3; ++wave) {
     const int y = threadIdx.x / MstepTile<X,Y>::wx;
     const int x = threadIdx.x % MstepTile<X,Y>::wx;
@@ -260,7 +260,7 @@ MstepPackedStage(float *shared, const MstepPackedCoreView &v,
 }
 
 template <int X, int Y>
-__global__ __launch_bounds__(MstepTile<X,Y>::threads, 1) void MstepPackedColumnCore(
+__global__ BEAMZ_LAUNCH_BOUNDS((MstepTile<X,Y>::threads), 1) void MstepPackedColumnCore(
     const MstepPackedCoreView v, const int *masks, const int *bounds, int ntx, int segment) {
   const int ox = blockIdx.x * X, oy = blockIdx.y * Y;
   const int shift = ((oy % 16) / 8) * 2 + (ox % 32) / 16;
@@ -295,7 +295,7 @@ __global__ __launch_bounds__(MstepTile<X,Y>::threads, 1) void MstepPackedColumnC
     final_h[c] = MstepCoreOffset(v.output[c], zb - 3, l3.y, l3.x);
     next_input[c] = MstepCoreOffset(v.input[3 + c], zb, gy, gx);
   }
-  extern __shared__ float shared[];
+  BEAMZ_DYNAMIC_SHARED(float, shared);
   // Two E0 planes rotate through the input ring. Prefetch p+2 after E1's last
   // use of p, while H2/E2 consume separate shared rings. The block waits before
   // the next wave may read a neighbour's asynchronous copy.
@@ -318,17 +318,17 @@ __global__ __launch_bounds__(MstepTile<X,Y>::threads, 1) void MstepPackedColumnC
 #pragma unroll
       for (int c = 0; c < 3; ++c) {
         const auto &f = v.input[3 + c];
-        __pipeline_memcpy_async(&MstepPackedInput<X,Y>(shared, c, p + 2, wy, wx),
-                                f.data + next_input[c], sizeof(float));
+        BEAMZ_ASYNC_COPY_F32((&MstepPackedInput<X,Y>(shared, c, p + 2, wy, wx)),
+                             (f.data + next_input[c]));
       }
-      __pipeline_commit();
+      BEAMZ_ASYNC_COMMIT();
     }
     if (wave >= 2)
       MstepPackedStage<X,Y,2>(shared, v, hc, l2, p - 1, owned, old_h, final_h);
     if (wave >= 3)
       MstepPackedStage<X,Y,3>(shared, v, hc, l3, p - 1, owned, final_e, final_h);
     if (wave + 1 < waves) {
-      __pipeline_wait_prior(0);
+      BEAMZ_ASYNC_WAIT_ALL();
       __syncthreads();
 #pragma unroll
       for (int c = 0; c < 3; ++c) {
@@ -343,8 +343,8 @@ __global__ __launch_bounds__(MstepTile<X,Y>::threads, 1) void MstepPackedColumnC
 }
 
 template <int Phase, bool Cpml, bool Packed, bool UniformCpml = false>
-__global__ void MstepEdgePhase(const __grid_constant__ BeamzLaunch launch,
-                               const __grid_constant__ BeamzBuffer cells,
+__global__ void MstepEdgePhase(BEAMZ_GRID_ARG(BeamzLaunch) launch,
+                               BEAMZ_GRID_ARG(BeamzBuffer) cells,
                                int ny, int nx) {
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= cells.dims[0])

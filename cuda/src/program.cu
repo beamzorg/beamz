@@ -1,4 +1,4 @@
-#include <cuda_runtime_api.h>
+#include "gpu_runtime.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -453,10 +453,19 @@ int LaunchTemporalYeeProgram(void* raw_stream,
   auto enqueue = [&]() {
     cudaError_t error = cudaSuccess;
     for (int32_t pair = 0; pair < program.nsteps / 2; ++pair) {
+#if defined(BEAMZ_PLATFORM_CPU)
+      // The fused full step keeps H in shared memory. On the CPU the same
+      // bank rotation runs as ordinary phases: e_ab reads h_ab's outputs.
+      for (const BeamzLaunch* phase : {&h_ab, &e_ab, &h_ba, &e_ba}) {
+        error = BeamzEnqueuePhase(raw_stream, *phase);
+        if (error != cudaSuccess) return error;
+      }
+#else
       error = BeamzEnqueueFusedFullStep(stream, h_ab, e_ab);
       if (error != cudaSuccess) return error;
       error = BeamzEnqueueFusedFullStep(stream, h_ba, e_ba);
       if (error != cudaSuccess) return error;
+#endif
     }
     for (int32_t step = 2 * (program.nsteps / 2); step < program.nsteps;
          ++step) {
@@ -477,6 +486,11 @@ int LaunchTemporalYeeProgram(void* raw_stream,
 // tile tails and shell intersections without allocating multi-million-cell
 // grids.
 bool FuseCpmlCore(const BeamzProgramLaunch &program) {
+#if defined(BEAMZ_PLATFORM_CPU)
+  // The fused interior keeps a shared-memory ring; not available on the CPU.
+  (void)program;
+  return false;
+#else
   if (!ScheduleFlagEnabled(program, kNativeScheduleCombinedCpmlCore))
     return false;
   const char *override = std::getenv("BEAMZ_CUDA_CPML_CORE_FUSION");
@@ -503,6 +517,7 @@ bool FuseCpmlCore(const BeamzProgramLaunch &program) {
                              device) != cudaSuccess)
     return false;
   return major == 8 && minor == 6;
+#endif
 }
 
 // Two completed timesteps share tile-local fields in the deep interior. The
@@ -700,6 +715,9 @@ int LaunchTemporalCpmlProgram(void *raw_stream,
   const char *spatial_choice=std::getenv("BEAMZ_CUDA_CPML_SPATIAL");
   bool spatial=spatial_choice && std::strcmp(spatial_choice,"1")==0 &&
       CombinedCpmlCoreSupported(program) && !FlagEnabled(h_ab,kBeamzCpmlPair);
+#if defined(BEAMZ_PLATFORM_CPU)
+  spatial = false;  // The fused CPML step uses shared-memory tiles.
+#endif
   const int psi_type=h_ab.inputs[31].element_type;
   for(int t=0;t<6;++t)
     spatial &= h_ab.inputs[31+t].element_type==psi_type &&

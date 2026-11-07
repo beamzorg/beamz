@@ -3,6 +3,8 @@
 
 #include <cstdint>
 
+#include "gpu_device.h"
+
 enum BeamzElementType : int32_t {
   kBeamzF32 = 0,
   kBeamzS32 = 1,
@@ -25,7 +27,7 @@ struct BeamzBuffer {
   int32_t compact_nx = 0;
 };
 
-#ifdef __CUDACC__
+#ifdef BEAMZ_GPU_COMPILER
 #define BEAMZ_HD __host__ __device__ __forceinline__
 #else
 #define BEAMZ_HD inline

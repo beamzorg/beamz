@@ -1,4 +1,4 @@
-#include <cuda_runtime_api.h>
+#include "gpu_runtime.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -129,8 +129,8 @@ __device__ __forceinline__ void ApplySourceGroupCell(
 }
 
 template <int Timing>
-__global__ void ApplySingleSourceGroup(BeamzBuffer target,
-                                       BeamzSourceGroupLaunch group,
+__global__ void ApplySingleSourceGroup(BEAMZ_ARG(BeamzBuffer) target,
+                                       BEAMZ_ARG(BeamzSourceGroupLaunch) group,
                                        int step_offset,
                                        int metallic_edges) {
   const int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -231,8 +231,8 @@ __device__ __forceinline__ void ApplyCoincidentSourceGroupCell(
 }
 
 template <bool Atomic>
-__global__ void ApplySourceGroupBatched(BeamzBuffer target,
-                                        BeamzSourceGroupLaunch group,
+__global__ void ApplySourceGroupBatched(BEAMZ_ARG(BeamzBuffer) target,
+                                        BEAMZ_ARG(BeamzSourceGroupLaunch) group,
                                         int z_blocks, int step_offset,
                                         int metallic_edges) {
   const int source_index = blockIdx.z / z_blocks;
@@ -246,8 +246,8 @@ __global__ void ApplySourceGroupBatched(BeamzBuffer target,
                                metallic_edges, z, y, x);
 }
 
-__global__ void ApplyCoincidentSourceGroup(BeamzBuffer target,
-                                            BeamzSourceGroupLaunch group,
+__global__ void ApplyCoincidentSourceGroup(BEAMZ_ARG(BeamzBuffer) target,
+                                            BEAMZ_ARG(BeamzSourceGroupLaunch) group,
                                             int step_offset,
                                             int metallic_edges) {
   const int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -268,7 +268,7 @@ struct SourcePhasePlan {
   int high[3];
 };
 
-__global__ void ApplySourcePhase(SourcePhasePlan plan, int step,
+__global__ void ApplySourcePhase(BEAMZ_ARG(SourcePhasePlan) plan, int step,
                                  int metallic_edges) {
   const int block = blockIdx.x;
   const int index = block < plan.ends[0] ? 0 : (block < plan.ends[1] ? 1 : 2);
@@ -320,27 +320,27 @@ cudaError_t LaunchSourceGroup(cudaStream_t stream, const BeamzLaunch& launch,
       launch_z_blocks);
   if (single) {
     if (group.timing == 0) {
-      ApplySingleSourceGroup<0><<<blocks, threads, 0, stream>>>(
+      BEAMZ_LAUNCH(blocks, threads, 0, stream, ApplySingleSourceGroup<0>)(
           target, group, step, launch.metallic_edges);
     } else if (group.timing == 1) {
-      ApplySingleSourceGroup<1><<<blocks, threads, 0, stream>>>(
+      BEAMZ_LAUNCH(blocks, threads, 0, stream, ApplySingleSourceGroup<1>)(
           target, group, step, launch.metallic_edges);
     } else {
-      ApplySingleSourceGroup<2><<<blocks, threads, 0, stream>>>(
+      BEAMZ_LAUNCH(blocks, threads, 0, stream, ApplySingleSourceGroup<2>)(
           target, group, step, launch.metallic_edges);
     }
     return cudaPeekAtLastError();
   }
   if (coincident) {
-    ApplyCoincidentSourceGroup<<<blocks, threads, 0, stream>>>(
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, ApplyCoincidentSourceGroup)(
         target, group, step, launch.metallic_edges);
     return cudaPeekAtLastError();
   }
   if (group.disjoint != 0) {
-    ApplySourceGroupBatched<false><<<blocks, threads, 0, stream>>>(
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, ApplySourceGroupBatched<false>)(
         target, group, z_blocks, step, launch.metallic_edges);
   } else {
-    ApplySourceGroupBatched<true><<<blocks, threads, 0, stream>>>(
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, ApplySourceGroupBatched<true>)(
         target, group, z_blocks, step, launch.metallic_edges);
   }
   return cudaPeekAtLastError();
@@ -356,7 +356,7 @@ __device__ __forceinline__ float ObservationTime(
                   static_cast<const float*>(monitors.time.data)[0]);
 }
 
-__global__ void PrepareDftPhases(DftFields fields, BeamzDftGroupLaunch monitors,
+__global__ void PrepareDftPhases(BEAMZ_ARG(DftFields) fields, BEAMZ_ARG(BeamzDftGroupLaunch) monitors,
                                  int step_offset) {
   const int frequency = blockIdx.x * blockDim.x + threadIdx.x;
   const int monitor = blockIdx.y;
@@ -409,8 +409,8 @@ __global__ void PrepareDftPhases(DftFields fields, BeamzDftGroupLaunch monitors,
 }
 
 template <bool SingleMonitor, bool CachedPhase>
-__global__ void AccumulateDftGroups(DftFields fields,
-                                    BeamzDftGroupLaunch monitors,
+__global__ void AccumulateDftGroups(BEAMZ_ARG(DftFields) fields,
+                                    BEAMZ_ARG(BeamzDftGroupLaunch) monitors,
                                     int step_offset) {
   const int point = blockIdx.x * blockDim.x + threadIdx.x;
   const int frequency = blockIdx.y * blockDim.y + threadIdx.y;
@@ -462,7 +462,7 @@ __global__ void AccumulateDftGroups(DftFields fields,
     phase_sin = static_cast<const float*>(monitors.phase_sin.data)[phase_offset];
     phase_cos = static_cast<const float*>(monitors.phase_cos.data)[phase_offset];
     if (window == 0.0f) return;
-  } else if (threadIdx.x == 0) {
+  } else if (BEAMZ_BROADCAST_LEADER) {
     const int64_t absolute_step =
         static_cast<int64_t>(
             static_cast<const int32_t*>(monitors.current_step.data)[0]) +
@@ -484,9 +484,11 @@ __global__ void AccumulateDftGroups(DftFields fields,
               &phase_cos);
     }
   }
-  window = __shfl_sync(0xffffffff, window, 0);
-  phase_sin = __shfl_sync(0xffffffff, phase_sin, 0);
-  phase_cos = __shfl_sync(0xffffffff, phase_cos, 0);
+  // Blocks are kTileX = 32 threads wide and each row has its own frequency:
+  // broadcast within 32-lane segments, so 64-wide waves (two rows) stay exact.
+  window = __shfl_sync(BEAMZ_FULL_LANE_MASK, window, 0, kTileX);
+  phase_sin = __shfl_sync(BEAMZ_FULL_LANE_MASK, phase_sin, 0, kTileX);
+  phase_cos = __shfl_sync(BEAMZ_FULL_LANE_MASK, phase_cos, 0, kTileX);
   if (window == 0.0f) return;
   if (point >= point_count) return;
   if (component == 0 && point == 0) {
@@ -533,9 +535,9 @@ __global__ void AccumulateDftGroups(DftFields fields,
 // Interpolation geometry is shared by both times and every frequency. Gather
 // once per point, retaining the original neighbor accumulation order.
 __global__ void
-GatherDftPair(const __grid_constant__ DftFields first,
-              const __grid_constant__ DftFields second,
-              const __grid_constant__ BeamzDftGroupLaunch monitors) {
+GatherDftPair(BEAMZ_GRID_ARG(DftFields) first,
+              BEAMZ_GRID_ARG(DftFields) second,
+              BEAMZ_GRID_ARG(BeamzDftGroupLaunch) monitors) {
   const int point = blockIdx.x * blockDim.x + threadIdx.x;
   const int monitor = blockIdx.y / 6, component = blockIdx.y % 6;
   const auto *counts = static_cast<const int *>(monitors.counts.data);
@@ -582,9 +584,9 @@ GatherDftPair(const __grid_constant__ DftFields first,
 // accumulator in registers between them. The intermediate field bank is sparse
 // but includes every interpolation neighbor in this gather plan.
 __global__ void
-AccumulateDftPair(const __grid_constant__ DftFields first,
-                  const __grid_constant__ DftFields second,
-                  const __grid_constant__ BeamzDftGroupLaunch monitors) {
+AccumulateDftPair(BEAMZ_GRID_ARG(DftFields) first,
+                  BEAMZ_GRID_ARG(DftFields) second,
+                  BEAMZ_GRID_ARG(BeamzDftGroupLaunch) monitors) {
   const int point = blockIdx.x * blockDim.x + threadIdx.x;
   const int frequency = blockIdx.y * blockDim.y + threadIdx.y;
   const int lane = blockIdx.z * blockDim.z + threadIdx.z;
@@ -659,8 +661,8 @@ AccumulateDftPair(const __grid_constant__ DftFields first,
 // Small frequency plans keep the original fused kernel.
 constexpr int kDftFrequencyBatch = 8;
 __global__ void AccumulateDftReusedSamples(
-    const __grid_constant__ DftFields fields,
-    const __grid_constant__ BeamzDftGroupLaunch monitors) {
+    BEAMZ_GRID_ARG(DftFields) fields,
+    BEAMZ_GRID_ARG(BeamzDftGroupLaunch) monitors) {
   const int point = blockIdx.x * blockDim.x + threadIdx.x;
   const int monitor = blockIdx.y / 6, component = blockIdx.y % 6;
   const int first_frequency = blockIdx.z * kDftFrequencyBatch;
@@ -723,8 +725,8 @@ __global__ void AccumulateDftReusedSamples(
 // Traverse the exact packed accumulator arena instead, retaining frequency
 // parallelism. Bound monitor count so the small descriptor search stays cheap.
 __global__ void AccumulateDftPacked(
-    const __grid_constant__ DftFields fields,
-    const __grid_constant__ BeamzDftGroupLaunch monitors) {
+    BEAMZ_GRID_ARG(DftFields) fields,
+    BEAMZ_GRID_ARG(BeamzDftGroupLaunch) monitors) {
   const int offset = blockIdx.x * blockDim.x + threadIdx.x;
   if (offset >= monitors.dft_re.dims[0]) return;
   const auto* counts = static_cast<const int32_t*>(monitors.counts.data);
@@ -806,7 +808,7 @@ cudaError_t LaunchDftGroups(cudaStream_t stream, const BeamzLaunch &h_launch,
     const dim3 phase_blocks(
         (monitors.frequencies.dims[1] + phase_threads.x - 1) / phase_threads.x,
         monitors.monitor_count);
-    PrepareDftPhases<<<phase_blocks, phase_threads, 0, stream>>>(
+    BEAMZ_LAUNCH(phase_blocks, phase_threads, 0, stream, PrepareDftPhases)(
         fields, monitors, step);
     if (cudaError_t error = cudaPeekAtLastError(); error != cudaSuccess) {
       return error;
@@ -821,26 +823,24 @@ cudaError_t LaunchDftGroups(cudaStream_t stream, const BeamzLaunch &h_launch,
   if (packed_launch) {
     const int threads = 256;
     const int blocks = (monitors.dft_re.dims[0] + threads - 1) / threads;
-    AccumulateDftPacked<<<blocks, threads, 0, stream>>>(fields, monitors);
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, AccumulateDftPacked)(fields, monitors);
   } else if (cache_phase && monitors.frequencies.dims[1] >= 16) {
     const dim3 reuse_threads(128);
     const dim3 reuse_blocks(
         (monitors.indices.dims[2] + reuse_threads.x - 1) / reuse_threads.x,
         monitors.monitor_count * 6,
         (monitors.frequencies.dims[1] + kDftFrequencyBatch - 1) / kDftFrequencyBatch);
-    AccumulateDftReusedSamples<<<reuse_blocks, reuse_threads, 0, stream>>>(
+    BEAMZ_LAUNCH(reuse_blocks, reuse_threads, 0, stream, AccumulateDftReusedSamples)(
         fields, monitors);
   } else if (monitors.monitor_count == 1 && cache_phase) {
-    AccumulateDftGroups<true, true>
-        <<<blocks, threads, 0, stream>>>(fields, monitors, step);
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, AccumulateDftGroups<true, true>)(fields, monitors, step);
   } else if (monitors.monitor_count == 1) {
-    AccumulateDftGroups<true, false>
-        <<<blocks, threads, 0, stream>>>(fields, monitors, step);
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, AccumulateDftGroups<true, false>)(fields, monitors, step);
   } else if (cache_phase) {
-    AccumulateDftGroups<false, true><<<blocks, threads, 0, stream>>>(
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, AccumulateDftGroups<false, true>)(
         fields, monitors, step);
   } else {
-    AccumulateDftGroups<false, false><<<blocks, threads, 0, stream>>>(
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, AccumulateDftGroups<false, false>)(
         fields, monitors, step);
   }
   return cudaPeekAtLastError();
@@ -918,7 +918,7 @@ cudaError_t BeamzEnqueueSourcePhase(cudaStream_t stream, const BeamzLaunch& h,
   if (active == 1 && !shell_only && inner_margin < 0)
     return BeamzEnqueueSourceGroup(stream, h, plan.targets[last],
                                    plan.groups[last], step);
-  ApplySourcePhase<<<total, threads, 0, stream>>>(plan, step, h.metallic_edges);
+  BEAMZ_LAUNCH(total, threads, 0, stream, ApplySourcePhase)(plan, step, h.metallic_edges);
   return cudaPeekAtLastError();
 }
 
@@ -936,18 +936,17 @@ cudaError_t BeamzEnqueueDftPair(cudaStream_t stream, const BeamzLaunch &h1,
   const auto first = MakeDftFields(h1, e1), second = MakeDftFields(h2, e2);
   const dim3 phase_blocks((monitors.frequencies.dims[1] + 31) / 32,
                           monitors.monitor_count, 2);
-  PrepareDftPhases<<<phase_blocks, 32, 0, stream>>>(first, monitors, step);
+  BEAMZ_LAUNCH(phase_blocks, 32, 0, stream, PrepareDftPhases)(first, monitors, step);
   if (auto error = cudaPeekAtLastError(); error != cudaSuccess)
     return error;
-  GatherDftPair<<<dim3((monitors.indices.dims[2] + 127) / 128,
-                       monitors.monitor_count * 6),
-                  128, 0, stream>>>(first, second, monitors);
+  BEAMZ_LAUNCH((dim3((monitors.indices.dims[2] + 127) / 128,
+                       monitors.monitor_count * 6)), 128, 0, stream, GatherDftPair)(first, second, monitors);
   if (auto error = cudaPeekAtLastError(); error != cudaSuccess)
     return error;
   const dim3 threads(32, 2, 2);
   const dim3 blocks((monitors.indices.dims[2] + 31) / 32,
                     (monitors.frequencies.dims[1] + 1) / 2,
                     (monitors.monitor_count * 6 + 1) / 2);
-  AccumulateDftPair<<<blocks, threads, 0, stream>>>(first, second, monitors);
+  BEAMZ_LAUNCH(blocks, threads, 0, stream, AccumulateDftPair)(first, second, monitors);
   return cudaPeekAtLastError();
 }
