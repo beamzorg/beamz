@@ -102,6 +102,25 @@ int main() {
 """
 
 
+MIN_MAX_PROGRAM = r"""
+#include <cstdio>
+#include "gpu_runtime.h"
+#include "gpu_device.h"
+
+template <int Z>
+__device__ int Depth(int high, int origin) { return min(Z, high - 2 - origin); }
+
+int main(int argc, char**) {
+  // Runtime operands, so the compiler cannot fold the calls away.
+  const int one = argc, sixteen = 15 + argc;
+  const long long big = 1ll << (32 + argc);
+  std::printf("%d %d %d %lld %g\n", Depth<16>(49, 29 + one), min(sixteen, 17),
+              max(one, -3), max(big, 5ll), min(2.5f, 1.5f * one));
+  return 0;
+}
+"""
+
+
 def _build(tmp_path, name, program):
     source = tmp_path / f"{name}.cc"
     source.write_text(program)
@@ -143,3 +162,12 @@ def test_cpu_barrier_stops_instead_of_racing(tmp_path):
     )
     assert result.returncode != 0
     assert "__syncthreads" in result.stderr
+
+
+@pytest.mark.skipif(COMPILER is None, reason="no C++ compiler")
+def test_cpu_integer_min_max_return_values(tmp_path):
+    """min/max return values, not references to their dead parameters."""
+    binary = _build(tmp_path, "min_max", MIN_MAX_PROGRAM)
+    result = subprocess.run([str(binary)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["16", "16", "1", str(1 << 33), "1.5"]

@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 #if defined(_OPENMP)
@@ -89,13 +90,15 @@ using std::isfinite;
 using std::isinf;
 using std::isnan;
 
-// CUDA's device min/max: integer overloads and fminf/fmaxf for floats.
+// CUDA's device min/max: integer overloads and fminf/fmaxf for floats. The
+// result is a value of the common type: decltype of a conditional over the
+// named parameters would be a reference to a parameter that dies on return.
 template <typename A, typename B>
-inline auto min(A a, B b) -> decltype(a < b ? a : b) {
+inline std::common_type_t<A, B> min(A a, B b) {
   return b < a ? b : a;
 }
 template <typename A, typename B>
-inline auto max(A a, B b) -> decltype(a < b ? a : b) {
+inline std::common_type_t<A, B> max(A a, B b) {
   return a < b ? b : a;
 }
 inline float min(float a, float b) { return std::fmin(a, b); }

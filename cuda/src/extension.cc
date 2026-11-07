@@ -30,7 +30,7 @@ BEAMZ_NB_MODULE(BEAMZ_EXTENSION_NAME, module) {
 #if !defined(BEAMZ_PLATFORM_CPU)
     // Simulated multi-device CPU runs gave wrong results that disappeared
     // when launches were serialised across XLA device threads; sharding is a
-    // GPU feature here (see docs/superpowers/plans/2026-11-06-cpu-prelude.md).
+    // GPU feature here (see the CPU section of cuda/README.md).
     registrations[kShardedTarget] =
         nb::capsule(reinterpret_cast<void*>(beamz_cuda_sharded));
 #endif
