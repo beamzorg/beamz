@@ -335,6 +335,41 @@ def test_schedule_and_reuse_are_execution_cache_inputs():
     ) != _preparation_key(cuda_keys[0])
 
 
+def test_mstep_inherits_streamed_block_encoded_e_materials():
+    """Host-side precondition of the hardware mstep block-material regression.
+
+    The streamed preparation packs binary E materials as rank-2 constant-block
+    headers next to scalar H, and mstep keys onto that same preparation, so the
+    mstep launcher must accept block headers with scalar H.
+    """
+    from beamz.simulation.compile import compile_simulation
+    from scripts.benchmark_cuda_realistic import build_simulation
+
+    sim = build_simulation(
+        SimpleNamespace(
+            shape=(37, 65, 97),
+            steps=5,
+            pml=4,
+            monitors=2,
+            frequencies=3,
+            material="binary",
+            source="gaussian",
+            monitor_type="field",
+        )
+    )
+    request = sim.to_request(num_steps=5, backend="cuda")
+    streamed, mstep = (
+        replace(request, run=replace(request.run, backend=backend))
+        for backend in ("cuda_streamed", "cuda_mstep")
+    )
+    assert _preparation_key(CompiledProgramKey.from_request(mstep)) == (
+        _preparation_key(CompiledProgramKey.from_request(streamed))
+    )
+    coefficients = compile_simulation(streamed).coefficients
+    assert all(np.ndim(getattr(coefficients, f"e_source_{c}")) == 2 for c in "xyz")
+    assert all(np.ndim(getattr(coefficients, f"h_source_{c}")) == 0 for c in "xyz")
+
+
 def test_auto_backend_cannot_silently_accept_mstep_on_2d():
     import beamz as bz
     from beamz.simulation.backend import CudaBackendUnavailable
