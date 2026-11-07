@@ -235,6 +235,11 @@ std::string BeamzGraphKey(const char* schedule, void* stream,
 cudaError_t BeamzLaunchGraph(cudaStream_t stream, const std::string& key,
                              bool cache_enabled, int32_t cache_capacity,
                              const std::function<cudaError_t()>& enqueue) {
+#if defined(BEAMZ_PLATFORM_CPU)
+  // Launches already run synchronously; there is nothing to capture.
+  (void)stream, (void)key, (void)cache_enabled, (void)cache_capacity;
+  return enqueue();
+#else
   cache_enabled = cache_enabled && cache_capacity > 0;
   const size_t capacity = static_cast<size_t>(cache_capacity);
   GraphCache& cache = CachedGraphs();
@@ -342,4 +347,5 @@ cudaError_t BeamzLaunchGraph(cudaStream_t stream, const std::string& key,
   }
   if (graph != nullptr) (void)cudaGraphDestroy(graph);
   return error;
+#endif
 }

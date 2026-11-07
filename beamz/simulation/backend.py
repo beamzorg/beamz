@@ -21,6 +21,7 @@ from beamz.simulation._cuda_abi import (
     CUDA_FIELD_PAD_Y8,
     CUDA_GRAPH_CACHE,
     CUDA_MATERIAL_ADJOINT_TARGET,
+    CUDA_SHARDED_TARGET,
     CUDA_SHELL32X4,
     CUDA_SHELL32X8,
     CUDA_STREAMED_TARGET,
@@ -40,9 +41,16 @@ ResolvedBackend = Literal["jax", "cuda_streamed", "cuda_mstep"]
 _EXTENSION_MODULE = "beamz._cuda"
 # The same native sources build for AMD GPUs through HIP as beamz._hip.
 _HIP_EXTENSION_MODULE = "beamz._hip"
+# ...and for JAX's CPU client as beamz._cpu (an OpenMP block scheduler).
+_CPU_EXTENSION_MODULE = "beamz._cpu"
+_EXTENSION_MODULES = {
+    "cuda": _EXTENSION_MODULE,
+    "rocm": _HIP_EXTENSION_MODULE,
+    "cpu": _CPU_EXTENSION_MODULE,
+}
 # XLA platform names for FFI registration, keyed by the extension's
 # ``__gpu_platform__``. Extensions predating the attribute are CUDA builds.
-_XLA_PLATFORMS = {"cuda": "CUDA", "rocm": "ROCM"}
+_XLA_PLATFORMS = {"cuda": "CUDA", "rocm": "ROCM", "cpu": "cpu"}
 _REGISTERED_MODULE: ModuleType | None = None
 _DEFAULT_CUDA_GRAPH_CACHE_CAPACITY = 32
 _MAX_CUDA_GRAPH_CACHE_CAPACITY = 4096
@@ -95,6 +103,17 @@ def cuda_flags_from_env() -> int:
     from .cuda.mstep_config import variant_flags_from_env
 
     flags |= variant_flags_from_env()
+    return flags
+
+
+def platform_cuda_flags(flags: int) -> int:
+    """Drop schedule requests the selected native build cannot run.
+
+    The CPU build has no shared memory or barriers, so requested two-step
+    tiles fall back to single steps, as unsupported tuning choices do on GPUs.
+    """
+    if _gpu_platform() == "cpu":
+        flags &= ~(CUDA_TEMPORAL_PAIR | CUDA_CPML_PAIR)
     return flags
 
 
@@ -188,8 +207,11 @@ def normalize_backend(backend: str | None) -> ExecutionBackend:
 
 
 def _gpu_platform() -> str:
-    """``"rocm"`` when JAX's GPU client is ROCm, else ``"cuda"``."""
-    for device in _gpu_devices():
+    """``"rocm"`` or ``"cuda"`` for JAX's GPU client, ``"cpu"`` without one."""
+    devices = _gpu_devices()
+    if not devices:
+        return "cpu"
+    for device in devices:
         client = getattr(device, "client", None)
         # e.g. "PJRT C API\nrocm 70200" or "PJRT C API\ncuda 13000".
         version = str(getattr(client, "platform_version", "")).lower()
@@ -200,7 +222,7 @@ def _gpu_platform() -> str:
 
 
 def _extension_module_name() -> str:
-    return _HIP_EXTENSION_MODULE if _gpu_platform() == "rocm" else _EXTENSION_MODULE
+    return _EXTENSION_MODULES[_gpu_platform()]
 
 
 def _load_extension() -> ModuleType:
@@ -241,6 +263,13 @@ def _compute_capability(device) -> int:
     return int(capability)
 
 
+def _required_targets(platform: str) -> frozenset[str]:
+    """Targets a native build must provide; the CPU build is single-device."""
+    if platform == "cpu":
+        return CUDA_STREAMED_TARGETS - {CUDA_SHARDED_TARGET}
+    return CUDA_STREAMED_TARGETS
+
+
 def _validated_registrations(extension: ModuleType) -> dict[str, object]:
     module = getattr(extension, "__name__", "native extension")
     abi_version = getattr(extension, "__abi_version__", None)
@@ -254,14 +283,15 @@ def _validated_registrations(extension: ModuleType) -> dict[str, object]:
     if not isinstance(registrations, dict) or not registrations:
         raise CudaBackendUnavailable(f"{module} exposes no FFI registrations")
     targets = {str(name) for name in registrations}
-    missing = sorted(CUDA_STREAMED_TARGETS - targets)
+    required = _required_targets(str(getattr(extension, "__gpu_platform__", "cuda")))
+    missing = sorted(required - targets)
     if missing:
         raise CudaBackendUnavailable(
             f"{module} is missing required streamed FFI targets: " + ", ".join(missing)
         )
     from ._cuda_abi import CUDA_MSTEP_TARGET
 
-    known = CUDA_STREAMED_TARGETS | ({CUDA_MSTEP_TARGET} & targets)
+    known = required | ({CUDA_MSTEP_TARGET} & targets)
     return {name: registrations[name] for name in sorted(known)}
 
 
@@ -308,13 +338,22 @@ def register_cuda_ffi_targets(module: ModuleType | None = None) -> tuple[str, ..
     return tuple(sorted(str(name) for name in registrations))
 
 
+def _cpu_extension_installed() -> bool:
+    """Whether a GPU-less process can use the native CPU (OpenMP) build."""
+    try:
+        importlib.import_module(_CPU_EXTENSION_MODULE)
+    except ImportError:
+        return False
+    return True
+
+
 def cuda_backend_status(*, register: bool = True) -> CudaBackendStatus:
     devices = _gpu_devices()
     device_names = tuple(
         str(getattr(device, "device_kind", device)) for device in devices
     )
     capabilities = tuple(_compute_capability(device) for device in devices)
-    if not devices:
+    if not devices and not _cpu_extension_installed():
         return CudaBackendStatus(
             False,
             None,
@@ -322,7 +361,8 @@ def cuda_backend_status(*, register: bool = True) -> CudaBackendStatus:
             (),
             device_names,
             capabilities,
-            "JAX has no visible GPU devices",
+            "JAX has no visible GPU devices and the native CPU build "
+            f"({_CPU_EXTENSION_MODULE}) is not installed",
         )
     try:
         extension = _load_extension()
@@ -373,7 +413,7 @@ def resolve_backend(backend: str | None) -> ResolvedBackend:
             "component (beamz._cuda on NVIDIA, beamz._hip on AMD); build it, "
             "or use backend='jax'."
         )
-    has_streamed = CUDA_STREAMED_TARGETS.issubset(status.targets)
+    has_streamed = _required_targets(status.gpu_platform).issubset(status.targets)
     if requested == "cuda_mstep":
         from ._cuda_abi import CUDA_MSTEP_TARGET
 

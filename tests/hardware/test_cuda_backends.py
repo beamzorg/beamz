@@ -17,6 +17,18 @@ from beamz.simulation.execute import build_scan, initial_program_state
 from tests.performance.h100_workloads import H100Workload
 
 STATUS = cuda_backend_status()
+# The CPU build has no shared memory: two-step requests fall back to one step.
+_PAIR_STEPS = 1 if STATUS.gpu_platform == "cpu" else 2
+
+
+def _gpu_count() -> int:
+    """Visible GPUs; zero in a CPU-only process (where JAX raises instead)."""
+    try:
+        return len(jax.devices("gpu"))
+    except RuntimeError:
+        return 0
+
+
 pytestmark = pytest.mark.skipif(
     not STATUS.available,
     reason=STATUS.reason or "CUDA backend unavailable",
@@ -151,7 +163,7 @@ def test_streamed_temporal_pair_full_state_and_continuation(
         state=_copy_state(state), num_steps=steps, backend="cuda_streamed"
     ).state
     _assert_state_close(reference, actual)
-    assert any(plan.temporal_steps == 2 for plan in plans)
+    assert any(plan.temporal_steps == _PAIR_STEPS for plan in plans)
     if steps < 33:
         reference = simulation.advance(
             state=reference, num_steps=33 - steps, backend="jax"
@@ -217,7 +229,7 @@ def test_streamed_temporal_pair_io_variants(
         state=_copy_state(state), num_steps=6, backend="cuda_streamed"
     ).state
     _assert_state_close(reference, actual)
-    assert any(plan.temporal_steps == 2 for plan in plans)
+    assert any(plan.temporal_steps == _PAIR_STEPS for plan in plans)
 
 
 @pytest.mark.parametrize("shell_tile", ["64x4", "32x8", "32x4"])
@@ -718,7 +730,11 @@ def test_streamed_cuda_realistic_sources_and_cpml_match_jax(
         num_steps=33,
         backend="cuda_streamed",
     ).state
-    _assert_state_close(reference, actual)
+    # The mode source grows these fields ~1e10x in 33 steps. Native CPU, native
+    # GPU, XLA CPU and XLA GPU then disagree pairwise by 0.7-1.5e-6 of each
+    # leaf's peak (XLA CPU alone moves 0.4e-6 with its thread count), so a
+    # 1e-6 floor sits at the float32 noise floor rather than above it.
+    _assert_state_close(reference, actual, dynamic_atol_scale=2e-6)
 
 
 @pytest.mark.parametrize("fusion", ["0", "1"])
@@ -1198,7 +1214,7 @@ def test_narrow_cpml_queue_matches_fused_state(
 @pytest.mark.parametrize("cpml", [False, True])
 def test_sharded_streamed_cuda_matches_jax_and_continuation(axis, num_devices, cpml):
     """Real FFI gate: uneven Yee supports, material interfaces, source and DFT."""
-    if len(jax.devices("gpu")) < num_devices:
+    if _gpu_count() < num_devices:
         pytest.skip(f"requires {num_devices} CUDA devices")
     simulation, state = _simulation_and_seed(cpml=cpml)
     sharding = dict(axis=axis, num_devices=num_devices, backend="gpu")
@@ -1235,7 +1251,7 @@ def test_sharded_streamed_cuda_matches_jax_and_continuation(axis, num_devices, c
     "profile", ["asymmetric_cpml", "rectilinear", "mode", "tensor"]
 )
 def test_sharded_streamed_extended_features(axis, profile):
-    if len(jax.devices("gpu")) < 2:
+    if _gpu_count() < 2:
         pytest.skip("requires two CUDA devices")
     if profile == "rectilinear":
         simulation, state = _nonuniform_simulation(metric_kind="rectilinear", cpml=True)

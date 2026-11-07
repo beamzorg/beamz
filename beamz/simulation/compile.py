@@ -1164,6 +1164,7 @@ def compile_program(
         cuda_graph_cache_capacity_from_env,
         cuda_storage_axes_from_env,
         normalize_backend,
+        platform_cuda_flags,
         resolve_backend,
     )
     from .sharding import _jax_devices_for_config
@@ -1259,7 +1260,9 @@ def compile_program(
         raise CudaBackendUnavailable(
             "cuda_mstep requires an unsharded isotropic uniform 3D grid"
         )
-    cuda_flags = cuda_flags_from_env() if resolved_backend != "jax" else 0
+    cuda_flags = (
+        platform_cuda_flags(cuda_flags_from_env()) if resolved_backend != "jax" else 0
+    )
     if requested_schedule == "mstep":
         from .cuda.mstep_config import ALLOWED_FLAGS
 

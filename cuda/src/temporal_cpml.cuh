@@ -203,13 +203,13 @@ __global__ BEAMZ_LAUNCH_BOUNDS(
                     (Mask == 2 && X == 16 && Y == 15))) ? 384 : 256,
     (Steps == 2 && Mask == 2 && X == 16 && Y == 15) ? 3 : 1)
 void TemporalCpmlPair(
-    const __grid_constant__ PairCpmlPhase h,
-    const __grid_constant__ PairCpmlPhase e,
-    const __grid_constant__ PairFieldOutputs final,
-    const __grid_constant__ FusedHSources hs,
-    const __grid_constant__ FusedHSources es,
-    const __grid_constant__ BeamzBuffer publication, PairCpmlGrid grid) {
-  extern __shared__ float shared[];
+    BEAMZ_GRID_ARG(PairCpmlPhase) h,
+    BEAMZ_GRID_ARG(PairCpmlPhase) e,
+    BEAMZ_GRID_ARG(PairFieldOutputs) final,
+    BEAMZ_GRID_ARG(FusedHSources) hs,
+    BEAMZ_GRID_ARG(FusedHSources) es,
+    BEAMZ_GRID_ARG(BeamzBuffer) publication, PairCpmlGrid grid) {
+  BEAMZ_DYNAMIC_SHARED(float, shared);
   auto tile_coordinate = [&](int axis, int local, int size) {
     const int low_count=(grid.high[axis]+size-1)/size;
     if (Mask & (1 << axis))

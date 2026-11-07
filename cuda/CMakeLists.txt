@@ -3,8 +3,8 @@ project(beamz_cuda LANGUAGES CXX)
 
 # One source tree, two GPU platforms. CUDA spelling is the source dialect;
 # src/gpu_runtime.h and src/gpu_device.h map it onto HIP.
-set(BEAMZ_GPU_PLATFORM "CUDA" CACHE STRING "GPU platform to build for: CUDA or HIP")
-set_property(CACHE BEAMZ_GPU_PLATFORM PROPERTY STRINGS CUDA HIP)
+set(BEAMZ_GPU_PLATFORM "CUDA" CACHE STRING "Platform to build for: CUDA, HIP or CPU")
+set_property(CACHE BEAMZ_GPU_PLATFORM PROPERTY STRINGS CUDA HIP CPU)
 
 option(
   BEAMZ_CUDA_FAST_MATH
@@ -60,8 +60,15 @@ elseif(BEAMZ_GPU_PLATFORM STREQUAL "HIP")
   find_package(hip CONFIG REQUIRED)
   set_source_files_properties(${BEAMZ_GPU_SOURCES} PROPERTIES LANGUAGE HIP)
   set(BEAMZ_EXTENSION_NAME _hip)
+elseif(BEAMZ_GPU_PLATFORM STREQUAL "CPU")
+  # Kernels compile as C++ and run through the OpenMP block scheduler in
+  # src/cpu_launch.h.
+  find_package(OpenMP REQUIRED COMPONENTS CXX)
+  set_source_files_properties(${BEAMZ_GPU_SOURCES} PROPERTIES LANGUAGE CXX)
+  set(BEAMZ_EXTENSION_NAME _cpu)
 else()
-  message(FATAL_ERROR "BEAMZ_GPU_PLATFORM must be CUDA or HIP, not ${BEAMZ_GPU_PLATFORM}")
+  message(FATAL_ERROR
+    "BEAMZ_GPU_PLATFORM must be CUDA, HIP or CPU, not ${BEAMZ_GPU_PLATFORM}")
 endif()
 
 nanobind_add_module(
@@ -95,6 +102,19 @@ if(BEAMZ_GPU_PLATFORM STREQUAL "CUDA")
     target_compile_options(
       ${BEAMZ_EXTENSION_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>)
   endif()
+elseif(BEAMZ_GPU_PLATFORM STREQUAL "CPU")
+  target_compile_definitions(${BEAMZ_EXTENSION_NAME} PRIVATE BEAMZ_PLATFORM_CPU)
+  set(BEAMZ_CPU_FLAGS "-O3;-march=native" CACHE STRING
+      "Optimisation and target flags for the CPU build")
+  # Explicit rounding in the kernels must not be undone by contraction.
+  target_compile_options(
+    ${BEAMZ_EXTENSION_NAME}
+    PRIVATE ${BEAMZ_CPU_FLAGS} -ffp-contract=off
+  )
+  set_source_files_properties(
+    ${BEAMZ_GPU_SOURCES} PROPERTIES COMPILE_OPTIONS "-xc++"
+  )
+  target_link_libraries(${BEAMZ_EXTENSION_NAME} PRIVATE OpenMP::OpenMP_CXX)
 else()
   set_target_properties(
     ${BEAMZ_EXTENSION_NAME}

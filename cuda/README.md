@@ -176,6 +176,94 @@ The HIP build passes the same hardware parity suite as CUDA, with an identical s
 of pre-existing failures on both platforms. Run AMD suites only when the card
 does not drive a display: a faulting kernel resets the GPU.
 
+## CPU (OpenMP)
+
+The same sources also build for JAX's CPU client as `beamz._cpu`. A third
+prelude branch, `src/cpu_launch.h`, compiles the kernels as C++ and runs every
+`BEAMZ_LAUNCH` through an OpenMP block scheduler: blocks are spread over
+threads, and the threads of a block run one after another with `x` fastest.
+Warps are one lane wide, `atomicAdd` maps to OpenMP atomics, and `blockIdx`,
+`threadIdx`, `blockDim` and `gridDim` are thread-local.
+
+```console
+cmake -S cuda -B build-cpu -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DBEAMZ_GPU_PLATFORM=CPU \
+  -DPython_EXECUTABLE="$(which python)" -Dnanobind_DIR="$(python -m nanobind --cmake_dir)"
+cmake --build build-cpu
+cp build-cpu/_cpu*.so beamz/
+```
+
+`BEAMZ_CPU_FLAGS` (default `-O3;-march=native`) sets the optimisation and target
+flags; `-ffp-contract=off` is always added. `-march=native` ties the binary to
+the build machine's ISA, which suits a local build; a wheel built for
+distribution should pass a portable baseline (e.g. `-O3;-march=x86-64-v3`).
+In a process without GPUs, BeamZ loads `beamz._cpu` and registers its targets
+for XLA's CPU platform. `backend="auto"` keeps JAX; request
+`backend="cuda_streamed"` explicitly.
+
+OpenMP and XLA keep separate thread pools. XLA's pool mostly sleeps while a
+native step runs, so the default (`OMP_NUM_THREADS` unset: one thread per
+logical CPU) is the fastest setting measured on a 7950X; 16 threads bound to
+cores were slightly slower. Lower `OMP_NUM_THREADS` when other work shares the
+machine. Do not set `OMP_WAIT_POLICY=active`: spinning workers compete with
+XLA's threads, and throughput fell tenfold.
+
+Kernels that need shared memory or barriers (two-step tiles, the fused CPML
+interior, `cuda_mstep`) cannot run this way. They all request dynamic shared
+memory, which the CPU launcher rejects with `cudaErrorNotSupported`. Scheduling
+never selects them on CPU: two-step requests fall back to single steps, and the
+`cuda_mstep` target is not registered. On the CPU `__syncthreads` aborts with
+a message: a kernel that reaches it (static `__shared__` without a dynamic
+request) would otherwise race silently.
+
+The CPU build is single-device; the sharded target is not registered. Under
+`--xla_force_host_platform_device_count`, sharded runs through `beamz._cpu`
+were wrong (relative error about 1.3, the same for every sharded axis). They
+were correct at `-O0`, under UBSan, and when a global mutex serialised
+launches, and wrong at `-O1` to `-O3` with GCC and clang. Thread-local launch
+indices were ruled out. Buffer logs showed concurrent calls from different
+device threads touching the same addresses, which points at buffer reuse
+across simulated devices in XLA's host runtime that only a fast native call
+exposes. Multi-device CPU is a test configuration, so this is left alone.
+
+Two details make the CPU build fast and reproducible. Struct kernel parameters
+use `BEAMZ_ARG(T)` / `BEAMZ_GRID_ARG(T)`, which bind by reference on the CPU
+(GPUs keep by-value parameters); copying the 4 KB launch descriptor once per
+CUDA thread had spent more than half the time in `memcpy`. OpenMP workers also
+adopt the calling XLA thread's flush-to-zero and denormals-are-zero modes, so
+results do not depend on which thread ran a block. That copy reads x86's
+MXCSR; other ISAs build with a warning and without it, until an FPCR
+equivalent exists.
+
+Same realistic workload as above (256 steps, median of 5 warm samples) on a
+Ryzen 9 7950X (16 cores, DDR5), JAX 0.9.0 CPU, GCUPS:
+
+| Shape (z×y×x) | JAX | native CPU build |
+|---|---:|---:|
+| 64×96×128 | 0.14 | 0.31 |
+| 96×160×256 | 0.11 | 0.32 |
+| 128×256×512 | 0.12 | 0.35 |
+
+The streamed interior is memory-bound, not compute-bound: with PEC walls it
+runs at about 0.5 GCUPS, moving roughly 100 bytes per cell and step, which is
+the 7950X's measured STREAM bandwidth (51 GB/s with write-allocate).
+Vectorising the kernels would therefore gain little. Only fewer bytes per step
+would: H/E fusion or several steps per pass through cache. The GPU's barrier
+kernels do that with shared memory, but running a block's threads as fibers to
+honour `__syncthreads` would cost more in switches than it saves (several
+barriers per two cell updates). A CPU-shaped schedule (H and E interleaved over
+z-chunks that stay in L3) is the remaining lever; sources and DFTs between the
+phases make it a separate piece of work.
+
+Launches below 32,768 CUDA threads (source injection, DFT phase tables) run on
+the calling thread, since waking the OpenMP team costs more than the work
+(`BEAMZ_CPU_PARALLEL_THRESHOLD`). Building with `-DBEAMZ_CPU_PROFILE` in
+`BEAMZ_CPU_FLAGS` prints wall time per kernel at exit.
+
+CI (`.github/workflows/cuda.yml`) builds this component and runs the hardware
+parity suite against JAX on CPU for every PR, and compiles the HIP component
+in a ROCm container.
+
 ## Streamed and multistep schedules
 
 `backend="cuda"` uses one CUDA component (**0.30.0 / ABI 30**) with two schedules.

@@ -7,18 +7,39 @@
 // C++ translation units, which see only BEAMZ_GPU_COMPILER and
 // BEAMZ_DEVICE_COMPILE (both undefined there).
 
-// Compiling with a GPU compiler (either pass): replaces __CUDACC__.
-#if defined(__CUDACC__) || defined(__HIPCC__)
+// Compiling with a kernel compiler (either pass): replaces __CUDACC__. On the
+// CPU platform the host compiler is the kernel compiler.
+#if defined(__CUDACC__) || defined(__HIPCC__) || defined(BEAMZ_PLATFORM_CPU)
 #define BEAMZ_GPU_COMPILER 1
 #endif
 
 // Compiling device code: replaces __CUDA_ARCH__. hip-clang never defines
 // __CUDA_ARCH__, so a bare check would silently pick host code in kernels.
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+// CPU kernels use the device numerics (explicit rounding, no contraction).
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__) || \
+    defined(BEAMZ_PLATFORM_CPU)
 #define BEAMZ_DEVICE_COMPILE 1
 #endif
 
-#if defined(BEAMZ_GPU_COMPILER)
+#if defined(BEAMZ_PLATFORM_CPU)
+
+#include "cpu_launch.h"
+
+#elif defined(BEAMZ_GPU_COMPILER)
+
+// Kernel launch, kernel last so template-argument commas need no parentheses:
+//   BEAMZ_LAUNCH(blocks, threads, shared_bytes, stream, Kernel<A, B>)(args...);
+#define BEAMZ_LAUNCH(grid, block, shared, stream, ...) \
+  __VA_ARGS__<<<grid, block, shared, stream>>>
+// Dynamic shared memory; kernels that use it cannot run on the CPU platform.
+#define BEAMZ_DYNAMIC_SHARED(type, name) extern __shared__ type name[]
+// Struct-typed kernel parameters. GPUs pass them by value in parameter space;
+// the CPU platform binds them by reference so a launch copies no descriptor
+// per CUDA thread (several kilobytes for BeamzLaunch).
+#define BEAMZ_ARG(type) type
+#define BEAMZ_GRID_ARG(type) const __grid_constant__ type
+// The lane that computes a value later broadcast across its warp.
+#define BEAMZ_BROADCAST_LEADER (threadIdx.x == 0)
 
 #if defined(BEAMZ_PLATFORM_HIP)
 

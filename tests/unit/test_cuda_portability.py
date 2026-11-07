@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 SOURCE_DIR = Path(__file__).resolve().parents[2] / "cuda" / "src"
-PRELUDES = {"gpu_runtime.h", "gpu_device.h"}
+PRELUDES = {"gpu_runtime.h", "gpu_device.h", "cpu_launch.h"}
 FORBIDDEN = {
     "__CUDA_ARCH__": re.compile(r"__CUDA_ARCH__"),
     "__CUDACC__": re.compile(r"__CUDACC__"),
@@ -20,6 +20,11 @@ FORBIDDEN = {
     "<cuda_pipeline.h>": re.compile(r"<cuda_pipeline\.h>"),
     "__pipeline_*": re.compile(r"__pipeline_\w+"),
     "__nv_bfloat16": re.compile(r"__nv_bfloat16"),
+    # The CPU platform has no <<<>>> syntax and no dynamic shared memory.
+    "<<<launch>>> (use BEAMZ_LAUNCH)": re.compile(r"<<<"),
+    "extern __shared__ (use BEAMZ_DYNAMIC_SHARED)": re.compile(r"extern\s+__shared__"),
+    # Struct kernel parameters bind by reference on the CPU platform.
+    "__grid_constant__ (use BEAMZ_GRID_ARG)": re.compile(r"__grid_constant__"),
 }
 
 

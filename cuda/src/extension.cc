@@ -13,6 +13,8 @@ using namespace beamz::cuda::abi;
 
 #if defined(BEAMZ_PLATFORM_HIP)
 constexpr const char* kGpuPlatform = "rocm";
+#elif defined(BEAMZ_PLATFORM_CPU)
+constexpr const char* kGpuPlatform = "cpu";
 #else
 constexpr const char* kGpuPlatform = "cuda";
 #endif
@@ -25,12 +27,20 @@ BEAMZ_NB_MODULE(BEAMZ_EXTENSION_NAME, module) {
     nb::dict registrations;
     registrations[kStreamedTarget] =
         nb::capsule(reinterpret_cast<void*>(beamz_cuda_streamed));
+#if !defined(BEAMZ_PLATFORM_CPU)
+    // Simulated multi-device CPU runs gave wrong results that disappeared
+    // when launches were serialised across XLA device threads; sharding is a
+    // GPU feature here (see docs/superpowers/plans/2026-11-06-cpu-prelude.md).
     registrations[kShardedTarget] =
         nb::capsule(reinterpret_cast<void*>(beamz_cuda_sharded));
+#endif
     registrations[kProgramTarget] =
         nb::capsule(reinterpret_cast<void*>(beamz_cuda_program));
+#if !defined(BEAMZ_PLATFORM_CPU)
+    // Whole-column two-step tiles need shared memory and barriers.
     registrations[kMstepTarget] =
         nb::capsule(reinterpret_cast<void *>(beamz_cuda_mstep));
+#endif
     registrations[kAdjointTarget] =
         nb::capsule(reinterpret_cast<void*>(beamz_cuda_adjoint));
     registrations[kMaterialAdjointTarget] =
