@@ -843,14 +843,19 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
         donate_state=donate_state,
     )
     if mstep_plan is not None:
-        from beamz.simulation.cuda.mstep_config import ALLOWED_FLAGS, variant_summary
+        from beamz.simulation.cuda.mstep_config import (
+            ALLOWED_FLAGS,
+            variant_summary,
+            with_steps,
+        )
 
+        flags = schedule_decision.get("mstep_cuda_flags", cfg.cuda_flags)
         step_context = replace(
             step_context,
             config=replace(
                 cfg,
-                cuda_flags=schedule_decision.get("mstep_cuda_flags", cfg.cuda_flags)
-                & ALLOWED_FLAGS,
+                # The native pass length must match the plan's levels.
+                cuda_flags=with_steps(flags & ALLOWED_FLAGS, mstep_plan.steps),
             ),
         )
         schedule_decision.update(variant_summary(step_context.config.cuda_flags))

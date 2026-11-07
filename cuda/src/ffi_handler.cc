@@ -1082,7 +1082,10 @@ MstepHandler(void *stream, ffi::RemainingArgs args, ffi::RemainingRets rets,
              int32_t logical_x, int32_t temporal_steps) {
   if (abi_version != kAbiVersion || nsteps < 1 || metric_kind != 0 ||
       (cpml_enabled != 0 && cpml_enabled != 1) || monitor_count < 0 ||
-      temporal_steps != 2 || program_layout != kProgramLayoutYeeInPlace ||
+      // The pass length is a launch flag; the attribute must agree with it.
+      temporal_steps !=
+          ((cuda_flags & beamz::cuda::abi::kBeamzMstepSteps4) ? 4 : 2) ||
+      program_layout != kProgramLayoutYeeInPlace ||
       logical_z || logical_y || logical_x || graph_cache_capacity < 0 ||
       graph_cache_capacity > 4096 || coincident_source_group_mask < 0 ||
       coincident_source_group_mask >= (1 << kSourceGroupCount) ||

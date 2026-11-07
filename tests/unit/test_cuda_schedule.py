@@ -399,7 +399,14 @@ def test_mstep_variant_flags_are_validated_and_cacheable(monkeypatch, tile, segm
     assert variant_summary(flags) == {
         "tile": tuple(map(int, tile.split("x"))),
         "column_segment": 0 if segment == "whole" else int(segment),
+        "temporal_steps": 2,
     }
+    monkeypatch.setenv("BEAMZ_CUDA_MSTEP_STEPS", "4")
+    assert variant_summary(variant_flags_from_env())["temporal_steps"] == 4
+    monkeypatch.setenv("BEAMZ_CUDA_MSTEP_STEPS", "3")
+    with pytest.raises(ValueError, match="STEPS"):
+        variant_flags_from_env()
+    monkeypatch.delenv("BEAMZ_CUDA_MSTEP_STEPS")
     monkeypatch.setenv("BEAMZ_CUDA_MSTEP_TILE", "bad")
     with pytest.raises(ValueError, match="TILE"):
         variant_flags_from_env()

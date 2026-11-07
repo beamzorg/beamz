@@ -327,7 +327,20 @@ Experimental settings retain the same two-step ownership/dependency plan:
 |---|---|
 | `BEAMZ_CUDA_MSTEP_TILE` | `16x32`, `8x32`, `8x16`, `16x16` |
 | `BEAMZ_CUDA_MSTEP_SEGMENT` | `whole`, `32`, `64`, `128`, `256` z planes |
+| `BEAMZ_CUDA_MSTEP_STEPS` | `2`, `4` steps per pass |
 | `BEAMZ_CUDA_STORAGE_AXES` | `012`, `120`, `201` right-handed cyclic orders |
+
+Four steps per pass read and write each field once per four steps instead of
+two, at the cost of a four-cell margin around CPML, sources and walls (more
+edge cells) and more shared memory: about 49 KB for 8×16 tiles and 80 KB or
+more for the larger ones, so 64 KB GPUs such as Turing can run only 8×16. A
+tile that does not fit fails at launch. On a 7950X at 256×384×768 with PEC
+walls, four steps run the core 1.65× faster than two, and the whole run at
+0.61 against 0.52 GCUPS; with CPML on every face of a small domain the extra
+edge cells cancel the gain. On a Quadro RTX 5000 with 8×16 tiles, four steps
+are 17% (PEC) and 9% (CPML on every face) faster than two at 192×384×768, but
+two steps with 16×32 tiles stay fastest there (4.3 against 3.6 GCUPS); four
+steps with 16×32 tiles need a GPU with about 80 KB of shared memory per block.
 
 Segments overlap frozen inputs and publish only owned results. Storage transforms
 are shared with streamed execution. Automatic selection changes tile/segment only

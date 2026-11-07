@@ -259,7 +259,10 @@ def choose_execution_schedule(
     shapes, cpml, planning_groups, monitor_indices = mstep_plan_inputs(
         program, groups, packed_monitors
     )
-    geometry = build_mstep_geometry(shapes, cpml, planning_groups)
+    from beamz.simulation.cuda.mstep_config import steps_from_flags
+
+    steps = steps_from_flags(cfg.cuda_flags)
+    geometry = build_mstep_geometry(shapes, cpml, planning_groups, steps)
     decision = {**decision, **geometry.summary()}
     if not geometry.core_cells:
         return None, {**decision, "reason": "no eligible columns"}
@@ -276,6 +279,7 @@ def choose_execution_schedule(
         cpml,
         planning_groups,
         monitor_indices,
+        steps,
     )
     if requested == "mstep":
         required, available = check_mstep_workspace(

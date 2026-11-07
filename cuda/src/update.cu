@@ -1674,25 +1674,29 @@ cudaError_t BeamzEnqueueSpatialCpml(cudaStream_t stream, const BeamzLaunch &h,
   return LaunchTemporalCpmlMasks<false,false,2,1>(stream,h,e,final,groups,step,{});
 }
 
-template <bool Packed, bool ScalarH, int X, int Y>
+template <bool Packed, bool ScalarH, int X, int Y, int S>
 cudaError_t LaunchMstepColumn(cudaStream_t stream, const BeamzLaunch &h,
                               const BeamzLaunch &e,
                               const PairFieldOutputs &final,
                               const BeamzBuffer &masks,
                               const BeamzBuffer &bounds, int segment) {
   // Map one thread to each lane in the shared input-plane window.
+  // A tile and step count beyond this GPU's shared memory fail here; clear
+  // the runtime's sticky last error so later launches do not inherit it.
   if (auto error = cudaFuncSetAttribute(
-          MstepColumnCore<Packed, ScalarH, X, Y>,
-          cudaFuncAttributeMaxDynamicSharedMemorySize, MstepTile<X,Y>::shared);
-      error != cudaSuccess)
+          MstepColumnCore<Packed, ScalarH, X, Y, S>,
+          cudaFuncAttributeMaxDynamicSharedMemorySize, MstepTile<X,Y,S>::shared);
+      error != cudaSuccess) {
+    (void)cudaGetLastError();
     return error;
+  }
   const dim3 blocks(masks.dims[1] * (32 / X), masks.dims[0] * (16 / Y), segment ? (h.inputs[0].dims[0] + segment - 1) / segment : 1);
-  BEAMZ_LAUNCH(blocks, BEAMZ_BARRIER_BLOCK(MstepTile<X,Y>::threads), (MstepTile<X,Y>::shared), stream, MstepColumnCore<Packed, ScalarH, X, Y>)(
+  BEAMZ_LAUNCH(blocks, BEAMZ_BARRIER_BLOCK(MstepTile<X,Y,S>::threads), (MstepTile<X,Y,S>::shared), stream, MstepColumnCore<Packed, ScalarH, X, Y, S>)(
           MakeFusedYeePhase(h), MakeFusedYeePhase(e), final, masks, bounds, segment);
   return cudaGetLastError();
 }
 
-template <int X, int Y>
+template <int X, int Y, int S>
 cudaError_t EnqueueMstepTile(cudaStream_t stream, const BeamzLaunch &h,
                                   const BeamzLaunch &e,
                                   const BeamzBuffer *final_fields,
@@ -1712,7 +1716,7 @@ cudaError_t EnqueueMstepTile(cudaStream_t stream, const BeamzLaunch &h,
     bool byte_codes = true;
     for (int c = 0; c < 3; ++c) byte_codes &= e.inputs[9 + c].rank != 2;
     if (scalar_h && !byte_codes)
-      return LaunchMstepColumn<true, true, X, Y>(stream, h, e, final, masks, bounds, segment);
+      return LaunchMstepColumn<true, true, X, Y, S>(stream, h, e, final, masks, bounds, segment);
     if (scalar_h) {
       MstepPackedCoreView v{};
       v.min_y = v.min_x = std::numeric_limits<int>::max();
@@ -1732,20 +1736,36 @@ cudaError_t EnqueueMstepTile(cudaStream_t stream, const BeamzLaunch &h,
         v.h_decay[c] = static_cast<const float *>(h.inputs[6 + c].data);
         v.h_source[c] = static_cast<const float *>(h.inputs[9 + c].data);
       }
-      if (auto err = cudaFuncSetAttribute(MstepPackedColumnCore<X,Y>,
-                        cudaFuncAttributeMaxDynamicSharedMemorySize, MstepTile<X,Y>::packed_shared);
-          err != cudaSuccess) return err;
+      if (auto err = cudaFuncSetAttribute(MstepPackedColumnCore<X,Y,S>,
+                        cudaFuncAttributeMaxDynamicSharedMemorySize, MstepTile<X,Y,S>::packed_shared);
+          err != cudaSuccess) {
+        (void)cudaGetLastError();
+        return err;
+      }
       const dim3 blocks(masks.dims[1] * (32 / X), masks.dims[0] * (16 / Y), segment ? (h.inputs[0].dims[0] + segment - 1) / segment : 1);
-      BEAMZ_LAUNCH(blocks, BEAMZ_BARRIER_BLOCK(MstepTile<X,Y>::threads), (MstepTile<X,Y>::packed_shared), stream, MstepPackedColumnCore<X,Y>)(
+      BEAMZ_LAUNCH(blocks, BEAMZ_BARRIER_BLOCK(MstepTile<X,Y,S>::threads), (MstepTile<X,Y,S>::packed_shared), stream, MstepPackedColumnCore<X,Y,S>)(
           v, static_cast<const int *>(masks.data),
           static_cast<const int *>(bounds.data), masks.dims[1], segment);
       return cudaGetLastError();
     }
-    return LaunchMstepColumn<true, false, X, Y>(stream, h, e, final, masks, bounds, segment);
+    return LaunchMstepColumn<true, false, X, Y, S>(stream, h, e, final, masks, bounds, segment);
   }
   if (scalar_h)
-    return LaunchMstepColumn<false, true, X, Y>(stream, h, e, final, masks, bounds, segment);
-  return LaunchMstepColumn<false, false, X, Y>(stream, h, e, final, masks, bounds, segment);
+    return LaunchMstepColumn<false, true, X, Y, S>(stream, h, e, final, masks, bounds, segment);
+  return LaunchMstepColumn<false, false, X, Y, S>(stream, h, e, final, masks, bounds, segment);
+}
+
+template <int S>
+cudaError_t EnqueueMstepSteps(cudaStream_t stream, const BeamzLaunch &h,
+    const BeamzLaunch &e, const BeamzBuffer *final_fields,
+    const BeamzBuffer &masks, const BeamzBuffer &bounds, int segment) {
+  if (h.cuda_flags & beamz::cuda::abi::kBeamzMstepTile8x32)
+    return EnqueueMstepTile<32,8,S>(stream,h,e,final_fields,masks,bounds,segment);
+  if (h.cuda_flags & beamz::cuda::abi::kBeamzMstepTile8x16)
+    return EnqueueMstepTile<16,8,S>(stream,h,e,final_fields,masks,bounds,segment);
+  if (h.cuda_flags & beamz::cuda::abi::kBeamzMstepTile16x16)
+    return EnqueueMstepTile<16,16,S>(stream,h,e,final_fields,masks,bounds,segment);
+  return EnqueueMstepTile<32,16,S>(stream,h,e,final_fields,masks,bounds,segment);
 }
 
 cudaError_t BeamzEnqueueMstepCore(cudaStream_t stream, const BeamzLaunch &h,
@@ -1755,13 +1775,9 @@ cudaError_t BeamzEnqueueMstepCore(cudaStream_t stream, const BeamzLaunch &h,
       (h.cuda_flags & beamz::cuda::abi::kBeamzMstepSegment64) ? 64 :
       (h.cuda_flags & beamz::cuda::abi::kBeamzMstepSegment128) ? 128 :
       (h.cuda_flags & beamz::cuda::abi::kBeamzMstepSegment256) ? 256 : 0;
-  if (h.cuda_flags & beamz::cuda::abi::kBeamzMstepTile8x32)
-    return EnqueueMstepTile<32,8>(stream,h,e,final_fields,masks,bounds,segment);
-  if (h.cuda_flags & beamz::cuda::abi::kBeamzMstepTile8x16)
-    return EnqueueMstepTile<16,8>(stream,h,e,final_fields,masks,bounds,segment);
-  if (h.cuda_flags & beamz::cuda::abi::kBeamzMstepTile16x16)
-    return EnqueueMstepTile<16,16>(stream,h,e,final_fields,masks,bounds,segment);
-  return EnqueueMstepTile<32,16>(stream,h,e,final_fields,masks,bounds,segment);
+  if (h.cuda_flags & beamz::cuda::abi::kBeamzMstepSteps4)
+    return EnqueueMstepSteps<4>(stream,h,e,final_fields,masks,bounds,segment);
+  return EnqueueMstepSteps<2>(stream,h,e,final_fields,masks,bounds,segment);
 }
 
 cudaError_t BeamzEnqueueMstepEdge(cudaStream_t stream,

@@ -189,6 +189,25 @@ def test_mstep_complete_state_matches_cuda_and_jax(steps, material, boundary):
     _compare(_run(sim, state, "jax", steps), actual, 3e-5)
 
 
+@pytest.mark.parametrize("steps", [4, 9, 17])
+@pytest.mark.parametrize("material,boundary", [("binary", "all"), ("smooth", "pec")])
+def test_mstep_four_steps_per_pass_match_jax(
+    steps, material, boundary, monkeypatch, fresh_program_caches
+):
+    """Four-step passes: whole passes, a one-step tail, and every monitor step."""
+    # 8x16 tiles keep the four-step scratch within a 64 KB shared-memory GPU.
+    monkeypatch.setenv("BEAMZ_CUDA_MSTEP_STEPS", "4")
+    monkeypatch.setenv("BEAMZ_CUDA_MSTEP_TILE", "8x16")
+    sim = _simulation(material, boundary)
+    state = _seed(sim.compile(backend="jax", num_steps=steps))
+    program = sim.compile(backend="cuda_mstep", num_steps=steps)
+    report = program.cuda_schedule_report()
+    assert report["selected"] == "mstep"
+    assert report["temporal_steps"] == 4
+    actual = _run(sim, state, "cuda_mstep", steps)
+    _compare(_run(sim, state, "jax", steps), actual, 3e-5)
+
+
 def test_mstep_constant_block_e_materials_match_jax():
     # The streamed schedule packs binary E materials as constant blocks (rank-2
     # headers) and mstep shares those coefficients. With scalar H, mstep used to

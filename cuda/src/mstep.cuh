@@ -1,14 +1,32 @@
-// Two-step column tiles. Eligibility and compact storage retain 8x16 quadrants.
-template <int X, int Y> struct MstepTile {
-  static constexpr int wx = X + 4, wy = Y + 4;
+// Column tiles advancing S steps per pass (2S stages: H, E, H, E, ...).
+// Eligibility and compact storage retain 8x16 quadrants. Stage K covers
+// (X + 2S - 1 - K) x (Y + 2S - 1 - K) lanes starting -S + (K + 1) / 2 cells
+// from the tile origin, on plane p - K / 2 of wave p; each keeps two planes.
+template <int X, int Y, int S, int K> struct MstepStage {
+  static constexpr int sx = X + 2 * S - 1 - K, sy = Y + 2 * S - 1 - K;
+  static constexpr int origin = -S + (K + 1) / 2;
+  static constexpr int offset = [] {
+    int value = 0;
+    for (int k = 0; k < K; ++k)
+      value += 6 * (X + 2 * S - 1 - k) * (Y + 2 * S - 1 - k);
+    return value;
+  }();
+  __device__ static __forceinline__ float &At(float *shared, int c, int z,
+                                              int y, int x) {
+    return shared[offset + ((c * 2 + (z & 1)) * sy + y) * sx + x];
+  }
+};
+template <int X, int Y, int S = 2> struct MstepTile {
+  static constexpr int wx = X + 2 * S, wy = Y + 2 * S;
   static constexpr int threads = wx * wy;
-  static constexpr int input = PairStage<X, Y, 3>::offset;
+  // Stages 0..2S-2 live in shared memory; the last writes the output banks.
+  static constexpr int input = MstepStage<X, Y, S, 2 * S - 1>::offset;
   static constexpr size_t shared = (input + 3 * threads) * sizeof(float);
   static constexpr size_t packed_shared = shared + 3 * threads * sizeof(float);
 };
-template <int X, int Y>
+template <int X, int Y, int S>
 __device__ __forceinline__ float &MstepInput(float *shared, int c, int y, int x) {
-  return shared[MstepTile<X,Y>::input + c * MstepTile<X,Y>::threads + y * MstepTile<X,Y>::wx + x];
+  return shared[MstepTile<X,Y,S>::input + c * MstepTile<X,Y,S>::threads + y * MstepTile<X,Y,S>::wx + x];
 }
 // Full field banks are canonical; compact addressing belongs only to edges.
 __device__ __forceinline__ int MstepFieldOffset(const BeamzBuffer &f, int z,
@@ -22,21 +40,22 @@ __device__ __forceinline__ float MstepFieldRead(const BeamzBuffer &f, int z,
 struct MstepHScalars {
   float decay[3], source[3];
 };
-template <bool Packed, bool ScalarH, int X, int Y, int K = 0>
+template <bool Packed, bool ScalarH, int X, int Y, int S, int K = 0>
 __device__ __forceinline__ void
 MstepStages(float *shared, const FusedYeePhase &h, const FusedYeePhase &e,
             const PairFieldOutputs &final, const MstepHScalars &hc, int ox,
             int oy, int oz, int wave, int mask) {
-  using Here = PairStage<X, Y, K>;
+  using Here = MstepStage<X, Y, S, K>;
+  constexpr int last = 2 * S - 1;
   constexpr int phase = K % 2, shift = phase == 1 ? 1 : 0;
   constexpr int sign = phase == 0 ? 1 : -1;
   const auto &launch = phase == 0 ? h : e;
-  const int z = oz + wave - 2 - K / 2;
+  const int z = oz + wave - S - K / 2;
   if (wave >= K) {
     for (int i = threadIdx.x; i < Here::sx * Here::sy; i += blockDim.x) {
       const int ix = i % Here::sx, iy = i / Here::sx;
-      const int x = ox - 2 + (K + 1) / 2 + ix;
-      const int y = oy - 2 + (K + 1) / 2 + iy;
+      const int x = ox + Here::origin + ix;
+      const int y = oy + Here::origin + iy;
 #pragma unroll
       for (int c = 0; c < 3; ++c) {
         float next = 0.f;
@@ -45,13 +64,13 @@ MstepStages(float *shared, const FusedYeePhase &h, const FusedYeePhase &e,
           auto other = [&](int component, int dz, int dy, int dx) {
             if constexpr (K == 0) {
               if (!dz)
-                return MstepInput<X,Y>(shared, component, iy + dy, ix + dx);
+                return MstepInput<X,Y,S>(shared, component, iy + dy, ix + dx);
               const auto &f = h.inputs[3 + component];
               return BufferContains(f, z + dz, y + dy, x + dx)
                          ? MstepFieldRead(f, z + dz, y + dy, x + dx)
                          : 0.f;
             } else {
-              return PairStage<X, Y, K - 1>::At(
+              return MstepStage<X, Y, S, K - 1>::At(
                   shared, component, z + dz, iy + shift + dy, ix + shift + dx);
             }
           };
@@ -68,11 +87,11 @@ MstepStages(float *shared, const FusedYeePhase &h, const FusedYeePhase &e,
                              difference(b.source_component, b.derivative_axis);
           float old;
           if constexpr (K == 1)
-            old = MstepInput<X,Y>(shared, c, iy + 1, ix + 1);
+            old = MstepInput<X,Y,S>(shared, c, iy + 1, ix + 1);
           else if constexpr (K == 0)
             old = MstepFieldRead(launch.inputs[c], z, y, x);
           else
-            old = PairStage<X, Y, K - 2>::At(shared, c, z, iy + 1, ix + 1);
+            old = MstepStage<X, Y, S, K - 2>::At(shared, c, z, iy + 1, ix + 1);
           const int logical = (z * static_cast<int>(out.dims[1]) + y) *
                                   static_cast<int>(out.dims[2]) +
                               x;
@@ -91,14 +110,14 @@ MstepStages(float *shared, const FusedYeePhase &h, const FusedYeePhase &e,
           next = beamz::cuda::yee::AdvanceYeeField(phase, old, decay, source,
                                                    curl);
         }
-        if constexpr (K == 3) {
+        if constexpr (K == last) {
           const int quadrant = (iy >= 8 ? 2 : 0) + (ix >= 16 ? 1 : 0);
           if (mask & (1 << quadrant)) {
             const auto &ef = final.fields[3 + c];
             const auto &hf = final.fields[c];
             static_cast<float *>(ef.data)[MstepFieldOffset(ef, z, y, x)] = next;
             static_cast<float *>(hf.data)[MstepFieldOffset(hf, z, y, x)] =
-                PairStage<X, Y, 2>::At(shared, c, z, iy + 1, ix + 1);
+                MstepStage<X, Y, S, last - 1>::At(shared, c, z, iy + 1, ix + 1);
           }
         } else
           Here::At(shared, c, z, iy, ix) = next;
@@ -106,13 +125,13 @@ MstepStages(float *shared, const FusedYeePhase &h, const FusedYeePhase &e,
     }
   }
   __syncthreads();
-  if constexpr (K < 3)
-    MstepStages<Packed, ScalarH, X, Y, K + 1>(shared, h, e, final, hc, ox, oy, oz,
-                                        wave, mask);
+  if constexpr (K < last)
+    MstepStages<Packed, ScalarH, X, Y, S, K + 1>(shared, h, e, final, hc, ox,
+                                                 oy, oz, wave, mask);
 }
 
-template <bool Packed, bool ScalarH, int X, int Y>
-__global__ __launch_bounds__((MstepTile<X,Y>::threads)) void MstepColumnCore(
+template <bool Packed, bool ScalarH, int X, int Y, int S>
+__global__ __launch_bounds__((MstepTile<X,Y,S>::threads)) void MstepColumnCore(
     BEAMZ_GRID_ARG(FusedYeePhase) h,
     BEAMZ_GRID_ARG(FusedYeePhase) e,
     BEAMZ_GRID_ARG(PairFieldOutputs) final,
@@ -136,30 +155,30 @@ __global__ __launch_bounds__((MstepTile<X,Y>::threads)) void MstepColumnCore(
     }
   }
   BEAMZ_DYNAMIC_SHARED(float, shared);
-  for (int wave = 0; wave < zt - zb + 3; ++wave) {
-    const int z = zb + wave - 2;
+  for (int wave = 0; wave < zt - zb + 2 * S - 1; ++wave) {
+    const int z = zb + wave - S;
     // One window lane per thread on GPUs (the block is MstepTile::threads).
-    for (int i = threadIdx.x; i < MstepTile<X,Y>::threads; i += blockDim.x) {
-      const int y = i / MstepTile<X,Y>::wx;
-      const int x = i % MstepTile<X,Y>::wx;
-      const int gy = oy - 2 + y;
-      const int gx = ox - 2 + x;
+    for (int i = threadIdx.x; i < MstepTile<X,Y,S>::threads; i += blockDim.x) {
+      const int y = i / MstepTile<X,Y,S>::wx;
+      const int x = i % MstepTile<X,Y,S>::wx;
+      const int gy = oy - S + y;
+      const int gx = ox - S + x;
 #pragma unroll
       for (int c = 0; c < 3; ++c) {
         const auto &f = h.inputs[3 + c];
-        MstepInput<X,Y>(shared, c, y, x) =
+        MstepInput<X,Y,S>(shared, c, y, x) =
             BufferContains(f, z, gy, gx) ? MstepFieldRead(f, z, gy, gx) : 0.f;
       }
     }
     __syncthreads();
-    MstepStages<Packed, ScalarH, X, Y>(shared, h, e, final, hc, ox,
-                                 oy, zb, wave, mask);
+    MstepStages<Packed, ScalarH, X, Y, S>(shared, h, e, final, hc, ox, oy, zb,
+                                          wave, mask);
   }
 }
 
-template <int X, int Y>
+template <int X, int Y, int S>
 __device__ __forceinline__ float &MstepPackedInput(float *shared, int c, int z, int y, int x) {
-  return shared[MstepTile<X,Y>::input + ((z & 1) * 3 + c) * MstepTile<X,Y>::threads + y * MstepTile<X,Y>::wx + x];
+  return shared[MstepTile<X,Y,S>::input + ((z & 1) * 3 + c) * MstepTile<X,Y,S>::threads + y * MstepTile<X,Y,S>::wx + x];
 }
 
 // Lean core for packed E and scalar H coefficients. Buffer metadata is lowered
@@ -182,11 +201,12 @@ struct MstepCoreLane {
   int ix, iy, x, y;
 };
 // Stage K's lane (iy, ix) of the tile at (ox, oy), clamped into the field.
-template <int X, int Y, int K>
+template <int X, int Y, int S, int K>
 __device__ __forceinline__ MstepCoreLane MstepMakeLane(int iy, int ix, int ox,
                                                        int oy, int ny, int nx) {
-  return {ix, iy, min(max(ox - 2 + (K + 1) / 2 + ix, 0), nx - 1),
-          min(max(oy - 2 + (K + 1) / 2 + iy, 0), ny - 1)};
+  constexpr int origin = MstepStage<X, Y, S, K>::origin;
+  return {ix, iy, min(max(ox + origin + ix, 0), nx - 1),
+          min(max(oy + origin + iy, 0), ny - 1)};
 }
 __device__ __forceinline__ int MstepCoreOffset(const MstepCoreField &f, int z,
                                                int y, int x) {
@@ -196,11 +216,12 @@ __device__ __forceinline__ int MstepCoreOffset(const MstepCoreField &f, int z,
 // Lanes are recomputed from the cell index and plane rather than carried per
 // thread, so nothing per-thread crosses a barrier and the kernel is correct
 // for any block size (see BEAMZ_BARRIER_BLOCK).
-template <int X, int Y, int K>
+template <int X, int Y, int S, int K>
 __device__ __forceinline__ void
 MstepPackedStage(float *shared, const MstepPackedCoreView &v,
                  const MstepHScalars &hc, int ox, int oy, int z, int mask) {
-  using Stage = PairStage<X, Y, K>;
+  using Stage = MstepStage<X, Y, S, K>;
+  constexpr int last = 2 * S - 1;
   constexpr int phase = K % 2, shift = phase == 1 ? 1 : 0;
   constexpr int sign = phase == 0 ? 1 : -1;
   // Loop-invariant material bases, so gathers from them can vectorise.
@@ -209,17 +230,18 @@ MstepPackedStage(float *shared, const MstepPackedCoreView &v,
   const int table_sizes[3] = {v.table_sizes[0], v.table_sizes[1],
                               v.table_sizes[2]};
   BEAMZ_TILE_LOOP(iy, ix, Stage::sy, Stage::sx) {
-    const auto lane = MstepMakeLane<X, Y, K>(iy, ix, ox, oy, v.min_y, v.min_x);
+    const auto lane =
+        MstepMakeLane<X, Y, S, K>(iy, ix, ox, oy, v.min_y, v.min_x);
     BEAMZ_UNROLL
     for (int c = 0; c < 3; ++c) {
       auto other = [&](int component, int dz, int dy, int dx) {
         if constexpr (K == 0) {
-          return MstepPackedInput<X,Y>(shared, component, z + dz, lane.iy + dy,
-                                  lane.ix + dx);
+          return MstepPackedInput<X,Y,S>(shared, component, z + dz,
+                                         lane.iy + dy, lane.ix + dx);
         } else
-          return PairStage<X, Y, K - 1>::At(shared, component, z + dz,
-                                              lane.iy + shift + dy,
-                                              lane.ix + shift + dx);
+          return MstepStage<X, Y, S, K - 1>::At(shared, component, z + dz,
+                                                lane.iy + shift + dy,
+                                                lane.ix + shift + dx);
       };
       auto difference = [&](int component, int axis) {
         float a = other(component, 0, 0, 0);
@@ -241,10 +263,10 @@ MstepPackedStage(float *shared, const MstepPackedCoreView &v,
       if constexpr (K == 0)
         old = v.input[c].data[logical];
       else if constexpr (K == 1)
-        old = MstepPackedInput<X,Y>(shared, c, z, lane.iy + 1, lane.ix + 1);
+        old = MstepPackedInput<X,Y,S>(shared, c, z, lane.iy + 1, lane.ix + 1);
       else
-        old = PairStage<X, Y, K - 2>::At(shared, c, z, lane.iy + 1,
-                                           lane.ix + 1);
+        old = MstepStage<X, Y, S, K - 2>::At(shared, c, z, lane.iy + 1,
+                                             lane.ix + 1);
       float decay, source;
       if constexpr (phase == 0) {
         decay = hc.decay[c];
@@ -256,12 +278,13 @@ MstepPackedStage(float *shared, const MstepPackedCoreView &v,
       }
       float next =
           beamz::cuda::yee::AdvanceYeeField(phase, old, decay, source, curl);
-      if constexpr (K == 3) {
+      if constexpr (K == last) {
         const int quadrant = (lane.iy >= 8 ? 2 : 0) + (lane.ix >= 16 ? 1 : 0);
         if (mask & (1 << quadrant)) {
           v.output[3 + c].data[logical] = next;
           v.output[c].data[MstepCoreOffset(v.output[c], z, lane.y, lane.x)] =
-              PairStage<X, Y, 2>::At(shared, c, z, lane.iy + 1, lane.ix + 1);
+              MstepStage<X, Y, S, last - 1>::At(shared, c, z, lane.iy + 1,
+                                                lane.ix + 1);
         }
       } else
         Stage::At(shared, c, z, lane.iy, lane.ix) = next;
@@ -270,20 +293,34 @@ MstepPackedStage(float *shared, const MstepPackedCoreView &v,
   __syncthreads();
 }
 
+// Stages 2..2S-1 of wave p: stage K works on plane p - K / 2 once the wave
+// has reached it.
+template <int X, int Y, int S, int K>
+__device__ __forceinline__ void
+MstepPackedLaterStages(float *shared, const MstepPackedCoreView &v,
+                       const MstepHScalars &hc, int ox, int oy, int p,
+                       int wave, int mask) {
+  if (wave >= K)
+    MstepPackedStage<X, Y, S, K>(shared, v, hc, ox, oy, p - K / 2, mask);
+  if constexpr (K < 2 * S - 1)
+    MstepPackedLaterStages<X, Y, S, K + 1>(shared, v, hc, ox, oy, p, wave,
+                                           mask);
+}
+
 // E planes of the input window, one lane per thread on GPUs.
-template <int X, int Y>
+template <int X, int Y, int S>
 __device__ __forceinline__ void
 MstepLoadWindow(float *shared, const MstepPackedCoreView &v, int ox, int oy,
                 int z, bool asynchronous) {
-  using Tile = MstepTile<X, Y>;
+  using Tile = MstepTile<X, Y, S>;
   for (int i = threadIdx.x; i < Tile::threads; i += blockDim.x) {
     const int wx = i % Tile::wx, wy = i / Tile::wx;
-    const int gx = min(max(ox - 2 + wx, 0), v.min_x - 1);
-    const int gy = min(max(oy - 2 + wy, 0), v.min_y - 1);
+    const int gx = min(max(ox - S + wx, 0), v.min_x - 1);
+    const int gy = min(max(oy - S + wy, 0), v.min_y - 1);
 #pragma unroll
     for (int c = 0; c < 3; ++c) {
       const auto &f = v.input[3 + c];
-      float *destination = &MstepPackedInput<X,Y>(shared, c, z, wy, wx);
+      float *destination = &MstepPackedInput<X,Y,S>(shared, c, z, wy, wx);
       const float *source = f.data + MstepCoreOffset(f, z, gy, gx);
       if (asynchronous)
         BEAMZ_ASYNC_COPY_F32(destination, source);
@@ -302,8 +339,8 @@ MstepLoadWindow(float *shared, const MstepPackedCoreView &v, int ox, int oy,
   }
 }
 
-template <int X, int Y>
-__global__ BEAMZ_LAUNCH_BOUNDS((MstepTile<X,Y>::threads), 1) void MstepPackedColumnCore(
+template <int X, int Y, int S>
+__global__ BEAMZ_LAUNCH_BOUNDS((MstepTile<X,Y,S>::threads), 1) void MstepPackedColumnCore(
     const MstepPackedCoreView v, const int *masks, const int *bounds, int ntx, int segment) {
   const int ox = blockIdx.x * X, oy = blockIdx.y * Y;
   const int shift = ((oy % 16) / 8) * 2 + (ox % 32) / 16;
@@ -321,25 +358,22 @@ __global__ BEAMZ_LAUNCH_BOUNDS((MstepTile<X,Y>::threads), 1) void MstepPackedCol
   }
   BEAMZ_DYNAMIC_SHARED(float, shared);
   // Two E0 planes rotate through the input ring. Prefetch p+2 after E1's last
-  // use of p, while H2/E2 consume separate shared rings. The block waits before
-  // the next wave may read a neighbour's asynchronous copy.
-  MstepLoadWindow<X,Y>(shared, v, ox, oy, zb - 2, false);
-  MstepLoadWindow<X,Y>(shared, v, ox, oy, zb - 1, false);
+  // use of p, while later stages consume separate shared rings. The block
+  // waits before the next wave may read a neighbour's asynchronous copy.
+  MstepLoadWindow<X,Y,S>(shared, v, ox, oy, zb - S, false);
+  MstepLoadWindow<X,Y,S>(shared, v, ox, oy, zb - S + 1, false);
   __syncthreads();
-  const int waves = zt - zb + 3;
+  const int waves = zt - zb + 2 * S - 1;
   for (int wave = 0; wave < waves; ++wave) {
-    int p = zb + wave - 2;
-    MstepPackedStage<X,Y,0>(shared, v, hc, ox, oy, p, mask);
+    int p = zb + wave - S;
+    MstepPackedStage<X,Y,S,0>(shared, v, hc, ox, oy, p, mask);
     if (wave >= 1)
-      MstepPackedStage<X,Y,1>(shared, v, hc, ox, oy, p, mask);
+      MstepPackedStage<X,Y,S,1>(shared, v, hc, ox, oy, p, mask);
     if (wave + 1 < waves) {
-      MstepLoadWindow<X,Y>(shared, v, ox, oy, p + 2, true);
+      MstepLoadWindow<X,Y,S>(shared, v, ox, oy, p + 2, true);
       BEAMZ_ASYNC_COMMIT();
     }
-    if (wave >= 2)
-      MstepPackedStage<X,Y,2>(shared, v, hc, ox, oy, p - 1, mask);
-    if (wave >= 3)
-      MstepPackedStage<X,Y,3>(shared, v, hc, ox, oy, p - 1, mask);
+    MstepPackedLaterStages<X,Y,S,2>(shared, v, hc, ox, oy, p, wave, mask);
     if (wave + 1 < waves) {
       BEAMZ_ASYNC_WAIT_ALL();
       __syncthreads();
@@ -355,6 +389,8 @@ __global__ void MstepEdgePhase(BEAMZ_GRID_ARG(BeamzLaunch) launch,
   if (i >= cells.dims[0])
     return;
   const int row = static_cast<const int *>(cells.data)[i];
+  if (row < 0)  // Padding of a shorter edge level.
+    return;
   // Two unsigned divisions; remainders by multiplication.
   const unsigned zy = static_cast<unsigned>(row) / static_cast<unsigned>(nx);
   const unsigned uz = zy / static_cast<unsigned>(ny);
