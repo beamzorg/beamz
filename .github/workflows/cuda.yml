@@ -92,6 +92,40 @@ jobs:
           name: beamz-private-cuda-component
           path: cuda/dist/*.whl
 
+  hip:
+    # Compile-only: no AMD GPU runner. Catches CUDA runtime names without a
+    # HIP alias and hip-clang errors before they reach hardware. gfx90a and
+    # gfx942 keep the unvalidated 64-wide wave path compiling.
+    name: Build HIP component
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container: rocm/dev-ubuntu-24.04:7.2
+    steps:
+      - name: Install host build tools
+        run: >-
+          apt-get update &&
+          DEBIAN_FRONTEND=noninteractive apt-get install -y
+          build-essential ca-certificates curl git
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: true
+      - run: uv python install 3.11
+      - name: Build the HIP component
+        env:
+          UV_PYTHON: "3.11"
+          # An environment prefix: a CMAKE_PREFIX_PATH define would replace
+          # the one scikit-build-core sets for nanobind.
+          CMAKE_PREFIX_PATH: /opt/rocm
+        run: >-
+          uv build --wheel cuda
+          -Ccmake.define.BEAMZ_GPU_PLATFORM=HIP
+          "-Ccmake.define.BEAMZ_HIP_ARCHITECTURES=gfx1100;gfx90a;gfx942"
+          -Ccmake.define.BEAMZ_HIP_ALLOW_WAVE64=ON
+          -Ccmake.define.CMAKE_HIP_COMPILER=/opt/rocm/lib/llvm/bin/clang++
+          -Cbuild-dir=build/hip
+
   h100:
     name: H100 parity and canonical benchmarks
     if: >-

@@ -1,4 +1,4 @@
-#include <cuda_runtime_api.h>
+#include "gpu_runtime.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -484,9 +484,11 @@ __global__ void AccumulateDftGroups(DftFields fields,
               &phase_cos);
     }
   }
-  window = __shfl_sync(0xffffffff, window, 0);
-  phase_sin = __shfl_sync(0xffffffff, phase_sin, 0);
-  phase_cos = __shfl_sync(0xffffffff, phase_cos, 0);
+  // Blocks are kTileX = 32 threads wide and each row has its own frequency:
+  // broadcast within 32-lane segments, so 64-wide waves (two rows) stay exact.
+  window = __shfl_sync(BEAMZ_FULL_LANE_MASK, window, 0, kTileX);
+  phase_sin = __shfl_sync(BEAMZ_FULL_LANE_MASK, phase_sin, 0, kTileX);
+  phase_cos = __shfl_sync(BEAMZ_FULL_LANE_MASK, phase_cos, 0, kTileX);
   if (window == 0.0f) return;
   if (point >= point_count) return;
   if (component == 0 && point == 0) {

@@ -1,7 +1,6 @@
-#include <cuda_runtime_api.h>
+#include "gpu_runtime.h"
 
-#include <cuda_bf16.h>
-#include <cuda_pipeline.h>
+#include "gpu_device.h"
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -458,12 +457,12 @@ __device__ __forceinline__ float CorrectCpml(float derivative, int z, int y,
   float old_psi;
   if constexpr (PsiType == kBeamzBF16) {
     old_psi = __bfloat162float(
-        static_cast<const __nv_bfloat16*>(psi_input.data)[psi_offset]);
+        static_cast<const beamz_bf16*>(psi_input.data)[psi_offset]);
   } else if constexpr (PsiType == kBeamzF32) {
     old_psi = static_cast<const float*>(psi_input.data)[psi_offset];
   } else {
     old_psi = psi_input.element_type == kBeamzBF16
-                  ? __bfloat162float(static_cast<const __nv_bfloat16*>(
+                  ? __bfloat162float(static_cast<const beamz_bf16*>(
                                          psi_input.data)[psi_offset])
                   : static_cast<const float*>(psi_input.data)[psi_offset];
   }
@@ -471,13 +470,13 @@ __device__ __forceinline__ float CorrectCpml(float derivative, int z, int y,
       static_cast<const float*>(b.data)[packed], old_psi,
       static_cast<const float*>(a.data)[packed], derivative);
   if constexpr (PsiType == kBeamzBF16) {
-    static_cast<__nv_bfloat16*>(psi_output.data)[psi_offset] =
-        __float2bfloat16_rn(next_psi);
+    static_cast<beamz_bf16*>(psi_output.data)[psi_offset] =
+        beamz_float_to_bf16_rn(next_psi);
   } else if constexpr (PsiType == kBeamzF32) {
     static_cast<float*>(psi_output.data)[psi_offset] = next_psi;
   } else if (psi_output.element_type == kBeamzBF16) {
-    static_cast<__nv_bfloat16*>(psi_output.data)[psi_offset] =
-        __float2bfloat16_rn(next_psi);
+    static_cast<beamz_bf16*>(psi_output.data)[psi_offset] =
+        beamz_float_to_bf16_rn(next_psi);
   } else {
     static_cast<float*>(psi_output.data)[psi_offset] = next_psi;
   }
@@ -1062,7 +1061,7 @@ __device__ void CoreEValue(const FusedYeePhase& e, const float* h_fields,
 }
 
 template <bool Packed, typename Tile, bool Band = false>
-__global__ __launch_bounds__(Tile::X* Tile::Y, 6) void FusedCpmlCore(
+__global__ BEAMZ_LAUNCH_BOUNDS(Tile::X* Tile::Y, 6) void FusedCpmlCore(
     FusedYeePhase h, FusedYeePhase e, FusedHSources sources, int low, int hz,
     int hy, int hx) {
   extern __shared__ float h_fields[];
@@ -1625,7 +1624,7 @@ cudaError_t LaunchTemporalCpmlMask(cudaStream_t stream,
   }
   constexpr size_t bytes=Steps==1 ? PairStage<X-2,Y-2,1>::offset*sizeof(float)
       : PairPsiStage<X,Y,1,Mask,Half>::offset*sizeof(float)+
-        2*PairPsiTerms(Mask)*(X+2)*(Y+2)*(Half?sizeof(__nv_bfloat16):sizeof(float));
+        2*PairPsiTerms(Mask)*(X+2)*(Y+2)*(Half?sizeof(beamz_bf16):sizeof(float));
   TemporalCpmlPair<Packed,Half,X,Y,Z,Mask,Steps>
       <<<dim3(counts[2],counts[1],counts[0]),
          (Steps == 2 && ((Mask == 4 && X == 15 && Y == 16) || (Mask == 2 && X == 16 && Y == 15))) ? 384 : 256,

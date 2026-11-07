@@ -6,7 +6,7 @@
 
 #include "launch.h"
 
-#ifdef __CUDACC__
+#ifdef BEAMZ_GPU_COMPILER
 #define BEAMZ_CELL __host__ __device__ inline
 #else
 #define BEAMZ_CELL inline

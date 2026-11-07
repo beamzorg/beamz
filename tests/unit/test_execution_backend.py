@@ -239,6 +239,7 @@ def test_cuda_status_exposes_complete_diagnostics():
         "gpu_devices": ("NVIDIA H100 80GB HBM3",),
         "compute_capabilities": (90,),
         "reason": None,
+        "gpu_platform": "cuda",
     }
 
 
@@ -588,3 +589,81 @@ def test_obsolete_extension_targets_are_not_registered(monkeypatch):
     targets = backend_runtime.register_cuda_ffi_targets(extension)
     assert set(targets) == backend_runtime.CUDA_STREAMED_TARGETS
     assert set(registered) == backend_runtime.CUDA_STREAMED_TARGETS
+
+
+class _FakeRocmDevice:
+    platform = "gpu"
+    device_kind = "AMD Radeon RX 7600 XT"
+    compute_capability = "gfx1100"
+    # Real value from jax-rocm7-plugin 0.9.1 (PJRT C API plugins prefix a line).
+    client = SimpleNamespace(platform_version="PJRT C API\nrocm 70200")
+
+
+def _hip_extension(*targets):
+    extension = _extension(*targets)
+    extension.__gpu_platform__ = "rocm"
+    return extension
+
+
+def test_rocm_device_capability_string_is_tolerated():
+    assert backend_runtime._compute_capability(_FakeRocmDevice()) == 0
+
+
+@pytest.mark.parametrize(
+    ("devices", "platform", "module"),
+    [
+        ((_FakeRocmDevice(),), "rocm", "beamz._hip"),
+        ((_FakeDevice(),), "cuda", "beamz._cuda"),
+        ((), "cuda", "beamz._cuda"),
+    ],
+)
+def test_gpu_platform_selects_extension_module(monkeypatch, devices, platform, module):
+    monkeypatch.setattr(backend_runtime, "_gpu_devices", lambda: devices)
+    imported = []
+    monkeypatch.setattr(
+        backend_runtime.importlib,
+        "import_module",
+        lambda name: imported.append(name) or SimpleNamespace(),
+    )
+
+    assert backend_runtime._gpu_platform() == platform
+    backend_runtime._load_extension()
+    assert imported == [module]
+
+
+@pytest.mark.parametrize(
+    ("extension", "platform"),
+    [
+        (_hip_extension("beamz_cuda_streamed"), "ROCM"),
+        (_extension("beamz_cuda_streamed"), "CUDA"),
+    ],
+)
+def test_extension_registers_its_own_xla_platform(monkeypatch, extension, platform):
+    monkeypatch.setattr(backend_runtime, "_REGISTERED_MODULE", None)
+    registrations = []
+    monkeypatch.setattr(
+        backend_runtime.jax.ffi,
+        "register_ffi_target",
+        lambda name, _capsule, **options: registrations.append(options["platform"]),
+    )
+
+    backend_runtime.register_cuda_ffi_targets(extension)
+
+    assert registrations
+    assert set(registrations) == {platform}
+
+
+def test_auto_keeps_jax_on_rocm_but_explicit_requests_use_hip(monkeypatch):
+    extension = _hip_extension("beamz_cuda_streamed")
+    monkeypatch.setattr(backend_runtime, "_gpu_devices", lambda: (_FakeRocmDevice(),))
+    monkeypatch.setattr(backend_runtime, "_load_extension", lambda: extension)
+    monkeypatch.setattr(backend_runtime, "_REGISTERED_MODULE", None)
+    monkeypatch.setattr(
+        backend_runtime.jax.ffi, "register_ffi_target", lambda *args, **kwargs: None
+    )
+
+    status = backend_runtime.cuda_backend_status()
+    assert status.available
+    assert status.gpu_platform == "rocm"
+    assert backend_runtime.resolve_backend("auto") == "jax"
+    assert backend_runtime.resolve_backend("cuda") == "cuda_streamed"
