@@ -95,6 +95,13 @@ def _expand_material_blocks(coeffs, state):
     }
     if not blocked:
         return coeffs
+    if blocked != set("xyz"):
+        # Preparation packs the three E components together, and the decoder
+        # below would misread a byte-coded component next to block headers.
+        raise ValueError(
+            "constant-block E materials must cover all three components, got "
+            + "".join(sorted(blocked))
+        )
     expanded = differentiable_coefficients(coeffs, state)
     return coeffs._replace(
         **{
