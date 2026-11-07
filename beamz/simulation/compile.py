@@ -66,6 +66,11 @@ from .sharding import (
 
 # Cache identity contains only values that affect generated code or static storage;
 # runtime field values stay excluded so one executable can serve many states.
+# Tile choices the native code reads from the environment at launch
+# (BEAMZ_CUDA_PAIR_TILE, BEAMZ_CUDA_CPML_TILE, BEAMZ_CUDA_CPML_PAIR_TILE) are
+# deliberately not key members either, so variants share material banks and
+# preparation. Tests that vary them and record trace-time plans must clear the
+# program and execution caches (the fresh_program_caches fixture).
 
 
 @dataclass(frozen=True, slots=True)

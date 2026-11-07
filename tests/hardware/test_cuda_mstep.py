@@ -467,16 +467,14 @@ def test_unified_cuda_schedule_matches_compatibility_alias():
 @pytest.mark.parametrize(
     "variant_flags", [0, abi.CUDA_MSTEP_TILE8X16 | abi.CUDA_MSTEP_SEGMENT32]
 )
-def test_automatic_schedule_dispatch_preserves_chunk_clocks(monkeypatch, variant_flags):
+def test_automatic_schedule_dispatch_preserves_chunk_clocks(
+    monkeypatch, variant_flags, fresh_program_caches
+):
     """Exercise automatic dispatch on a small core; model admission is tested on host."""
-    from beamz.simulation.compile import clear_program_cache
     from beamz.simulation.cuda import schedule
-    from beamz.simulation.execute import clear_execution_cache
 
-    # Each mocked policy is a different frozen decision for an equivalent case.
-    clear_program_cache()
-    clear_execution_cache()
-
+    # Each mocked policy is a different frozen decision for an equivalent case, so
+    # fresh_program_caches drops the previous variant's program.
     monkeypatch.setattr(schedule, "cuda_device_kind", lambda: "NVIDIA GeForce RTX 3090")
     monkeypatch.setattr(
         schedule,

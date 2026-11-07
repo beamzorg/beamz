@@ -87,7 +87,7 @@ def test_streamed_padded_fields_preserve_logical_state(
     ],
 )
 def test_streamed_temporal_pair_full_state_and_continuation(
-    steps, padding, material, tile, monkeypatch
+    steps, padding, material, tile, monkeypatch, fresh_program_caches
 ):
     from argparse import Namespace
 
@@ -164,7 +164,9 @@ def test_streamed_temporal_pair_full_state_and_continuation(
 
 @pytest.mark.parametrize("io", ["none", "source", "mode_monitor"])
 @pytest.mark.parametrize("pair_tile", ["16x8x16", "single"])
-def test_streamed_temporal_pair_io_variants(io, pair_tile, monkeypatch):
+def test_streamed_temporal_pair_io_variants(
+    io, pair_tile, monkeypatch, fresh_program_caches
+):
     """Exercise both FFI arities and six-component mode-monitor gathering."""
     from argparse import Namespace
 
@@ -174,13 +176,6 @@ def test_streamed_temporal_pair_io_variants(io, pair_tile, monkeypatch):
     monkeypatch.setenv("BEAMZ_CUDA_FIELD_PADDING", "32x8")
     monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "2")
     monkeypatch.setenv("BEAMZ_CUDA_PAIR_TILE", pair_tile)
-    # The pair tile is read natively at launch, so variants share one traced
-    # program; drop it so this test's plan is recorded at trace time.
-    from beamz.simulation.compile import clear_program_cache
-    from beamz.simulation.execute import clear_execution_cache
-
-    clear_program_cache()
-    clear_execution_cache()
     plans = []
     choose = runtime._native_schedule_plan
 
