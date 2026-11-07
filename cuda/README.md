@@ -199,7 +199,7 @@ the build machine's ISA, which suits a local build; a wheel built for
 distribution should pass a portable baseline (e.g. `-O3;-march=x86-64-v3`).
 In a process without GPUs, BeamZ loads `beamz._cpu` and registers its targets
 for XLA's CPU platform. `backend="auto"` keeps JAX; request
-`backend="cuda_streamed"` explicitly.
+`backend="cuda_streamed"` or `backend="cuda_mstep"` explicitly.
 
 OpenMP and XLA keep separate thread pools. XLA's pool mostly sleeps while a
 native step runs, so the default (`OMP_NUM_THREADS` unset: one thread per
@@ -208,13 +208,21 @@ cores were slightly slower. Lower `OMP_NUM_THREADS` when other work shares the
 machine. Do not set `OMP_WAIT_POLICY=active`: spinning workers compete with
 XLA's threads, and throughput fell tenfold.
 
-Kernels that need shared memory or barriers (two-step tiles, the fused CPML
-interior, `cuda_mstep`) cannot run this way. They all request dynamic shared
-memory, which the CPU launcher rejects with `cudaErrorNotSupported`. Scheduling
-never selects them on CPU: two-step requests fall back to single steps, and the
-`cuda_mstep` target is not registered. On the CPU `__syncthreads` aborts with
-a message: a kernel that reaches it (static `__shared__` without a dynamic
-request) would otherwise race silently.
+Kernels whose threads meet at `__syncthreads` (two-step tiles, the CPML core
+tiles, `cuda_mstep`) run on the CPU as one-thread blocks. A barrier cannot be
+honoured between threads that run one after another, but these kernels cover
+each stage with block-stride loops and keep nothing per thread across a
+barrier, so a single thread runs every stage in order and the barrier has
+nobody to wait for. Their launches pass the thread count through
+`BEAMZ_BARRIER_BLOCK(n)`, which is `n` on GPUs and 1 on the CPU, and each
+OpenMP worker supplies the dynamic shared memory from a reusable scratch
+buffer that stays in cache. The launcher still rejects shared memory in larger
+blocks, and `__syncthreads` in a block of more than one thread aborts with a
+message rather than racing. `BEAMZ_TILE_LOOP` walks a tile stage: on GPUs it
+is the usual block-stride loop, on the CPU a row/column nest that the compiler
+vectorises along x. The fused CPML step (`BEAMZ_CUDA_CPML_SPATIAL`) and the
+complete CPML pair (`BEAMZ_CUDA_CPML_TEMPORAL`) are not converted yet and still
+fall back on the CPU.
 
 The CPU build is single-device; the sharded target is not registered. Under
 `--xla_force_host_platform_device_count`, sharded runs through `beamz._cpu`
@@ -244,21 +252,36 @@ Ryzen 9 7950X (16 cores, DDR5), JAX 0.9.0 CPU, GCUPS:
 | 96×160×256 | 0.11 | 0.32 |
 | 128×256×512 | 0.12 | 0.35 |
 
-The streamed interior is memory-bound, not compute-bound: with PEC walls it
-runs at about 0.5 GCUPS, moving roughly 100 bytes per cell and step, which is
-the 7950X's measured STREAM bandwidth (51 GB/s with write-allocate).
-Vectorising the kernels would therefore gain little. Only fewer bytes per step
-would: H/E fusion or several steps per pass through cache. The GPU's barrier
-kernels do that with shared memory, but running a block's threads as fibers to
-honour `__syncthreads` would cost more in switches than it saves (several
-barriers per two cell updates). A CPU-shaped schedule (H and E interleaved over
-z-chunks that stay in L3) is the remaining lever; sources and DFTs between the
-phases make it a separate piece of work.
+`cuda_mstep` is the fastest CPU schedule. Ryzen 9 7950X, 128×256×512, GCUPS:
+
+| Boundaries | streamed | mstep |
+|---|---:|---:|
+| PEC walls | 0.49 | 0.53 |
+| one CPML wall | 0.41 | 0.50 |
+| CPML on every face | 0.35 | 0.39 |
+
+The gain grows with the domain, where the mstep core dominates: per cell, the
+core runs at about 1.5× the streamed kernels, while its edge phases (CPML,
+sources, monitors) cost about 2.5× and shrink with the surface-to-volume
+ratio. On one thread the core is compute-bound (a DRAM-sized domain runs as
+fast per cell as a cache-resident one). It scales sublinearly, 7× on 16
+cores, because threads then stall on DRAM; more steps per pass would cut that
+traffic. Parallel efficiency inside a launch is 92–95%, so load balance is not
+the limit.
+
+Two CPU-only details help the core. The packed E material lookup loads at a
+clamped index and then selects, because a bounds-checked load becomes a
+masked load that the vectoriser cannot turn into a gather; the core also
+prefetches the next plane's rows, since a wave reads more short streams than
+the hardware prefetchers follow. Which stages vectorise depends on the
+target's tuning: GCC enables gathers for Intel targets (Sapphire Rapids
+vectorises every stage) and leaves the E lookups scalar on Zen, where forcing
+gathers was 5% slower. Pass the target CPU in `BEAMZ_CPU_FLAGS`.
 
 Launches below 32,768 CUDA threads (source injection, DFT phase tables) run on
 the calling thread, since waking the OpenMP team costs more than the work
 (`BEAMZ_CPU_PARALLEL_THRESHOLD`). Building with `-DBEAMZ_CPU_PROFILE` in
-`BEAMZ_CPU_FLAGS` prints wall time per kernel at exit.
+`BEAMZ_CPU_FLAGS` prints wall time and parallel efficiency per kernel at exit.
 
 CI (`.github/workflows/cuda.yml`) builds this component and runs the hardware
 parity suite against JAX on CPU for every PR, and compiles the HIP component

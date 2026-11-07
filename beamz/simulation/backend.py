@@ -109,11 +109,12 @@ def cuda_flags_from_env() -> int:
 def platform_cuda_flags(flags: int) -> int:
     """Drop schedule requests the selected native build cannot run.
 
-    The CPU build has no shared memory or barriers, so requested two-step
-    tiles fall back to single steps, as unsupported tuning choices do on GPUs.
+    The CPU build runs barrier kernels only as one-thread blocks. The interior
+    pair tiles are written that way; the CPML pair is not yet, so it falls
+    back to the interior pair, as unsupported tuning choices do on GPUs.
     """
     if _gpu_platform() == "cpu":
-        flags &= ~(CUDA_TEMPORAL_PAIR | CUDA_CPML_PAIR)
+        flags &= ~CUDA_CPML_PAIR
     return flags
 
 

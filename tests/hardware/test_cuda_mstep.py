@@ -492,6 +492,10 @@ def test_automatic_schedule_dispatch_preserves_chunk_clocks(
     # Each mocked policy is a different frozen decision for an equivalent case, so
     # fresh_program_caches drops the previous variant's program.
     monkeypatch.setattr(schedule, "cuda_device_kind", lambda: "NVIDIA GeForce RTX 3090")
+    # The CPU platform reports no device memory; admission is not under test.
+    from beamz.simulation import memory
+
+    monkeypatch.setattr(memory, "cuda_available_bytes", lambda program: 16 << 30)
     monkeypatch.setattr(
         schedule,
         "automatic_candidate",

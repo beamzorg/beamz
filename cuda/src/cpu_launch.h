@@ -7,9 +7,12 @@
 //
 // Execution model: blocks are distributed over OpenMP threads; inside a block
 // the CUDA threads run one after another (x fastest, matching memory order).
-// A warp is one lane wide. Kernels that need barriers or shared memory cannot
-// be expressed this way; they all request dynamic shared memory, and the
-// launcher rejects any launch that does with cudaErrorNotSupported.
+// A warp is one lane wide. A barrier cannot be honoured between threads that
+// run one after another, so kernels with barriers run only as one-thread
+// blocks (BEAMZ_BARRIER_BLOCK): their block-stride loops then cover every
+// stage before the barrier, which has nobody to wait for. Dynamic shared
+// memory is a per-worker scratch buffer that stays in cache. The launcher
+// rejects shared memory in blocks of more than one thread.
 
 #include <cmath>
 #include <cstddef>
@@ -49,11 +52,28 @@
 #define __launch_bounds__(...)
 #define __grid_constant__
 #define __restrict__ __restrict
-// Only reached in kernels the launcher rejects (they all also use dynamic
-// shared memory); one instance per OpenMP thread keeps them well formed.
+// One instance per OpenMP worker, which runs one (one-thread) block at a time.
 #define __shared__ static thread_local
 #define BEAMZ_LAUNCH_BOUNDS(threads, min_blocks)
-#define BEAMZ_DYNAMIC_SHARED(type, name) type* name = nullptr
+#define BEAMZ_DYNAMIC_SHARED(type, name) \
+  type* name = static_cast<type*>(::beamz::cpu::shared_scratch)
+#define BEAMZ_BARRIER_BLOCK(...) 1
+#if defined(__clang__)
+#define BEAMZ_UNROLL _Pragma("unroll")
+#else
+#define BEAMZ_UNROLL _Pragma("GCC unroll 16")
+#endif
+// Cells of one tile stage are independent: each writes only its own slot and
+// reads the previous stage or frozen inputs. Saying so lets the compiler
+// vectorise along x despite clamped addresses and possibly aliasing pointers.
+#if defined(__clang__)
+#define BEAMZ_INDEPENDENT_X _Pragma("clang loop vectorize(assume_safety)")
+#else
+#define BEAMZ_INDEPENDENT_X _Pragma("GCC ivdep")
+#endif
+#define BEAMZ_TILE_LOOP(iy, ix, ny, nx) \
+  for (int iy = 0; iy < (ny); ++iy)     \
+    BEAMZ_INDEPENDENT_X for (int ix = 0; ix < (nx); ++ix)
 // Warps have one lane: width-dependent code takes its per-lane path.
 #define BEAMZ_WAVE32 false
 #define BEAMZ_ARG(type) const type&
@@ -74,6 +94,8 @@ inline thread_local uint3 thread_index{0, 0, 0};
 inline thread_local uint3 block_index{0, 0, 0};
 inline thread_local dim3 block_dim{};
 inline thread_local dim3 grid_dim{};
+// The running block's dynamic shared memory (null when none was requested).
+inline thread_local void* shared_scratch = nullptr;
 }  // namespace beamz::cpu
 
 #define threadIdx (::beamz::cpu::thread_index)
@@ -104,16 +126,18 @@ inline std::common_type_t<A, B> max(A a, B b) {
 inline float min(float a, float b) { return std::fmin(a, b); }
 inline float max(float a, float b) { return std::fmax(a, b); }
 
-// Every kernel with a barrier also requests dynamic shared memory, which the
-// launcher rejects, so no barrier is reached on the CPU. A kernel that slips
-// past (static __shared__ only, say) would race silently: stop instead.
-[[noreturn]] inline void __syncthreads() {
-  std::fputs("beamz._cpu: a kernel reached __syncthreads; barrier kernels "
-             "cannot run on the CPU platform\n", stderr);
+// A one-thread block has nobody to wait for. In a larger block the threads
+// run one after another, so the first to arrive would read what later
+// threads have not written yet: stop instead of racing.
+inline void __syncthreads() {
+  const dim3& b = ::beamz::cpu::block_dim;
+  if (b.x * b.y * b.z == 1) return;
+  std::fputs("beamz._cpu: a kernel reached __syncthreads in a block of more "
+             "than one thread; launch it with BEAMZ_BARRIER_BLOCK\n", stderr);
   std::abort();
 }
 
-// Only reached in shared-memory kernels, which the launcher rejects.
+// Shared memory is ordinary cache-resident memory: copy synchronously.
 #define BEAMZ_ASYNC_COPY_F32(shared_destination, global_source) \
   (*(shared_destination) = *(global_source))
 #define BEAMZ_ASYNC_COMMIT() ((void)0)
@@ -179,11 +203,15 @@ namespace beamz::cpu {
 
 #if defined(BEAMZ_CPU_PROFILE)
 // Opt-in (-DBEAMZ_CPU_PROFILE): wall time per kernel, printed at exit.
+// Busy is the summed time workers spent on blocks; busy / (seconds x team)
+// is the launch's parallel efficiency (the rest is waiting for stragglers).
 struct KernelProfile {
   struct Entry {
     double seconds = 0;
     long launches = 0;
     double blocks = 0;
+    double busy = 0;
+    double capacity = 0;
   };
   std::mutex mutex;
   std::map<std::string, Entry> entries;
@@ -192,9 +220,11 @@ struct KernelProfile {
     for (auto& [name, e] : entries) total += e.seconds;
     std::fprintf(stderr, "beamz cpu profile: %.3f s in kernels\n", total);
     for (auto& [name, e] : entries)
-      std::fprintf(stderr, "%8.3f s %5.1f%% %8ld launches %10.0f blocks/launch  %s\n",
+      std::fprintf(stderr, "%8.3f s %5.1f%% %8ld launches %10.0f blocks/launch %5.1f%% busy  %s\n",
                    e.seconds, 100 * e.seconds / total, e.launches,
-                   e.blocks / e.launches, name.c_str());
+                   e.blocks / e.launches,
+                   e.capacity > 0 ? 100 * e.busy / e.capacity : 0.0,
+                   name.c_str());
   }
   static KernelProfile& Get() {
     static KernelProfile profile;
@@ -213,6 +243,23 @@ const char* KernelName() {
 #endif
 inline constexpr int64_t kParallelThreshold = BEAMZ_CPU_PARALLEL_THRESHOLD;
 
+// Each worker keeps its largest shared-memory buffer for later launches.
+inline void* SharedScratch(size_t bytes) {
+  struct Buffer {
+    void* data = nullptr;
+    size_t size = 0;
+    ~Buffer() { std::free(data); }
+  };
+  static thread_local Buffer buffer;
+  if (bytes > buffer.size) {
+    std::free(buffer.data);
+    const size_t size = (bytes + 63) / 64 * 64;
+    buffer.data = std::aligned_alloc(64, size);
+    buffer.size = buffer.data ? size : 0;
+  }
+  return buffer.data;
+}
+
 template <auto Kernel>
 struct Launcher {
   dim3 grid;
@@ -226,7 +273,10 @@ struct Launcher {
 
   template <size_t... I, typename... Args>
   void Run(std::index_sequence<I...>, const Args&... args) const {
-    if (shared_bytes != 0) {
+    // Shared memory implies cooperating threads, which only a one-thread
+    // block can run in order (see BEAMZ_BARRIER_BLOCK).
+    if (shared_bytes != 0 &&
+        static_cast<int64_t>(block.x) * block.y * block.z != 1) {
       beamz_cpu_last_error = cudaErrorNotSupported;
       return;
     }
@@ -239,6 +289,8 @@ struct Launcher {
     struct Record {
       std::chrono::steady_clock::time_point start;
       int64_t blocks;
+      double busy = 0;
+      int team = 1;
       ~Record() {
         const double s = std::chrono::duration<double>(
                              std::chrono::steady_clock::now() - start).count();
@@ -248,6 +300,8 @@ struct Launcher {
         e.seconds += s;
         e.launches += 1;
         e.blocks += blocks;
+        e.busy += busy;
+        e.capacity += s * team;
       }
     } record{start, blocks};
 #endif
@@ -261,8 +315,14 @@ struct Launcher {
     const int64_t chunk = blocks / (16 * static_cast<int64_t>(omp_get_max_threads())) + 1;
     // Waking the team costs far more than a few thousand CUDA threads of
     // work (source injection, DFT phases): run those on the caller.
+    // A one-thread block with shared memory stands for a whole GPU block's
+    // tile, so every such launch is worth the team.
     const int64_t work = blocks * static_cast<int64_t>(b.x) * b.y * b.z;
-#pragma omp parallel if (work >= kParallelThreshold)
+    const bool parallel = shared_bytes ? blocks > 1 : work >= kParallelThreshold;
+#endif
+    bool out_of_memory = false;
+#if defined(_OPENMP)
+#pragma omp parallel if (parallel)
 #endif
     {
 #if defined(__SSE__)
@@ -273,10 +333,25 @@ struct Launcher {
     // shared original, forcing one full copy per CUDA thread. Nothing can
     // alias this local, so the per-thread copies fold away.
     const std::tuple<Args...> local(args...);
+    void* const scratch = shared_bytes ? SharedScratch(shared_bytes) : nullptr;
+    const bool ready = shared_bytes == 0 || scratch != nullptr;
+    if (!ready) {
 #if defined(_OPENMP)
+#pragma omp atomic write
+#endif
+      out_of_memory = true;
+    }
+    shared_scratch = scratch;
+#if defined(BEAMZ_CPU_PROFILE)
+    const auto worker_start = std::chrono::steady_clock::now();
+#endif
+#if defined(_OPENMP) && defined(BEAMZ_CPU_PROFILE)
+#pragma omp for schedule(dynamic, chunk) nowait
+#elif defined(_OPENMP)
 #pragma omp for schedule(dynamic, chunk)
 #endif
     for (int64_t linear = 0; linear < blocks; ++linear) {
+      if (!ready) continue;
       grid_dim = g;
       block_dim = b;
       block_index = {static_cast<unsigned int>(linear % gx),
@@ -289,7 +364,21 @@ struct Launcher {
             Kernel(std::get<I>(local)...);
           }
     }
+#if defined(BEAMZ_CPU_PROFILE)
+    const double busy = std::chrono::duration<double>(
+                            std::chrono::steady_clock::now() - worker_start)
+                            .count();
+#if defined(_OPENMP)
+#pragma omp atomic
+#endif
+    record.busy += busy;
+#if defined(_OPENMP)
+#pragma omp single nowait
+    record.team = omp_get_num_threads();
+#endif
+#endif
     }
+    if (out_of_memory) beamz_cpu_last_error = cudaErrorMemoryAllocation;
   }
 };
 

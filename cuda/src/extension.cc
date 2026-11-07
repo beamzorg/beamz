@@ -36,11 +36,8 @@ BEAMZ_NB_MODULE(BEAMZ_EXTENSION_NAME, module) {
 #endif
     registrations[kProgramTarget] =
         nb::capsule(reinterpret_cast<void*>(beamz_cuda_program));
-#if !defined(BEAMZ_PLATFORM_CPU)
-    // Whole-column two-step tiles need shared memory and barriers.
     registrations[kMstepTarget] =
         nb::capsule(reinterpret_cast<void *>(beamz_cuda_mstep));
-#endif
     registrations[kAdjointTarget] =
         nb::capsule(reinterpret_cast<void*>(beamz_cuda_adjoint));
     registrations[kMaterialAdjointTarget] =

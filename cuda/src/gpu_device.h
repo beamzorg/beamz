@@ -31,8 +31,24 @@
 //   BEAMZ_LAUNCH(blocks, threads, shared_bytes, stream, Kernel<A, B>)(args...);
 #define BEAMZ_LAUNCH(grid, block, shared, stream, ...) \
   __VA_ARGS__<<<grid, block, shared, stream>>>
-// Dynamic shared memory; kernels that use it cannot run on the CPU platform.
+// Dynamic shared memory. On the CPU platform it is a per-worker scratch buffer.
 #define BEAMZ_DYNAMIC_SHARED(type, name) extern __shared__ type name[]
+// Block size of a kernel whose threads meet at __syncthreads. Such a kernel
+// must cover each stage's work with block-stride loops over threadIdx.x and
+// keep nothing per-thread across a barrier except values every thread
+// computes alike: then it is correct for any block size, and the CPU platform
+// runs it as one thread per block, where barriers are trivially satisfied.
+#define BEAMZ_BARRIER_BLOCK(...) (__VA_ARGS__)
+// Fully unroll the next loop. GCC ignores CUDA's `#pragma unroll`.
+#define BEAMZ_UNROLL _Pragma("unroll")
+// Block-stride loop over the cells of an ny x nx tile, row-major: thread t
+// takes cells t, t + blockDim.x, ... The CPU platform, where such kernels run
+// as one-thread blocks, nests the rows and columns so x vectorises.
+#define BEAMZ_TILE_LOOP(iy, ix, ny, nx)                                    \
+  for (int beamz_cell_ = threadIdx.x, iy = 0, ix = 0;                      \
+       beamz_cell_ < (ny) * (nx) &&                                        \
+       ((iy = beamz_cell_ / (nx)), (ix = beamz_cell_ % (nx)), true);       \
+       beamz_cell_ += blockDim.x)
 // Struct-typed kernel parameters. GPUs pass them by value in parameter space;
 // the CPU platform binds them by reference so a launch copies no descriptor
 // per CUDA thread (several kilobytes for BeamzLaunch).

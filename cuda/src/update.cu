@@ -1091,23 +1091,27 @@ __global__ BEAMZ_LAUNCH_BOUNDS(Tile::X* Tile::Y, 6) void FusedCpmlCore(
   };
   // Only two H planes are live: the current plane and its backward z halo.
   stage(oz - 1, 1);
-  const int lx = threadIdx.x + 1, ly = threadIdx.y + 1;
-  const int x = ox + threadIdx.x, y = oy + threadIdx.y;
   for (int dz = 0; dz < Tile::Z && oz + dz < hz; ++dz) {
     const int z = oz + dz, lz = dz & 1;
     stage(z, lz);
     __syncthreads();
-    if (y < hy && x < hx &&
-        (!Band || x < low + 2 || y < low + 2 || z < low + 2 || x >= hx - 2 ||
-         y >= hy - 2 || z >= hz - 2)) {
-      for (int component = 0; component < 3; ++component) {
-        const auto &output = h.outputs[component];
-        static_cast<float*>(output.data)[BeamzOffset3D<false>(output, z, y, x)] =
-            h_fields[component * Tile::Volume + Tile::Offset(lz, ly, lx)];
+    // One tile cell per thread on GPUs (the block is Tile::X x Tile::Y).
+    for (int cell = thread; cell < Tile::X * Tile::Y; cell += threads) {
+      const int tx = cell % Tile::X, ty = cell / Tile::X;
+      const int lx = tx + 1, ly = ty + 1;
+      const int x = ox + tx, y = oy + ty;
+      if (y < hy && x < hx &&
+          (!Band || x < low + 2 || y < low + 2 || z < low + 2 ||
+           x >= hx - 2 || y >= hy - 2 || z >= hz - 2)) {
+        for (int component = 0; component < 3; ++component) {
+          const auto &output = h.outputs[component];
+          static_cast<float*>(output.data)[BeamzOffset3D<false>(output, z, y, x)] =
+              h_fields[component * Tile::Volume + Tile::Offset(lz, ly, lx)];
+        }
+        CoreEValue<0, Packed, Tile>(e, h_fields, lz, ly, lx, z, y, x);
+        CoreEValue<1, Packed, Tile>(e, h_fields, lz, ly, lx, z, y, x);
+        CoreEValue<2, Packed, Tile>(e, h_fields, lz, ly, lx, z, y, x);
       }
-      CoreEValue<0, Packed, Tile>(e, h_fields, lz, ly, lx, z, y, x);
-      CoreEValue<1, Packed, Tile>(e, h_fields, lz, ly, lx, z, y, x);
-      CoreEValue<2, Packed, Tile>(e, h_fields, lz, ly, lx, z, y, x);
     }
     __syncthreads();
   }
@@ -1455,11 +1459,11 @@ cudaError_t EnqueueCpmlCoreTile(cudaStream_t stream, const BeamzLaunch& h,
                     (geometry.high_y - geometry.low + Tile::Y - 1) / Tile::Y,
                     (geometry.high_z - geometry.low + Tile::Z - 1) / Tile::Z);
   if (HasPackedLosslessMaterial(e)) {
-    BEAMZ_LAUNCH(blocks, (dim3(Tile::X, Tile::Y)), Tile::SharedBytes, stream, FusedCpmlCore<true, Tile, Band>)(
+    BEAMZ_LAUNCH(blocks, BEAMZ_BARRIER_BLOCK(dim3(Tile::X, Tile::Y)), Tile::SharedBytes, stream, FusedCpmlCore<true, Tile, Band>)(
             MakeFusedYeePhase(h), MakeFusedYeePhase(e), sources, geometry.low,
             geometry.high_z, geometry.high_y, geometry.high_x);
   } else {
-    BEAMZ_LAUNCH(blocks, (dim3(Tile::X, Tile::Y)), Tile::SharedBytes, stream, FusedCpmlCore<false, Tile, Band>)(
+    BEAMZ_LAUNCH(blocks, BEAMZ_BARRIER_BLOCK(dim3(Tile::X, Tile::Y)), Tile::SharedBytes, stream, FusedCpmlCore<false, Tile, Band>)(
             MakeFusedYeePhase(h), MakeFusedYeePhase(e), sources, geometry.low,
             geometry.high_z, geometry.high_y, geometry.high_x);
   }
@@ -1520,12 +1524,12 @@ cudaError_t EnqueueCpmlPairCoreTile(cudaStream_t stream, const BeamzLaunch &h,
                     (geometry.high_y - geometry.low - 4 + Y - 1) / Y,
                     (geometry.high_z - geometry.low - 4 + Z - 1) / Z);
   if (HasPackedLosslessMaterial(e))
-    BEAMZ_LAUNCH(blocks, 256, (PairStage<X, Y, 3>::offset * sizeof(float)), stream, TemporalPairCore<true, X, Y, Z>)(
+    BEAMZ_LAUNCH(blocks, BEAMZ_BARRIER_BLOCK(256), (PairStage<X, Y, 3>::offset * sizeof(float)), stream, TemporalPairCore<true, X, Y, Z>)(
             MakeFusedYeePhase(h), MakeFusedYeePhase(e), final, hs, es,
             publication, geometry.low, geometry.high_z, geometry.high_y,
             geometry.high_x);
   else
-    BEAMZ_LAUNCH(blocks, 256, (PairStage<X, Y, 3>::offset * sizeof(float)), stream, TemporalPairCore<false, X, Y, Z>)(
+    BEAMZ_LAUNCH(blocks, BEAMZ_BARRIER_BLOCK(256), (PairStage<X, Y, 3>::offset * sizeof(float)), stream, TemporalPairCore<false, X, Y, Z>)(
             MakeFusedYeePhase(h), MakeFusedYeePhase(e), final, hs, es,
             publication, geometry.low, geometry.high_z, geometry.high_y,
             geometry.high_x);
@@ -1683,7 +1687,7 @@ cudaError_t LaunchMstepColumn(cudaStream_t stream, const BeamzLaunch &h,
       error != cudaSuccess)
     return error;
   const dim3 blocks(masks.dims[1] * (32 / X), masks.dims[0] * (16 / Y), segment ? (h.inputs[0].dims[0] + segment - 1) / segment : 1);
-  BEAMZ_LAUNCH(blocks, (MstepTile<X,Y>::threads), (MstepTile<X,Y>::shared), stream, MstepColumnCore<Packed, ScalarH, X, Y>)(
+  BEAMZ_LAUNCH(blocks, BEAMZ_BARRIER_BLOCK(MstepTile<X,Y>::threads), (MstepTile<X,Y>::shared), stream, MstepColumnCore<Packed, ScalarH, X, Y>)(
           MakeFusedYeePhase(h), MakeFusedYeePhase(e), final, masks, bounds, segment);
   return cudaGetLastError();
 }
@@ -1732,7 +1736,7 @@ cudaError_t EnqueueMstepTile(cudaStream_t stream, const BeamzLaunch &h,
                         cudaFuncAttributeMaxDynamicSharedMemorySize, MstepTile<X,Y>::packed_shared);
           err != cudaSuccess) return err;
       const dim3 blocks(masks.dims[1] * (32 / X), masks.dims[0] * (16 / Y), segment ? (h.inputs[0].dims[0] + segment - 1) / segment : 1);
-      BEAMZ_LAUNCH(blocks, (MstepTile<X,Y>::threads), (MstepTile<X,Y>::packed_shared), stream, MstepPackedColumnCore<X,Y>)(
+      BEAMZ_LAUNCH(blocks, BEAMZ_BARRIER_BLOCK(MstepTile<X,Y>::threads), (MstepTile<X,Y>::packed_shared), stream, MstepPackedColumnCore<X,Y>)(
           v, static_cast<const int *>(masks.data),
           static_cast<const int *>(bounds.data), masks.dims[1], segment);
       return cudaGetLastError();

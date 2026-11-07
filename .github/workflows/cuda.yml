@@ -137,7 +137,7 @@ jobs:
         run: >-
           uv run --no-sync --no-active --python 3.11 python -m pytest
           tests/hardware/test_cuda_backends.py tests/hardware/test_cuda_autodiff.py
-          -v --tb=short --durations=20
+          tests/hardware/test_cuda_mstep.py -v --tb=short --durations=20
 
   hip:
     # Compile-only: no AMD GPU runner. Catches CUDA runtime names without a

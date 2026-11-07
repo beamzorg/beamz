@@ -36,8 +36,13 @@ template <bool Compact = true>
 BEAMZ_HD int BeamzOffset3D(const BeamzBuffer& value, int z, int y, int x) {
   if constexpr (Compact) {
     if (value.compact_slots) {
-      const int q = (z * value.compact_ny + y / 8) * value.compact_nx + x / 16;
-      return value.compact_slots[q] * 128 + (y % 8) * 16 + x % 16;
+      // Compact coordinates are never negative, so shifts and masks replace
+      // signed division and remainder by the 8 x 16 quadrant shape.
+      const unsigned uy = static_cast<unsigned>(y), ux = static_cast<unsigned>(x);
+      const int q = (z * value.compact_ny + static_cast<int>(uy >> 3)) *
+                        value.compact_nx +
+                    static_cast<int>(ux >> 4);
+      return value.compact_slots[q] * 128 + static_cast<int>((uy & 7u) * 16u + (ux & 15u));
     }
   }
   return z * value.plane_stride + y * value.row_stride + x;

@@ -17,8 +17,6 @@ from beamz.simulation.execute import build_scan, initial_program_state
 from tests.performance.h100_workloads import H100Workload
 
 STATUS = cuda_backend_status()
-# The CPU build has no shared memory: two-step requests fall back to one step.
-_PAIR_STEPS = 1 if STATUS.gpu_platform == "cpu" else 2
 
 
 def _gpu_count() -> int:
@@ -163,7 +161,7 @@ def test_streamed_temporal_pair_full_state_and_continuation(
         state=_copy_state(state), num_steps=steps, backend="cuda_streamed"
     ).state
     _assert_state_close(reference, actual)
-    assert any(plan.temporal_steps == _PAIR_STEPS for plan in plans)
+    assert any(plan.temporal_steps == 2 for plan in plans)
     if steps < 33:
         reference = simulation.advance(
             state=reference, num_steps=33 - steps, backend="jax"
@@ -229,7 +227,7 @@ def test_streamed_temporal_pair_io_variants(
         state=_copy_state(state), num_steps=6, backend="cuda_streamed"
     ).state
     _assert_state_close(reference, actual)
-    assert any(plan.temporal_steps == _PAIR_STEPS for plan in plans)
+    assert any(plan.temporal_steps == 2 for plan in plans)
 
 
 @pytest.mark.parametrize("shell_tile", ["64x4", "32x8", "32x4"])

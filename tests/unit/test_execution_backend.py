@@ -737,11 +737,13 @@ def test_cpu_only_process_without_cpu_extension_reports_no_devices(monkeypatch):
     assert "beamz._cpu" in status.reason
 
 
-def test_cpu_platform_drops_barrier_only_schedule_flags(monkeypatch):
+def test_cpu_platform_keeps_interior_pairs_but_drops_cpml_pairs(monkeypatch):
     from beamz.simulation import _cuda_abi as abi
 
     flags = abi.CUDA_DEFAULT_FLAGS | abi.CUDA_TEMPORAL_PAIR | abi.CUDA_CPML_PAIR
     monkeypatch.setattr(backend_runtime, "_gpu_platform", lambda: "cpu")
-    assert backend_runtime.platform_cuda_flags(flags) == abi.CUDA_DEFAULT_FLAGS
+    assert backend_runtime.platform_cuda_flags(flags) == (
+        abi.CUDA_DEFAULT_FLAGS | abi.CUDA_TEMPORAL_PAIR
+    )
     monkeypatch.setattr(backend_runtime, "_gpu_platform", lambda: "cuda")
     assert backend_runtime.platform_cuda_flags(flags) == flags

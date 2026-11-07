@@ -144,8 +144,7 @@ __global__ __launch_bounds__(256) void TemporalPairCore(
   // Most blocks do not intersect any source. Determine that once per block,
   // rather than rereading slab metadata in every stage and halo cell.
   __shared__ bool active_sources[6];
-  if (threadIdx.x < 6) {
-    const int c = threadIdx.x;
+  for (int c = threadIdx.x; c < 6; c += blockDim.x) {
     const auto &group = c < 3 ? hs.groups[c] : es.groups[c - 3];
     const auto *starts = static_cast<const int *>(group.starts.data);
     bool active = false;
