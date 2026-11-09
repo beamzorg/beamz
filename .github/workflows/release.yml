@@ -12,6 +12,7 @@ jobs:
   version:
     name: Verify release version metadata
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -31,6 +32,7 @@ jobs:
   build-sdist:
     needs: validation
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -52,6 +54,7 @@ jobs:
 
   build-wheels:
     needs: validation
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -98,6 +101,7 @@ jobs:
   build:
     needs: [build-sdist, build-wheels]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -120,6 +124,7 @@ jobs:
     name: Qualify built GDSFactory workflow
     needs: [build-sdist, build-wheels]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -158,6 +163,7 @@ jobs:
   github-release:
     needs: [build, package-qualification]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -177,6 +183,7 @@ jobs:
   pypi-publish:
     needs: github-release
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Download distributions
         uses: actions/download-artifact@v8
