@@ -125,7 +125,7 @@ def test_solve_modes_projects_fields_to_symmetric_material_parity(monkeypatch):
 
 
 @pytest.mark.parametrize("force_symmetry", [False, True])
-def test_solve_modes_leaves_2d_launch_line_profiles_unprojected(
+def test_solve_modes_collocates_line_profiles_without_symmetry_projection(
     monkeypatch, force_symmetry
 ):
     dims = ("y", "z", "x", "f", "mode_index")
@@ -148,8 +148,31 @@ def test_solve_modes_leaves_2d_launch_line_profiles_unprojected(
         force_symmetry=force_symmetry,
     )
 
+    # Ex/Ez/Hy are y-node fields; do not average the invariant singleton z axis.
     for index, component in enumerate((*electric[0], *magnetic[0])):
-        np.testing.assert_allclose(component, (index + 1) * (1.0 + np.arange(5.0)))
+        expected = [1.5, 2.5, 3.5, 4.5, 2.5] if index in (0, 2, 4) else 1 + np.arange(5)
+        np.testing.assert_allclose(component, (index + 1) * np.asarray(expected))
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("polarization", ["te", "tm"])
+def test_fundamental_line_mode_preserves_slab_mirror(axis, polarization):
+    eps = np.full(80, 1.44402**2)
+    eps[34:46] = 3.47644**2
+    _, electric, magnetic, normal = solve_modes(
+        eps,
+        omega=2 * np.pi * LIGHT_SPEED / 1.55e-6,
+        dL=40e-9,
+        direction="+" + axis,
+        filter_pol=polarization,
+        return_fields=True,
+    )
+    for fields, component in (
+        (electric, 2 if polarization == "tm" else 1 - normal),
+        (magnetic, 2 if polarization == "te" else 1 - normal),
+    ):
+        field = fields[0, component]
+        assert np.linalg.norm(field - field[::-1]) / np.linalg.norm(field) < 1e-10
 
 
 def test_solve_modes_rejects_unknown_polarization():

@@ -539,7 +539,11 @@ class MaterialGrid:
             return False
         if self.dispersion or self.metric_kind != "isotropic_uniform":
             return True
-        if self.smoothing == "farjadpour_diagonal" or self.uses_full_permittivity:
+        # Isotropic cells can still have mixed-material native interface samples.
+        if (
+            self.smoothing in {"farjadpour_diagonal", "farjadpour_full"}
+            or self.uses_full_permittivity
+        ):
             return True
         for name in ("epsilon", "conductivity"):
             if name not in self.tensors:
