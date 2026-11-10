@@ -181,3 +181,117 @@ def test_published_lorentz_variants_match_photon_energy_equation(key, params):
     )
     assert "Technical Note 08" in variant.references
     assert "not the source publication" in variant.conditions
+
+
+def _source_formula(text):
+    """Formula type and coefficients from a refractiveindex.info YAML page."""
+    import re
+
+    kind = re.search(r"type:\s*(formula \d)", text).group(1)
+    values = np.array(
+        re.search(r"coefficients:\s*([^\n]+)", text).group(1).split(), float
+    )
+    return kind, values
+
+
+def _sellmeier(kind, values, wavelength_um):
+    eps = np.full(wavelength_um.shape, 1.0 + values[0])
+    for strength, resonance in values[1:].reshape(-1, 2):
+        squared = resonance**2 if kind == "formula 1" else resonance
+        eps += strength * wavelength_um**2 / (wavelength_um**2 - squared)
+    return eps
+
+
+def test_anisotropic_library_media_are_passive_and_serializable():
+    from beamz.material_library import anisotropic_library
+
+    assert set(anisotropic_library) == {"Al2O3", "LiNbO3", "hBN", "MoO3"}
+    for item in anisotropic_library.values():
+        assert item.medium is item[item.default]
+        for variant in item.variants.values():
+            medium = variant.medium
+            assert isinstance(medium, bz.AnisotropicMedium)
+            assert variant.source.strip() and variant.license
+            restored = bz.AnisotropicMedium.from_spec(medium.to_spec())
+            assert restored.cache_spec() == medium.cache_spec()
+            lo, hi = medium.frequency_range
+            tensor = medium.permittivity_tensor(np.geomspace(lo, hi, 300))
+            # Passive: the anti-Hermitian part is positive semidefinite.
+            loss = (tensor - np.conj(np.swapaxes(tensor, -1, -2))) / 2j
+            assert np.linalg.eigvalsh(loss).min() > -1e-12
+
+
+@pytest.mark.parametrize(
+    "key,stems", [("Al2O3", "Al2O3-Malitson"), ("LiNbO3", "LiNbO3-Zelmon")]
+)
+def test_uniaxial_crystals_match_bundled_sellmeier_sources(key, stems):
+    import hashlib
+    import json
+    from importlib.resources import files
+
+    from beamz.material_library import anisotropic_library
+
+    data = files("beamz.material_library").joinpath("data")
+    catalog = json.loads(data.joinpath("anisotropic_catalog.json").read_text())
+    record = next(iter(catalog[key]["variants"].values()))
+    medium = anisotropic_library[key].medium
+    lo, hi = medium.frequency_range
+    wavelength = bz.LIGHT_SPEED / np.geomspace(lo, hi, 200)
+    tensor = medium.permittivity_tensor(bz.LIGHT_SPEED / wavelength).real
+    for ray, index in (("o", (0, 0)), ("e", (2, 2))):
+        name = f"{stems}-{ray}.yml"
+        raw = data.joinpath(name).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() in record["source_sha256"]
+        expected = _sellmeier(*_source_formula(raw.decode()), wavelength * 1e6)
+        np.testing.assert_allclose(tensor[(slice(None), *index)], expected, rtol=1e-12)
+    np.testing.assert_allclose(tensor[:, 0, 0], tensor[:, 1, 1])
+
+
+def test_hbn_follows_caldwell_model_and_is_hyperbolic_in_both_bands():
+    from beamz.material_library import anisotropic_library
+
+    medium = anisotropic_library["hBN"].medium
+
+    def caldwell(wavenumber, eps_inf, to, lo, gamma):
+        return eps_inf * (
+            1 + (lo**2 - to**2) / (to**2 - wavenumber**2 - 1j * gamma * wavenumber)
+        )
+
+    wavenumber = np.linspace(700, 1700, 501)
+    tensor = medium.permittivity_tensor(wavenumber * bz.LIGHT_SPEED * 100)
+    np.testing.assert_allclose(
+        tensor[:, 0, 0], caldwell(wavenumber, 4.90, 1360, 1614, 7), rtol=1e-10
+    )
+    np.testing.assert_allclose(
+        tensor[:, 2, 2], caldwell(wavenumber, 2.95, 760, 825, 2), rtol=1e-10
+    )
+    # Main text: Re eps_t < 0 < Re eps_z in the upper band, reversed in the lower.
+    upper = medium.permittivity_tensor(1450 * bz.LIGHT_SPEED * 100).real
+    lower = medium.permittivity_tensor(790 * bz.LIGHT_SPEED * 100).real
+    assert upper[0, 0] < 0 < upper[2, 2]
+    assert lower[2, 2] < 0 < lower[0, 0]
+
+
+def test_moo3_tracks_factorized_alvarez_perez_model():
+    from beamz.material_library import anisotropic_library
+
+    medium = anisotropic_library["MoO3"].medium
+    model = {
+        0: (5.78, ((506.7, 534.3, 49.1), (821.4, 963.0, 6.0), (998.7, 999.2, 0.35))),
+        1: (6.07, ((544.6, 850.1, 9.5),)),
+        2: (4.47, ((956.7, 1006.9, 1.5),)),
+    }
+    wavenumber = np.linspace(450, 1100, 2001)
+    tensor = medium.permittivity_tensor(wavenumber * bz.LIGHT_SPEED * 100)
+    for axis, (eps_inf, oscillators) in model.items():
+        reference = np.full(wavenumber.shape, eps_inf, dtype=complex)
+        for to, lo, gamma in oscillators:
+            reference *= (lo**2 - wavenumber**2 - 1j * gamma * wavenumber) / (
+                to**2 - wavenumber**2 - 1j * gamma * wavenumber
+            )
+        error = np.abs(tensor[:, axis, axis] - reference)
+        if len(oscillators) == 1:
+            np.testing.assert_allclose(tensor[:, axis, axis], reference, rtol=1e-10)
+        else:
+            assert np.median(error / np.abs(reference)) < 0.01
+            assert error.max() < 0.01 * np.abs(reference).max()

@@ -662,9 +662,11 @@ def _lower_mode_source(
     ):
         return _lower_broadband_mode_source(source, ctx)
 
+    from beamz.design.material_views import fields_at_frequency
+
     launch_plan = plan_mode_source_launch(
         source,
-        ctx.fields,
+        fields_at_frequency(ctx.fields, source.frequency, source),
         resolution=ctx.resolution,
         dt=ctx.dt,
         **({"grid": ctx.grid} if ctx.grid is not None else {}),
@@ -717,6 +719,8 @@ def _lower_broadband_mode_source(
     ctx: SourceLoweringContext,
 ) -> CompiledInjectionPlan:
     """Lower a broadband mode into frequency-partitioned injection entries."""
+    from beamz.design.material_views import fields_at_frequency
+
     sampled = _sample_temporal_waveform(src.source_time, ctx)
     analytic = np.asarray(sampled.values, dtype=np.float64) + 1j * np.asarray(
         sampled.quadrature, dtype=np.float64
@@ -735,7 +739,7 @@ def _lower_broadband_mode_source(
         )
         plan = plan_mode_source_launch(
             profile_src,
-            ctx.fields,
+            fields_at_frequency(ctx.fields, float(freq), src),
             resolution=ctx.resolution,
             dt=ctx.dt,
             **({"grid": ctx.grid} if ctx.grid is not None else {}),

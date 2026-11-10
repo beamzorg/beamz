@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- Added `AnisotropicMedium`, `TensorPole` and `GyrotropicPole`. They provide
+  full symmetric permittivity and permeability tensors, tensor-valued
+  Lorentz/Drude resonances (oriented poles via `rotated()`), and
+  non-reciprocal gyrotropic resonances such as magnetized plasmas. Hyperbolic
+  media take their negative branch from a pole. These features run on JAX,
+  CPU or GPU.
+- FDTD now honours non-unit permeability, including off-diagonal tensors, which
+  rasterization previously rejected.
+- Full-tensor permittivity accepts conductive and sponge-PML loss on JAX. The
+  update applies loss semi-implicitly through `(eps + sigma dt / 2 eps0)^-1`.
+  `bz.Absorber` therefore now works with every tensor medium and absorbs the
+  backward waves that a PML amplifies in hyperbolic media. BeamZ warns when
+  such a medium overlaps a PML.
+- Periodic and Bloch seams average tensor cross terms with the seam phase. This
+  also covers the full-tensor permittivity kernel, and rectilinear full-tensor
+  grids may now use periodic or Bloch boundaries on JAX.
+- Mode sources inside media with electric tensor poles are solved at their
+  frequency. Mode ports outside tensor media are no longer rejected.
+- `Simulation.differentiable()` and `TopologyProblem` differentiate through
+  tensor media that lie outside the design region.
+- Added `anisotropic_library` with sapphire, lithium niobate, hBN, and
+  alpha-MoO3 crystal models.
+- Added `examples/anisotropic/`: asymmetric refraction in tilted hyperbolic
+  calcite, permittivity and permeability iso-frequency contours, and a one-way
+  surface magnetoplasmon. Added the "Anisotropic, Hyperbolic, and Gyrotropic
+  Media" guide.
+
 ## v0.6.2 - 2026-11-04
 
 - Corrected native Yee material and field sampling for 3D mode ports. Solver

@@ -130,14 +130,16 @@ def test_default_farjadpour_compilation_preserves_native_colocation(design):
     assert material_grid.uses_direct_yee_materials
 
 
-def test_simulation_conversion_rejects_nonunit_permeability():
+def test_simulation_conversion_keeps_nonunit_permeability_tensors():
     result = rasterize(
         Scene((Material(mu_r=2.0),)),
         Grid.uniform((0, 0, 0), (1, 1, 1), (2, 2, 2)),
     )
 
-    with pytest.raises(ValueError, match="unit permeability"):
-        MaterialGrid.from_raster_result(result)
+    grid = MaterialGrid.from_raster_result(result)
+    assert grid.uses_magnetic_tensors
+    assert set(grid.magnetic_tensors) == {"mu_hx", "mu_hy", "mu_hz", "mu_cell"}
+    np.testing.assert_allclose(np.asarray(grid.magnetic_tensors["mu_cell"])[:3], 2.0)
 
 
 @pytest.mark.parametrize(
@@ -150,7 +152,6 @@ def test_simulation_conversion_rejects_nonunit_permeability():
             "off-diagonal conductivity",
         ),
         ((3.0, 2.0, 1.5, 0.0, 0.1, 0.0), 0.0, 2, "without xz or yz"),
-        ((3.0, 2.0, 1.5, 0.2, 0.0, 0.0), (1.0, 0.5, 0.2), 3, "zero conductivity"),
     ),
 )
 def test_full_tensor_conversion_rejects_unsupported_material_couplings(
@@ -1160,12 +1161,17 @@ def test_full_tensor_and_full_farjadpour_compile_onto_constitutive_supports():
     assert lowered.e_inverse_diagonal_x.shape == padded_shapes["Ex"]
     assert lowered.e_inverse_offdiagonal.shape == (4, 3, 3, 3)
 
-    with pytest.raises(ValueError, match="use CPML"):
-        bz.Simulation(
-            material_grid=material_grid,
-            boundaries=[bz.PML(thickness=0.5, formulation="sponge")],
-            run_time=2e-9,
-        ).compile()
+    # Sponge loss enters the coupled update semi-implicitly on JAX.
+    sponge = bz.Simulation(
+        material_grid=material_grid,
+        boundaries=[bz.PML(thickness=0.5, formulation="sponge")],
+        run_time=2e-9,
+    )
+    assert sponge.compile(backend="jax").coefficients.e_inverse_offdiagonal.size
+    sponge_state = sponge.advance(backend="jax").state
+    assert all(
+        np.all(np.isfinite(getattr(sponge_state, n))) for n in ("ex", "ey", "ez")
+    )
 
 
 def test_rectilinear_full_tensor_update_executes_combined_kernel():

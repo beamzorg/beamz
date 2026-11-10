@@ -196,4 +196,20 @@ def _rasterize_design(
         material_grid = replace(
             material_grid, dispersion=regions, dispersion_interfaces=interfaces
         )
+    from .dispersion import has_tensor_dispersion, rasterize_tensor_dispersion
+
+    if has_tensor_dispersion(scene):
+        material_grid = replace(
+            material_grid,
+            tensor_dispersion=rasterize_tensor_dispersion(
+                scene,
+                native_grid,
+                kind=kind,
+                polarization=polarization,
+                quality=quality,
+                resolution=representative_resolution,
+                cache_directory=cache_directory,
+                periodic_axes=periodic_axes,
+            ),
+        )
     return material_grid
