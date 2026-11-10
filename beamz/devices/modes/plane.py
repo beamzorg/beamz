@@ -185,18 +185,16 @@ def solve_modes(
         solver_plane(eps if eps_zz is None else eps_zz),
     )
     permeability = tuple(solver_plane(v) for v in (mu_xx, mu_yy, mu_zz))
-    if is_plane:
-        solver_axes = tuple(a for a in "xyz" if a != axis)
-        epsilon = tuple(
-            cell_material_samples(value, "E" + a, solver_axes)
-            for a, value in zip("xyz", epsilon, strict=True)
-        )
-        permeability = tuple(
-            None
-            if value is None
-            else cell_material_samples(value, "H" + a, solver_axes)
-            for a, value in zip("xyz", permeability, strict=True)
-        )
+    # Line solves need the same cell-to-Yee material sampling as planes.
+    solver_axes = tuple(a for a in "xyz" if a != axis)
+    epsilon = tuple(
+        cell_material_samples(value, "E" + a, solver_axes)
+        for a, value in zip("xyz", epsilon, strict=True)
+    )
+    permeability = tuple(
+        None if value is None else cell_material_samples(value, "H" + a, solver_axes)
+        for a, value in zip("xyz", permeability, strict=True)
+    )
     result = solve_grid(
         eps_xx=cast(np.ndarray, epsilon[order[0]]),
         eps_yy=epsilon[order[1]],
@@ -213,12 +211,12 @@ def solve_modes(
         pml=(int(npml), int(npml)),
         normal_axis=cast(Literal[0, 1, 2], axis_index),
     )
-    if is_plane:
-        result = collocate_result(
-            result,
-            tuple(a for a in "xyz" if a != axis),
-            tuple(np.asarray(e) for e in edges),
-        )
+    # A line's invariant singleton axis has no PEC wall to collocate against.
+    result = collocate_result(
+        result,
+        solver_axes[: eps_array.ndim],
+        tuple(np.asarray(e) for e in edges[: eps_array.ndim]),
+    )
     fields = {
         name: _mode_planes(data, axis) for name, data in result.field_components.items()
     }
