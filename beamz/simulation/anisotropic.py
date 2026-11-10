@@ -40,12 +40,7 @@ from beamz.constitutive import (
     expand_packed,
     inverse_permittivity_components,
 )
-from beamz.design.material_views import (  # noqa: F401 - re-exported
-    FrequencyFields,
-    fields_at_frequency,
-    port_cells,
-    static_material_grid,
-)
+from beamz.design.material_views import port_cells
 from beamz.lattice import component_axis_offsets_3d
 
 _HALO = 2
@@ -213,9 +208,12 @@ class GyrotropicRegion:
             zip(box.components, box.shapes, self.weights, strict=True)
         ):
             cross = sum(
-                self.rotation[(slice(None), row, col, *spatial)] * shared[col]
-                for col in range(len(shared))
-                if col != row
+                (
+                    self.rotation[(slice(None), row, col, *spatial)] * shared[col]
+                    for col in range(len(shared))
+                    if col != row
+                ),
+                jnp.zeros_like(shared[row]),
             )
             out.append(
                 weight
@@ -600,6 +598,7 @@ def _compile_magnetic(grid, periodic_axes, dt) -> MagneticPlan | None:
     tensors = grid.material_grid.magnetic_tensors
     if not tensors:
         return None
+    _check_static_tensor_stability(grid, dt)
     cell_shape = tuple(grid.material_grid.shape)
     components = _active_components("H", grid)
     active = np.zeros(cell_shape, dtype=bool)
@@ -621,6 +620,34 @@ def _compile_magnetic(grid, periodic_axes, dt) -> MagneticPlan | None:
     )
     loss = _cropped_losses(magnetic_losses(grid, components, dt), box)
     return MagneticPlan(box, _magnetic_inverse(grid, box, dt), loss)
+
+
+def _check_static_tensor_stability(grid, dt):
+    """Bound the wave speed using the smallest constitutive eigenvalues."""
+    from beamz.design.anisotropic import packed_to_matrix
+
+    def minimum_eigenvalue(tensors):
+        return min(
+            float(
+                np.linalg.eigvalsh(
+                    packed_to_matrix(np.moveaxis(expand_packed(tensor), 0, -1))
+                ).min()
+            )
+            for tensor in tensors
+        )
+
+    materials = grid.material_grid
+    eps_min = minimum_eigenvalue(
+        (materials.tensors["epsilon"], *materials.yee_tensors.values())
+    )
+    mu_min = minimum_eigenvalue(materials.magnetic_tensors.values())
+    axes = ("x", "y", "z") if len(materials.shape) == 3 else ("x", "y")
+    limit = grid.geometry.cfl_time_step(np.sqrt(eps_min * mu_min), active_axes=axes)
+    if dt > limit * (1 + 1e-6):
+        raise ValueError(
+            f"Static tensor media exceed the CFL stability bound at dt={dt:.3e} s; "
+            f"use dt <= {limit:.3e} s."
+        )
 
 
 def _pole_coefficients(poles, dt):
@@ -763,6 +790,11 @@ def _compile_gyrotropic_region(poles, fraction, family, grid, dt, periodic_axes)
 def _compile_tensor_region(poles, fraction, family, grid, dt, periodic_axes):
     cell_shape = tuple(grid.material_grid.shape)
     weights = np.stack([np.asarray(p.weight) for p in poles])  # (poles, 6)
+    if len(cell_shape) == 2 and np.any(weights[:, 4:] != 0.0):
+        raise ValueError(
+            "2D simulations require tensor poles without xz or yz coupling; "
+            "use a 3D simulation for out-of-plane coupling."
+        )
     c1, c2, c3 = _pole_coefficients(poles, dt)
     # Fold dt^2/(1 + gamma dt / 2) into the strengths in float64: separately
     # they are ~1e-31 and ~1e31, and reverse-mode cotangents multiplied by the
@@ -868,15 +900,12 @@ def _seam_phases(grid, periodic_axes) -> dict:
     return out
 
 
-def compile_anisotropic(
-    grid, dt, periodic_axes=frozenset(), *, complex_fields=False
-) -> AnisotropicPlan | None:
+def compile_anisotropic(grid, dt, periodic_axes=frozenset()) -> AnisotropicPlan | None:
     """Build static tensor-permeability and tensor-pole plans for a compiled grid."""
 
     material_grid = grid.material_grid
     if not material_grid.uses_magnetic_tensors and not material_grid.tensor_dispersion:
         return None
-    del complex_fields  # seam phases come from the boundaries themselves
     periodic = _seam_phases(grid, periodic_axes)
     _warn_on_absorber_overlap(grid)
     electric, magnetic = [], []
@@ -894,7 +923,8 @@ def validate_mode_ports(material_grid, sources, monitors) -> None:
     """Reject mode ports whose modal solve cannot reproduce the propagation media.
 
     Mode sources inside electric tensor-pole media are solved at their
-    frequency (see :func:`static_material_grid`). Mode monitors project after
+    frequency (see :func:`beamz.design.material_views.static_material_grid`).
+    Mode monitors project after
     the run against one static material snapshot, so they must stay outside
     tensor-pole media; every port must avoid non-unit permeability.
     """

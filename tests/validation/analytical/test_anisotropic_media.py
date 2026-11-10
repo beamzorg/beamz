@@ -81,6 +81,20 @@ def test_rejects_gain_and_static_hyperbolic_tensors():
         bz.AnisotropicMedium((-2.0, 3.0, 3.0))
 
 
+@pytest.mark.parametrize("family", ["E", "H"])
+@pytest.mark.parametrize("polarization", ["te", "tm"])
+@pytest.mark.parametrize("axis", ["x", "y"])
+def test_2d_rejects_out_of_plane_tensor_poles(family, polarization, axis):
+    rotation = (np.pi / 4, 0, 0) if axis == "x" else (0, np.pi / 4, 0)
+    pole = bz.TensorPole.drude((1e15, 1e15, 0), damping=0.0).rotated(rotation)
+    medium = bz.AnisotropicMedium(
+        2.0,
+        **{"electric_poles" if family == "E" else "magnetic_poles": [pole]},
+    )
+    with pytest.raises(ValueError, match="tensor poles without xz or yz coupling"):
+        _program(medium, polarization, width=1.6e-6, cells=16)
+
+
 def _program(
     medium,
     polarization,
@@ -187,6 +201,48 @@ def _harmonic_amplitudes(trace, times):
     matrix = np.c_[np.cos(OMEGA * times), np.sin(OMEGA * times), np.ones(times.size)]
     amplitude = np.linalg.lstsq(matrix, trace, rcond=None)[0]
     return amplitude[0] + 1j * amplitude[1]
+
+
+@pytest.mark.parametrize("family", ["E", "H"])
+@pytest.mark.parametrize("gyration", [0.0, 1e14])
+def test_single_component_gyrotropic_response_matches_drude(family, gyration):
+    """Precession about z leaves the out-of-plane response unchanged."""
+
+    def run(pole):
+        medium = bz.AnisotropicMedium(
+            **{"electric_poles" if family == "E" else "magnetic_poles": [pole]}
+        )
+        simulation, _, _ = _program(
+            medium,
+            "tm" if family == "E" else "te",
+            width=1.6e-6,
+            cells=16,
+            steps=33,
+            dt=0.1e-7 / LIGHT_SPEED,
+            boundaries=[bz.Periodic(axes=("x", "y"))],
+        )
+        state = simulation.initial_state()
+        component = "ez" if family == "E" else "hz"
+        rng = np.random.default_rng(0)
+        state = state._replace(
+            **{component: jnp.asarray(rng.normal(size=getattr(state, component).shape))}
+        )
+        return simulation.advance(
+            state=state, num_steps=32, backend="jax", performance=False
+        ).state
+
+    actual = run(
+        bz.GyrotropicPole.magnetized_plasma(1e15, (0, 0, gyration), damping=1e13)
+    )
+    expected = run(bz.TensorPole.drude(1e15, damping=1e13))
+    for component in ("ex", "ey", "ez", "hx", "hy", "hz"):
+        reference = np.asarray(getattr(expected, component))
+        np.testing.assert_allclose(
+            getattr(actual, component),
+            reference,
+            rtol=1e-5,
+            atol=1e-5 * max(1.0, float(np.abs(reference).max(initial=0.0))),
+        )
 
 
 @pytest.mark.parametrize("kind", ["tensor", "gyrotropic"])
@@ -312,6 +368,34 @@ def test_permeability_tensor_sets_packet_speed(
     np.testing.assert_allclose(
         measured, LIGHT_SPEED / np.sqrt(2.0 * mu_effective), rtol=5e-3
     )
+
+
+@pytest.mark.parametrize("polarization", ["te", "tm"])
+@pytest.mark.parametrize("permeability", [0.25, (0.25, 0.25, 0.25, 0.1, 0, 0)])
+def test_static_permeability_enforces_material_cfl(permeability, polarization):
+    medium = bz.AnisotropicMedium(permeability=permeability)
+    spacing = 1e-7
+    options = dict(
+        width=16 * spacing,
+        cells=16,
+        steps=201,
+        boundaries=[bz.Periodic(axes=("x", "y"))],
+    )
+    with pytest.raises(ValueError, match="Static tensor media.*CFL"):
+        _program(medium, polarization, dt=0.5 * spacing / LIGHT_SPEED, **options)
+    simulation, _, _ = _program(
+        medium, polarization, dt=0.2 * spacing / LIGHT_SPEED, **options
+    )
+    state = simulation.initial_state()
+    component = "ez" if polarization == "tm" else "ex"
+    rng = np.random.default_rng(0)
+    state = state._replace(
+        **{component: jnp.asarray(rng.normal(size=getattr(state, component).shape))}
+    )
+    final = simulation.advance(
+        state=state, num_steps=200, backend="jax", performance=False
+    ).state
+    assert float(jnp.abs(getattr(final, component)).max()) < 20.0
 
 
 def test_lossless_tilted_drude_slab_is_stable_and_resumable():

@@ -134,7 +134,7 @@ def compile_dispersion(grid, dt, periodic_axes=frozenset(), *, complex_fields=Fa
         tuple(coefficients),
         interfaces,
         complex_fields,
-        compile_anisotropic(grid, dt, periodic_axes, complex_fields=complex_fields),
+        compile_anisotropic(grid, dt, periodic_axes),
     )
 
 

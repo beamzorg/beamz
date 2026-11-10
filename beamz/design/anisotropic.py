@@ -153,11 +153,10 @@ class TensorPole:
 
     @classmethod
     def drude(cls, plasma_frequency: Any, *, damping: float) -> TensorPole:
-        """Drude term; ``plasma_frequency`` (rad/s) may be per-axis.
+        """Drude term; ``plasma_frequency`` (rad/s) is a scalar or three axis values.
 
-        A tensor argument is interpreted as the symmetric tensor of squared
-        plasma frequencies, so pass ``(wp_x**2, wp_y**2, ...)`` explicitly
-        through the raw constructor if off-diagonal terms are needed.
+        For off-diagonal response, rotate the pole or use the raw constructor
+        with a tensor of squared plasma frequencies.
         """
 
         frequencies = np.asarray(plasma_frequency, dtype=np.float64)
