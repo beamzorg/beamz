@@ -26,6 +26,7 @@ def make_problem(
     reference=True,
     height=4e-6,
     solver_padding_cells=None,
+    extra_structures=(),
 ):
     width, y_offset = 6e-6, (height - 4e-6) / 2
     wavelength = 1.55e-6
@@ -43,6 +44,8 @@ def make_problem(
         height=1.2e-6,
         material=Material(permittivity=4),
     )
+    for structure in extra_structures:
+        design += structure
     mode_spec = ModeSpec(
         num_modes=2,
         polarization=polarization,

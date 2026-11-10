@@ -296,8 +296,13 @@ class TopologyProblem:
                 raise ValueError(
                     "TopologyProblem requires lossless materials; use CPML instead of sponge PML."
                 )
-            if not np.allclose(getattr(grid, f"mu_h{axis}"), 1):
+            if not grid.material_grid.uses_magnetic_tensors and not np.allclose(
+                getattr(grid, f"mu_h{axis}"), 1
+            ):
                 raise ValueError("TopologyProblem requires relative permeability one.")
+        _require_design_clear_of_tensor_media(
+            program, spec.region_mask, self.gradient_backend
+        )
         if len(sim.sources) != 1 or not isinstance(
             sim.sources[0], (ModeSource, GaussianBeamSource)
         ):
@@ -627,3 +632,31 @@ class TopologyProblem:
         ):
             design += polygon
         return design
+
+
+def _require_design_clear_of_tensor_media(program, mask, gradient_backend) -> None:
+    """Allow tensor permeability and tensor-pole media only outside the design.
+
+    Their corrections use static compile-time constitutive coefficients, so
+    the design density must not reach their supports. The default
+    differentiable scan differentiates through them; the spectral adjoint
+    replays bare Yee kernels and cannot.
+    """
+    plan = None if program.dispersion is None else program.dispersion.anisotropic
+    if plan is None:
+        return
+    if gradient_backend == "adjoint":
+        raise ValueError(
+            "gradient_backend='adjoint' does not support tensor permeability or "
+            "tensor-pole media; use the default differentiable scan."
+        )
+    mask = np.asarray(mask, dtype=bool)
+    boxes = [region.box for region in plan.regions]
+    if plan.magnetic is not None:
+        boxes.append(plan.magnetic.box)
+    for box in boxes:
+        if np.any(mask[box.cell_slices]):
+            raise ValueError(
+                "TopologyProblem design regions must not overlap tensor permeability "
+                "or tensor-pole media (including their two-cell coupling halo)."
+            )

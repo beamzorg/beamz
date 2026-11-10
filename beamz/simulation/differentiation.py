@@ -69,6 +69,15 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
         raise ValueError(
             "Differentiable execution currently requires an unsharded grid"
         )
+    if (
+        cfg.backend != "jax"
+        and program.dispersion is not None
+        and program.dispersion.anisotropic is not None
+    ):
+        raise ValueError(
+            "Differentiating tensor permeability or tensor-pole media requires "
+            "backend='jax'."
+        )
     if cfg.backend != "jax" and cfg.cuda_flags & CUDA_BF16_PSI:
         raise ValueError("CUDA autodiff requires BEAMZ_CUDA_CPML_PSI_PRECISION=fp32")
     if cfg.num_steps < 1:

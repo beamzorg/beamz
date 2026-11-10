@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
@@ -31,6 +32,11 @@ class DispersionPlan:
     coefficients: tuple[tuple[str, object, object, object], ...]
     interfaces: tuple = ()
     complex_fields: bool = False
+    anisotropic: Any = None
+
+    @property
+    def scalar_state_count(self) -> int:
+        return len(self.regions) + len(self.interfaces)
 
 
 def periodic_support_average(value, cell_shape, periodic_axes, geometry=None):
@@ -121,23 +127,59 @@ def compile_dispersion(grid, dt, periodic_axes=frozenset(), *, complex_fields=Fa
                 jnp.asarray(response, dtype=jnp.float32),
             )
         )
+    from beamz.simulation.anisotropic import compile_anisotropic
+
     return DispersionPlan(
-        tuple(regions), tuple(coefficients), interfaces, complex_fields
+        tuple(regions),
+        tuple(coefficients),
+        interfaces,
+        complex_fields,
+        compile_anisotropic(grid, dt, periodic_axes, complex_fields=complex_fields),
     )
 
 
 def initial_polarization(plan, continuation=None):
+    """Allocate auxiliary media state: scalar ADE states, then tensor poles."""
     regions = (*plan.regions, *plan.interfaces)
+    fresh = tuple(jnp.zeros(r.shape, dtype=jnp.complex64) for r in regions)
+    if plan.anisotropic is not None:
+        from beamz.simulation.anisotropic import initial_states
+
+        fresh += initial_states(
+            plan.anisotropic, jnp.complex64 if plan.complex_fields else jnp.float32
+        )
     if continuation is not None and continuation.polarization:
         old = continuation.polarization
-        if len(old) != len(regions) or any(
-            q.shape != region.shape for q, region in zip(old, regions, strict=True)
+        if len(old) != len(fresh) or any(
+            q.shape != f.shape for q, f in zip(old, fresh, strict=True)
         ):
             raise ValueError(
                 "Continuation polarization does not match dispersive material layout."
             )
         return old
-    return tuple(jnp.zeros(r.shape, dtype=jnp.complex64) for r in regions)
+    return fresh
+
+
+def _update_tensor_states(update, old, state, plan):
+    """Run ``update`` on the tensor-pole states that follow the scalar ones."""
+    head = state.polarization[: plan.scalar_state_count]
+    tail = state.polarization[plan.scalar_state_count :]
+    state, tail = update(old, state, plan.anisotropic, tail)
+    return state._replace(polarization=head + tuple(tail))
+
+
+def update_anisotropic_magnetic(old, state, plan):
+    """Apply tensor permeability and magnetic poles after the H kernel."""
+    from beamz.simulation.anisotropic import update_magnetic
+
+    return _update_tensor_states(update_magnetic, old, state, plan)
+
+
+def update_anisotropic_electric(old, state, plan):
+    """Apply electric tensor poles after the E kernel and its sources."""
+    from beamz.simulation.anisotropic import update_electric
+
+    return _update_tensor_states(update_electric, old, state, plan)
 
 
 def update_dispersion(old, state, plan):
@@ -188,4 +230,6 @@ def update_dispersion(old, state, plan):
             plan.interfaces, interface_states, contexts, strict=True
         )
     )
+    # Tensor-pole states (if any) follow the scalar states and advance elsewhere.
+    polarization += tuple(state.polarization[plan.scalar_state_count :])
     return state._replace(**fields, polarization=polarization)

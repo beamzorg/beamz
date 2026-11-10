@@ -269,14 +269,6 @@ def _pack_cuda_lossless_e_coefficients(decays, sources, *, blocks=False):
     return tuple(value[0] for value in values), tuple(value[1] for value in values)
 
 
-def _inverse_permittivity_components(values):
-    """Invert a packed symmetric tensor field into six trailing components."""
-
-    from beamz.constitutive import inverse_permittivity_components
-
-    return jnp.asarray(inverse_permittivity_components(values))
-
-
 def _compile_derivative_metrics(
     material_grid, periodic_axes: frozenset[int] = frozenset()
 ) -> DerivativeMetricPlan:
@@ -714,6 +706,21 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             raise ValueError(
                 "Tensor modal workflows require single-device JAX or streamed CUDA execution"
             )
+    if request.materials.tensor_dispersion or request.materials.uses_magnetic_tensors:
+        from beamz.devices.monitors.monitors import ModeMonitor
+        from beamz.devices.sources.specs import ModeSource
+
+        from .anisotropic import validate_mode_ports
+
+        validate_mode_ports(
+            request.materials,
+            [s for s in request.sources if isinstance(s, ModeSource)],
+            [m for m in request.monitors if isinstance(m, ModeMonitor)],
+        )
+        if request.run.backend != "jax" or request.run.sharding[0]:
+            raise ValueError(
+                "Tensor permeability and tensor-pole media require single-device JAX execution."
+            )
     if request.materials.dispersion:
         from beamz.devices.monitors.monitors import ModeMonitor
         from beamz.devices.sources.specs import ModeSource
@@ -937,36 +944,44 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             ),
         )
         e_conductivity_x = e_conductivity_y = e_conductivity_z = empty3
+        if request.materials.uses_full_permittivity:
+            # The coupled tensor update applies loss as an explicit sigma*E current.
+            e_conductivity_x, e_conductivity_y, e_conductivity_z = (
+                _elide_zero_conductivity_grid(getattr(fields, "sig_" + axis))
+                for axis in "xyz"
+            )
         e_permittivity_x = e_permittivity_y = e_permittivity_z = empty3
     empty_inverse = jnp.zeros((0,), dtype=jnp.float32)
     if request.materials.uses_full_permittivity:
-        if any(
+        lossy = any(
             np.any(np.asarray(value) != 0.0)
             for value in (fields.sig_x, fields.sig_y, fields.sig_z)
-        ):
+        )
+        if lossy and request.run.backend != "jax":
             raise ValueError(
-                "Full-tensor permittivity requires lossless electric updates; "
-                "use CPML rather than conductive or sponge-PML materials."
+                "Full-tensor permittivity with conductive or sponge-PML loss "
+                "requires backend='jax'; native CUDA updates are lossless."
             )
+        from .anisotropic import electric_losses, lossy_tensor_inverse
+
         support_tensors = request.materials.yee_tensors
-        e_inverse_diagonal_x = (
-            _inverse_permittivity_components(support_tensors["eps_x"])[..., 0]
-            if "eps_x" in support_tensors
-            else empty_inverse
+        components = tuple(
+            "E" + axis for axis in "xyz" if "eps_" + axis in support_tensors
         )
-        e_inverse_diagonal_y = (
-            _inverse_permittivity_components(support_tensors["eps_y"])[..., 1]
-            if "eps_y" in support_tensors
-            else empty_inverse
+        # Conductive loss enters as the semi-implicit (eps + sigma dt / 2 eps0)^-1.
+        diagonal, cross = lossy_tensor_inverse(
+            {c: support_tensors["eps_" + c[-1].lower()] for c in components},
+            support_tensors["eps_node"],
+            electric_losses(fields, components, dt) if lossy else {},
+            "Node",
         )
-        e_inverse_diagonal_z = (
-            _inverse_permittivity_components(support_tensors["eps_z"])[..., 2]
-            if "eps_z" in support_tensors
+        e_inverse_diagonal_x, e_inverse_diagonal_y, e_inverse_diagonal_z = (
+            jnp.asarray(diagonal["E" + axis])
+            if "E" + axis in diagonal
             else empty_inverse
+            for axis in "xyz"
         )
-        e_inverse_offdiagonal = _inverse_permittivity_components(
-            support_tensors["eps_node"]
-        )[..., 3:]
+        e_inverse_offdiagonal = jnp.asarray(cross)
     else:
         e_inverse_diagonal_x = e_inverse_diagonal_y = e_inverse_diagonal_z = (
             empty_inverse
@@ -1033,6 +1048,8 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         config.backend in {"jax", "cuda_streamed"}
         and not sharding_layout.enabled
         and e_inverse_offdiagonal.size
+        # Periodic seams average across the domain; keep full-span coefficients.
+        and not boundary_data.periodic_axes
     ):
         from .tensor_regions import compact_tensor_region
 
@@ -1186,12 +1203,18 @@ def compile_program(
             raise ValueError(
                 "Rectilinear full-tensor updates require single-device JAX or streamed CUDA."
             )
-        if any(isinstance(boundary, Periodic) for boundary in simulation.boundaries):
+        if requested_backend not in {"auto", "jax"} and any(
+            isinstance(boundary, Periodic) for boundary in simulation.boundaries
+        ):
             raise ValueError(
-                "Rectilinear full-tensor updates do not yet support periodic/Bloch "
-                "constitutive averaging; use open or CPML boundaries."
+                "Rectilinear full-tensor updates with periodic/Bloch seams "
+                "require backend='jax'."
             )
-    has_dispersion = bool(material_grid.dispersion)
+    has_dispersion = bool(
+        material_grid.dispersion
+        or material_grid.tensor_dispersion
+        or material_grid.uses_magnetic_tensors
+    )
     if has_dispersion and sharding_token[0]:
         raise ValueError(
             "Dispersive media currently support single-device execution only."

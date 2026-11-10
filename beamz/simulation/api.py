@@ -490,6 +490,25 @@ def _rasterize_scene_for_simulation(
         material_grid = replace(
             material_grid, dispersion=regions, dispersion_interfaces=interfaces
         )
+    from beamz.design.raster.dispersion import (
+        has_tensor_dispersion,
+        rasterize_tensor_dispersion,
+    )
+
+    if has_tensor_dispersion(scene):
+        material_grid = replace(
+            material_grid,
+            tensor_dispersion=rasterize_tensor_dispersion(
+                scene,
+                raster_grid,
+                kind="3d" if dimensions == 3 else "2d",
+                polarization=polarization,
+                quality=options.quality,
+                resolution=material_grid.resolution,
+                cache_directory=None,
+                periodic_axes=options.periodic_axes,
+            ),
+        )
     return material_grid
 
 
