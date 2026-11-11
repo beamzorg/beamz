@@ -690,15 +690,23 @@ def max_stable_timestep(medium, family, spacings) -> float:
     ``Omega`` is :func:`coupled_pole_frequency`. This is the stability bound of
     the explicit central-difference pole recurrence coupled to Yee leapfrog.
     """
+    if family == "E":
+        poles, static = medium.electric_poles, medium.epsilon_r
+    else:
+        poles, static = medium.magnetic_poles, medium.mu_r
+    omega = coupled_pole_frequency(static, poles)
+    return float(1.0 / np.sqrt(_courant_rate(medium, spacings) + 0.25 * omega**2))
+
+
+def _courant_rate(medium, spacings) -> float:
+    """(S / dt)^2 for the in-medium Courant number S (CFL at S = 1)."""
     from beamz.design.anisotropic import packed_to_matrix
 
-    poles = medium.electric_poles if family == "E" else medium.magnetic_poles
-    static = medium.epsilon_r if family == "E" else medium.mu_r
-    floor = np.linalg.eigvalsh(packed_to_matrix(np.asarray(medium.epsilon_r)))[0]
-    floor *= np.linalg.eigvalsh(packed_to_matrix(np.asarray(medium.mu_r)))[0]
-    courant = LIGHT_SPEED**2 * sum(1.0 / h**2 for h in spacings) / floor
-    omega = coupled_pole_frequency(static, poles)
-    return float(1.0 / np.sqrt(courant + 0.25 * omega**2))
+    eps_floor = np.linalg.eigvalsh(packed_to_matrix(np.asarray(medium.epsilon_r)))[0]
+    mu_floor = np.linalg.eigvalsh(packed_to_matrix(np.asarray(medium.mu_r)))[0]
+    return float(
+        LIGHT_SPEED**2 * sum(1.0 / h**2 for h in spacings) / (eps_floor * mu_floor)
+    )
 
 
 def _check_pole_stability(medium, family, dt, grid):
@@ -707,10 +715,20 @@ def _check_pole_stability(medium, family, dt, grid):
     spacings = tuple(geometry.min_spacings[:active])
     limit = max_stable_timestep(medium, family, spacings)
     if dt >= limit:
+        # Pole frequency that would leave a 10% margin at this dt, if the
+        # in-medium Courant number alone is still stable.
+        headroom = 1.0 - _courant_rate(medium, spacings) * dt**2
+        hint = ""
+        if headroom > 0.0:
+            max_resonance = 1.8 * np.sqrt(headroom) / dt
+            hint = (
+                " For poles far above the band of interest, "
+                f"medium.fold_fast_poles({max_resonance:.3e}) slows them enough for this dt."
+            )
         raise ValueError(
             f"Tensor poles are unstable at dt={dt:.3e} s; this medium needs "
             f"dt < {limit:.3e} s (S^2 + (Omega dt / 2)^2 < 1 with the in-medium "
-            "Courant number S and the fastest coupled pole frequency Omega)."
+            "Courant number S and the fastest coupled pole frequency Omega)." + hint
         )
 
 
@@ -922,12 +940,13 @@ def compile_anisotropic(grid, dt, periodic_axes=frozenset()) -> AnisotropicPlan 
 def validate_mode_ports(material_grid, sources, monitors) -> None:
     """Reject mode ports whose modal solve cannot reproduce the propagation media.
 
-    Mode sources inside electric tensor-pole media are solved at their
-    frequency (see :func:`beamz.design.material_views.static_material_grid`).
-    Mode monitors project after
-    the run against one static material snapshot, so they must stay outside
-    tensor-pole media; every port must avoid non-unit permeability.
+    Mode sources and mode monitors inside electric tensor-pole media are solved
+    at each of their frequencies (see
+    :class:`beamz.design.material_views.DispersionFolding`). Ports must avoid
+    non-unit permeability and media whose poles cannot be frozen into static
+    tensors (gyrotropic or magnetic poles).
     """
+    from beamz.design.material_views import foldable
 
     magnetic = np.zeros(material_grid.shape, dtype=bool)
     if material_grid.magnetic_tensors:
@@ -936,9 +955,10 @@ def validate_mode_ports(material_grid, sources, monitors) -> None:
             np.abs(cell - _PACKED_IDENTITY.reshape((6,) + (1,) * cell[0].ndim)) > 1e-10,
             axis=0,
         )
-    poles = np.zeros(material_grid.shape, dtype=bool)
-    for _medium, fraction in material_grid.tensor_dispersion:
-        poles |= np.asarray(fraction) > 1e-7
+    unfoldable = np.zeros(material_grid.shape, dtype=bool)
+    for medium, fraction in material_grid.tensor_dispersion:
+        if not foldable(medium):
+            unfoldable |= np.asarray(fraction) > 1e-7
     for kind, ports in (("ModeSource", sources), ("ModeMonitor", monitors)):
         for port in ports:
             cells = port_cells(material_grid, port.center, port.size)
@@ -947,10 +967,8 @@ def validate_mode_ports(material_grid, sources, monitors) -> None:
                     f"{kind} planes cannot yet overlap non-unit permeability; "
                     "place the port in a nonmagnetic region."
                 )
-            if kind == "ModeMonitor" and np.any(cells & poles):
+            if np.any(cells & unfoldable):
                 raise ValueError(
-                    "ModeMonitor planes cannot yet lie in tensor-pole media: modal "
-                    "projection uses one static material snapshot for all "
-                    "frequencies. Move the monitor to a nondispersive region or "
-                    "use field/flux monitors."
+                    f"{kind} planes cannot yet overlap gyrotropic or magnetic-pole "
+                    "media; place the port outside them."
                 )

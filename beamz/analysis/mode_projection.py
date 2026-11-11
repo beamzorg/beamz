@@ -594,6 +594,10 @@ def _build_port_projection(
     if cached is not None:
         return cached
 
+    materials = getattr(sim, "materials", None)
+    if materials is not None and materials.dispersion_folding is not None:
+        # Tensor-pole media: the mode at this frequency sees eps_inf + Re chi(f).
+        sim = replace(sim, materials=materials.at_frequency(frequency))
     parts = _mode_components_for_port(spec)
     if sim.is_3d:
         analysis_coords0, analysis_coords1 = _monitor_analysis_plane_3d(

@@ -621,15 +621,65 @@ def test_mode_source_in_tensor_pole_core_matches_static_equivalent():
     assert error < 0.02, error
 
 
-def test_mode_monitors_must_stay_outside_tensor_pole_media():
+def _modal_to_flux_ratio(core, source_frequency, frequencies):
+    plane = {"center": (4.5e-6, 1.5e-6, 0.0), "size": (0.0, 2.0e-6, 1.0e-6)}
+    simulation = _guide(core, source_frequency).updated_copy(
+        monitors=[
+            bz.ModeMonitor(
+                **plane,
+                mode_spec=bz.ModeSpec(polarization="tm"),
+                freqs=frequencies,
+                name="port",
+            ),
+            bz.FluxMonitor(**plane, freqs=frequencies, name="flux"),
+        ]
+    )
+    result = simulation.run(backend="jax", performance=False)
+    modal = result.mode("port").amps.sel(direction="+", mode_index=0).values
+    flux = np.asarray(result.monitor("flux").get_dft_flux()).ravel()
+    return np.abs(modal) ** 2 / np.abs(flux)
+
+
+def test_mode_monitor_in_tensor_pole_core_projects_per_frequency():
+    """A mode monitor inside a dispersive core uses eps_inf + Re chi(f) per f.
+
+    At each monitor frequency the modal-to-flux power ratio must equal that of
+    a static core with permittivity eps(f) (the shared few-percent excess is
+    this coarse grid's projection bias). One static snapshot for all
+    frequencies would not.
+    """
+
+    frequency = LIGHT_SPEED / 1e-6
+    omega = 2 * np.pi * frequency
+    core = bz.AnisotropicMedium(
+        2.0,
+        electric_poles=[
+            bz.TensorPole.lorentz(16.0 / 9.0, resonance=3 * omega, damping=0.0)
+        ],
+    )
+    frequencies = frequency * np.array([0.9, 1.1])
+    dispersive = _modal_to_flux_ratio(core, frequency, frequencies)
+    for index, f in enumerate(frequencies):
+        static_core = bz.Material(float(core.permittivity_tensor(f)[2, 2].real))
+        static = _modal_to_flux_ratio(static_core, frequency, frequencies)[index]
+        np.testing.assert_allclose(dispersive[index], static, rtol=1e-3)
+
+
+def test_mode_ports_reject_gyrotropic_media_at_compile_time():
     frequency = LIGHT_SPEED / 1e-6
     core = bz.AnisotropicMedium(
         2.0,
         electric_poles=[
-            bz.TensorPole.lorentz(1.0, resonance=6 * np.pi * frequency, damping=0.0)
+            bz.GyrotropicPole.lorentz(
+                1.0,
+                resonance=6 * np.pi * frequency,
+                damping=0.0,
+                gyration=(0.0, 0.0, 1e14),
+            )
         ],
     )
     simulation = _guide(core, frequency).updated_copy(
+        sources=[],
         monitors=[
             bz.ModeMonitor(
                 center=(4.5e-6, 1.5e-6, 0.0),
@@ -638,9 +688,9 @@ def test_mode_monitors_must_stay_outside_tensor_pole_media():
                 freqs=[frequency],
                 name="port",
             )
-        ]
+        ],
     )
-    with pytest.raises(ValueError, match="static material snapshot"):
+    with pytest.raises(ValueError, match="gyrotropic or magnetic-pole"):
         simulation.compile(backend="jax")
 
 
@@ -1053,3 +1103,101 @@ def test_differentiable_simulation_through_tensor_poles_is_consistent():
     gradient = jax.grad(objective)(permittivity)
     reverse = sum(jnp.sum(g * t) for g, t in zip(gradient, tangent, strict=True))
     np.testing.assert_allclose(float(reverse), float(forward), rtol=1e-4)
+
+
+def test_dispersive_monitor_materials_survive_result_archives(tmp_path):
+    from beamz.simulation.result_io import load_results, save_results
+
+    frequency = LIGHT_SPEED / 1e-6
+    omega = 2 * np.pi * frequency
+    core = bz.AnisotropicMedium(
+        2.0,
+        electric_poles=[
+            bz.TensorPole.lorentz(16.0 / 9.0, resonance=3 * omega, damping=0.0)
+        ],
+    )
+    simulation = _guide(core, frequency).updated_copy(
+        monitors=[
+            bz.ModeMonitor(
+                center=(4.5e-6, 1.5e-6, 0.0),
+                size=(0.0, 2.0e-6, 1.0e-6),
+                mode_spec=bz.ModeSpec(polarization="tm"),
+                freqs=[frequency],
+                name="port",
+            )
+        ]
+    )
+    result = simulation.run(backend="jax", performance=False)
+    path = tmp_path / "result.npz"
+    save_results(result, path)
+    loaded = load_results(path)
+    region = loaded.monitor("port").material_region
+    assert region.dispersion_folding is not None
+    np.testing.assert_allclose(
+        region.at_frequency(frequency).permittivity,
+        result.monitor("port").material_region.at_frequency(frequency).permittivity,
+    )
+    np.testing.assert_allclose(
+        loaded.mode("port").amps.values, result.mode("port").amps.values
+    )
+
+
+def test_folding_fast_poles_keeps_low_frequency_response_and_relaxes_timestep():
+    """Ultraviolet Sellmeier poles can be slowed without changing the band.
+
+    Folding preserves the static limit exactly and the telecom-band
+    permittivity to ~1e-3, and lifts the pole timestep limit so a coarse-grid
+    run the original crystal rejects becomes stable.
+    """
+
+    from beamz.material_library import anisotropic_library
+    from beamz.simulation.anisotropic import max_stable_timestep
+
+    crystal = anisotropic_library["LiNbO3"].medium.rotated((0.0, np.pi / 2, 0.0))
+    folded = crystal.fold_fast_poles(2 * np.pi * LIGHT_SPEED / 0.4e-6)
+    near_static = np.array([1e9])
+    np.testing.assert_allclose(
+        folded.permittivity_tensor(near_static),
+        crystal.permittivity_tensor(near_static),
+        rtol=1e-9,
+        atol=1e-12,
+    )
+    band = LIGHT_SPEED / np.linspace(1.2e-6, 1.7e-6, 101)
+    reference = crystal.permittivity_tensor(band)
+    error = np.abs(folded.permittivity_tensor(band) - reference).max()
+    assert error < 2e-3 * np.abs(reference).max()
+    for pole in (*folded.electric_poles,):
+        assert (
+            np.linalg.eigvalsh(pole.weight_matrix).min()
+            > -1e-6 * np.abs(pole.weight_matrix).max()
+        )
+
+    spacing = 60e-9
+    original_limit = max_stable_timestep(crystal, "E", (spacing, spacing))
+    folded_limit = max_stable_timestep(folded, "E", (spacing, spacing))
+    dt = 0.95 * min(folded_limit, spacing / (LIGHT_SPEED * np.sqrt(2)))
+    assert dt > 1.3 * original_limit
+
+    def simulation(medium):
+        return bz.Simulation(
+            design=bz.Design(width=24 * spacing, height=24 * spacing, material=medium),
+            resolution=spacing,
+            time=np.arange(4001) * dt,
+            polarization="te",
+            boundaries=[bz.Periodic(axes=("x", "y"))],
+            raster_options=RasterOptions(smoothing="farjadpour_full"),
+        )
+
+    with pytest.raises(ValueError, match="fold_fast_poles"):
+        simulation(crystal).compile(backend="jax")
+    stable = simulation(folded)
+    state = stable.initial_state()
+    rng = np.random.default_rng(2)
+    state = state._replace(
+        ex=jnp.asarray(rng.normal(size=state.ex.shape), dtype=jnp.float32),
+        ey=jnp.asarray(rng.normal(size=state.ey.shape), dtype=jnp.float32),
+    )
+    final = stable.advance(
+        state=state, num_steps=4000, backend="jax", performance=False
+    ).state
+    assert float(jnp.abs(final.ex).max()) < 20.0

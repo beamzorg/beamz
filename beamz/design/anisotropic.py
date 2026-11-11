@@ -415,6 +415,60 @@ class AnisotropicMedium(Material):
             frequency_range=self.frequency_range,
         )
 
+    def fold_fast_poles(self, max_resonance: float) -> AnisotropicMedium:
+        """Slow down poles resonating above ``max_resonance`` (rad/s).
+
+        Ultraviolet Sellmeier terms are far above typical simulation bands but
+        set the explicit pole timestep limit. Each tensor pole with
+        ``resonance > max_resonance`` is replaced by a static shift of the
+        high-frequency tensor plus a slower pole at ``max_resonance`` that
+        matches the original susceptibility's value and its ``omega^2`` slope
+        at low frequency:
+
+            W' = W (w1 / w0)^4,   delta eps_inf = (W / w0^2) (1 - w1^2 / w0^2)
+
+        Both are positive semidefinite, so the result stays passive; damping
+        is kept, preserving the leading in-band loss. The remaining error grows
+        like ``(omega / w1)^4`` relative to the pole's contribution, so choose
+        ``max_resonance`` well above the band of interest and check
+        ``permittivity_tensor`` against the original over that band. A declared
+        ``frequency_range`` is capped at half of ``max_resonance``. Gyrotropic
+        poles are left unchanged.
+        """
+
+        target = float(max_resonance)
+        if not np.isfinite(target) or target <= 0.0:
+            raise ValueError("max_resonance must be finite and positive.")
+
+        def fold(static, poles):
+            static = np.asarray(static, dtype=np.float64).copy()
+            kept = []
+            for pole in poles:
+                if not isinstance(pole, TensorPole) or pole.resonance <= target:
+                    kept.append(pole)
+                    continue
+                ratio = target / pole.resonance
+                weight = np.asarray(pole.weight)
+                static = static + weight / pole.resonance**2 * (1.0 - ratio**2)
+                kept.append(TensorPole(target, pole.damping, weight * ratio**4))
+            return static, tuple(kept)
+
+        permittivity, electric = fold(self._epsilon_r, self.electric_poles)
+        permeability, magnetic = fold(self._mu_r, self.magnetic_poles)
+        band = self.frequency_range
+        if band is not None:
+            # The folded response is only faithful well below the new resonance.
+            upper = min(band[1], 0.5 * target / (2.0 * np.pi))
+            band = (band[0], upper) if upper > band[0] else None
+        return AnisotropicMedium(
+            permittivity,
+            permeability,
+            electric_poles=electric,
+            magnetic_poles=magnetic,
+            conductivity=np.asarray(self._conductivity[:3]),
+            frequency_range=band,
+        )
+
     def is_indefinite(self) -> bool:
         """Whether the Hermitian part of eps or mu is ever indefinite.
 

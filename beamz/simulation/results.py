@@ -196,6 +196,9 @@ class MaterialRegion:
     material_tensors: Mapping[str, np.ndarray] = field(default_factory=dict)
     yee_materials: Mapping[str, np.ndarray] = field(default_factory=dict)
     yee_tensors: Mapping[str, np.ndarray] = field(default_factory=dict)
+    # Present when the region reaches tensor-pole media: modal analysis must
+    # then see eps_inf + Re chi(f) at each monitor frequency.
+    dispersion_folding: Any = None
 
     def __post_init__(self):
         object.__setattr__(self, "permittivity", readonly_array(self.permittivity))
@@ -206,6 +209,28 @@ class MaterialRegion:
         )
         for name in ("material_tensors", "yee_materials", "yee_tensors"):
             object.__setattr__(self, name, immutable_snapshot(getattr(self, name)))
+
+    def at_frequency(self, frequency: float) -> MaterialRegion:
+        """Return the static region a CW mode solve at ``frequency`` sees."""
+        if self.dispersion_folding is None:
+            return self
+        folded = self.dispersion_folding.fold(frequency)
+        tensors = dict(self.material_tensors)
+        if "epsilon" in tensors:
+            tensors["epsilon"] = folded["epsilon"]
+        yee = dict(self.yee_materials)
+        yee.update({k: v for k, v in folded["yee_materials"].items() if k in yee})
+        yee_tensors = dict(self.yee_tensors)
+        yee_tensors.update(folded["yee_tensors"])
+        return MaterialRegion(
+            folded["permittivity"],
+            self.permeability,
+            self.origin,
+            self.full_shape,
+            material_tensors=tensors,
+            yee_materials=yee,
+            yee_tensors=yee_tensors,
+        )
 
 
 def _snapshot_material_region(runtime_fields, crop, origin):
@@ -241,6 +266,15 @@ def _snapshot_material_region(runtime_fields, crop, origin):
         name: np.asarray(values)[(slice(None), *component_crop)]
         for name, values in material_grid.yee_tensors.items()
     }
+    folding = None
+    if getattr(material_grid, "tensor_dispersion", ()):
+        from beamz.design.material_views import DispersionFolding
+
+        folding = DispersionFolding.from_material_grid(material_grid).crop(
+            crop, component_crop
+        )
+        if not folding.overlaps():
+            folding = None
     return MaterialRegion(
         permittivity[crop],
         permeability if permeability.ndim == 0 else permeability[crop],
@@ -249,6 +283,7 @@ def _snapshot_material_region(runtime_fields, crop, origin):
         material_tensors=tensors,
         yee_materials=yee,
         yee_tensors=support_tensors,
+        dispersion_folding=folding,
     )
 
 
