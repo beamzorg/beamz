@@ -24,6 +24,19 @@ class ModeLineContext:
     edges: np.ndarray
     snapped: SnappedRegion | None
     transverse_axis: str
+    # Diagonal relative permeability (xx, yy, zz) per profile cell, or None
+    # for nonmagnetic lines.
+    mu: np.ndarray | None = None
+
+
+def cell_permeability(material_grid):
+    """Packed cell permeability of a magnetic grid or region, else ``None``."""
+    if material_grid is None or not getattr(material_grid, "magnetic_tensors", None):
+        return None
+    tensors = getattr(material_grid, "tensors", None)
+    if tensors is None:
+        tensors = getattr(material_grid, "material_tensors", {})
+    return np.asarray(tensors["mu"]) if "mu" in tensors else None
 
 
 def prepare_mode_line(
@@ -38,8 +51,14 @@ def prepare_mode_line(
     origin=(0, 0),
     full_shape=None,
     snapped=None,
+    permeability=None,
 ):
-    """Extract the same finite, explicitly padded cell profile for every consumer."""
+    """Extract the same finite, explicitly padded cell profile for every consumer.
+
+    ``permeability`` is an optional packed ``(1|3|6, y, x)`` cell tensor in the
+    same local frame as ``permittivity``. Its diagonal joins the line solve; a
+    line cannot represent in-plane (xy) magnetic coupling, which is rejected.
+    """
     permittivity = np.asarray(permittivity)
     if permittivity.ndim != 2 or axis not in {"x", "y"}:
         raise ValueError("2D mode ports require an x- or y-normal line in an xy grid")
@@ -84,6 +103,19 @@ def prepare_mode_line(
         if grid is not None
         else np.arange(shape[transverse_dim] + 1) * resolution
     )
+    mu = None
+    if permeability is not None:
+        tensor = np.asarray(permeability)
+        if tensor.shape[1:] != permittivity.shape or tensor.shape[0] not in (1, 3, 6):
+            raise ValueError("2D port permeability must be a packed cell tensor")
+        line = tensor[:, :, normal] if axis == "x" else tensor[:, normal, :]
+        line = line[:, local_lo:local_hi]
+        if tensor.shape[0] == 6 and np.any(np.abs(line[3:]) > 1e-10):
+            raise ValueError(
+                "2D mode ports cannot yet reproduce off-diagonal permeability; "
+                "use a diagonal permeability tensor at the port."
+            )
+        mu = np.asarray(np.broadcast_to(line[:3], (3, line.shape[1])), dtype=float)
     return ModeLineContext(
         np.asarray(profile[local_lo:local_hi]),
         slice(lo, hi),
@@ -91,6 +123,7 @@ def prepare_mode_line(
         edges[lo : hi + 1],
         snapped,
         transverse,
+        mu,
     )
 
 
@@ -112,6 +145,11 @@ def solve_mode_line(
     minimum = spec.min_aperture_fraction
     limit = max(count, min(64, max(1, 2 * context.eps.size - 3)))
     weights = np.diff(context.edges)
+    permeability: dict[str, np.ndarray] = (
+        {}
+        if context.mu is None
+        else dict(zip(("mu_xx", "mu_yy", "mu_zz"), context.mu, strict=True))
+    )
     while True:
         neffs, electric, magnetic, _ = solver(
             eps=context.eps,
@@ -124,6 +162,7 @@ def solve_mode_line(
             force_symmetry=spec.force_symmetry,
             return_fields=True,
             grid_edges=(context.edges,) if use_grid_edges else None,
+            **permeability,
         )
         electric, magnetic = np.asarray(electric), np.asarray(magnetic)
         # Both tangential E components contribute to confinement; this is an

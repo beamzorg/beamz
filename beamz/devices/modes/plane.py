@@ -9,6 +9,7 @@ from typing import Literal, cast, overload
 
 import numpy as np
 
+from beamz.constitutive import expand_packed
 from beamz.design.grid import RectilinearGrid
 from beamz.devices._placement import (
     snap_centered_extent,
@@ -542,6 +543,7 @@ def _solve_mode_plane_3d(
     material_tensors=None,
     yee_materials=None,
     yee_tensors=None,
+    magnetic_tensors=None,
     frequency,
     resolution,
     dt,
@@ -584,15 +586,12 @@ def _solve_mode_plane_3d(
         aperture_pad_cells=(
             0 if solver_padding_cells is None else solver_padding_cells
         ),
-        normal_halo_cells=TENSOR_MODE_NORMAL_HALO if yee_tensors else 0,
+        normal_halo_cells=(
+            TENSOR_MODE_NORMAL_HALO if yee_tensors or magnetic_tensors else 0
+        ),
         material_origin_zyx=material_origin_zyx,
         grid=grid,
     )
-    target = target_neff
-    if target is None:
-        target = 0.98 * np.sqrt(
-            max(float(np.max(np.real(local_plane["scalar_permittivity"]))), 1e-12)
-        )
     sampling_plane = dict(local_plane)
     sampling_plane["origin_zyx"] = tuple(
         int(global_offset) - int(region_offset)
@@ -600,14 +599,39 @@ def _solve_mode_plane_3d(
             local_plane["origin_zyx"], material_origin_zyx, strict=True
         )
     )
+    electric_support = yee_tensors or {
+        name: values
+        for name, values in (material_tensors or {}).items()
+        if name == "epsilon"
+    }
     local_tensors = crop_tensor_support(
-        yee_tensors or material_tensors,
+        electric_support,
         origin=sampling_plane["origin_zyx"],
         shape=local_plane["grid_shape"],
     )
-    coupled = has_cross_terms(local_tensors)
+    local_magnetic = crop_tensor_support(
+        magnetic_tensors,
+        origin=sampling_plane["origin_zyx"],
+        shape=local_plane["grid_shape"],
+    )
+    component_permittivity, component_permeability = _local_component_materials(
+        permittivity,
+        permeability,
+        sampling_plane,
+        yee_materials=yee_materials,
+    )
+    if local_magnetic:
+        # Propagation applies the packed support tensors, not the scalar mean.
+        component_permeability = {
+            component: expand_packed(local_magnetic["mu_h" + component[-1].lower()])[
+                "xyz".index(component[-1].lower())
+            ]
+            for component in ("Hx", "Hy", "Hz")
+        }
+    electric_coupled = has_cross_terms(local_tensors)
+    coupled = electric_coupled or has_cross_terms(local_magnetic)
     if coupled:
-        if not yee_tensors:
+        if electric_coupled and not yee_tensors:
             require_diagonal_support(
                 local_tensors, operation="3D modal solve/projection"
             )
@@ -617,14 +641,19 @@ def _solve_mode_plane_3d(
             raise ValueError(
                 "Full-tensor mixed-polarization ports require polarization=None and force_symmetry=False"
             )
-        if not np.all(np.asarray(permeability) == 1):
-            raise ValueError(
-                "Full-tensor ports currently require nonmagnetic materials (mu=1)"
+        if not electric_coupled:
+            local_tensors = _diagonal_electric_support(
+                component_permittivity, local_plane["grid_shape"]
             )
-        for values in local_tensors.values():
+        local_magnetic = (
+            {name: expand_packed(values) for name, values in local_magnetic.items()}
+            if _differs_from_identity(local_magnetic)
+            else {}
+        )
+        for values in (*local_tensors.values(), *local_magnetic.values()):
             if np.iscomplexobj(values) and np.any(np.imag(values)):
                 raise ValueError(
-                    "Full-tensor ports require real lossless dielectric tensors"
+                    "Full-tensor ports require real lossless constitutive tensors"
                 )
             if not np.allclose(
                 values, np.take(values, [0], axis=axis_index + 1), rtol=1e-6, atol=1e-12
@@ -634,13 +663,8 @@ def _solve_mode_plane_3d(
                 )
     else:
         local_tensors = {}
+        local_magnetic = {}
 
-    component_permittivity, component_permeability = _local_component_materials(
-        permittivity,
-        permeability,
-        sampling_plane,
-        yee_materials=yee_materials,
-    )
     diagonal_permittivity, diagonal_permeability = _local_diagonal_materials(
         material_tensors,
         local_plane,
@@ -648,22 +672,35 @@ def _solve_mode_plane_3d(
         plane_index=plane_index,
         material_origin_zyx=material_origin_zyx,
     )
-    cross_profiles = {}
-    if coupled and material_tensors and "epsilon" in material_tensors:
-        values = np.asarray(material_tensors["epsilon"])
-        if values.shape[0] == 6:
-            for i, name in enumerate(("xy", "xz", "yz"), start=3):
-                local_values = crop_tensor_support(
-                    {"epsilon": values},
-                    origin=sampling_plane["origin_zyx"],
-                    shape=local_plane["grid_shape"],
-                )["epsilon"][i]
-                profile = np.take(
-                    local_values, local_plane["plane_index"], axis=axis_index
-                )
-                cross_profiles[name] = profile[
-                    tuple(slice(0, n) for n in local_plane["scalar_permittivity"].shape)
-                ]
+    target = target_neff
+    if target is None:
+        # The highest local index sqrt(eps mu); mu=1 leaves the permittivity.
+        index_squared = np.real(local_plane["scalar_permittivity"])
+        if diagonal_permeability:
+            index_squared = index_squared * np.max(
+                np.real(np.stack(list(diagonal_permeability.values()))), axis=0
+            )
+        target = 0.98 * np.sqrt(max(float(np.max(index_squared)), 1e-12))
+
+    def cross_profiles(name):
+        values = np.asarray((material_tensors or {}).get(name, np.zeros((1,))))
+        if not coupled or values.shape[0] != 6:
+            return {}
+        local_values = crop_tensor_support(
+            {name: values},
+            origin=sampling_plane["origin_zyx"],
+            shape=local_plane["grid_shape"],
+        )[name]
+        profiles = {}
+        for i, pair in enumerate(("xy", "xz", "yz"), start=3):
+            profile = np.take(
+                local_values[i], local_plane["plane_index"], axis=axis_index
+            )
+            profiles[pair] = profile[
+                tuple(slice(0, n) for n in local_plane["scalar_permittivity"].shape)
+            ]
+        return profiles
+
     mode = solver(
         ModePlaneSpec(
             scalar_permittivity=np.asarray(
@@ -681,8 +718,10 @@ def _solve_mode_plane_3d(
             component_permeability=component_permeability,
             diagonal_permittivity=diagonal_permittivity,
             yee_tensors=local_tensors,
-            offdiagonal_permittivity=cross_profiles,
+            offdiagonal_permittivity=cross_profiles("epsilon"),
             diagonal_permeability=diagonal_permeability,
+            magnetic_tensors=local_magnetic,
+            offdiagonal_permeability=(cross_profiles("mu") if local_magnetic else {}),
             center=local_plane["center"],
             width=float(width),
             height=float(height),
@@ -735,6 +774,40 @@ def _solve_mode_plane_3d(
         resolution=resolution,
         axis_offset=local_plane["axis_origins"][axis],
     )
+
+
+def _differs_from_identity(tensors) -> bool:
+    """Whether any packed tensor differs from the identity."""
+    identity = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 0.0])
+    return any(
+        np.any(
+            np.abs(
+                expand_packed(values)
+                - identity.reshape((6,) + (1,) * (np.ndim(values) - 1))
+            )
+            > 1e-10
+        )
+        for values in tensors.values()
+    )
+
+
+def _diagonal_electric_support(component_permittivity, grid_shape):
+    """Packed diagonal electric supports for a port whose only coupling is magnetic."""
+    supports = {}
+    for component in ("Ex", "Ey", "Ez"):
+        values = np.asarray(component_permittivity[component])
+        if np.iscomplexobj(values) and np.any(np.imag(values)):
+            raise ValueError(
+                "Full-tensor ports require real lossless constitutive tensors"
+            )
+        packed = np.zeros((6, *values.shape))
+        packed[:3] = 1.0
+        packed["xyz".index(component[-1].lower())] = np.real(values)
+        supports["eps_" + component[-1].lower()] = packed
+    node = np.zeros((6, *(int(n) + 1 for n in grid_shape)))
+    node[:3] = 1.0
+    supports["eps_node"] = node
+    return supports
 
 
 def _local_diagonal_materials(

@@ -20,6 +20,15 @@
   grids may now use periodic or Bloch boundaries on JAX.
 - Mode sources inside media with electric tensor poles are solved at their
   frequency. Mode ports outside tensor media are no longer rejected.
+- Mode sources and mode monitors may now sit in magnetic media. 3D ports
+  reproduce diagonal and full symmetric permeability tensors with the
+  propagation's own discretization, which puts diagonals on the H sites and
+  cross terms at cell centres. 2D ports support diagonal permeability; 2D TM
+  ports overlapping in-plane (xy) magnetic coupling are still rejected. Magnetic
+  tensor poles fold into `mu(f)` for both sources and monitors, and the folding
+  is kept in result archives. 3D mode-source launches now map their incident H
+  increment through `mu^-1`, so the launched power is correct in magnetic media.
+  Ports overlapping gyrotropic media are still rejected.
 - `Simulation.differentiable()` and `TopologyProblem` differentiate through
   tensor media that lie outside the design region.
 - Added `anisotropic_library` with sapphire, lithium niobate, hBN, and

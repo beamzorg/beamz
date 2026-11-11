@@ -102,6 +102,10 @@ class ModePlaneSpec:
     diagonal_permeability: Mapping[str, np.ndarray] = field(default_factory=dict)
     yee_tensors: Mapping[str, np.ndarray] = field(default_factory=dict)
     offdiagonal_permittivity: Mapping[str, np.ndarray] = field(default_factory=dict)
+    # Packed permeability on H supports (mu_hx, mu_hy, mu_hz) and cell centers
+    # (mu_cell) for full-tensor ports in magnetic media; empty means mu=1.
+    magnetic_tensors: Mapping[str, np.ndarray] = field(default_factory=dict)
+    offdiagonal_permeability: Mapping[str, np.ndarray] = field(default_factory=dict)
     # Guarded by joint field, power, energy, and discrete-Maxwell validation.
     yee_refinement: bool = True
     grid: RectilinearGrid | None = None
@@ -185,6 +189,8 @@ class ModePlaneSpec:
             ("diagonal_permeability", self.diagonal_permeability),
             ("yee_tensors", self.yee_tensors),
             ("offdiagonal_permittivity", self.offdiagonal_permittivity),
+            ("magnetic_tensors", self.magnetic_tensors),
+            ("offdiagonal_permeability", self.offdiagonal_permeability),
         ):
             if name.startswith("diagonal_"):
                 unknown = set(value) - {"xx", "yy", "zz"}
@@ -200,67 +206,7 @@ class ModePlaneSpec:
             object.__setattr__(self, name, immutable_snapshot(value))
 
         if self.yee_tensors:
-            from beamz.lattice import component_shape_3d
-
-            required = {"eps_x", "eps_y", "eps_z", "eps_node"}
-            if set(self.yee_tensors) != required:
-                raise ValueError(
-                    "Full-tensor modes require all electric-support and shared-node tensors"
-                )
-            if self.dt is None or not np.isfinite(self.dt) or self.dt <= 0:
-                raise ValueError(
-                    "Full-tensor modes require a positive propagation timestep"
-                )
-            require_uniform_normal_spacing(self.grid, axis)
-            if self.polarization is not None or self.force_symmetry:
-                raise ValueError(
-                    "Full-tensor modes require polarization=None and force_symmetry=False"
-                )
-            if not self.component_permeability or any(
-                not np.all(np.asarray(v) == 1)
-                for v in self.component_permeability.values()
-            ):
-                raise ValueError(
-                    "Full-tensor modes currently require nonmagnetic materials (mu=1)"
-                )
-            for name, values in self.yee_tensors.items():
-                expected = (
-                    tuple(n + 1 for n in self.grid_shape)
-                    if name == "eps_node"
-                    else component_shape_3d("E" + name[-1], self.grid_shape)
-                )
-                if np.asarray(values).shape != (6, *expected):
-                    raise ValueError(
-                        f"{name} must cover the complete packed Yee support {(6, *expected)}"
-                    )
-
-                if not np.isfinite(values).all() or np.any(np.imag(values)):
-                    raise ValueError(
-                        "Full-tensor modes require finite real dielectric tensors"
-                    )
-                normal = {"z": 1, "y": 2, "x": 3}[self.axis]
-                if not np.allclose(
-                    values, np.take(values, [0], axis=normal), rtol=1e-6, atol=1e-12
-                ):
-                    raise ValueError(
-                        "Full-tensor modes require longitudinally invariant constitutive support"
-                    )
-                xx, yy, zz, xy, xz, yz = np.real(values)
-                determinant = (
-                    xx * yy * zz
-                    + 2 * xy * xz * yz
-                    - xx * yz**2
-                    - yy * xz**2
-                    - zz * xy**2
-                )
-                if (
-                    np.any(xx <= 0)
-                    or np.any(xx * yy - xy**2 <= 0)
-                    or np.any(determinant <= 0)
-                ):
-                    raise ValueError(
-                        "Full-tensor modes require positive-definite dielectric tensors"
-                    )
+            self._validate_full_tensor_supports(axis)
 
         if float(self.frequency) <= 0.0 or not np.isfinite(float(self.frequency)):
             raise ValueError("frequency must be finite and positive")
@@ -293,6 +239,78 @@ class ModePlaneSpec:
             if pol not in {"te", "tm"}:
                 raise ValueError("polarization must be 'te', 'tm', or None")
             object.__setattr__(self, "polarization", pol)
+
+    def _validate_full_tensor_supports(self, axis) -> None:
+        """Check the packed constitutive supports of a full-tensor port."""
+        from beamz.lattice import component_shape_3d
+
+        required = {"eps_x", "eps_y", "eps_z", "eps_node"}
+        if set(self.yee_tensors) != required:
+            raise ValueError(
+                "Full-tensor modes require all electric-support and shared-node tensors"
+            )
+        if self.dt is None or not np.isfinite(self.dt) or self.dt <= 0:
+            raise ValueError(
+                "Full-tensor modes require a positive propagation timestep"
+            )
+        require_uniform_normal_spacing(self.grid, axis)
+        if self.polarization is not None or self.force_symmetry:
+            raise ValueError(
+                "Full-tensor modes require polarization=None and force_symmetry=False"
+            )
+        if not self.component_permeability:
+            raise ValueError(
+                "Full-tensor modes require Yee-sampled permeability components"
+            )
+        magnetic = any(
+            not np.all(np.asarray(v) == 1) for v in self.component_permeability.values()
+        )
+        if self.magnetic_tensors:
+            if set(self.magnetic_tensors) != {"mu_hx", "mu_hy", "mu_hz", "mu_cell"}:
+                raise ValueError(
+                    "Full-tensor magnetic modes require all H-support and cell tensors"
+                )
+        elif magnetic:
+            raise ValueError(
+                "Full-tensor modes in magnetic media require packed magnetic tensors"
+            )
+        normal = {"z": 1, "y": 2, "x": 3}[self.axis]
+        for name, values in {**self.yee_tensors, **self.magnetic_tensors}.items():
+            if name == "eps_node":
+                expected = tuple(n + 1 for n in self.grid_shape)
+            elif name == "mu_cell":
+                expected = tuple(self.grid_shape)
+            elif name.startswith("mu_h"):
+                expected = component_shape_3d("H" + name[-1], self.grid_shape)
+            else:
+                expected = component_shape_3d("E" + name[-1], self.grid_shape)
+            if np.asarray(values).shape != (6, *expected):
+                raise ValueError(
+                    f"{name} must cover the complete packed Yee support {(6, *expected)}"
+                )
+
+            if not np.isfinite(values).all() or np.any(np.imag(values)):
+                raise ValueError(
+                    "Full-tensor modes require finite real constitutive tensors"
+                )
+            if not np.allclose(
+                values, np.take(values, [0], axis=normal), rtol=1e-6, atol=1e-12
+            ):
+                raise ValueError(
+                    "Full-tensor modes require longitudinally invariant constitutive support"
+                )
+            xx, yy, zz, xy, xz, yz = np.real(values)
+            determinant = (
+                xx * yy * zz + 2 * xy * xz * yz - xx * yz**2 - yy * xz**2 - zz * xy**2
+            )
+            if (
+                np.any(xx <= 0)
+                or np.any(xx * yy - xy**2 <= 0)
+                or np.any(determinant <= 0)
+            ):
+                raise ValueError(
+                    "Full-tensor modes require positive-definite constitutive tensors"
+                )
 
 
 @dataclass(frozen=True)
@@ -346,7 +364,9 @@ def solve_solver_mode(spec: ModePlaneSpec, *, basis_cache=None) -> _SolverMode:
             "contract": "solver_preview",
             "field_representation": "solver",
             "processing_stage": "solver_fields_colocated_before_launch_preparation",
-            "full_tensor_operator": bool(spec.offdiagonal_permittivity),
+            "full_tensor_operator": bool(
+                spec.offdiagonal_permittivity or spec.offdiagonal_permeability
+            ),
             "mode_index": spec.mode_index,
             "candidate_count": basis.candidate_count,
             "selected_neff": complex(selected["neff"]),
@@ -394,7 +414,6 @@ def _solve_beamz_mode(
     candidate_cache: _SolveCache[Result] | None = None,
     basis_cache: dict | None = None,
 ) -> DiscreteMode:
-
     if not isinstance(spec, ModePlaneSpec):
         raise TypeError("spec must be a ModePlaneSpec")
 
@@ -503,6 +522,10 @@ def _resolve_mode_basis(
         name: _transpose_between_axes(values, spec.transverse_axes, solver_axes)
         for name, values in spec.diagonal_permeability.items()
     }
+    cross_mu = {
+        name: _transpose_between_axes(values, spec.transverse_axes, solver_axes)
+        for name, values in spec.offdiagonal_permeability.items()
+    }
     # Material components, like their sample axes above, must be in the local
     # (tangent, tangent, normal) frame expected by solve_grid.
     u, v, n = (*solver_axes, spec.axis)
@@ -520,6 +543,12 @@ def _resolve_mode_basis(
         mu_xx=diagonal_mu.get(u * 2),
         mu_yy=diagonal_mu.get(v * 2),
         mu_zz=diagonal_mu.get(n * 2),
+        mu_xy=cross_mu.get("".join(sorted(u + v))),
+        mu_yx=cross_mu.get("".join(sorted(u + v))),
+        mu_xz=cross_mu.get("".join(sorted(u + n))),
+        mu_zx=cross_mu.get("".join(sorted(u + n))),
+        mu_yz=cross_mu.get("".join(sorted(v + n))),
+        mu_zy=cross_mu.get("".join(sorted(v + n))),
         x_edges=x_edges,
         y_edges=y_edges,
         freqs=[spec.frequency],
@@ -529,7 +558,7 @@ def _resolve_mode_basis(
         normal_axis=_AXIS_INDEX[spec.axis],
     )
 
-    if not spec.offdiagonal_permittivity:
+    if not (spec.offdiagonal_permittivity or spec.offdiagonal_permeability):
         for local, axis in zip("xyz", (u, v, n), strict=True):
             for prefix, components, diagonal, fallback in (
                 (
@@ -739,6 +768,7 @@ def _prepare_discrete_mode(
             grid=spec.grid
             if spec.grid is not None and spec.grid.metric_kind != "isotropic_uniform"
             else None,
+            magnetic_tensors=spec.magnetic_tensors or None,
         )
         selected = _ModeCandidate(
             neff=complex(k_num * 299792458.0 / omega), fields=selected["fields"]
@@ -944,11 +974,20 @@ def _solve_mode_in_x_frame(
         )[component_order].transpose((0, *(i + 1 for i in storage_order)))
         for name, values in spec.yee_tensors.items()
     }
-    rotated_cross = {
-        new: spec.offdiagonal_permittivity[old]
-        for new, old in zip(tensor_components[3:], old_components[3:], strict=True)
-        if old in spec.offdiagonal_permittivity
+    rotated_magnetic = {
+        ("mu_cell" if name == "mu_cell" else "mu_h" + inverse[name[-1]]): np.asarray(
+            values
+        )[component_order].transpose((0, *(i + 1 for i in storage_order)))
+        for name, values in spec.magnetic_tensors.items()
     }
+
+    def rotate_cross(materials):
+        return {
+            new: materials[old]
+            for new, old in zip(tensor_components[3:], old_components[3:], strict=True)
+            if old in materials
+        }
+
     canonical_grid = None
     if spec.grid is not None:
         canonical_grid = RectilinearGrid(
@@ -967,7 +1006,9 @@ def _solve_mode_in_x_frame(
         diagonal_permittivity=rotate_diagonal(spec.diagonal_permittivity),
         diagonal_permeability=rotate_diagonal(spec.diagonal_permeability),
         yee_tensors=rotated_tensors,
-        offdiagonal_permittivity=rotated_cross,
+        offdiagonal_permittivity=rotate_cross(spec.offdiagonal_permittivity),
+        magnetic_tensors=rotated_magnetic,
+        offdiagonal_permeability=rotate_cross(spec.offdiagonal_permeability),
         grid=canonical_grid,
     )
     mode = _solve_beamz_mode(

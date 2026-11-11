@@ -260,9 +260,16 @@ def _solve_one_frequency(
     eps_tensor = material_grid.flat_eps_tensor()
     mu_tensor = material_grid.flat_mu_tensor()
     if target_neff is None:
-        # Default to the highest local material index. Users can supply a target
-        # explicitly when hunting for modes near another branch.
-        target_neff = float(np.sqrt(np.max(np.abs(eps_tensor))))
+        # Default to the highest local material index sqrt(eps mu). Users can
+        # supply a target explicitly when hunting for modes near another branch.
+        target_neff = float(
+            np.sqrt(
+                np.max(
+                    np.max(np.abs(eps_tensor), axis=(0, 1))
+                    * np.max(np.abs(mu_tensor), axis=(0, 1))
+                )
+            )
+        )
     target_neff = _shift_target_neff(float(target_neff))
 
     if not material_grid.is_diagonal:

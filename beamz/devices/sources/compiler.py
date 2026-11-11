@@ -792,14 +792,23 @@ def _mode_launch_injection_plan(
     if isinstance(plan, Mode2DLaunchPlan):
         entries = []
         normal_spacing = float(plan.normal_spacing or ctx.resolution)
+        magnetic = getattr(
+            getattr(ctx.fields, "material_grid", None), "magnetic_tensors", None
+        )
         for entry in plan.entries:
             component = entry.component
             material_scale = MU_0 if component.startswith("H") else EPS_0
-            denominator = (
-                material_scale
-                * np.asarray(component_material_at(ctx.fields, component, entry.index))
-                * normal_spacing
-            )
+            if magnetic and component.startswith("H"):
+                # Propagation maps H increments through the packed support
+                # tensor, not the scalar-mean permeability. Ports reject
+                # in-plane coupling, so its diagonal is the local inverse.
+                tensor = np.asarray(magnetic["mu_h" + component[-1].lower()])
+                material = tensor[
+                    min("xyz".index(component[-1].lower()), tensor.shape[0] - 1)
+                ][entry.index]
+            else:
+                material = component_material_at(ctx.fields, component, entry.index)
+            denominator = material_scale * np.asarray(material) * normal_spacing
             target = np.asarray(getattr(ctx.fields, component)[entry.index])
             values = (
                 _match_shape(np.asarray(entry.profile), target.shape)
