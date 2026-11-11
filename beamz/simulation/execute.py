@@ -766,16 +766,12 @@ def scan_compiler_options(program) -> dict:
     # compilation, outside executable.memory_analysis(). Use default emitters for
     # both FDTD backends so an otherwise fitting run can compile near capacity.
     options = {"xla_gpu_autotune_level": 0}
-    if (
-        program.config.backend == "cuda_streamed"
-        and program.dispersion is not None
-        and program.dispersion.anisotropic is not None
-    ):
-        # Tensor-media corrections interleave JAX fusions with per-step native
-        # phases. Re-executing CUDA graphs that capture those FFI calls crashes
-        # XLA on the host, so keep native calls out of command buffers; fusions
-        # stay graphed.
-        options["xla_gpu_enable_command_buffer"] = "FUSION,CUBLAS,CUBLASLT,CUDNN"
+    if program.dispersion is not None and program.dispersion.anisotropic is not None:
+        # XLA (jax 0.9) segfaults on the host executing CUDA graphs of some
+        # tensor-media scans, depending on region sizes and on both backends.
+        # Plain kernel launches cost about 10% on JAX and nothing measurable on
+        # the per-step CUDA path.
+        options["xla_gpu_enable_command_buffer"] = ""
     return options
 
 

@@ -1217,9 +1217,7 @@ def test_tensor_media_lower_to_jax_or_streamed_cuda_only():
     ).rotated((0.2, 0.3, 0.4))
     length = 1.2e-6
     design = bz.Design(width=length, height=length, depth=length)
-    design += bz.Box(
-        center=(length / 2,) * 3, size=(length / 3,) * 3, material=medium
-    )
+    design += bz.Box(center=(length / 2,) * 3, size=(length / 3,) * 3, material=medium)
     sim = bz.Simulation(
         design=design,
         resolution=0.1e-6,
@@ -1231,10 +1229,15 @@ def test_tensor_media_lower_to_jax_or_streamed_cuda_only():
     with pytest.raises(ValueError, match="single-device"):
         sim.compile(backend="jax", sharding=True)
 
+    # XLA crashes executing CUDA graphs of some tensor-media scans.
     program = sim.compile(backend="jax")
-    assert "xla_gpu_enable_command_buffer" not in scan_compiler_options(program)
     streamed = replace(program, config=replace(program.config, backend="cuda_streamed"))
-    # Per-step native phases must stay out of XLA command buffers.
-    assert "CUSTOM_CALL" not in scan_compiler_options(streamed).get(
-        "xla_gpu_enable_command_buffer", "CUSTOM_CALL"
-    )
+    for compiled in (program, streamed):
+        assert scan_compiler_options(compiled)["xla_gpu_enable_command_buffer"] == ""
+    static = bz.Simulation(
+        design=bz.Design(width=length, height=length, depth=length),
+        resolution=0.1e-6,
+        time=np.arange(4) * 1e-17,
+        setup_device="cpu",
+    ).compile(backend="jax")
+    assert "xla_gpu_enable_command_buffer" not in scan_compiler_options(static)
