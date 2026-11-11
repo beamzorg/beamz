@@ -1201,3 +1201,40 @@ def test_folding_fast_poles_keeps_low_frequency_response_and_relaxes_timestep():
         state=state, num_steps=4000, backend="jax", performance=False
     ).state
     assert float(jnp.abs(final.ex).max()) < 20.0
+
+
+def test_tensor_media_lower_to_jax_or_streamed_cuda_only():
+    from dataclasses import replace
+
+    from beamz.simulation.backend import CudaBackendUnavailable
+    from beamz.simulation.execute import scan_compiler_options
+
+    medium = bz.AnisotropicMedium(
+        2.0,
+        electric_poles=[
+            bz.TensorPole.lorentz((1.5, 0.5, 0.2), resonance=2.5e15, damping=1e13)
+        ],
+    ).rotated((0.2, 0.3, 0.4))
+    length = 1.2e-6
+    design = bz.Design(width=length, height=length, depth=length)
+    design += bz.Box(
+        center=(length / 2,) * 3, size=(length / 3,) * 3, material=medium
+    )
+    sim = bz.Simulation(
+        design=design,
+        resolution=0.1e-6,
+        time=np.arange(4) * 1e-17,
+        setup_device="cpu",
+    )
+    with pytest.raises(CudaBackendUnavailable, match="backend='cuda_streamed'"):
+        sim.compile(backend="cuda_mstep")
+    with pytest.raises(ValueError, match="single-device"):
+        sim.compile(backend="jax", sharding=True)
+
+    program = sim.compile(backend="jax")
+    assert "xla_gpu_enable_command_buffer" not in scan_compiler_options(program)
+    streamed = replace(program, config=replace(program.config, backend="cuda_streamed"))
+    # Per-step native phases must stay out of XLA command buffers.
+    assert "CUSTOM_CALL" not in scan_compiler_options(streamed).get(
+        "xla_gpu_enable_command_buffer", "CUSTOM_CALL"
+    )

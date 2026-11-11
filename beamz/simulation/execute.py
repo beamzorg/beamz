@@ -760,6 +760,25 @@ class _BoundedCompileScan:
         return getattr(self.compiled, name)
 
 
+def scan_compiler_options(program) -> dict:
+    """Per-executable XLA options for a compiled scan."""
+    # Empirical fusion autotuning allocates full-sized trial inputs/outputs during
+    # compilation, outside executable.memory_analysis(). Use default emitters for
+    # both FDTD backends so an otherwise fitting run can compile near capacity.
+    options = {"xla_gpu_autotune_level": 0}
+    if (
+        program.config.backend == "cuda_streamed"
+        and program.dispersion is not None
+        and program.dispersion.anisotropic is not None
+    ):
+        # Tensor-media corrections interleave JAX fusions with per-step native
+        # phases. Re-executing CUDA graphs that capture those FFI calls crashes
+        # XLA on the host, so keep native calls out of command buffers; fusions
+        # stay graphed.
+        options["xla_gpu_enable_command_buffer"] = "FUSION,CUBLAS,CUBLASLT,CUDNN"
+    return options
+
+
 def build_step_context(program, *, donate_state: bool = False):
     """Bind the shared source, boundary, and memory plan for one timestep."""
     cfg = program.config
@@ -843,6 +862,8 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
     cuda_multi_step = (
         cfg.backend in {"cuda_streamed", "cuda_mstep"}
         and not cfg.sharding.enabled
+        # Tensor-media corrections run in JAX between per-step CUDA phases.
+        and (program.dispersion is None or program.dispersion.anisotropic is None)
         and (not program.monitors or packed_graph_monitors is not None)
         and (not program.sources or source_groups_supported)
     )
@@ -1158,9 +1179,6 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
     # preserves its input state; callers may opt into the lower-memory variant when
     # they no longer need that continuation value.
     donate_argnums = (0,) if donate_state else ()
-    # Empirical fusion autotuning allocates full-sized trial inputs/outputs during
-    # compilation, outside executable.memory_analysis(). Use default emitters for
-    # both FDTD backends so an otherwise fitting run can compile near capacity.
     # JAX and the plan adapters expose a dynamic callable/lowering interface.
     scan: Any
     if "compiler_options" in inspect.signature(jax.jit).parameters:
@@ -1169,7 +1187,7 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
             jax.jit(
                 run_scan,
                 donate_argnums=donate_argnums,
-                compiler_options={"xla_gpu_autotune_level": 0},
+                compiler_options=scan_compiler_options(program),
             ),
         )
     # Older supported JAX releases lack per-executable options. Preserve their

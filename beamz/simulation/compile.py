@@ -717,9 +717,13 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             [s for s in request.sources if isinstance(s, ModeSource)],
             [m for m in request.monitors if isinstance(m, ModeMonitor)],
         )
-        if request.run.backend != "jax" or request.run.sharding[0]:
+        if (
+            request.run.backend not in {"jax", "cuda_streamed"}
+            or request.run.sharding[0]
+        ):
             raise ValueError(
-                "Tensor permeability and tensor-pole media require single-device JAX execution."
+                "Tensor permeability and tensor-pole media require single-device "
+                "JAX or streamed CUDA execution."
             )
     if request.materials.dispersion:
         from beamz.devices.monitors.monitors import ModeMonitor
@@ -1210,18 +1214,27 @@ def compile_program(
                 "Rectilinear full-tensor updates with periodic/Bloch seams "
                 "require backend='jax'."
             )
-    has_dispersion = bool(
-        material_grid.dispersion
-        or material_grid.tensor_dispersion
-        or material_grid.uses_magnetic_tensors
+    tensor_media = bool(
+        material_grid.tensor_dispersion or material_grid.uses_magnetic_tensors
     )
+    has_dispersion = bool(material_grid.dispersion) or tensor_media
     if has_dispersion and sharding_token[0]:
         raise ValueError(
             "Dispersive media currently support single-device execution only."
         )
-    if has_dispersion and requested_backend not in {"auto", "jax"}:
+    if material_grid.dispersion and requested_backend not in {"auto", "jax"}:
         raise CudaBackendUnavailable(
             "Dispersive media require backend='jax' (including JAX GPU)."
+        )
+    # Tensor media run their corrections between streamed CUDA phases; the
+    # fused multi-step schedules cannot host them.
+    if tensor_media and (
+        requested_backend not in {"auto", "jax", "cuda", "cuda_streamed"}
+        or requested_schedule == "mstep"
+    ):
+        raise CudaBackendUnavailable(
+            "Tensor permeability and tensor-pole media require backend='jax' or "
+            "backend='cuda_streamed'."
         )
     cuda_grid_supported = simulation.is_3d
     multi_device = sharding_token[0] and sharding_token[2] != 1
@@ -1299,7 +1312,7 @@ def compile_program(
         cuda_graph_cache_capacity_from_env() if resolved_backend != "jax" else 0
     )
     if (
-        material_grid.uses_full_permittivity
+        (material_grid.uses_full_permittivity or tensor_media)
         and resolved_backend == "cuda_streamed"
         and not multi_device
     ):
