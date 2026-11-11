@@ -9,9 +9,12 @@ from beamz.const import EPS_0
 from beamz.lattice import component_axis_offsets_3d
 
 
-def inverse_permittivity_components(values):
-    """Invert packed (xx, yy, zz, xy, xz, yz) tensors; components are trailing."""
-    packed = np.asarray(values)
+def inverse_permittivity_components(values, xp=np):
+    """Invert packed (xx, yy, zz, xy, xz, yz) tensors; components are trailing.
+
+    ``xp`` selects the array module; pass ``jax.numpy`` to trace the inverse.
+    """
+    packed = xp.asarray(values)
     if packed.shape[0] != 6:
         raise ValueError("Full electric constitutive support requires six components")
     xx, yy, zz, xy, xz, yz = packed
@@ -26,7 +29,7 @@ def inverse_permittivity_components(values):
         xy * yz - xz * yy,
         xy * xz - xx * yz,
     )
-    return np.stack(cofactors, axis=-1) / determinant[..., None]
+    return xp.stack(cofactors, axis=-1) / determinant[..., None]
 
 
 def electric_tensor_coefficients(tensors):

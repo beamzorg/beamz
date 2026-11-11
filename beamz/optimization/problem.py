@@ -110,7 +110,21 @@ class TopologyProblem:
             else tuple((name, None) for name in output_monitor_names or ())
         )
         self.checkpoint_interval = checkpoint_interval
-        self.program = simulation.compile(backend="jax")
+        self._design = None
+        compile_simulation = simulation
+        if topology.material_min is not None:
+            from .anisotropic_design import AnisotropicDesignBinding
+
+            self._design = AnisotropicDesignBinding(
+                simulation._material_grid(),
+                topology.region_mask,
+                topology.material_min,
+                topology.material_max,
+            )
+            compile_simulation = simulation.updated_copy(
+                material_grid=self._design.compile_grid()
+            )
+        self.program = compile_simulation.compile(backend="jax")
         self._validate()
         self._mask = jnp.asarray(topology.region_mask)
         self._base_eps = jnp.asarray(self.program.grid.material_grid.permittivity)
@@ -140,6 +154,12 @@ class TopologyProblem:
         scan = build_scan(self.program, checkpoint_interval=checkpoint_interval)
 
         def simulate(density, beta):
+            if self._design is not None:
+                rho = self._physical_density(density, beta)
+                supports = self._design.supports(rho)
+                coefficients = self._design.coefficients(self.program, supports)
+                plan = self._design.plan(self.program, rho, supports)
+                return scan(self._initial, coefficients, None, None, plan)
             eps = self._permittivity(density, beta)
             coefficients = topology_coefficients(self.program, eps, self._mask)
             return scan(self._initial, coefficients)
@@ -289,8 +309,11 @@ class TopologyProblem:
             raise ValueError("filter_radius must be finite and nonnegative.")
         if not 0 < spec.projection_eta < 1:
             raise ValueError("projection_eta must lie strictly between zero and one.")
-        if grid.material_grid.uses_full_permittivity:
-            raise ValueError("TopologyProblem requires scalar permittivity.")
+        if grid.material_grid.uses_full_permittivity and self._design is None:
+            raise ValueError(
+                "TopologyProblem requires scalar permittivity; use TopologySpec "
+                "material_min/material_max for anisotropic designs."
+            )
         for axis in "xyz":
             if np.any(np.asarray(getattr(grid, f"sig_{axis}")) != 0):
                 raise ValueError(
@@ -301,7 +324,7 @@ class TopologyProblem:
             ):
                 raise ValueError("TopologyProblem requires relative permeability one.")
         _require_design_clear_of_tensor_media(
-            program, spec.region_mask, self.gradient_backend
+            program, spec.region_mask, self.gradient_backend, self._design
         )
         if len(sim.sources) != 1 or not isinstance(
             sim.sources[0], (ModeSource, GaussianBeamSource)
@@ -579,6 +602,10 @@ class TopologyProblem:
 
     def material_simulation(self, density, *, beta=1.0):
         """Create an ordinary simulation with the identical density material map."""
+        if self._design is not None:
+            rho = self._physical_density(self._density(density), self._beta(beta))
+            materials = self._design.material_grid_at(np.asarray(rho))
+            return self.simulation.updated_copy(material_grid=materials)
         eps = self._permittivity(self._density(density), self._beta(beta))
         materials = topology_material_grid(self.program, eps, self._mask)
         return self.simulation.updated_copy(material_grid=materials)
@@ -634,7 +661,9 @@ class TopologyProblem:
         return design
 
 
-def _require_design_clear_of_tensor_media(program, mask, gradient_backend) -> None:
+def _require_design_clear_of_tensor_media(
+    program, mask, gradient_backend, design=None
+) -> None:
     """Allow tensor permeability and tensor-pole media only outside the design.
 
     Their corrections use static compile-time constitutive coefficients, so
@@ -642,6 +671,11 @@ def _require_design_clear_of_tensor_media(program, mask, gradient_backend) -> No
     differentiable scan differentiates through them; the spectral adjoint
     replays bare Yee kernels and cannot.
     """
+    if design is not None and gradient_backend == "adjoint":
+        raise ValueError(
+            "TopologySpec material_min/material_max require the default autodiff "
+            "gradient backend."
+        )
     plan = None if program.dispersion is None else program.dispersion.anisotropic
     if plan is None:
         return
@@ -651,7 +685,18 @@ def _require_design_clear_of_tensor_media(program, mask, gradient_backend) -> No
             "tensor-pole media; use the default differentiable scan."
         )
     mask = np.asarray(mask, dtype=bool)
-    boxes = [region.box for region in plan.regions]
+    # The design media's own regions are rebuilt from the density each run.
+    owners = (
+        design._electric_region_owners(program)
+        if design is not None
+        else [None] * len(plan.electric_regions)
+    )
+    boxes = [
+        region.box
+        for region, owner in zip(plan.electric_regions, owners, strict=True)
+        if owner is None or owner.role is None
+    ]
+    boxes += [region.box for region in plan.magnetic_regions]
     if plan.magnetic is not None:
         boxes.append(plan.magnetic.box)
     for box in boxes:

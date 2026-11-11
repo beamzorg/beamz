@@ -805,6 +805,51 @@ def _compile_gyrotropic_region(poles, fraction, family, grid, dt, periodic_axes)
     )
 
 
+def tensor_pole_weights(fraction, drive, box: YeeBox):
+    """Per-site and shared-support pole strengths for a cropped cell fraction.
+
+    ``fraction`` is the medium's volume fraction on ``box.cell_slices`` (JAX or
+    NumPy; traced values are fine), ``drive`` the folded strengths (poles, 6).
+    Returns ``(diagonal per component, cross terms or None)``.
+    """
+    seams = _material_seams(box)
+    cell_ndim = len(box.shared_shape)
+    reshape = (-1,) + (1,) * cell_ndim
+    coupled = bool(np.any(drive[:, 3:] != 0.0)) and len(box.components) > 1
+    # Cross terms live on the shared support. With coupling, the diagonal weight
+    # of each site must be the shared weight averaged back to it: the operator
+    # is then a sum of per-support forms w * avg(E)^T W avg(E) (Jensen), hence
+    # positive semidefinite. Plain cell averages leave sites just outside a
+    # tilted medium with cross coupling but no diagonal, an indefinite operator
+    # that diverges for Drude (hyperbolic) poles.
+    if box.family == "H":
+        shared = fraction
+    else:
+        shared = _collocate(
+            fraction, "Cell", "Node", box.shared_shape, box.widths, seams
+        )
+    if coupled:
+        site_support, site_weight = box.shared, shared
+    else:
+        site_support, site_weight = "Cell", fraction
+    diagonal = []
+    for component, shape in zip(box.components, box.shapes, strict=True):
+        site = _collocate(
+            site_weight, site_support, component, shape, box.widths, seams
+        )
+        strength = drive[:, _axis_index(component)].reshape(reshape)
+        diagonal.append(jnp.asarray(strength, dtype=jnp.float32) * site[None])
+    offdiagonal = None
+    if coupled:
+        offdiagonal = (
+            jnp.asarray(drive[:, 3:], dtype=jnp.float32)[
+                (slice(None),) + (None,) * cell_ndim + (slice(None),)
+            ]
+            * shared[None, ..., None]
+        )
+    return tuple(diagonal), offdiagonal
+
+
 def _compile_tensor_region(poles, fraction, family, grid, dt, periodic_axes):
     cell_shape = tuple(grid.material_grid.shape)
     weights = np.stack([np.asarray(p.weight) for p in poles])  # (poles, 6)
@@ -818,7 +863,6 @@ def _compile_tensor_region(poles, fraction, family, grid, dt, periodic_axes):
     # they are ~1e-31 and ~1e31, and reverse-mode cotangents multiplied by the
     # tiny factor first would underflow float32.
     drive = weights * c3[:, None]
-    has_offdiagonal = bool(np.any(weights[:, 3:] != 0.0))
     components = _active_components(family, grid)
     box = _make_box(
         family,
@@ -827,46 +871,14 @@ def _compile_tensor_region(poles, fraction, family, grid, dt, periodic_axes):
         grid,
         periodic_axes,
     )
-    seams = _material_seams(box)
-    cropped = jnp.asarray(fraction[box.cell_slices], dtype=jnp.float32)
     reshape = (-1,) + (1,) * len(cell_shape)
-    coupled = has_offdiagonal and len(components) > 1
-    # Cross terms live on the shared support. With coupling, the diagonal weight
-    # of each site must be the shared weight averaged back to it: the operator
-    # is then a sum of per-support forms w * avg(E)^T W avg(E) (Jensen), hence
-    # positive semidefinite. Plain cell averages leave sites just outside a
-    # tilted medium with cross coupling but no diagonal, an indefinite operator
-    # that diverges for Drude (hyperbolic) poles.
-    if family == "H":
-        shared = cropped
-    else:
-        shared = _collocate(
-            cropped, "Cell", "Node", box.shared_shape, box.widths, seams
-        )
-    if coupled:
-        site_support, site_weight = box.shared, shared
-    else:
-        site_support, site_weight = "Cell", cropped
-    diagonal = []
-    for component, shape in zip(components, box.shapes, strict=True):
-        site = _collocate(
-            site_weight, site_support, component, shape, box.widths, seams
-        )
-        strength = drive[:, _axis_index(component)].reshape(reshape)
-        diagonal.append(jnp.asarray(strength, dtype=jnp.float32) * site[None])
-    offdiagonal = None
-    if coupled:
-        offdiagonal = (
-            jnp.asarray(drive[:, 3:], dtype=jnp.float32)[
-                (slice(None),) + (None,) * len(cell_shape) + (slice(None),)
-            ]
-            * shared[None, ..., None]
-        )
+    cropped = jnp.asarray(fraction[box.cell_slices], dtype=jnp.float32)
+    diagonal, offdiagonal = tensor_pole_weights(cropped, drive, box)
     return TensorPolarizationRegion(
         box,
         jnp.asarray(c1.reshape(reshape), dtype=jnp.float32),
         jnp.asarray(c2.reshape(reshape), dtype=jnp.float32),
-        tuple(diagonal),
+        diagonal,
         offdiagonal,
         _family_inverse(grid, box, dt),
     )
@@ -972,3 +984,85 @@ def validate_mode_ports(material_grid, sources, monitors) -> None:
                     f"{kind} planes cannot yet overlap gyrotropic or magnetic-pole "
                     "media; place the port outside them."
                 )
+
+
+# ---------------------------------------------------------------------------
+# Pytree registration: plans can be rebuilt from traced design parameters and
+# passed through jitted scans. Boxes are static metadata (slices are stored as
+# (start, stop) pairs because slices are unhashable on older Pythons); every
+# array is a leaf.
+
+
+def _slice_key(part):
+    return tuple((s.start, s.stop) for s in part)
+
+
+def _slice_value(key):
+    return tuple(slice(start, stop) for start, stop in key)
+
+
+def _flatten_box(box: YeeBox):
+    meta = (
+        box.family,
+        box.components,
+        tuple(_slice_key(part) for part in box.slices),
+        box.shapes,
+        box.shared_shape,
+        _slice_key(box.shared_slices),
+        _slice_key(box.cell_slices),
+        box.seams,
+    )
+    return (box.widths,), meta
+
+
+def _unflatten_box(meta, children):
+    family, components, slices, shapes, shared_shape, shared, cells, seams = meta
+    return YeeBox(
+        family,
+        components,
+        tuple(_slice_value(part) for part in slices),
+        shapes,
+        shared_shape,
+        _slice_value(shared),
+        _slice_value(cells),
+        children[0],
+        seams,
+    )
+
+
+def _register_fields(cls, data, meta=()):
+    def flatten(value):
+        children = tuple(getattr(value, f) for f in data)
+        aux = tuple(getattr(value, f) for f in meta)
+        return children, aux
+
+    def unflatten(aux, children):
+        return cls(
+            **dict(zip(data, children, strict=True)),
+            **dict(zip(meta, aux, strict=True)),
+        )
+
+    jax.tree_util.register_pytree_node(cls, flatten, unflatten)
+
+
+jax.tree_util.register_pytree_node(YeeBox, _flatten_box, _unflatten_box)
+_register_fields(InverseOperator, ("diagonal", "offdiagonal"))
+_register_fields(MagneticPlan, ("box", "inverse", "loss"))
+_register_fields(
+    TensorPolarizationRegion,
+    ("box", "c1", "c2", "diagonal", "offdiagonal", "inverse"),
+)
+_register_fields(
+    GyrotropicRegion,
+    (
+        "box",
+        "rotation",
+        "strength",
+        "resonance_squared",
+        "damping",
+        "weights",
+        "inverse",
+    ),
+    ("iterations",),
+)
+_register_fields(AnisotropicPlan, ("magnetic", "electric_regions", "magnetic_regions"))

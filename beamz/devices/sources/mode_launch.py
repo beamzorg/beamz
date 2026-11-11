@@ -281,6 +281,7 @@ def _plan_2d_mode_source(
     _require_cell_mode_materials(
         getattr(fields, "material_grid", None),
         operation="2D ModeSource",
+        port=source,
     )
     permittivity = np.asarray(fields.permittivity)
     ny, nx = permittivity.shape

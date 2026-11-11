@@ -110,6 +110,15 @@ class TopologySpec:
         Optional smooth morphology applied after filtering.
     morphology_smooth_tau : float, default=0.01
         Smooth min/max temperature used by morphology.
+    material_min, material_max : Material or AnisotropicMedium, optional
+        Design materials at zero and unit physical density. Either may be an
+        anisotropic, dispersive medium (e.g. a tilted LiNbO3 crystal): its
+        high-frequency tensor blends linearly with density and its poles fill
+        the cell with volume fraction ``rho`` (or ``1 - rho``). When given,
+        they replace ``eps_min``/``eps_max``, which are then set to each
+        material's mean principal permittivity for fixed-structure detection
+        and export. Design materials must be nonmagnetic and lossless apart
+        from their poles; gradients use the autodiff backend on JAX.
 
     Notes
     -----
@@ -134,6 +143,8 @@ class TopologySpec:
     filter_type: str = "conic"
     morphology_operation: str = "openclose"
     morphology_smooth_tau: float = 0.01
+    material_min: Any = field(default=None, repr=False)
+    material_max: Any = field(default=None, repr=False)
     fixed_solid: Any = field(default=None, repr=False, compare=False)
     fixed_void: Any = field(default=None, repr=False, compare=False)
     fixed_structure_mask: np.ndarray = field(init=False, repr=False)
@@ -160,6 +171,15 @@ class TopologySpec:
                 raise ValueError("Fixed density cells must lie inside region_mask.")
         object.__setattr__(self, "fixed_solid", solid)
         object.__setattr__(self, "fixed_void", void)
+        if self.material_min is not None or self.material_max is not None:
+            from beamz.design.materials import Material
+
+            low = self.material_min or Material(float(self.eps_min))
+            high = self.material_max or Material(float(self.eps_max))
+            object.__setattr__(self, "material_min", low)
+            object.__setattr__(self, "material_max", high)
+            object.__setattr__(self, "eps_min", float(np.mean(low.epsilon_r[:3])))
+            object.__setattr__(self, "eps_max", float(np.mean(high.epsilon_r[:3])))
         base_grid = self.design.rasterize(resolution)
         fixed = get_fixed_structure_mask(
             base_grid, float(self.eps_min), float(self.eps_max), mask

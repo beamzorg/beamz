@@ -907,13 +907,21 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
         coeffs: UpdateCoefficients,
         dispersion_coefficients=None,
         mstep_buffers=None,
+        anisotropic_plan=None,
     ):
         runtime_program = program
+        if anisotropic_plan is not None:
+            # Design-dependent tensor media (topology optimization) rebuild the
+            # plan from traced parameters; it is a pytree with static boxes.
+            runtime_program = replace(
+                runtime_program,
+                dispersion=replace(program.dispersion, anisotropic=anisotropic_plan),
+            )
         if dispersion_coefficients is not None:
             runtime_program = replace(
-                program,
+                runtime_program,
                 dispersion=replace(
-                    program.dispersion,
+                    runtime_program.dispersion,
                     coefficients=tuple(
                         (record[0], *values)
                         for record, values in zip(
