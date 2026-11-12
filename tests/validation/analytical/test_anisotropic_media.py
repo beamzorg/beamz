@@ -825,9 +825,9 @@ def test_permeability_tensor_packet_speed_on_graded_grid():
 
 
 def test_pole_timestep_bound_is_enforced_and_sufficient():
-    """S^2 + (Omega dt / 2)^2 < 1 guards the explicit recurrence: just below
-    the bound a lossless multi-pole tilted crystal stays bounded from random
-    initial fields; just above it, compilation is refused."""
+    """The von Neumann limit guards the explicit recurrence: just below it a
+    lossless multi-pole tilted crystal stays bounded from random initial
+    fields; just above it, compilation is refused."""
 
     from beamz.simulation.anisotropic import max_stable_timestep
 
@@ -845,7 +845,7 @@ def test_pole_timestep_bound_is_enforced_and_sufficient():
         ],
     ).rotated((0.0, 0.0, 0.5))
     spacing = 30e-9
-    limit = max_stable_timestep(medium, "E", (spacing, spacing))
+    limit = max_stable_timestep(medium, "E", (spacing, spacing), "te")
 
     def simulation(dt):
         return bz.Simulation(
@@ -870,6 +870,132 @@ def test_pole_timestep_bound_is_enforced_and_sufficient():
         state=state, num_steps=6000, backend="jax", performance=False
     ).state
     assert float(jnp.abs(final.ex).max()) < 20.0
+
+
+def _seeded_peaks(medium, spacing, dt, steps):
+    """Peak |Ex| of a seeded periodic 2D TE run after each third of ``steps``."""
+    simulation = bz.Simulation(
+        design=bz.Design(width=16 * spacing, height=16 * spacing, material=medium),
+        resolution=spacing,
+        time=np.arange(steps + 1) * dt,
+        polarization="te",
+        boundaries=[bz.Periodic(axes=("x", "y"))],
+        raster_options=RasterOptions(smoothing="farjadpour_full"),
+    )
+    state = simulation.initial_state()
+    rng = np.random.default_rng(0)
+    state = state._replace(
+        ex=jnp.asarray(rng.normal(size=state.ex.shape), dtype=jnp.float32),
+        ey=jnp.asarray(rng.normal(size=state.ey.shape), dtype=jnp.float32),
+    )
+    peaks = []
+    for _ in range(3):
+        state = simulation.advance(
+            state=state, num_steps=steps // 3, backend="jax", performance=False
+        ).state
+        peaks.append(float(jnp.abs(state.ex).max()))
+    return np.array(peaks)
+
+
+def test_analytic_pole_bound_is_not_sufficient_for_multi_pole_crystals(monkeypatch):
+    """Regression: S^2 + (Omega dt / 2)^2 < 1 accepted timesteps that diverge.
+
+    The bound combines the in-medium Courant number with the fastest k = 0
+    pole frequency, but a stiff pole tilted against an anisotropic eps_inf
+    couples to the grid's dispersion at finite k. The von Neumann analysis of
+    the implemented scheme puts the limit about 11% lower here; a seeded run
+    diverges at 0.98 of the analytic bound and stays bounded at 0.98 of the
+    numeric one.
+    """
+    from beamz.design.anisotropic import packed_to_matrix
+    from beamz.simulation import pole_stability
+    from beamz.simulation.anisotropic import max_stable_timestep
+
+    spacing = 20e-9
+    rate = LIGHT_SPEED / spacing
+    eps_inf = bz.AnisotropicMedium((6.0, 2.0, 6.0)).rotated((0.0, 0.0, np.pi / 4))
+    medium = bz.AnisotropicMedium(
+        eps_inf.epsilon_r,
+        electric_poles=[
+            bz.TensorPole.lorentz((4.5, 4.7, 0.5), resonance=1.2 * rate, damping=0.0),
+            bz.TensorPole.lorentz(
+                (50.0, 0.2, 18.0), resonance=3.7 * rate, damping=0.0
+            ).rotated((0.0, 0.0, np.pi / 6)),
+        ],
+    )
+    # The former analytic bound, with Omega the largest k = 0 normal mode.
+    eps_matrix = packed_to_matrix(np.asarray(medium.epsilon_r))
+    inverse = np.linalg.inv(eps_matrix)
+    poles = medium.electric_poles
+    modes = np.block(
+        [
+            [
+                p.weight_matrix @ inverse + (p is q) * p.resonance**2 * np.eye(3)
+                for q in poles
+            ]
+            for p in poles
+        ]
+    )
+    omega = np.sqrt(np.linalg.eigvals(modes).real.max())
+    courant = 2.0 * LIGHT_SPEED**2 / spacing**2 / min(np.linalg.eigvalsh(eps_matrix))
+    analytic = 1.0 / np.sqrt(courant + 0.25 * omega**2)
+    limit = max_stable_timestep(medium, "E", (spacing, spacing), "te")
+    assert limit < 0.9 * analytic
+
+    def compile_at(dt):
+        bz.Simulation(
+            design=bz.Design(width=8 * spacing, height=8 * spacing, material=medium),
+            resolution=spacing,
+            time=np.arange(4) * dt,
+            polarization="te",
+            raster_options=RasterOptions(smoothing="farjadpour_full"),
+        ).compile(backend="jax")
+
+    compile_at(0.98 * limit)
+    with pytest.raises(ValueError, match="unstable") as error:
+        compile_at(0.98 * analytic)
+    assert "fold_fast_poles" in str(error.value)
+
+    stable = _seeded_peaks(medium, spacing, 0.98 * limit, 3000)
+    assert np.isfinite(stable).all() and stable.max() < 2 * stable[0], stable
+    # Bypass the check to watch the timestep the analytic bound accepted.
+    monkeypatch.setattr(pole_stability, "check_stability", lambda *args: None)
+    radius = pole_stability.amplification_radius(
+        medium, "E", 0.98 * analytic, (spacing, spacing), "te"
+    )
+    steps = 3 * int(np.ceil(15 / np.log(radius)))
+    unstable = _seeded_peaks(medium, spacing, 0.98 * analytic, steps)
+    assert not np.isfinite(unstable[-1]) or unstable[-1] > 1e4 * stable[0], unstable
+
+
+def test_von_neumann_limit_covers_gyrotropic_poles(monkeypatch):
+    """Gyrotropic poles enter the analysis with their Crank-Nicolson precession
+    and their separate eps_inf correction: a magnetized plasma next to a tilted
+    stiff Lorentz pole is bounded at 0.98 of the limit and diverges at 1.02."""
+    from beamz.simulation import pole_stability
+
+    spacing = 20e-9
+    rate = LIGHT_SPEED / spacing
+    medium = bz.AnisotropicMedium(
+        2.0,
+        electric_poles=[
+            bz.GyrotropicPole.magnetized_plasma(
+                3.0 * rate, (0.0, 0.0, 1.5 * rate), damping=0.0
+            ),
+            bz.TensorPole.lorentz(
+                (20.0, 0.5, 3.0), resonance=3.0 * rate, damping=0.0
+            ).rotated((0.0, 0.0, 0.5)),
+        ],
+    )
+    grid = ((spacing, spacing), "te")
+    limit = pole_stability.max_stable_timestep(medium, "E", *grid)
+    stable = _seeded_peaks(medium, spacing, 0.98 * limit, 3000)
+    assert np.isfinite(stable).all() and stable.max() < 2 * stable[0], stable
+    monkeypatch.setattr(pole_stability, "check_stability", lambda *args: None)
+    radius = pole_stability.amplification_radius(medium, "E", 1.02 * limit, *grid)
+    steps = 3 * int(np.ceil(15 / np.log(radius)))
+    unstable = _seeded_peaks(medium, spacing, 1.02 * limit, steps)
+    assert not np.isfinite(unstable[-1]) or unstable[-1] > 1e4 * stable[0], unstable
 
 
 def _ring_radius(medium, wavelength, polarization="te"):

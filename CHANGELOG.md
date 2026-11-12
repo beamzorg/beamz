@@ -58,6 +58,13 @@
   implicit `B` term solves with `eps_inf + sum dt/(1 + gamma dt/2) B` and runs
   on JAX and streamed CUDA. Mode ports fold the `B` term. The timestep check
   for such media is a von Neumann analysis of the scheme.
+- The timestep check for Lorentz, Drude and gyrotropic tensor poles is now the
+  same von Neumann analysis of the implemented scheme. The analytic bound
+  `S^2 + (Omega dt / 2)^2 < 1` it replaces accepted timesteps that diverge for
+  some multi-pole anisotropic media; for one tilted crystal the true limit is
+  11% lower. The analysis is cached and independent of grid size.
+  `beamz.simulation.anisotropic.max_stable_timestep` takes an optional 2D
+  `polarization`.
 - Tensor permeability and tensor-pole media run on single-device
   `backend="cuda_streamed"`. New native kernels apply their corrections; the
   CUDA component is now version 0.31.0 / ABI 31, so rebuild it after updating.

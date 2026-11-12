@@ -41,7 +41,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from beamz.const import EPS_0, LIGHT_SPEED, MU_0
+from beamz.const import EPS_0, MU_0
 from beamz.constitutive import (
     _support_offsets,
     collocate_yee_component,
@@ -1004,95 +1004,28 @@ def _pole_coefficients(poles, dt):
     return c1, c2, c3
 
 
-def coupled_pole_frequency(static, poles) -> float:
-    """Largest local (k = 0) normal-mode frequency of a pole set, in rad/s.
+def max_stable_timestep(medium, family, spacings, polarization=None) -> float:
+    """Largest stable dt for a medium's poles on a grid with these ``spacings``.
 
-    With the field slaved to the polarization (E = D - eps_inf^-1 sum p), each
-    pole obeys p_p'' = -omega_p^2 p_p - W_p eps_inf^-1 sum_q p_q; the
-    eigenvalues of that 3P x 3P matrix are the squared normal-mode frequencies.
+    A von Neumann analysis of the implemented scheme (see
+    :mod:`beamz.simulation.pole_stability`); with two spacings,
+    ``polarization`` (``"te"`` or ``"tm"``) keeps only the simulated field
+    components, both when None.
     """
-    from beamz.design.anisotropic import packed_to_matrix
+    from beamz.simulation import pole_stability
 
-    inverse = np.linalg.inv(packed_to_matrix(np.asarray(static)))
-    count = len(poles)
-    matrix = np.zeros((3 * count, 3 * count))
-    for row, pole in enumerate(poles):
-        coupling = pole.weight_matrix @ inverse
-        for column in range(count):
-            matrix[3 * row : 3 * row + 3, 3 * column : 3 * column + 3] = coupling
-        matrix[3 * row : 3 * row + 3, 3 * row : 3 * row + 3] += (
-            pole.resonance** 2 * np.eye(3)
-        )
-    return float(np.sqrt(max(0.0, np.max(np.linalg.eigvals(matrix).real))))
-
-
-def max_stable_timestep(medium, family, spacings) -> float:
-    """Largest dt with S^2 + (Omega dt / 2)^2 < 1 for a medium's tensor poles.
-
-    ``S`` is the Courant number inside the medium, normalized to its CFL limit
-    (the vacuum limit scaled by sqrt(min eig eps_inf * min eig mu_inf)), and
-    ``Omega`` is :func:`coupled_pole_frequency`. This is the stability bound of
-    the explicit central-difference pole recurrence coupled to Yee leapfrog.
-    """
-    if family == "E":
-        poles, static = medium.electric_poles, medium.epsilon_r
-    else:
-        poles, static = medium.magnetic_poles, medium.mu_r
-    if any(getattr(p, "edot", None) is not None for p in poles):
-        from beamz.simulation import ccpr
-
-        return ccpr.max_stable_timestep(medium, family, spacings)
-    omega = coupled_pole_frequency(static, poles)
-    return float(1.0 / np.sqrt(_courant_rate(medium, spacings) + 0.25 * omega**2))
-
-
-def _courant_rate(medium, spacings) -> float:
-    """(S / dt)^2 for the in-medium Courant number S (CFL at S = 1)."""
-    from beamz.design.anisotropic import packed_to_matrix
-
-    eps_floor = np.linalg.eigvalsh(packed_to_matrix(np.asarray(medium.epsilon_r)))[0]
-    mu_floor = np.linalg.eigvalsh(packed_to_matrix(np.asarray(medium.mu_r)))[0]
-    return float(
-        LIGHT_SPEED**2 * sum(1.0 / h**2 for h in spacings) / (eps_floor * mu_floor)
-    )
-
-
-def _check_pole_stability(medium, family, dt, grid):
-    poles = medium.electric_poles if family == "E" else medium.magnetic_poles
-    if any(getattr(p, "edot", None) is not None for p in poles):
-        from beamz.simulation import ccpr
-
-        return ccpr.check_stability(medium, family, dt, grid)
-    geometry = grid.geometry
-    active = 3 if len(grid.material_grid.shape) == 3 else 2
-    spacings = tuple(geometry.min_spacings[:active])
-    limit = max_stable_timestep(medium, family, spacings)
-    if dt >= limit:
-        # Pole frequency that would leave a 10% margin at this dt, if the
-        # in-medium Courant number alone is still stable.
-        headroom = 1.0 - _courant_rate(medium, spacings) * dt**2
-        hint = ""
-        if headroom > 0.0:
-            max_resonance = 1.8 * np.sqrt(headroom) / dt
-            hint = (
-                " For poles far above the band of interest, "
-                f"medium.fold_fast_poles({max_resonance:.3e}) slows them enough for this dt."
-            )
-        raise ValueError(
-            f"Tensor poles are unstable at dt={dt:.3e} s; this medium needs "
-            f"dt < {limit:.3e} s (S^2 + (Omega dt / 2)^2 < 1 with the in-medium "
-            "Courant number S and the fastest coupled pole frequency Omega)." + hint
-        )
+    return pole_stability.max_stable_timestep(medium, family, spacings, polarization)
 
 
 def _compile_regions(medium, fraction, family, grid, dt, periodic_axes) -> list:
     from beamz.design.anisotropic import GyrotropicPole
+    from beamz.simulation import pole_stability
 
     poles = medium.electric_poles if family == "E" else medium.magnetic_poles
     fraction = np.asarray(fraction, dtype=np.float64)
     if not poles or not np.any(fraction > 1e-7):
         return []
-    _check_pole_stability(medium, family, dt, grid)
+    pole_stability.check_stability(medium, family, dt, grid)
     tensor = [p for p in poles if not isinstance(p, GyrotropicPole)]
     gyrotropic = [p for p in poles if isinstance(p, GyrotropicPole)]
     regions = []

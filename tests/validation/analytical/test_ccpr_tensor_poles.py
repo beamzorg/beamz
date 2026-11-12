@@ -25,7 +25,7 @@ from beamz.design.anisotropic import (
     rotation_matrix,
 )
 from beamz.design.raster import RasterOptions
-from beamz.simulation import ccpr
+from beamz.simulation import ccpr, pole_stability
 from beamz.simulation.dispersion import (
     update_anisotropic_electric,
     update_anisotropic_magnetic,
@@ -630,15 +630,16 @@ def test_von_neumann_limit_predicts_the_simulated_stability_boundary(path, monke
     spacing = 20e-9
     medium = _stiff_crystal(path)
     grid = ((spacing, spacing), "te")
-    limit = ccpr.max_stable_timestep(medium, "E", *grid)
+    limit = pole_stability.max_stable_timestep(medium, "E", *grid)
     assert limit < 0.9 * spacing / (LIGHT_SPEED * np.sqrt(2))
-    above = ccpr.amplification_radius(medium, "E", 1.02 * limit, *grid)
-    assert ccpr.amplification_radius(medium, "E", 0.99 * limit, *grid) < 1 + 1e-6
+    above = pole_stability.amplification_radius(medium, "E", 1.02 * limit, *grid)
+    below = pole_stability.amplification_radius(medium, "E", 0.99 * limit, *grid)
+    assert below < 1 + 1e-6
     steps = 3 * int(np.ceil(15 / np.log(above)))
     stable = _bounded(medium, spacing, 0.98 * limit, steps)
     assert np.isfinite(stable).all() and stable.max() < 2 * stable[0], stable
     # Compilation rejects the unstable step; bypass it to watch the divergence.
-    monkeypatch.setattr(ccpr, "check_stability", lambda *args: None)
+    monkeypatch.setattr(pole_stability, "check_stability", lambda *args: None)
     unstable = _bounded(medium, spacing, 1.02 * limit, steps)
     assert not np.isfinite(unstable[-1]) or unstable[-1] > 1e4 * stable[0], unstable
 
@@ -656,9 +657,9 @@ def test_compile_rejects_unstable_ccpr_timesteps_and_singular_updates(monkeypatc
         ).compile(backend="jax")
 
     stiff = _stiff_crystal("full")
-    limit = ccpr.max_stable_timestep(stiff, "E", (spacing, spacing), "te")
+    limit = pole_stability.max_stable_timestep(stiff, "E", (spacing, spacing), "te")
     compile_at(stiff, 0.98 * limit)
-    with pytest.raises(ValueError, match="CCPR tensor poles are unstable"):
+    with pytest.raises(ValueError, match="Tensor poles are unstable"):
         compile_at(stiff, 1.05 * limit)
     # The implicit update divides by eps_inf + sum dt / (1 + gamma dt / 2) B,
     # which must stay positive definite; only an active medium can violate it.

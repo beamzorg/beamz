@@ -221,14 +221,12 @@ puts the permittivity off by about 0.1 to 1% at 10 to 20 points per
 wavelength, which is comparable to the Yee dispersion error.
 
 **Timestep.** `eps'` must stay positive definite; only an active medium can
-violate this, and compilation rejects it. The Lorentz bound below is not
-sufficient once `B` is non-zero. For media with CCPR poles, compilation runs a
-von Neumann analysis of exactly this scheme instead. It samples the Brillouin
-zone with the collocation factors of the shared-support operators and the
-pointwise inverse of `eps'`, and it keeps only the simulated polarization in
-2D. The predicted limit matches seeded simulations: stable at 0.98 of it and
-divergent at 1.02. `beamz.simulation.ccpr.max_stable_timestep` reports it in
-advance. `fold_fast_poles` leaves CCPR poles unchanged.
+violate this, and compilation rejects it. The von Neumann analysis of the
+[timestep check](#timestep) includes the implicit `B` term and the pointwise
+inverse of `eps'`. For CCPR media too, the predicted limit matches seeded
+simulations: stable at 0.98 of it and divergent at 1.02.
+`beamz.simulation.anisotropic.max_stable_timestep` reports it in advance.
+`fold_fast_poles` leaves CCPR poles unchanged.
 
 **Support.**
 
@@ -291,22 +289,34 @@ sponge losses enter the tensor updates semi-implicitly as `(T + sigma dt / 2)^-1
 
 ## Timestep
 
-The explicit pole recurrence is stable when
+The pole recurrences are explicit, so they limit the timestep. Compilation
+checks it with a von Neumann analysis of the implemented scheme in the bulk
+medium. Every plane wave on the grid evolves independently, so the scheme is
+stable when the per-step amplification matrix of each wave vector has spectral
+radius at most one. The analysis samples the Brillouin zone and models the
+scheme as implemented:
 
-```text
-S^2 + (Omega dt / 2)^2 < 1
-```
+- off-diagonal operators act through the shared-support averaging, which scales
+  them by `cos(k h / 2)` along each axis;
+- the field update applies the pointwise inverse of `eps_inf`;
+- gyrotropic poles keep their Crank-Nicolson precession;
+- in 2D, only the simulated polarization counts.
 
-In this condition:
+It depends on the medium and `dt`, not on the grid size, and is cached.
+Compilation rejects a timestep the analysis finds unstable and reports the
+largest stable `dt`. Use `beamz.simulation.anisotropic.max_stable_timestep` to
+compute it in advance. In seeded simulations the predicted limit is sharp:
+runs stay bounded at 0.98 of it and diverge at 1.02.
 
-- `S` is the Courant number inside the medium, normalized to its CFL limit.
-- `Omega` is the fastest coupled normal-mode frequency of the medium's poles.
+The analytic bound `S^2 + (Omega dt / 2)^2 < 1`, with `S` the in-medium
+Courant number and `Omega` the fastest coupled pole frequency at `k = 0`, is
+not sufficient for multi-pole anisotropic media. A stiff pole tilted against
+an anisotropic `eps_inf` couples to the grid dispersion at finite `k`: one such
+crystal diverges at 0.98 of that bound, and the analysis puts its limit about
+11% lower. BeamZ therefore no longer uses it.
 
-Compilation rejects a timestep that violates this and reports the largest
-stable `dt`. Sellmeier crystals with ultraviolet poles, such as LiNbO3 and
-sapphire, need a Courant number noticeably below the vacuum limit. Use
-`beamz.simulation.anisotropic.max_stable_timestep` to compute the bound in
-advance.
+Sellmeier crystals with ultraviolet poles, such as LiNbO3 and sapphire, need a
+Courant number noticeably below the vacuum limit.
 
 Ultraviolet poles sit far above optical bands, yet they set this limit.
 `medium.fold_fast_poles(max_resonance)` replaces every pole resonating above

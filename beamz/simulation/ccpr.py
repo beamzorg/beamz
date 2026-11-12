@@ -35,7 +35,7 @@ realizations are used:
 Both give ``E^{n+1} - E^n = Inv_{eps'+beta}(X - 2 beta E^n - delta)``. Then
 every pole gains ``(dt / d_p) B_p (E^{n+1} - E^n)``. Gyrotropic poles are
 unaffected. Stability is checked with a von Neumann analysis of exactly this
-scheme (:func:`amplification_radius`).
+scheme (:mod:`beamz.simulation.pole_stability`).
 """
 
 from __future__ import annotations
@@ -46,7 +46,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from beamz.const import LIGHT_SPEED
 from beamz.constitutive import (
     expand_packed,
     inverse_permittivity_components,
@@ -59,7 +58,6 @@ from beamz.simulation.anisotropic import (
     _axis_index,
     _cell_bounds,
     _collocate,
-    _courant_rate,
     _crop,
     _crop_inverse,
     _crop_or_fill,
@@ -73,8 +71,6 @@ from beamz.simulation.anisotropic import (
     magnetic_losses,
     tensor_pole_weights,
 )
-
-_STABLE = 1.0 + 1e-6  # neutral (static and Drude) modes sit on the unit circle
 
 
 def has_edot(poles) -> bool:
@@ -384,181 +380,3 @@ def apply_ccpr_region(region, fields, flat, state, native=False):
     for k, value in enumerate(coupled):
         advanced[2 * k] = advanced[2 * k] + value.astype(advanced[2 * k].dtype)
     return state, tuple(advanced)
-
-
-# ---------------------------------------------------------------------------
-# Stability
-
-
-def _family_statics(medium, family):
-    from beamz.design.anisotropic import packed_to_matrix
-
-    eps = packed_to_matrix(np.asarray(medium.epsilon_r))
-    mu = packed_to_matrix(np.asarray(medium.mu_r))
-    if family == "E":
-        return eps, mu, medium.electric_poles
-    return mu, eps, medium.magnetic_poles
-
-
-def _collocated(tensor, c):
-    out = tensor * (c[..., :, None] * c[..., None, :])
-    index = np.arange(3)
-    out[..., index, index] = tensor[..., index, index]
-    return out
-
-
-def _samples(active: int, count: int = 9) -> np.ndarray:
-    grid = np.linspace(-1.0, 1.0, count)
-    axes = [grid] * active + [np.zeros(1)] * (3 - active)
-    return np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3)
-
-
-def amplification_radius(medium, family, dt, spacings, polarization=None) -> float:
-    """Largest amplification factor of the discrete scheme in the bulk medium.
-
-    A von Neumann analysis of the Yee leapfrog coupled to the pole recurrence
-    exactly as implemented: implicit ``B`` term, static operators collocated
-    with the factors ``cos(k_j h_j / 2)`` that the shared-support averaging
-    gives off-diagonal entries, and the pointwise inverse of ``eps'``. Wave
-    vectors sample the Brillouin zone of the active axes (``spacings`` in m);
-    with two axes, ``polarization`` (``"te"`` or ``"tm"``) keeps only the
-    simulated field components (both when None). Gyrotropic poles enter as
-    their Lorentz part. Losses are omitted, which
-    only removes damping. Neutral modes (static fields, Drude) sit at 1.
-    """
-    from beamz.design.anisotropic import GyrotropicPole
-
-    static, other, poles = _family_statics(medium, family)
-    c = LIGHT_SPEED
-    step = c * float(dt)  # time in metres
-    resonance = np.array([p.resonance for p in poles]) / c
-    damping = np.array([p.damping for p in poles]) / c
-    weights = np.array([p.weight_matrix for p in poles]) / c**2
-    edots = (
-        np.array(
-            [
-                np.zeros((3, 3)) if isinstance(p, GyrotropicPole) else p.edot_matrix
-                for p in poles
-            ]
-        )
-        / c
-    )
-    count = len(poles)
-    d = 1.0 + 0.5 * damping * step
-    c1 = (2.0 - (resonance * step) ** 2) / d
-    c2 = -(1.0 - 0.5 * damping * step) / d
-    edot_scale = (step / d)[:, None, None]
-    total_k = (edots * edot_scale).sum(axis=0)
-    inverse = np.linalg.inv(static + total_k)
-    other_inverse = np.linalg.inv(other)
-
-    h = np.asarray(spacings, dtype=np.float64)
-    s = _samples(len(h))
-    phase = 0.5 * np.pi * s[:, : len(h)]
-    kappa = np.zeros((len(s), 3))
-    cos = np.ones((len(s), 3))
-    kappa[:, : len(h)] = 2.0 / h * np.sin(phase)
-    cos[:, : len(h)] = np.cos(phase)
-    x, y, z = kappa.T
-    zero = np.zeros_like(x)
-    curl = 1j * np.stack(
-        [
-            np.stack([zero, -z, y], -1),
-            np.stack([z, zero, -x], -1),
-            np.stack([-y, x, zero], -1),
-        ],
-        -2,
-    )
-    eye = np.broadcast_to(np.eye(3), (len(s), 3, 3))
-    m = _collocated(np.broadcast_to(inverse, (len(s), 3, 3)).copy(), cos)
-    other_m = _collocated(np.broadcast_to(other_inverse, (len(s), 3, 3)).copy(), cos)
-    a_ops = [
-        _collocated(np.broadcast_to(w, (len(s), 3, 3)).copy(), cos) * step**2 / di
-        for w, di in zip(weights, d, strict=True)
-    ]
-    k_ops = [
-        _collocated(np.broadcast_to(b, (len(s), 3, 3)).copy(), cos) * step / di
-        for b, di in zip(edots, d, strict=True)
-    ]
-    # Rows of the field update E^{n+1} = ee E + eh H + sum ep_i p_i + epp_i q_i.
-    a_sum = sum(a_ops, np.zeros((len(s), 3, 3), dtype=complex))
-    ee = eye - step**2 * m @ curl @ other_m @ curl - m @ a_sum
-    eh = step * m @ curl
-    size = 6 + 6 * count
-    matrix = np.zeros((len(s), size, size), dtype=complex)
-    matrix[:, 0:3, 0:3] = ee
-    matrix[:, 0:3, 3:6] = eh
-    matrix[:, 3:6, 0:3] = -step * other_m @ curl
-    matrix[:, 3:6, 3:6] = eye
-    # Pole i's current state p_i and previous state q_i occupy these columns.
-    current = [slice(6 + 3 * i, 9 + 3 * i) for i in range(count)]
-    previous = [slice(6 + 3 * (count + i), 9 + 3 * (count + i)) for i in range(count)]
-    for i, (p, q) in enumerate(zip(current, previous, strict=True)):
-        matrix[:, 0:3, p] = -(c1[i] - 1.0) * m
-        matrix[:, 0:3, q] = -c2[i] * m
-    # E^{n+1} - E^n, which drives every pole's implicit B term.
-    change = matrix[:, 0:3, :].copy()
-    change[:, :, 0:3] -= eye
-    for i, (p, q) in enumerate(zip(current, previous, strict=True)):
-        matrix[:, p, :] = k_ops[i] @ change
-        matrix[:, p, 0:3] += a_ops[i]
-        matrix[:, p, p] += c1[i] * eye
-        matrix[:, p, q] += c2[i] * eye
-        matrix[:, q, p] = eye
-    if polarization is not None:
-        # In 2D the TE and TM systems decouple; keep the simulated one. The
-        # family's own components are in-plane for E/TE and H/TM.
-        in_plane = (polarization == "te") == (family == "E")
-        own = (0, 1) if in_plane else (2,)
-        other_axes = (2,) if in_plane else (0, 1)
-        keep = [*own, *(3 + a for a in other_axes)]
-        keep += [6 + 3 * i + a for i in range(2 * count) for a in own]
-        matrix = matrix[:, keep][:, :, keep]
-    return float(np.abs(np.linalg.eigvals(matrix)).max())
-
-
-def max_stable_timestep(medium, family, spacings, polarization=None) -> float:
-    """Largest stable dt (bisection on :func:`amplification_radius`)."""
-
-    def stable(dt):
-        radius = amplification_radius(medium, family, dt, spacings, polarization)
-        return radius <= _STABLE
-
-    upper = float(1.0 / np.sqrt(_courant_rate(medium, spacings))) * (1.0 - 1e-9)
-    if stable(upper):
-        return upper
-    lower = 0.0
-    for _ in range(40):
-        middle = 0.5 * (lower + upper)
-        if stable(middle):
-            lower = middle
-        else:
-            upper = middle
-        if upper - lower < 1e-4 * upper:
-            break
-    return lower
-
-
-def check_stability(medium, family, dt, grid) -> None:
-    """Reject a timestep at which the CCPR medium's bulk scheme grows."""
-    from beamz.design.anisotropic import TensorPole, packed_to_matrix
-
-    static, _other, poles = _family_statics(medium, family)
-    drive = _edot_drive([p for p in poles if isinstance(p, TensorPole)], dt)
-    if np.linalg.eigvalsh(static + packed_to_matrix(drive.sum(axis=0)))[0] <= 0.0:
-        raise ValueError(
-            "The implicit CCPR update divides by eps_inf + sum_p dt/(1 + gamma_p "
-            f"dt/2) B_p, which is not positive definite at dt={dt:.3e} s. "
-            "Reduce the timestep or refit the medium."
-        )
-    material_grid = grid.material_grid
-    active = len(material_grid.shape)
-    spacings = tuple(grid.geometry.min_spacings[:active])
-    polarization = material_grid.polarization if active == 2 else None
-    radius = amplification_radius(medium, family, dt, spacings, polarization)
-    if radius > _STABLE:
-        limit = max_stable_timestep(medium, family, spacings, polarization)
-        raise ValueError(
-            f"CCPR tensor poles are unstable at dt={dt:.3e} s (amplification "
-            f"{radius:.6f} per step); this medium needs dt < {limit:.3e} s."
-        )
