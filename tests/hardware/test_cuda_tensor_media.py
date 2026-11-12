@@ -46,7 +46,7 @@ OMEGA = 2 * np.pi * bz.LIGHT_SPEED / WAVELENGTH
 
 
 def _media(kind):
-    """Two overlapping-free media exercising one family of native kernels each."""
+    """Two non-overlapping media exercising one family of native kernels each."""
     if kind == "electric_coupled":
         pole = bz.AnisotropicMedium(
             2.0,
@@ -143,6 +143,10 @@ def _seeded(sim):
     )
 
 
+def _flat(tree):
+    return np.concatenate([np.asarray(v).ravel() for v in jax.tree.leaves(tree)])
+
+
 @pytest.mark.parametrize("grid_kind", ["uniform", "graded"])
 @pytest.mark.parametrize("kind", ["electric_coupled", "magnetic_pole", "diagonal"])
 def test_native_tensor_media_match_jax(kind, grid_kind, monkeypatch):
@@ -171,12 +175,8 @@ def test_native_tensor_media_match_jax(kind, grid_kind, monkeypatch):
     # One pole region; the other medium is a static tensor (inverse only).
     assert calls["advance_poles"] >= 1 and calls["apply_inverse"] >= 2, calls
     for name in (*FIELDS, "polarization"):
-        expected = np.concatenate(
-            [np.asarray(v).ravel() for v in jax.tree.leaves(getattr(reference, name))]
-        )
-        result = np.concatenate(
-            [np.asarray(v).ravel() for v in jax.tree.leaves(getattr(actual, name))]
-        )
+        expected = _flat(getattr(reference, name))
+        result = _flat(getattr(actual, name))
         scale = np.abs(expected).max()
         assert scale > 0 and np.isfinite(result).all(), name
         assert np.abs(result - expected).max() < 2e-5 * scale, name
