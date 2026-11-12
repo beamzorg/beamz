@@ -667,6 +667,14 @@ def forward_step(
     if anisotropic:
         old_e_boxes = snapshot_electric(state, program.dispersion.anisotropic)
     state = update_kernel.update_e(state, ctx, coeffs)
+    if anisotropic:
+        from beamz.simulation.anisotropic import update_static_electric
+
+        # Map the vacuum increment through the full static tensors before E
+        # sources inject, mirroring the permeability mapping above.
+        state = update_static_electric(
+            old_e_boxes, state, program.dispersion.anisotropic, native_tensor
+        )
     state = apply_source_phase(
         state,
         state.current_step,

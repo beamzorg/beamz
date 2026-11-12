@@ -318,7 +318,9 @@ class MaterialGrid:
 
         entries = []
         for medium, fraction in self.tensor_dispersion:
-            if not isinstance(medium, AnisotropicMedium) or not medium.is_dispersive:
+            if not isinstance(medium, AnisotropicMedium) or not (
+                medium.is_dispersive or medium.requires_static_correction
+            ):
                 raise TypeError(
                     "Tensor dispersion entries require dispersive AnisotropicMedium values."
                 )

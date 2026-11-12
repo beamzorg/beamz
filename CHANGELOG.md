@@ -43,6 +43,22 @@
   CUDA component is now version 0.31.0 / ABI 31, so rebuild it after updating.
   Tensor-media executables compile without XLA command buffers, which crashed
   on replay for some of these programs.
+- `AnisotropicMedium` accepts full 3x3 tensors, given as nine row-major values
+  or a nested matrix. Permittivity and permeability may be non-symmetric
+  (non-Hermitian, so BeamZ warns). Electric `conductivity` and the new
+  `magnetic_conductivity` take full tensors with a passive symmetric part; an
+  antisymmetric part is lossless and non-reciprocal. `rotated()` now rotates
+  conductivity instead of rejecting it.
+- Added `AnisotropicMedium.from_complex_permittivity()`, which mirrors fdtdx.
+  A complex `eps` or `mu` (scalar, three values, or 3x3) at a reference
+  frequency or wavelength becomes real tensors plus
+  `sigma = omega0 eps0 Im(eps)`. A Hermitian `eps` therefore becomes an
+  antisymmetric conductivity. Added `complex_permittivity()` and
+  `complex_permeability()`, which include conduction.
+- These terms are applied by a box-local, semi-implicit full-tensor update on
+  JAX and on `backend="cuda_streamed"`. Inside the box, the E kernel runs in
+  vacuum. The native tensor-media inverse kernel gains antisymmetric cross
+  terms. Mode ports must avoid these media.
 - Added `anisotropic_library` with sapphire, lithium niobate, hBN, and
   alpha-MoO3 crystal models.
 - Added `examples/anisotropic/`: asymmetric refraction in tilted hyperbolic

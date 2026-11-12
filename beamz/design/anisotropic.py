@@ -19,11 +19,13 @@ FDTD, so the negative branch must come from a resonance or a Drude term.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
+from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.design.materials import Material
 
 _PACKED_INDEX = ((0, 3, 4), (3, 1, 5), (4, 5, 2))
@@ -65,6 +67,64 @@ def packed_to_matrix(packed) -> np.ndarray:
 
     packed = np.asarray(packed)
     return packed[..., np.asarray(_PACKED_INDEX)]
+
+
+def _matrix_from_any(value: Any, name: str, dtype=np.float64) -> np.ndarray:
+    """Return a full 3x3 tensor from scalar, 3, 6 (packed), 9 (row-major), or 3x3."""
+
+    array = np.asarray(value, dtype=dtype)
+    if array.shape == ():
+        return array * np.eye(3, dtype=dtype)
+    if array.shape == (3,):
+        return np.diag(array)
+    if array.shape == (6,):
+        return packed_to_matrix(array).astype(dtype)
+    if array.shape == (9,):
+        return array.reshape(3, 3).copy()
+    if array.shape == (3, 3):
+        return array.copy()
+    raise ValueError(
+        f"{name} must be a scalar, three diagonal values, six packed symmetric "
+        "values, nine row-major values, or a 3x3 matrix."
+    )
+
+
+def _symmetric_packed(matrix: np.ndarray) -> np.ndarray:
+    """Packed ``(xx, yy, zz, xy, xz, yz)`` symmetric part of a 3x3 matrix."""
+
+    symmetric = 0.5 * (matrix + matrix.T)
+    return np.array(
+        [
+            symmetric[0, 0],
+            symmetric[1, 1],
+            symmetric[2, 2],
+            symmetric[0, 1],
+            symmetric[0, 2],
+            symmetric[1, 2],
+        ]
+    )
+
+
+def skew_values(matrix) -> np.ndarray:
+    """Antisymmetric part ``(A_xy, A_xz, A_yz)`` of a 3x3 matrix, ``A = (T - T^T)/2``."""
+
+    matrix = np.asarray(matrix)
+    skew = 0.5 * (matrix - np.swapaxes(matrix, -1, -2))
+    return np.stack((skew[..., 0, 1], skew[..., 0, 2], skew[..., 1, 2]), axis=-1)
+
+
+def skew_matrix(values) -> np.ndarray:
+    """Antisymmetric 3x3 matrix with upper entries ``(A_xy, A_xz, A_yz)``."""
+
+    xy, xz, yz = np.asarray(values, dtype=np.float64)
+    return np.array(((0.0, xy, xz), (-xy, 0.0, yz), (-xz, -yz, 0.0)))
+
+
+def _drop_roundoff(matrix: np.ndarray, reference) -> np.ndarray:
+    matrix = np.array(matrix, dtype=np.float64)
+    scale = float(np.abs(np.asarray(reference)).max(initial=0.0))
+    matrix[np.abs(matrix) < 1e-13 * scale] = 0.0
+    return matrix
 
 
 def rotation_matrix(rotation) -> np.ndarray:
@@ -291,28 +351,80 @@ def _pole_from_spec(spec):
     return TensorPole(*spec)
 
 
+def _finite_matrix(value: Any, name: str) -> np.ndarray:
+    matrix = _matrix_from_any(value, name)
+    if not np.isfinite(matrix).all():
+        raise ValueError(f"{name} must contain finite values.")
+    return matrix
+
+
+def _is_symmetric(matrix: np.ndarray) -> bool:
+    """Whether the antisymmetric part is roundoff relative to the largest entry."""
+    scale = float(np.abs(matrix).max(initial=0.0))
+    return bool(np.all(np.abs(skew_values(matrix)) <= 1e-12 * max(scale, 1e-300)))
+
+
+def _static_matrix(value: Any, name: str) -> np.ndarray:
+    matrix = _finite_matrix(value, name)
+    if _is_symmetric(matrix):
+        return 0.5 * (matrix + matrix.T)
+    warnings.warn(
+        f"AnisotropicMedium {name} is not symmetric. A real non-symmetric "
+        "tensor is non-Hermitian: the medium exchanges energy with the "
+        "field (gain or loss) and may grow. For a lossless non-reciprocal "
+        "response use an antisymmetric conductivity (from_complex_permittivity "
+        "with a Hermitian tensor) or a GyrotropicPole.",
+        UserWarning,
+        stacklevel=3,
+    )
+    return matrix
+
+
+def _conductivity_matrix(value: Any, name: str) -> np.ndarray:
+    matrix = _finite_matrix(value, name)
+    symmetric = 0.5 * (matrix + matrix.T)
+    scale = float(np.abs(matrix).max(initial=0.0))
+    tolerance = 64.0 * np.finfo(float).eps * max(scale, 1e-300)
+    if np.any(np.linalg.eigvalsh(symmetric) < -tolerance):
+        raise ValueError(
+            f"{name} must be passive: its symmetric part must be positive "
+            "semidefinite (a negative eigenvalue is gain)."
+        )
+    return symmetric if _is_symmetric(matrix) else matrix
+
+
 @dataclass(frozen=True, init=False)
 class AnisotropicMedium(Material):
     """Electric and magnetic tensor medium with optional tensor-valued poles.
 
     Parameters
     ----------
-    permittivity : scalar, 3, 6, or symmetric 3x3
-        High-frequency relative permittivity ``eps_inf``; positive definite.
-    permeability : scalar, 3, 6, or symmetric 3x3
-        High-frequency relative permeability ``mu_inf``; positive definite.
+    permittivity : scalar, 3, 6, 9, or 3x3
+        High-frequency relative permittivity ``eps_inf``. Six values are the
+        packed symmetric ``(xx, yy, zz, xy, xz, yz)``; nine values or a 3x3
+        matrix give the full, possibly non-symmetric, tensor (row-major). Its
+        symmetric part must be positive definite. A non-symmetric real tensor
+        is non-Hermitian (it exchanges energy with the field) and warns.
+    permeability : scalar, 3, 6, 9, or 3x3
+        High-frequency relative permeability ``mu_inf``, as ``permittivity``.
     electric_poles, magnetic_poles : sequence of TensorPole or GyrotropicPole
         Resonances added to the permittivity and permeability respectively.
-    conductivity : scalar or 3 values, default=0
-        Diagonal electrical conductivity in S/m.
+    conductivity : scalar, 3, 6, 9, or 3x3, default=0
+        Electric conductivity tensor in S/m. Its symmetric part must be
+        positive semidefinite (passive); an antisymmetric part is lossless and
+        non-reciprocal (a Hall-like response).
+    magnetic_conductivity : scalar, 3, 6, 9, or 3x3, default=0
+        Magnetic conductivity tensor in Ohm/m, as ``conductivity``.
     frequency_range : (float, float), optional
         Band in Hz used to report ``max_permittivity`` for meshing.
 
     Notes
     -----
-    Off-diagonal tensors require ``volume`` or ``farjadpour_full`` raster
-    smoothing. Dispersive tensor poles and non-unit permeability currently run
-    on the single-device JAX backend only.
+    Symmetric off-diagonal permittivity requires ``volume`` or
+    ``farjadpour_full`` raster smoothing. Dispersive tensor poles, non-unit
+    permeability, non-symmetric tensors, off-diagonal conductivity and
+    magnetic conductivity run on single-device JAX or streamed CUDA; see
+    :meth:`requires_static_correction`.
 
     Examples
     --------
@@ -331,6 +443,13 @@ class AnisotropicMedium(Material):
     electric_poles: tuple[TensorPole, ...]
     magnetic_poles: tuple[TensorPole, ...]
     frequency_range: tuple[float, float] | None
+    # Static terms beyond the symmetric, diagonal-loss raster model: the
+    # antisymmetric parts (xy, xz, yz) of eps_inf and mu_inf and the full
+    # row-major electric and magnetic conductivity tensors.
+    _epsilon_skew: tuple[float, float, float]
+    _mu_skew: tuple[float, float, float]
+    _sigma: tuple[float, ...]
+    _sigma_m: tuple[float, ...]
 
     def __init__(
         self,
@@ -340,15 +459,26 @@ class AnisotropicMedium(Material):
         electric_poles=(),
         magnetic_poles=(),
         conductivity: Any = 0.0,
+        magnetic_conductivity: Any = 0.0,
         frequency_range=None,
     ) -> None:
+        epsilon = _static_matrix(permittivity, "permittivity")
+        mu = _static_matrix(permeability, "permeability")
+        sigma = _conductivity_matrix(conductivity, "conductivity")
+        sigma_m = _conductivity_matrix(magnetic_conductivity, "magnetic_conductivity")
         super().__init__(
-            permittivity=permittivity,
-            permeability=permeability,
-            conductivity=conductivity,
+            permittivity=_symmetric_packed(epsilon),
+            permeability=_symmetric_packed(mu),
+            conductivity=np.diag(sigma).copy(),
         )
-        if any(abs(v) > 0 for v in self._conductivity[3:]):
-            raise ValueError("AnisotropicMedium supports diagonal conductivity only.")
+        object.__setattr__(
+            self, "_epsilon_skew", tuple(float(v) for v in skew_values(epsilon))
+        )
+        object.__setattr__(self, "_mu_skew", tuple(float(v) for v in skew_values(mu)))
+        object.__setattr__(self, "_sigma", tuple(float(v) for v in sigma.reshape(-1)))
+        object.__setattr__(
+            self, "_sigma_m", tuple(float(v) for v in sigma_m.reshape(-1))
+        )
         object.__setattr__(
             self, "electric_poles", _poles(electric_poles, "electric_poles")
         )
@@ -366,28 +496,152 @@ class AnisotropicMedium(Material):
             frequency_range = band
         object.__setattr__(self, "frequency_range", frequency_range)
 
+    @classmethod
+    def from_complex_permittivity(
+        cls,
+        permittivity: Any,
+        *,
+        frequency: float | None = None,
+        wavelength: float | None = None,
+        permeability: Any = 1.0,
+        **kwargs,
+    ) -> AnisotropicMedium:
+        """Medium matching a complex ``eps`` (and ``mu``) at one reference frequency.
+
+        With the exp(-i omega t) convention a positive imaginary part is loss.
+        The real parts become ``permittivity`` and ``permeability``; the
+        imaginary parts become ``conductivity = omega0 eps0 Im(eps)`` and
+        ``magnetic_conductivity = omega0 mu0 Im(mu)``, component by component,
+        so :meth:`complex_permittivity` reproduces ``eps`` exactly at the
+        reference frequency. A Hermitian tensor (imaginary off-diagonals, as
+        in a gyrotropic or magneto-optic medium) therefore becomes an
+        antisymmetric conductivity: lossless and non-reciprocal at
+        ``omega0``. Away from it the conductive part scales as
+        ``omega0 / omega``, the causal response of a conductor.
+
+        Parameters
+        ----------
+        permittivity, permeability : complex scalar, 3, 6, 9, or 3x3
+            Complex relative tensors; ``permeability`` defaults to 1.
+        frequency, wavelength : float
+            Exactly one: the reference frequency in Hz or free-space
+            wavelength in m.
+        **kwargs
+            Further :class:`AnisotropicMedium` arguments (poles,
+            ``frequency_range``).
+        """
+
+        if (frequency is None) == (wavelength is None):
+            raise ValueError("Pass exactly one of frequency or wavelength.")
+        reference = (
+            float(frequency)
+            if frequency is not None
+            else LIGHT_SPEED / float(wavelength)  # type: ignore[arg-type]
+        )
+        if not np.isfinite(reference) or reference <= 0.0:
+            raise ValueError("The reference frequency must be finite and positive.")
+        omega = 2.0 * np.pi * reference
+        epsilon = _matrix_from_any(permittivity, "permittivity", complex)
+        mu = _matrix_from_any(permeability, "permeability", complex)
+        return cls(
+            epsilon.real,
+            mu.real,
+            conductivity=omega * EPS_0 * epsilon.imag,
+            magnetic_conductivity=omega * MU_0 * mu.imag,
+            **kwargs,
+        )
+
     @property
     def is_dispersive(self) -> bool:
         return bool(self.electric_poles or self.magnetic_poles)
 
-    def permittivity_tensor(self, frequencies) -> np.ndarray:
-        """Complex relative permittivity tensor(s), shape ``(..., 3, 3)``."""
+    @property
+    def permittivity_matrix(self) -> np.ndarray:
+        """Full static (high-frequency) relative permittivity, 3x3."""
+        return packed_to_matrix(np.asarray(self._epsilon_r)) + skew_matrix(
+            self._epsilon_skew
+        )
 
-        return self._response(self._epsilon_r, self.electric_poles, frequencies)
+    @property
+    def permeability_matrix(self) -> np.ndarray:
+        """Full static (high-frequency) relative permeability, 3x3."""
+        return packed_to_matrix(np.asarray(self._mu_r)) + skew_matrix(self._mu_skew)
+
+    @property
+    def conductivity_matrix(self) -> np.ndarray:
+        """Full electric conductivity tensor in S/m, 3x3."""
+        return np.asarray(self._sigma).reshape(3, 3)
+
+    @property
+    def magnetic_conductivity_matrix(self) -> np.ndarray:
+        """Full magnetic conductivity tensor in Ohm/m, 3x3."""
+        return np.asarray(self._sigma_m).reshape(3, 3)
+
+    @property
+    def requires_static_correction(self) -> bool:
+        """Whether static terms exceed the symmetric, diagonal-loss raster model.
+
+        True for non-symmetric permittivity or permeability, off-diagonal
+        electric conductivity, or any magnetic conductivity. Such media are
+        updated box-locally with the full semi-implicit tensor update.
+        """
+        sigma = self.conductivity_matrix
+        return bool(
+            any(self._epsilon_skew)
+            or any(self._mu_skew)
+            or np.any(sigma != np.diag(np.diag(sigma)))
+            or any(self._sigma_m)
+        )
+
+    def permittivity_tensor(self, frequencies) -> np.ndarray:
+        """Complex relative permittivity tensor(s), shape ``(..., 3, 3)``.
+
+        High-frequency tensor plus poles; see :meth:`complex_permittivity` for
+        the response including conductivity.
+        """
+
+        return self._response(
+            self.permittivity_matrix, self.electric_poles, frequencies
+        )
 
     def permeability_tensor(self, frequencies) -> np.ndarray:
         """Complex relative permeability tensor(s), shape ``(..., 3, 3)``."""
 
-        return self._response(self._mu_r, self.magnetic_poles, frequencies)
+        return self._response(
+            self.permeability_matrix, self.magnetic_poles, frequencies
+        )
+
+    def complex_permittivity(self, frequencies) -> np.ndarray:
+        """``permittivity_tensor + i sigma / (omega eps0)``, shape ``(..., 3, 3)``."""
+
+        return self._conductive(
+            self.permittivity_tensor(frequencies),
+            self.conductivity_matrix / EPS_0,
+            frequencies,
+        )
+
+    def complex_permeability(self, frequencies) -> np.ndarray:
+        """``permeability_tensor + i sigma_m / (omega mu0)``, shape ``(..., 3, 3)``."""
+
+        return self._conductive(
+            self.permeability_tensor(frequencies),
+            self.magnetic_conductivity_matrix / MU_0,
+            frequencies,
+        )
+
+    @staticmethod
+    def _conductive(tensor, rate, frequencies) -> np.ndarray:
+        omega = 2.0 * np.pi * np.asarray(frequencies, dtype=np.float64)
+        return tensor + 1j * rate / omega[..., None, None]
 
     @staticmethod
     def _response(static, poles, frequencies) -> np.ndarray:
         frequencies = np.asarray(frequencies, dtype=np.float64)
         if np.any(~np.isfinite(frequencies)) or np.any(frequencies <= 0):
             raise ValueError("Frequencies must be finite and positive.")
-        value = np.broadcast_to(
-            packed_to_matrix(np.asarray(static)), (*frequencies.shape, 3, 3)
-        ).astype(complex)
+        value = np.broadcast_to(np.asarray(static), (*frequencies.shape, 3, 3)).astype(
+            complex
+        )
         for pole in poles:
             value = value + pole.susceptibility(frequencies)
         return value
@@ -401,17 +655,19 @@ class AnisotropicMedium(Material):
         """
 
         matrix = rotation_matrix(rotation)
-        conductivity = _rotate_packed(np.asarray(self._conductivity), matrix)
-        if np.any(
-            np.abs(conductivity[3:]) > 1e-12 * max(1.0, np.abs(conductivity).max())
-        ):
-            raise ValueError("Rotating anisotropic conductivity is not supported.")
+
+        def rotate(tensor):
+            if np.array_equal(tensor, tensor[0, 0] * np.eye(3)):
+                return tensor  # isotropic tensors are rotation invariant
+            return _drop_roundoff(matrix @ tensor @ matrix.T, tensor)
+
         return AnisotropicMedium(
-            _rotate_packed(np.asarray(self._epsilon_r), matrix),
-            _rotate_packed(np.asarray(self._mu_r), matrix),
+            rotate(self.permittivity_matrix),
+            rotate(self.permeability_matrix),
             electric_poles=tuple(p.rotated(matrix) for p in self.electric_poles),
             magnetic_poles=tuple(p.rotated(matrix) for p in self.magnetic_poles),
-            conductivity=conductivity[:3],
+            conductivity=rotate(self.conductivity_matrix),
+            magnetic_conductivity=rotate(self.magnetic_conductivity_matrix),
             frequency_range=self.frequency_range,
         )
 
@@ -461,11 +717,12 @@ class AnisotropicMedium(Material):
             upper = min(band[1], 0.5 * target / (2.0 * np.pi))
             band = (band[0], upper) if upper > band[0] else None
         return AnisotropicMedium(
-            permittivity,
-            permeability,
+            packed_to_matrix(permittivity) + skew_matrix(self._epsilon_skew),
+            packed_to_matrix(permeability) + skew_matrix(self._mu_skew),
             electric_poles=electric,
             magnetic_poles=magnetic,
-            conductivity=np.asarray(self._conductivity[:3]),
+            conductivity=self.conductivity_matrix,
+            magnetic_conductivity=self.magnetic_conductivity_matrix,
             frequency_range=band,
         )
 
@@ -521,24 +778,43 @@ class AnisotropicMedium(Material):
             tuple(str(_pole_spec(p)) for p in self.electric_poles),
             tuple(str(_pole_spec(p)) for p in self.magnetic_poles),
             self.frequency_range,
+            (self._epsilon_skew, self._mu_skew, self._sigma, self._sigma_m),
         )
 
     def to_spec(self) -> dict:
-        """JSON-compatible complete specification (SI units, packed tensors)."""
+        """JSON-compatible complete specification (SI units, packed tensors).
+
+        Symmetric tensors stay packed; non-symmetric tensors and off-diagonal
+        conductivities are written as nested 3x3 lists.
+        """
 
         def poles(values):
             return [_pole_spec(p) for p in values]
 
-        return {
-            "permittivity": list(self._epsilon_r),
-            "permeability": list(self._mu_r),
-            "conductivity": list(self._conductivity[:3]),
+        def tensor(packed, skew):
+            if any(skew):
+                matrix = packed_to_matrix(np.asarray(packed)) + skew_matrix(skew)
+                return matrix.tolist()
+            return list(packed)
+
+        sigma = self.conductivity_matrix
+        spec = {
+            "permittivity": tensor(self._epsilon_r, self._epsilon_skew),
+            "permeability": tensor(self._mu_r, self._mu_skew),
+            "conductivity": (
+                list(self._conductivity[:3])
+                if np.array_equal(sigma, np.diag(np.diag(sigma)))
+                else sigma.tolist()
+            ),
             "electric_poles": poles(self.electric_poles),
             "magnetic_poles": poles(self.magnetic_poles),
             "frequency_range": (
                 None if self.frequency_range is None else list(self.frequency_range)
             ),
         }
+        if any(self._sigma_m):
+            spec["magnetic_conductivity"] = self.magnetic_conductivity_matrix.tolist()
+        return spec
 
     @classmethod
     def from_spec(cls, spec) -> AnisotropicMedium:
@@ -548,6 +824,7 @@ class AnisotropicMedium(Material):
             electric_poles=[_pole_from_spec(p) for p in spec.get("electric_poles", ())],
             magnetic_poles=[_pole_from_spec(p) for p in spec.get("magnetic_poles", ())],
             conductivity=spec.get("conductivity", 0.0),
+            magnetic_conductivity=spec.get("magnetic_conductivity", 0.0),
             frequency_range=spec.get("frequency_range"),
         )
 
@@ -561,11 +838,12 @@ class AnisotropicMedium(Material):
 
     def updated_copy(self, **changes):
         values = dict(
-            permittivity=self.permittivity,
-            permeability=self.permeability,
+            permittivity=self.permittivity_matrix,
+            permeability=self.permeability_matrix,
             electric_poles=self.electric_poles,
             magnetic_poles=self.magnetic_poles,
-            conductivity=self.conductivity,
+            conductivity=self.conductivity_matrix,
+            magnetic_conductivity=self.magnetic_conductivity_matrix,
             frequency_range=self.frequency_range,
         )
         unknown = set(changes) - set(values)

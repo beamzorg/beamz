@@ -679,6 +679,13 @@ def _require_design_clear_of_tensor_media(
     plan = None if program.dispersion is None else program.dispersion.anisotropic
     if plan is None:
         return
+    if plan.electric is not None:
+        # Design bindings rebuild E coefficients from the grid, which would
+        # undo the vacuum coefficients the full static-tensor box relies on.
+        raise ValueError(
+            "TopologyProblem does not yet support media with non-symmetric "
+            "tensors or off-diagonal conductivity."
+        )
     if gradient_backend == "adjoint":
         raise ValueError(
             "gradient_backend='adjoint' does not support tensor permeability or "
