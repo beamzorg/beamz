@@ -8,7 +8,7 @@ from typing import Any, Literal
 import numpy as np
 import numpy.typing as npt
 
-from beamz._cache_tokens import cache_token
+from beamz._cache_tokens import HashToken, dataclass_cache_spec
 from beamz.design.grid import RectilinearGrid
 from beamz.devices._immutable import readonly_array
 from beamz.lattice import component_shapes, normalize_polarization_2d
@@ -71,7 +71,8 @@ class MaterialGrid:
 
     Notes
     -----
-    Input arrays are copied and made read-only during construction.
+    Input arrays are copied and made read-only. Content fingerprints are computed
+    once when value comparison or an explicit canonical specification needs them.
     """
 
     permittivity: npt.ArrayLike
@@ -88,6 +89,7 @@ class MaterialGrid:
     grid: RectilinearGrid | None = None
     dispersion: tuple = ()
     dispersion_interfaces: tuple = ()
+    _cache_spec: HashToken = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "permittivity", readonly_array(self.permittivity))
@@ -566,27 +568,20 @@ class MaterialGrid:
         )
 
     def canonical_spec(self):
-        """Return values defining material-grid cache identity."""
-        return (
-            *self.field_arrays(),
-            self.grid,
-            self.shape,
-            self.yee_materials,
-            self.tensors,
-            self.smoothing,
-            self.polarization,
-            self.yee_tensors,
-            tuple((m.cache_spec(), weights) for m, weights in self.dispersion),
-            tuple(i.cache_spec() for i in self.dispersion_interfaces),
-        )
+        """Return the fingerprint of the owned immutable material snapshot."""
+        if self._cache_spec is None:
+            object.__setattr__(self, "_cache_spec", dataclass_cache_spec(self))
+        return self._cache_spec
 
     def __eq__(self, other):
         if not isinstance(other, MaterialGrid):
             return NotImplemented
-        return cache_token(self.canonical_spec()) == cache_token(other.canonical_spec())
+        return self is other or self.canonical_spec() == other.canonical_spec()
 
     def __hash__(self):
-        return hash(cache_token(self.canonical_spec()))
+        # Equal snapshots necessarily share these metadata. Hash collisions compare
+        # content lazily; ordinary reuse of the same snapshot never scans arrays.
+        return hash((self.shape, self.smoothing, self.polarization))
 
 
 def build_material_grid(

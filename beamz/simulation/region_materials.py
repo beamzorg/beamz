@@ -77,6 +77,16 @@ def build_region_materials(fields):
 
 def electric_coefficients(shape, sigma, epsilon, dt):
     # Match the eager FP32 coefficient algebra, including its rounding order.
+    if sigma.ndim == 0 and float(sigma) == 0:
+
+        def lossless_source(e):
+            denominator = np.asarray(np.float32(EPS_0) * e)
+            return np.divide(np.float32(dt), denominator, out=denominator)
+
+        return np.asarray(1, np.float32), mapped_material(
+            shape, lossless_source, epsilon
+        )
+
     def alpha(s, e):
         return s * np.float32(dt) / (np.float32(2 * EPS_0) * e)
 
@@ -86,8 +96,6 @@ def electric_coefficients(shape, sigma, epsilon, dt):
         sigma,
         epsilon,
     )
-    if sigma.ndim == 0 and float(sigma) == 0:
-        decay = np.asarray(1, np.float32)
     source = mapped_material(
         shape,
         lambda s, e: (

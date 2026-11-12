@@ -134,6 +134,9 @@ class CompiledGrid:
 
 
 def _copy_initial_field(value):
+    # A compiled zero lattice is metadata, not a second resident field bank.
+    if isinstance(value, np.ndarray) and value.size and not any(value.strides):
+        return jnp.full(value.shape, value.flat[0], dtype=value.dtype)
     # Commit placement before copying: jnp.array(..., device=source.sharding)
     # can execute the copy on the default accelerator before moving it back.
     placement = getattr(value, "sharding", None)
@@ -351,9 +354,9 @@ class CpmlTerm:
     component: str
     axis: int
     sign: float
-    a: jnp.ndarray
-    b: jnp.ndarray
-    inv_kappa: jnp.ndarray
+    a: jax.Array | np.ndarray
+    b: jax.Array | np.ndarray
+    inv_kappa: jax.Array | np.ndarray
     slab: CpmlPackedSlabSpec
 
 

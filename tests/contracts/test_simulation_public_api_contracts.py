@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -10,6 +11,7 @@ import beamz.design as design
 import beamz.devices as devices
 import beamz.devices.sources as sources
 import beamz.simulation as simulation
+from beamz._cache_tokens import cache_token
 
 pytestmark = pytest.mark.unit
 
@@ -154,32 +156,31 @@ def test_execution_docstrings_explain_the_state_lifecycle():
     assert "Examples\n--------" in advance_doc
 
 
-def test_material_grid_has_array_aware_value_equality():
+def test_material_grid_has_array_aware_value_equality(monkeypatch):
+    values = np.arange(4.0).reshape(2, 2)
     first = design.MaterialGrid(
-        permittivity=np.ones((2, 2)),
+        permittivity=values,
         conductivity=np.zeros((2, 2)),
         permeability=np.ones((2, 2)),
         resolution=0.5,
         shape=(2, 2),
     )
-    equivalent = design.MaterialGrid(
-        permittivity=np.ones((2, 2)),
-        conductivity=np.zeros((2, 2)),
-        permeability=np.ones((2, 2)),
-        resolution=0.5,
-        shape=(2, 2),
-    )
-    changed = design.MaterialGrid(
-        permittivity=np.full((2, 2), 4.0),
-        conductivity=np.zeros((2, 2)),
-        permeability=np.ones((2, 2)),
-        resolution=0.5,
-        shape=(2, 2),
-    )
+    equivalent = replace(first, permittivity=np.asfortranarray(values))
+    changed = replace(first, permittivity=values + 1)
+    values[:] = 99
+    assert first == equivalent
+    assert first != changed
 
+    def rehash(_):
+        pytest.fail("Immutable material snapshots must not be rehashed.")
+
+    monkeypatch.setattr("beamz._cache_tokens.array_cache_token", rehash)
+    assert np.array_equal(first.permittivity, np.arange(4.0).reshape(2, 2))
     assert first == equivalent
     assert hash(first) == hash(equivalent)
     assert first != changed
+    assert cache_token(first) == cache_token(equivalent)
+    assert cache_token(first) != cache_token(changed)
 
 
 def test_lowering_and_mutable_registry_internals_are_not_public():
@@ -202,3 +203,19 @@ def test_lowering_and_mutable_registry_internals_are_not_public():
     assert "RegularGrid" not in design.__all__
     assert "RegularGrid" not in simulation.__all__
     assert "RegularGrid" not in beamz.__all__
+
+
+def test_reused_material_snapshot_does_not_need_content_fingerprints(monkeypatch):
+    from beamz import _cache_tokens
+
+    original = _cache_tokens.array_cache_token
+
+    def token(value):
+        assert np.shape(value) != (8, 9), "unchanged owned material must not be scanned"
+        return original(value)
+
+    monkeypatch.setattr(_cache_tokens, "array_cache_token", token)
+    grid = design.MaterialGrid(np.ones((8, 9)), 0.0, 1.0, 1e-7, (8, 9))
+    sim = simulation.Simulation(material_grid=grid, time=np.arange(3) * 1e-17)
+    first = sim.compile(backend="jax")
+    assert sim.compile(backend="jax") is first
