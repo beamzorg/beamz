@@ -1,7 +1,9 @@
 """Hardware parity of tensor permeability and tensor-pole media on streamed CUDA.
 
 The streamed backend runs the tensor-media corrections through the native
-``beamz_cuda_tensor_media`` kernels; JAX is the reference.
+``beamz_cuda_tensor_media`` kernels; JAX is the reference. Non-symmetric
+tensors and conductivity tensors exercise the inverse launch's antisymmetric
+cross terms.
 
 Run explicitly on a CUDA host with the matching native component:
 JAX_PLATFORMS=cuda PYTHONPATH=. pytest -q tests/hardware/test_cuda_tensor_media.py
@@ -68,6 +70,29 @@ def _media(kind):
             ],
         ).rotated((0.3, 0.1, 0.5))
         other = bz.AnisotropicMedium(2.5, (1.5, 1.2, 1.8))
+    elif kind == "nonsymmetric":
+        # Hermitian (gyrotropic) eps with loss, rotated: antisymmetric and
+        # off-diagonal conductivity on a full-tensor grid, plus a tensor pole
+        # whose inverse inherits the antisymmetric cross terms.
+        frequency = OMEGA / (2 * np.pi)
+        pole = bz.AnisotropicMedium.from_complex_permittivity(
+            ((2.0 + 0.05j, 0.3j, 0.1), (-0.3j, 2.5 + 0.02j, 0.0), (0.1, 0.0, 3.0)),
+            frequency=frequency,
+            electric_poles=[
+                bz.TensorPole.lorentz(
+                    (0.5, 0.2, 0.1), resonance=2 * OMEGA, damping=0.02 * OMEGA
+                )
+            ],
+        ).rotated((0.2, 0.3, 0.4))
+        other = bz.AnisotropicMedium.from_complex_permittivity(
+            2.0,
+            permeability=(
+                (1.3 + 0.04j, 0.2j, 0.0),
+                (-0.2j, 1.2, 0.05j),
+                (0.0, -0.05j, 1.1 + 0.01j),
+            ),
+            frequency=frequency,
+        ).rotated((0.1, 0.5, 0.2))
     else:  # two uncoupled diagonal poles and diagonal permeability
         pole = bz.AnisotropicMedium(
             (2.0, 2.5, 3.0),
@@ -148,7 +173,9 @@ def _flat(tree):
 
 
 @pytest.mark.parametrize("grid_kind", ["uniform", "graded"])
-@pytest.mark.parametrize("kind", ["electric_coupled", "magnetic_pole", "diagonal"])
+@pytest.mark.parametrize(
+    "kind", ["electric_coupled", "magnetic_pole", "diagonal", "nonsymmetric"]
+)
 def test_native_tensor_media_match_jax(kind, grid_kind, monkeypatch):
     sim = _simulation(kind, grid_kind)
     program = sim.compile(backend="cuda_streamed")
@@ -180,6 +207,35 @@ def test_native_tensor_media_match_jax(kind, grid_kind, monkeypatch):
         scale = np.abs(expected).max()
         assert scale > 0 and np.isfinite(result).all(), name
         assert np.abs(result - expected).max() < 2e-5 * scale, name
+
+
+def test_native_inverse_needs_the_antisymmetric_cross_terms(monkeypatch):
+    """Negative control: dropping the native skew terms breaks JAX parity."""
+    from beamz.simulation.compile import clear_program_cache
+    from beamz.simulation.execute import clear_execution_cache
+
+    sim = _simulation("nonsymmetric", "uniform")
+    state = _seeded(sim)
+    reference = sim.advance(
+        state=state, num_steps=40, backend="jax", performance=False
+    ).state
+    original = native.apply_inverse
+
+    def dropped(state, box, inverse, *args, **kwargs):
+        return original(state, box, replace(inverse, skew=None), *args, **kwargs)
+
+    monkeypatch.setattr(native, "apply_inverse", dropped)
+    clear_program_cache()
+    clear_execution_cache()
+    actual = sim.advance(
+        state=state, num_steps=40, backend="cuda_streamed", performance=False
+    ).state
+    error = max(
+        np.abs(_flat(getattr(actual, n)) - _flat(getattr(reference, n))).max()
+        / np.abs(_flat(getattr(reference, n))).max()
+        for n in FIELDS
+    )
+    assert error > 1e-3, error
 
 
 def test_tensor_media_streamed_cuda_reexecutes():

@@ -785,6 +785,16 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     logical_grid = _compile_grid(request, boundary_data, region_setup=region_setup)
     setup = _prepare_compilation(request, logical_grid)
     fields = logical_grid
+    coefficient_tensors = request.materials.yee_tensors
+    if request.materials.tensor_dispersion:
+        from .anisotropic import vacuum_coefficient_grid
+
+        # Full static tensors (non-symmetric or off-diagonal-conductive media)
+        # are applied box-locally after a vacuum E update; the plan itself is
+        # compiled from ``logical_grid``.
+        fields, coefficient_tensors = vacuum_coefficient_grid(
+            logical_grid, boundary_data.periodic_axes
+        )
     dt = setup.dt
     sharding = setup.sharding
     sharding_layout = sharding.layout
@@ -968,7 +978,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             )
         from .anisotropic import electric_losses, lossy_tensor_inverse
 
-        support_tensors = request.materials.yee_tensors
+        support_tensors = coefficient_tensors
         components = tuple(
             "E" + axis for axis in "xyz" if "eps_" + axis in support_tensors
         )

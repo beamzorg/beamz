@@ -9,8 +9,11 @@
 //                   delta = sum_poles(p_new - p)
 //   op 1 (inverse): field = (base or field) + sign * Inv(src)
 //
-// A packed symmetric tensor acts as diagonal * own site plus cross terms on the
-// shared support (primal nodes for E, cell centers for H), reached and left with
+// A packed tensor acts as diagonal * own site plus cross terms on the shared
+// support (primal nodes for E, cell centers for H): symmetric terms, plus
+// optional antisymmetric ones (entry (r, c) = cross + skew for r < c and
+// cross - skew for r > c) for non-symmetric static tensors. They are reached
+// and left with
 // the reciprocal averaging of beamz.constitutive.collocate_yee_component:
 // center->node is width-weighted with copied ends, node->center a plain mean.
 // Collocated values are recomputed on the fly, so no shared scratch is needed.
@@ -125,17 +128,21 @@ __device__ __forceinline__ int PairIndex(int row, int column) {
   return row + column - 1;  // (x,y) -> 0, (x,z) -> 1, (y,z) -> 2
 }
 
-// sum_{col != row} cross[node, pair] * collocated(values_col)[node]
+// sum_{col != row} entry(row, col)[node] * collocated(values_col)[node], with
+// entry = cross +- skew; either array may be nullptr (zero).
 __device__ float CrossAtShared(const Box& box, const float* cross,
                                const Vector3& values, int row, int z, int y,
-                               int x) {
+                               int x, const float* skew = nullptr) {
   const int64_t node =
       Offset(z, y, x, box.SharedExtent(1), box.SharedExtent(2)) * 3;
   float sum = 0.0f;
   for (int column = 0; column < 3; ++column) {
     if (column == row) continue;
-    sum += cross[node + PairIndex(row, column)] *
-           ToShared(box, values.data[column], column, z, y, x);
+    const int pair = PairIndex(row, column);
+    float entry = cross != nullptr ? cross[node + pair] : 0.0f;
+    if (skew != nullptr)
+      entry += row < column ? skew[node + pair] : -skew[node + pair];
+    sum += entry * ToShared(box, values.data[column], column, z, y, x);
   }
   return sum;
 }
@@ -143,28 +150,33 @@ __device__ float CrossAtShared(const Box& box, const float* cross,
 // Shared-support cross terms averaged back to the site (z,y,x) of ``row``.
 __device__ float CrossAtSite(const Box& box, const float* cross,
                              const Vector3& values, int row, int z, int y,
-                             int x) {
+                             int x, const float* skew = nullptr) {
   const int axis = 2 - row;
   int at[3] = {z, y, x};
   const int m = at[axis];
   if (box.family == kFamilyE) {  // node -> center
-    const float low = CrossAtShared(box, cross, values, row, at[0], at[1], at[2]);
+    const float low =
+        CrossAtShared(box, cross, values, row, at[0], at[1], at[2], skew);
     at[axis] = m + 1;
-    const float high = CrossAtShared(box, cross, values, row, at[0], at[1], at[2]);
+    const float high =
+        CrossAtShared(box, cross, values, row, at[0], at[1], at[2], skew);
     return 0.5f * (low + high);
   }
   // H: center -> node with copied ends.
   const int count = box.cells[axis];
-  if (m == 0) return CrossAtShared(box, cross, values, row, at[0], at[1], at[2]);
+  if (m == 0)
+    return CrossAtShared(box, cross, values, row, at[0], at[1], at[2], skew);
   if (m == count) {
     at[axis] = count - 1;
-    return CrossAtShared(box, cross, values, row, at[0], at[1], at[2]);
+    return CrossAtShared(box, cross, values, row, at[0], at[1], at[2], skew);
   }
   const float weight = NodeWeight(box, axis, m);
   at[axis] = m - 1;
-  const float low = CrossAtShared(box, cross, values, row, at[0], at[1], at[2]);
+  const float low =
+      CrossAtShared(box, cross, values, row, at[0], at[1], at[2], skew);
   at[axis] = m;
-  const float high = CrossAtShared(box, cross, values, row, at[0], at[1], at[2]);
+  const float high =
+      CrossAtShared(box, cross, values, row, at[0], at[1], at[2], skew);
   return weight * low + (1.0f - weight) * high;
 }
 
@@ -220,6 +232,7 @@ struct InverseLaunch {
   const float* base[3];  // (*site) or nullptr to start from the field
   const float* diagonal[3];
   const float* cross;    // (*shared, 3) or nullptr
+  const float* skew;     // (*shared, 3) antisymmetric cross terms or nullptr
   float sign;
 };
 
@@ -233,8 +246,9 @@ __global__ void InverseKernel(InverseLaunch launch) {
     if (z >= ez || y >= ey || x >= ex) continue;
     const int64_t site = Offset(z, y, x, ey, ex);
     float correction = launch.diagonal[row][site] * launch.source.data[row][site];
-    if (launch.cross != nullptr)
-      correction += CrossAtSite(box, launch.cross, launch.source, row, z, y, x);
+    if (launch.cross != nullptr || launch.skew != nullptr)
+      correction += CrossAtSite(box, launch.cross, launch.source, row, z, y, x,
+                                launch.skew);
     const int64_t target =
         Offset(launch.origin[0] + z, launch.origin[1] + y, launch.origin[2] + x,
                launch.field_dims[row][1], launch.field_dims[row][2]);
@@ -338,13 +352,13 @@ ffi::Error PoleOp(cudaStream_t stream, const ffi::RemainingArgs& args,
   return Launched();
 }
 
-// args: field[3], source[3], base[3], widths[3], diagonal[3], cross
+// args: field[3], source[3], base[3], widths[3], diagonal[3], cross, skew
 // rets: field[3]
 ffi::Error InverseOp(cudaStream_t stream, const ffi::RemainingArgs& args,
                      const ffi::RemainingRets& rets, const Box& shape,
                      const int origin[3], bool coupled, float sign) {
-  if (args.size() != 16 || rets.size() != 3)
-    return ffi::Error::InvalidArgument("tensor-media inverse op expects 16 args, 3 rets");
+  if (args.size() != 17 || rets.size() != 3)
+    return ffi::Error::InvalidArgument("tensor-media inverse op expects 17 args, 3 rets");
   InverseLaunch launch{};
   launch.box = shape;
   launch.sign = sign;
@@ -372,6 +386,8 @@ ffi::Error InverseOp(cudaStream_t stream, const ffi::RemainingArgs& args,
                 "inverse cross terms", /*optional=*/!coupled));
   if (coupled && launch.cross == nullptr)
     return ffi::Error::InvalidArgument("coupled inverse lacks cross terms");
+  BEAMZ_TRY(Arg(args, 16, box.SharedSize() * 3, &launch.skew,
+                "inverse antisymmetric cross terms", /*optional=*/true));
   InverseKernel<<<Blocks(box), kThreads, 0, stream>>>(launch);
   return Launched();
 }

@@ -66,6 +66,10 @@ def _validate_design_material(material, name: str) -> None:
             raise ValueError(f"{name} cannot have magnetic poles.")
         if any(isinstance(p, GyrotropicPole) for p in material.electric_poles):
             raise ValueError(f"{name} cannot have gyrotropic poles.")
+        if material.requires_static_correction:
+            raise ValueError(
+                f"{name} cannot have non-symmetric tensors or conductivity tensors."
+            )
     elif type(material) is not Material:
         raise TypeError(
             f"{name} must be a static Material or an AnisotropicMedium; scalar "
@@ -324,6 +328,14 @@ class AnisotropicDesignBinding:
 
     def coefficients(self, program, supports):
         """Electric update coefficients for traced support tensors."""
+        plan = program.dispersion.anisotropic if program.dispersion else None
+        if plan is not None and plan.electric is not None:
+            # Those media need vacuum E coefficients on their box, which a
+            # rebuild from the design blend would overwrite.
+            raise ValueError(
+                "Anisotropic designs cannot yet share a simulation with "
+                "non-symmetric or off-diagonal-conductive media."
+            )
         coefficients = program.coefficients
         updates = {}
         if coefficients.e_inverse_offdiagonal.size:

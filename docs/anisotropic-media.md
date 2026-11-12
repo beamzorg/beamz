@@ -69,6 +69,78 @@ A static negative permittivity is unconditionally unstable in FDTD, so
 `eps_inf` and `mu_inf` must be positive definite. The negative branch of a
 hyperbolic medium has to come from a pole.
 
+## Non-symmetric tensors and conductivity tensors
+
+`permittivity`, `permeability`, `conductivity`, and `magnetic_conductivity`
+each accept a scalar, three diagonal values, six packed symmetric values
+`(xx, yy, zz, xy, xz, yz)`, nine row-major values, or a 3x3 matrix. A full
+matrix may be non-symmetric:
+
+- **Conductivity tensors.** `conductivity` (S/m) and `magnetic_conductivity`
+  (Ohm/m) may be any real 3x3 tensor whose symmetric part is positive
+  semidefinite. The symmetric part is loss; the antisymmetric part is
+  lossless and non-reciprocal, like a Hall response. Rotating a medium now
+  rotates its conductivities too.
+- **Non-symmetric `eps_inf` or `mu_inf`.** A real non-symmetric tensor is
+  non-Hermitian, so it exchanges energy with the field (gain or loss), and
+  BeamZ warns. Its symmetric part must be positive definite.
+
+`AnisotropicMedium.from_complex_permittivity(eps, frequency=... or
+wavelength=..., permeability=mu)` mirrors fdtdx's constructor of the same
+name. It takes a complex scalar, three values, or a 3x3 tensor for each. The
+real parts become the tensors, and the imaginary parts become
+`sigma = omega0 eps0 Im(eps)` and `sigma_m = omega0 mu0 Im(mu)`, element by
+element. `complex_permittivity(f)` and `complex_permeability(f)` return
+`eps_inf + chi(f) + i sigma / (omega eps0)`, so they reproduce the input
+exactly at the reference frequency. A Hermitian tensor (imaginary
+off-diagonals) becomes an antisymmetric conductivity. That gives a lossless
+gyrotropic response at `omega0`, scaling as `omega0 / omega` away from it,
+which is the causal response of a conductor. For a response matched across a
+band, use a `GyrotropicPole`.
+
+```python
+medium = bz.AnisotropicMedium.from_complex_permittivity(
+    ((2.25, 0.3j, 0.0), (-0.3j, 2.25, 0.0), (0.0, 0.0, 2.25)),
+    wavelength=1.55e-6,
+)
+```
+
+**Update.** Around these media, a cropped box with a two-cell halo takes the
+full semi-implicit update
+
+```text
+(T + B) F_new = (T - B) F_old + inc,   B = sigma dt / (2 eps0)  (mu0 for H)
+F_new = F_old + (T + B)^-1 (inc - 2 B F_old)
+```
+
+`inc` is the vacuum kernel's increment, including CPML terms; sources inject
+afterwards, as in any other medium. The E kernel runs with vacuum
+coefficients inside the box (the H kernel always does), and the box then
+applies the full tensors. Each Yee support inverts
+its own full `T + B`. Diagonals stay on the sites, and the symmetric and
+antisymmetric cross terms sit on the shared support, as in the symmetric
+full-tensor update. `B F_old` uses the same collocation. For an antisymmetric
+`B` this is a Cayley transform: a uniform field rotates at constant
+`E^T eps E`. Plane waves see `T + i cot(omega dt / 2) B`, which tends to
+`eps' + i sigma / (omega eps0)` as `omega dt -> 0`.
+
+**Rasterization.** The raster keeps the symmetric `eps_inf` and `mu_inf` and the
+diagonal electric conductivity, with the usual smoothing. The antisymmetric
+tensor parts, the off-diagonal electric conductivity, and the whole magnetic
+conductivity are volume-averaged by each medium's cell fraction on every
+support.
+
+**Support.** These media run on JAX (2D and 3D) and on single-device
+`backend="cuda_streamed"`, whose native inverse kernel carries the
+antisymmetric cross terms. Tensor poles in the same medium use the full
+inverse. The following are rejected:
+
+- mode sources and mode monitors that overlap these media;
+- 2D simulations with `xz` or `yz` terms;
+- `TopologyProblem` designs in the same simulation.
+
+Other off-diagonal permittivity must stay at least three cells away.
+
 ## Material library
 
 `beamz.material_library.anisotropic_library` bundles four crystals. Each one is

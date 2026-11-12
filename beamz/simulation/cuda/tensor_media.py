@@ -4,7 +4,9 @@ Each tensor-pole region takes two ``beamz_cuda_tensor_media`` launches per
 half-step: the pole advance, then the inverse-background correction applied in
 place to the field box. They reproduce
 :meth:`beamz.simulation.anisotropic.TensorPolarizationRegion.advance` and
-``apply_tensor_operator`` exactly, up to float32 rounding order.
+``apply_tensor_operator`` exactly, up to float32 rounding order. The inverse
+launch also maps full static tensors (non-symmetric eps or mu, conductivity
+tensors) through their antisymmetric cross terms.
 """
 
 from __future__ import annotations
@@ -101,7 +103,10 @@ def advance_poles(region, old_fields, flat):
 
 
 def apply_inverse(state, box, inverse, source, *, base=None, sign):
-    """``field = (base or field) + sign * Inv(source)`` on the box, in place."""
+    """``field = (base or field) + sign * Inv(source)`` on the box, in place.
+
+    ``inverse`` may carry antisymmetric cross terms (``inverse.skew``).
+    """
     from . import runtime as rt
 
     names = tuple(c.lower() for c in box.components)
@@ -118,6 +123,7 @@ def apply_inverse(state, box, inverse, source, *, base=None, sign):
         *_widths(box),
         *(_f32(d, s) for d, s in zip(inverse.diagonal, box.shapes, strict=True)),
         jnp.asarray(inverse.offdiagonal, jnp.float32) if coupled else _empty(),
+        _empty() if inverse.skew is None else jnp.asarray(inverse.skew, jnp.float32),
     )
     outputs = rt._ffi_call(
         abi.CUDA_TENSOR_MEDIA_TARGET, fields, {k: k for k in range(3)}
