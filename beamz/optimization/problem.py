@@ -28,7 +28,6 @@ from beamz.simulation.execute import (
 from beamz.simulation.results import SimulationResults
 
 from ._validation import check_density, step_count
-from .autodiff import transform_density
 from .objectives import ModePower, WeightedObjective
 from .polygonize import density_to_polygons
 from .result import TopologyResult, load_result
@@ -112,14 +111,11 @@ class TopologyProblem:
         self.checkpoint_interval = checkpoint_interval
         self._design = None
         compile_simulation = simulation
-        if topology.material_min is not None:
+        if topology.materials is not None:
             from .anisotropic_design import AnisotropicDesignBinding
 
             self._design = AnisotropicDesignBinding(
-                simulation._material_grid(),
-                topology.region_mask,
-                topology.material_min,
-                topology.material_max,
+                simulation._material_grid(), topology.region_mask, topology.materials
             )
             compile_simulation = simulation.updated_copy(
                 material_grid=self._design.compile_grid()
@@ -222,8 +218,8 @@ class TopologyProblem:
                 self._binding_results, self.program, names
             )
         values = jnp.asarray(density, dtype=jnp.float32)
-        if values.shape != self.topology.region_mask.shape:
-            raise ValueError("Density must match the topology mask shape.")
+        if values.shape != self.topology.density_shape:
+            raise ValueError("Density must match the topology density shape.")
         if not isinstance(values, Tracer):
             values = self._density(values)
         if self._spectral_adjoint is None:
@@ -312,7 +308,7 @@ class TopologyProblem:
         if grid.material_grid.uses_full_permittivity and self._design is None:
             raise ValueError(
                 "TopologyProblem requires scalar permittivity; use TopologySpec "
-                "material_min/material_max for anisotropic designs."
+                "materials (or material_min/material_max) for anisotropic designs."
             )
         for axis in "xyz":
             if np.any(np.asarray(getattr(grid, f"sig_{axis}")) != 0):
@@ -351,7 +347,12 @@ class TopologyProblem:
                 and term.reference_monitor not in monitor_names
             ):
                 raise ValueError("Reference monitor is not present in the simulation.")
-        min_eps = min(spec.eps_min, float(np.min(grid.permittivity)))
+        # Every design material's smallest principal permittivity bounds dt.
+        min_eps = min(
+            spec.eps_min,
+            float(np.min(grid.permittivity)),
+            getattr(self._design, "min_permittivity", np.inf),
+        )
         cfl = (
             sim.resolution
             * np.sqrt(min_eps / (3 if program.config.is_3d else 2))
@@ -420,11 +421,7 @@ class TopologyProblem:
                 raise ValueError("The design region must not overlap the absorber.")
 
     def _physical_density(self, density, beta):
-        return transform_density(
-            jnp.where(self._mask, density, 0.0),
-            beta=beta,
-            **self.topology._transform_options,
-        )
+        return self.topology._transform(jnp.where(self._mask, density, 0.0), beta)
 
     def _permittivity(self, density, beta):
         physical = self._physical_density(density, beta)
@@ -437,7 +434,7 @@ class TopologyProblem:
 
     def _density(self, density):
         density = np.asarray(density, dtype=np.float32)
-        check_density(density, self.topology.region_mask.shape)
+        check_density(density, self.topology.density_shape)
         return jnp.asarray(density)
 
     def value(self, density, *, beta=1.0):
@@ -597,7 +594,7 @@ class TopologyProblem:
             design=self,
             fingerprint=self.fingerprint,
             optimizer=self.topology._optimizer(),
-            shape=self.topology.region_mask.shape,
+            shape=self.topology.density_shape,
         )
 
     def material_simulation(self, density, *, beta=1.0):
@@ -625,6 +622,11 @@ class TopologyProblem:
         The base design must contain only fixed structures in the design region's
         background. A low-index region polygon overwrites any initial geometry in
         that region before adding solid topology contours.
+
+        With design materials the region polygon uses the first material. Each
+        later material ``k`` adds the contour where the nested fraction ``Q_k``
+        of material ``k`` or later exceeds ``threshold``, in order, so binarized
+        multi-material designs export exactly.
         """
         if self.program.config.is_3d:
             raise ValueError(
@@ -638,26 +640,36 @@ class TopologyProblem:
         dx = float(self.simulation.resolution)
         kwargs = {"dx": dx, "x0": origin[0], "y0": origin[1]}
         design = spec.design
+        if spec.materials is None:
+            background = Material(permittivity=spec.eps_min)
+            layers = [(physical, Material(permittivity=spec.eps_max))]
+        else:
+            from .anisotropic_design import solid_fractions
+
+            background = spec.materials[0]
+            fractions = solid_fractions(physical, len(spec.materials))
+            layers = list(zip(fractions, spec.materials[1:], strict=True))
         for polygon in density_to_polygons(
             spec.region_mask.astype(float),
             level=0.5,
-            material=Material(permittivity=spec.eps_min),
+            material=background,
             mode="pixel_exact",
             **kwargs,
         ):
             design += polygon
-        for polygon in density_to_polygons(
-            np.where(spec.region_mask, physical, spec.fixed_structure_mask),
-            level=threshold,
-            material=Material(permittivity=spec.eps_max),
-            mode=mode,
-            sample_spacing=sample_spacing,
-            region_mask=spec.region_mask,
-            fixed_solid=spec.fixed_solid,
-            fixed_void=spec.fixed_void,
-            **kwargs,
-        ):
-            design += polygon
+        for fraction, material in layers:
+            for polygon in density_to_polygons(
+                np.where(spec.region_mask, fraction, spec.fixed_structure_mask),
+                level=threshold,
+                material=material,
+                mode=mode,
+                sample_spacing=sample_spacing,
+                region_mask=spec.region_mask,
+                fixed_solid=spec.fixed_solid,
+                fixed_void=spec.fixed_void,
+                **kwargs,
+            ):
+                design += polygon
         return design
 
 
@@ -673,7 +685,7 @@ def _require_design_clear_of_tensor_media(
     """
     if design is not None and gradient_backend == "adjoint":
         raise ValueError(
-            "TopologySpec material_min/material_max require the default autodiff "
+            "TopologySpec design materials require the default autodiff "
             "gradient backend."
         )
     plan = None if program.dispersion is None else program.dispersion.anisotropic
@@ -694,7 +706,7 @@ def _require_design_clear_of_tensor_media(
     boxes = [
         region.box
         for region, owner in zip(plan.electric_regions, owners, strict=True)
-        if owner is None or owner.role is None
+        if owner is None or owner.indices is None
     ]
     boxes += [region.box for region in plan.magnetic_regions]
     if plan.magnetic is not None:

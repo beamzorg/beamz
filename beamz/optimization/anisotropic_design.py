@@ -1,13 +1,19 @@
 """Density-dependent anisotropic design materials for topology optimization.
 
-The design density ``rho`` blends two materials cell by cell,
+A design region chooses among ``K >= 2`` materials ``m_0, ..., m_{K-1}``. Its
+physical density has ``K - 1`` nested channels ``c_1, ..., c_{K-1}`` in
+[0, 1] (a single field when ``K = 2``). Material ``k`` or a later one fills
+the fraction ``Q_k = c_1 c_2 ... c_k`` of a cell (``Q_0 = 1``, ``Q_K = 0``),
+so material ``k`` alone has weight ``w_k = Q_k - Q_{k+1}``:
 
-    material(rho) = (1 - rho) * material_min + rho * material_max,
+    material(c) = sum_k w_k m_k = m_0 + sum_{k>=1} Q_k (m_k - m_{k-1}).
 
-where either material may be an ``AnisotropicMedium``: its high-frequency
-permittivity tensor blends linearly, and the volume fraction of its tensor
-poles is ``rho`` (or ``1 - rho``). Outside the design mask the compiled
-simulation is unchanged. At runtime the binding rebuilds, from traced ``rho``,
+The weights are nonnegative and sum to one, binary channels select exactly one
+material, and ``K = 2`` gives ``(1 - rho) * m_0 + rho * m_1``. Any material may
+be an ``AnisotropicMedium``: its high-frequency permittivity tensor blends
+linearly, and the volume fraction of its tensor poles is ``w_k``. Outside the
+design mask the compiled simulation is unchanged. At runtime the binding
+rebuilds, from traced ``rho``,
 
 * the electric update coefficients (inverse permittivity tensors on Yee sites
   and shared nodes for full-tensor programs, or the diagonal coefficients), and
@@ -27,6 +33,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from beamz._cache_tokens import cache_token
 from beamz.constitutive import (
     collocate_yee_component,
     expand_packed,
@@ -83,24 +90,56 @@ def _collocate_numpy(values, target, shape):
     )
 
 
+def validate_design_materials(materials) -> tuple:
+    """Check a sequence of at least two design materials and return it."""
+    materials = tuple(materials)
+    if len(materials) < 2:
+        raise ValueError("A design region needs at least two materials.")
+    names = (
+        ("material_min", "material_max")
+        if len(materials) == 2
+        else tuple(f"materials[{k}]" for k in range(len(materials)))
+    )
+    for material, name in zip(materials, names, strict=True):
+        _validate_design_material(material, name)
+    return materials
+
+
+def solid_fractions(rho, count: int) -> list:
+    """Nested fractions ``Q_1, ..., Q_{K-1}`` of physical channels ``rho``.
+
+    ``rho`` has the mask shape for ``count == 2`` and a leading axis of
+    ``count - 1`` channels otherwise. ``Q_k`` is the fraction of the cell
+    holding material ``k`` or a later one.
+    """
+    channels = [rho] if count == 2 else [rho[k] for k in range(count - 1)]
+    fractions = [channels[0]]
+    for channel in channels[1:]:
+        fractions.append(fractions[-1] * channel)
+    return fractions
+
+
+def material_weights(rho, count: int) -> list:
+    """Per-material volume fractions ``w_k = Q_k - Q_{k+1}``; they sum to one."""
+    q = solid_fractions(rho, count)
+    return [1.0 - q[0], *(q[k - 1] - q[k] for k in range(1, count - 1)), q[-1]]
+
+
 @dataclass(frozen=True)
 class _MediumEntry:
     medium: AnisotropicMedium
     base_fraction: np.ndarray  # cell fraction outside the mask
-    role: str | None  # "min", "max", or None for fixed media
+    indices: tuple[int, ...] | None  # design materials, or None for fixed media
 
 
 class AnisotropicDesignBinding:
     """Bind a density field to design materials on a fixed compiled plan."""
 
-    def __init__(self, material_grid, mask, material_min, material_max):
-        _validate_design_material(material_min, "material_min")
-        _validate_design_material(material_max, "material_max")
+    def __init__(self, material_grid, mask, materials):
+        self.materials = validate_design_materials(materials)
         self.material_grid = material_grid
         self.mask = np.asarray(mask, dtype=bool)
         self.components = _components(material_grid)
-        self.material_min = material_min
-        self.material_max = material_max
         shapes = component_shapes(
             tuple(material_grid.shape), material_grid.polarization or "tm"
         )
@@ -143,57 +182,68 @@ class AnisotropicDesignBinding:
             self.mask_supports["Node"] = _collocate_numpy(
                 mask_cells, "Node", self.node_shape
             )
-        self.eps_min = np.asarray(material_min.epsilon_r, dtype=np.float64)
-        self.eps_max = np.asarray(material_max.epsilon_r, dtype=np.float64)
+        self.eps = [
+            np.asarray(material.epsilon_r, dtype=np.float64)
+            for material in self.materials
+        ]
         self.entries = self._media_entries()
+
+    @property
+    def density_shape(self) -> tuple[int, ...]:
+        """Physical density shape: the mask, with ``K - 1`` channels for K > 2."""
+        if len(self.materials) == 2:
+            return self.mask.shape
+        return (len(self.materials) - 1, *self.mask.shape)
+
+    @property
+    def min_permittivity(self) -> float:
+        """Smallest principal high-frequency permittivity of any design material."""
+        values = []
+        for xx, yy, zz, xy, xz, yz in self.eps:
+            tensor = np.array([[xx, xy, xz], [xy, yy, yz], [xz, yz, zz]])
+            values.append(float(np.min(np.linalg.eigvalsh(tensor))))
+        return min(values)
 
     # -- media bookkeeping -------------------------------------------------
 
     def _media_entries(self) -> tuple[_MediumEntry, ...]:
-        roles = {
-            role: material
-            for role, material in (
-                ("min", self.material_min),
-                ("max", self.material_max),
-            )
-            if _has_poles(material)
-        }
-        claimed = set()
+        # Identical pole media share one entry whose fraction sums their weights.
+        media, unclaimed = {}, {}
+        for index, material in enumerate(self.materials):
+            if _has_poles(material):
+                key = cache_token(material.cache_spec())
+                media.setdefault(key, material)
+                unclaimed[key] = (*unclaimed.get(key, ()), index)
         outside = ~self.mask
         entries = []
         for medium, fraction in self.material_grid.tensor_dispersion:
             fraction = np.asarray(fraction, dtype=np.float64)
-            role = next(
-                (
-                    r
-                    for r, material in roles.items()
-                    if r not in claimed and material.cache_spec() == medium.cache_spec()
-                ),
-                None,
-            )
-            if role is not None:
-                claimed.add(role)
-            entries.append(_MediumEntry(medium, fraction * outside, role))
-        for role, material in roles.items():
-            if role not in claimed:
-                entries.append(
-                    _MediumEntry(material, np.zeros(self.material_grid.shape), role)
-                )
+            indices = unclaimed.pop(cache_token(medium.cache_spec()), None)
+            entries.append(_MediumEntry(medium, fraction * outside, indices))
+        for key, indices in unclaimed.items():
+            zero = np.zeros(self.material_grid.shape)
+            entries.append(_MediumEntry(media[key], zero, indices))
         return tuple(entries)
 
     def _fraction(self, entry: _MediumEntry, rho):
-        if entry.role is None:
+        if entry.indices is None:
             return entry.base_fraction
-        weight = rho if entry.role == "max" else 1.0 - rho
+        weights = material_weights(rho, len(self.materials))
+        weight = weights[entry.indices[0]]
+        for index in entry.indices[1:]:
+            weight = weight + weights[index]
         return entry.base_fraction + self.mask * weight
 
     # -- constitutive fields ----------------------------------------------
 
     def _design_cell(self, rho, xp):
         rho = xp.asarray(rho)
-        lower = xp.asarray(self.eps_min).reshape((6,) + (1,) * rho.ndim)
-        upper = xp.asarray(self.eps_max).reshape((6,) + (1,) * rho.ndim)
-        return lower + (upper - lower) * rho[None]
+        shape = (6,) + (1,) * self.mask.ndim
+        tensors = [xp.asarray(eps).reshape(shape) for eps in self.eps]
+        cell = tensors[0]
+        for k, fraction in enumerate(solid_fractions(rho, len(self.materials)), 1):
+            cell = cell + (tensors[k] - tensors[k - 1]) * fraction[None]
+        return cell
 
     def _cell_tensor(self, rho):
         mask = self.mask.astype(np.float64)
@@ -218,13 +268,14 @@ class AnisotropicDesignBinding:
     # -- compile-time grid --------------------------------------------------
 
     def compile_grid(self):
-        """Material grid at rho = 1/2 inside the mask.
+        """Material grid with every density channel at 1/2 inside the mask.
 
-        Compiling at the midpoint gives the program a full-tensor kernel when
-        either design material needs one, and pole regions covering the mask
-        for every design medium with poles. Runtime values come from ``rho``.
+        Every material then has a nonzero weight, so the program gets a
+        full-tensor kernel when any design material needs one, and pole regions
+        covering the mask for every design medium with poles. Runtime values
+        come from ``rho``.
         """
-        rho = np.full(self.material_grid.shape, 0.5) * self.mask
+        rho = np.full(self.density_shape, 0.5) * self.mask
         return self.material_grid_at(rho)
 
     def material_grid_at(self, rho):
@@ -319,7 +370,7 @@ class AnisotropicDesignBinding:
         owners = self._electric_region_owners(program)
         regions = []
         for region, entry in zip(base.electric_regions, owners, strict=True):
-            if entry is None or entry.role is None:
+            if entry is None or entry.indices is None:
                 regions.append(region)
                 continue
             box = region.box
