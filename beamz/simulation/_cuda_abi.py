@@ -9,6 +9,7 @@ __all__ = [
     "CUDA_ADJOINT_TARGET",
     "CUDA_MATERIAL_ADJOINT_TARGET",
     "CUDA_MSTEP_TARGET",
+    "CUDA_TENSOR_MEDIA_TARGET",
     "CUDA_STREAMED_TARGETS",
     "CUDA_GRAPH_CACHE",
     "CUDA_BF16_PSI",
@@ -86,14 +87,15 @@ __all__ = [
     "MSTEP_PLAN_BUFFER_COUNT",
 ]
 
-CUDA_ABI_VERSION = 30
-CUDA_COMPONENT_VERSION = "0.30.0"
+CUDA_ABI_VERSION = 31
+CUDA_COMPONENT_VERSION = "0.31.0"
 CUDA_STREAMED_TARGET = "beamz_cuda_streamed"
 CUDA_SHARDED_TARGET = "beamz_cuda_sharded"
 CUDA_PROGRAM_TARGET = "beamz_cuda_program"
 CUDA_ADJOINT_TARGET = "beamz_cuda_adjoint"
 CUDA_MATERIAL_ADJOINT_TARGET = "beamz_cuda_material_adjoint"
 CUDA_MSTEP_TARGET = "beamz_cuda_mstep"
+CUDA_TENSOR_MEDIA_TARGET = "beamz_cuda_tensor_media"
 
 CUDA_STREAMED_TARGETS = frozenset(
     (
@@ -102,6 +104,7 @@ CUDA_STREAMED_TARGETS = frozenset(
         CUDA_PROGRAM_TARGET,
         CUDA_ADJOINT_TARGET,
         CUDA_MATERIAL_ADJOINT_TARGET,
+        CUDA_TENSOR_MEDIA_TARGET,
     )
 )
 

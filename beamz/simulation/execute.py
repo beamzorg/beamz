@@ -595,16 +595,25 @@ def forward_step(
             logical_shapes=ctx.boundary.logical_component_shapes,
         )
         state = state._replace(ex=ex, ey=ey, ez=ez)
-    old_h_state = state
-    state = update_kernel.update_h(state, ctx, coeffs)
     anisotropic = (
         program.dispersion is not None and program.dispersion.anisotropic is not None
     )
     if anisotropic:
-        from beamz.simulation.dispersion import update_anisotropic_magnetic
+        from beamz.simulation.anisotropic import snapshot_electric, snapshot_magnetic
+        from beamz.simulation.dispersion import (
+            update_anisotropic_electric,
+            update_anisotropic_magnetic,
+        )
 
+        # Streamed CUDA runs the corrections as native kernels.
+        native_tensor = cfg.backend == "cuda_streamed" and not cfg.sharding.enabled
+        old_h_boxes = snapshot_magnetic(state, program.dispersion.anisotropic)
+    state = update_kernel.update_h(state, ctx, coeffs)
+    if anisotropic:
         # Map the vacuum increment through mu^-1 before H sources inject.
-        state = update_anisotropic_magnetic(old_h_state, state, program.dispersion)
+        state = update_anisotropic_magnetic(
+            old_h_boxes, state, program.dispersion, native_tensor
+        )
 
     # 2. H-phase sources may overwrite constrained cells, so reapply the compiled masks
     # before E consumes the half-step magnetic fields.
@@ -655,6 +664,8 @@ def forward_step(
 
     # 3. Advance E, inject its sources, and restore its masks before observation.
     old_e_state = state
+    if anisotropic:
+        old_e_boxes = snapshot_electric(state, program.dispersion.anisotropic)
     state = update_kernel.update_e(state, ctx, coeffs)
     state = apply_source_phase(
         state,
@@ -670,9 +681,9 @@ def forward_step(
     if program.dispersion is not None:
         state = update_dispersion(old_e_state, state, program.dispersion)
     if anisotropic:
-        from beamz.simulation.dispersion import update_anisotropic_electric
-
-        state = update_anisotropic_electric(old_e_state, state, program.dispersion)
+        state = update_anisotropic_electric(
+            old_e_boxes, state, program.dispersion, native_tensor
+        )
     if not kernel_owns_pec:
         ex, ey, ez = update_runtime.apply_post_source_boundaries(
             (state.ex, state.ey, state.ez),

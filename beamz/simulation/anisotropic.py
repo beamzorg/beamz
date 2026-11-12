@@ -109,9 +109,8 @@ class TensorPolarizationRegion:
         poles = int(np.shape(self.c1)[0])
         return tuple((poles, *shape) for shape in self.box.shapes for _ in range(2))
 
-    def advance(self, old, flat):
-        """Advance from the previous field; return (field-site delta p, new state)."""
-        fields = _crop(old, self.box)
+    def advance(self, fields, flat):
+        """Advance from the previous box fields; return (site delta p, new state)."""
         driven = apply_tensor_operator(
             fields, self.diagonal, self.offdiagonal, self.box
         )
@@ -183,11 +182,10 @@ class GyrotropicRegion:
             )
         return out
 
-    def advance(self, old, flat):
+    def advance(self, fields, flat):
         count = len(self.box.components)
         p = [flat[2 * k] for k in range(count)]
         j = [flat[2 * k + 1] for k in range(count)]
-        fields = _crop(old, self.box)
         spatial = (None,) * len(self.box.shared_shape)
         strength = self.strength[(slice(None), *spatial)]
         resonance = self.resonance_squared[(slice(None), *spatial)]
@@ -289,24 +287,68 @@ def _scatter(state, box: YeeBox, values):
     }
 
 
-def _apply_regions(regions, old, state, flat):
+@dataclass(frozen=True)
+class BoxFields:
+    """Pre-update fields cropped to each correction box.
+
+    Taking these crops before the vacuum kernel lets an in-place (CUDA) update
+    reuse the field buffers instead of XLA copying whole arrays to keep the
+    previous fields alive.
+    """
+
+    regions: tuple  # per region: one cropped array per box component
+    magnetic: tuple | None = None  # static tensor-permeability box
+
+
+def snapshot_electric(state, plan: AnisotropicPlan) -> BoxFields:
+    return BoxFields(tuple(_crop(state, r.box) for r in plan.electric_regions))
+
+
+def snapshot_magnetic(state, plan: AnisotropicPlan) -> BoxFields:
+    return BoxFields(
+        tuple(_crop(state, r.box) for r in plan.magnetic_regions),
+        None if plan.magnetic is None else _crop(state, plan.magnetic.box),
+    )
+
+
+def _use_native(native: bool, box: YeeBox, state) -> bool:
+    """Whether ``box`` runs on the streamed-CUDA tensor-media kernels."""
+    if not native:
+        return False
+    from beamz.simulation.cuda.tensor_media import supports
+
+    return supports(box, state.ex.dtype)
+
+
+def _apply_regions(regions, old_fields, state, flat, native=False):
     """Advance each region and subtract eps_inf^-1 (or mu_inf^-1) of its delta."""
     new_flat, index = [], 0
-    for region in regions:
+    for region, fields in zip(regions, old_fields, strict=True):
         count = len(region.state_shapes)
-        delta, advanced = region.advance(old, flat[index : index + count])
+        part = flat[index : index + count]
         index += count
-        correction = apply_tensor_operator(
-            delta, region.inverse.diagonal, region.inverse.offdiagonal, region.box
-        )
-        current = _crop(state, region.box)
-        state = state._replace(
-            **_scatter(
-                state,
-                region.box,
-                tuple(c - d for c, d in zip(current, correction, strict=True)),
+        if isinstance(region, TensorPolarizationRegion) and _use_native(
+            native, region.box, state
+        ):
+            from beamz.simulation.cuda import tensor_media
+
+            delta, advanced = tensor_media.advance_poles(region, fields, part)
+            state = tensor_media.apply_inverse(
+                state, region.box, region.inverse, delta, sign=-1.0
             )
-        )
+        else:
+            delta, advanced = region.advance(fields, part)
+            correction = apply_tensor_operator(
+                delta, region.inverse.diagonal, region.inverse.offdiagonal, region.box
+            )
+            current = _crop(state, region.box)
+            state = state._replace(
+                **_scatter(
+                    state,
+                    region.box,
+                    tuple(c - d for c, d in zip(current, correction, strict=True)),
+                )
+            )
         new_flat.extend(advanced)
     return state, tuple(new_flat)
 
@@ -315,12 +357,18 @@ def _state_count(regions) -> int:
     return sum(len(region.state_shapes) for region in regions)
 
 
-def update_magnetic(old, state, plan: AnisotropicPlan, tail):
-    """Apply tensor permeability and magnetic poles after the vacuum H kernel."""
+def update_magnetic(old, state, plan: AnisotropicPlan, tail, native=False):
+    """Apply tensor permeability and magnetic poles after the vacuum H kernel.
 
+    ``old`` is the pre-update state or its :func:`snapshot_magnetic`.
+    ``native`` selects the streamed-CUDA kernels where a box supports them.
+    """
+
+    if not isinstance(old, BoxFields):
+        old = snapshot_magnetic(old, plan)
     if plan.magnetic is not None:
         box = plan.magnetic.box
-        before, after = _crop(old, box), _crop(state, box)
+        before, after = old.magnetic, _crop(state, box)
         if plan.magnetic.loss is None:
             increment = tuple(a - b for a, b in zip(after, before, strict=True))
         else:
@@ -332,31 +380,50 @@ def update_magnetic(old, state, plan: AnisotropicPlan, tail):
                 (a - (1 - beta) / (1 + beta) * b) * (1 + beta) - 2 * beta * b
                 for a, b, beta in zip(after, before, plan.magnetic.loss, strict=True)
             )
-        mapped = apply_tensor_operator(
-            increment,
-            plan.magnetic.inverse.diagonal,
-            plan.magnetic.inverse.offdiagonal,
-            box,
-        )
-        state = state._replace(
-            **_scatter(
-                state, box, tuple(b + m for b, m in zip(before, mapped, strict=True))
+        if _use_native(native, box, state):
+            from beamz.simulation.cuda.tensor_media import apply_inverse
+
+            state = apply_inverse(
+                state, box, plan.magnetic.inverse, increment, base=before, sign=1.0
             )
-        )
+        else:
+            mapped = apply_tensor_operator(
+                increment,
+                plan.magnetic.inverse.diagonal,
+                plan.magnetic.inverse.offdiagonal,
+                box,
+            )
+            state = state._replace(
+                **_scatter(
+                    state,
+                    box,
+                    tuple(b + m for b, m in zip(before, mapped, strict=True)),
+                )
+            )
     if not plan.magnetic_regions:
         return state, tail
     split = _state_count(plan.electric_regions)
-    state, magnetic = _apply_regions(plan.magnetic_regions, old, state, tail[split:])
+    state, magnetic = _apply_regions(
+        plan.magnetic_regions, old.regions, state, tail[split:], native
+    )
     return state, tuple(tail[:split]) + magnetic
 
 
-def update_electric(old, state, plan: AnisotropicPlan, tail):
-    """Apply electric tensor poles after the E kernel and E-phase sources."""
+def update_electric(old, state, plan: AnisotropicPlan, tail, native=False):
+    """Apply electric tensor poles after the E kernel and E-phase sources.
+
+    ``old`` is the pre-update state or its :func:`snapshot_electric`.
+    ``native`` selects the streamed-CUDA kernels where a box supports them.
+    """
 
     if not plan.electric_regions:
         return state, tail
+    if not isinstance(old, BoxFields):
+        old = snapshot_electric(old, plan)
     split = _state_count(plan.electric_regions)
-    state, electric = _apply_regions(plan.electric_regions, old, state, tail[:split])
+    state, electric = _apply_regions(
+        plan.electric_regions, old.regions, state, tail[:split], native
+    )
     return state, electric + tuple(tail[split:])
 
 

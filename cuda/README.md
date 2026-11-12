@@ -13,9 +13,9 @@ monitor schedules. JAX still owns tracing, buffers, and orchestration around tha
 small native interface, preserving BeamZ's public numerical semantics and JAX
 fallback without duplicating configuration-specific FFI targets.
 
-The native boundary has six typed FFI targets: a phase update, a sharded phase,
+The native boundary has seven typed FFI targets: a phase update, a sharded phase,
 a complete multi-step program, an explicit column multistep schedule, a phase VJP,
-and a complete material/state reverse step. The implementation is
+a complete material/state reverse step, and the tensor-media corrections. The implementation is
 split by responsibility:
 
 - `ffi_handler.cc` decodes JAX buffers into a validated `BeamzProgramLaunch`;
@@ -24,9 +24,13 @@ split by responsibility:
 - `update.cu` owns Yee and CPML kernels;
 - `adjoint.cu` applies the Yee/CPML transpose and accumulates parameter gradients;
 - `sharded.cu` launches the global-coordinate-aware cells in `sharded_cell.h`;
-- `io.cu` owns source injection and DFT monitor accumulation.
+- `io.cu` owns source injection and DFT monitor accumulation;
+- `tensor_media.cu` advances tensor-pole ADEs on a cropped Yee box and applies
+  inverse background tensors with on-the-fly reciprocal node/cell averaging.
 
-ABI 30 supports full-tensor updates and exact constant-block material storage.
+ABI 31 adds `beamz_cuda_tensor_media` for tensor permeability and tensor-pole
+media in per-step `cuda_streamed` runs. ABI 30 added full-tensor updates and
+exact constant-block material storage.
 Tensor updates require canonical, unpadded float32 `cuda_streamed` storage on
 uniform or rectilinear grids; full-tensor gradients require JAX.
 Lossless materials use shared constant pools with 32-sample blocks when this
@@ -100,7 +104,7 @@ simulations; only the explicitly selected CPML recurrence state may use BF16.
 
 ## Streamed and multistep schedules
 
-`backend="cuda"` uses one CUDA component (**0.30.0 / ABI 30**) with two schedules.
+`backend="cuda"` uses one CUDA component (**0.31.0 / ABI 31**) with two schedules.
 Omitting `schedule` preserves main's streamed and geometry-based layout policy.
 The aliases `cuda_streamed` and `cuda_mstep` force their respective schedules.
 Explicit `schedule="auto"` enables the time-to-result selector:
@@ -190,7 +194,7 @@ result = simulation.advance(
 This path has native C++/CPU FFI coverage and recorded two/eight-H100 parity and
 capacity checks; remaining gaps are listed in the [validation summary](../docs/reviews/pr334-post-merge-validation-2026-10-17.md#historical-studies-and-raw-evidence).
 `auto` continues selecting JAX for sharded requests. Rebuild the optional native
-component when updating Python across an ABI boundary; this branch uses ABI 30,
+component when updating Python across an ABI boundary; this branch uses ABI 31,
 including `beamz_cuda_sharded`. Sharded phases pass separate neighbor faces to
 avoid full-field halo concatenations and retain integer DFT chunk offsets.
 

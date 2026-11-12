@@ -18,8 +18,12 @@
 - Periodic and Bloch seams average tensor cross terms with the seam phase. This
   also covers the full-tensor permittivity kernel, and rectilinear full-tensor
   grids may now use periodic or Bloch boundaries on JAX.
-- Mode sources inside media with electric tensor poles are solved at their
-  frequency. Mode ports outside tensor media are no longer rejected.
+- Mode sources and mode monitors inside media with tensor poles are solved at
+  each frequency with the poles folded in. Mode ports outside tensor media are
+  no longer rejected.
+- Added `AnisotropicMedium.fold_fast_poles(max_resonance)`. It replaces
+  ultraviolet poles with a static shift plus a slower, passive pole that
+  matches the low-frequency response, which relaxes the pole timestep limit.
 - Mode sources and mode monitors may now sit in magnetic media. 3D ports
   reproduce diagonal and full symmetric permeability tensors with the
   propagation's own discretization, which puts diagonals on the H sites and
@@ -31,6 +35,14 @@
   Ports overlapping gyrotropic media are still rejected.
 - `Simulation.differentiable()` and `TopologyProblem` differentiate through
   tensor media that lie outside the design region.
+- `TopologySpec(material_min=..., material_max=...)` accepts anisotropic and
+  pole-dispersive design materials. Density blends the high-frequency tensors
+  and fills each cell with the endpoints' poles.
+- Tensor permeability and tensor-pole media run on single-device
+  `backend="cuda_streamed"`. New native kernels apply their corrections; the
+  CUDA component is now version 0.31.0 / ABI 31, so rebuild it after updating.
+  Tensor-media executables compile without XLA command buffers, which crashed
+  on replay for some of these programs.
 - Added `anisotropic_library` with sapphire, lithium niobate, hBN, and
   alpha-MoO3 crystal models.
 - Added `examples/anisotropic/`: asymmetric refraction in tilted hyperbolic

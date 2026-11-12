@@ -138,6 +138,20 @@ sapphire, need a Courant number noticeably below the vacuum limit. Use
 `beamz.simulation.anisotropic.max_stable_timestep` to compute the bound in
 advance.
 
+Ultraviolet poles sit far above optical bands, yet they set this limit.
+`medium.fold_fast_poles(max_resonance)` replaces every pole resonating above
+`max_resonance` (rad/s) with a static `eps_inf` shift plus a slower pole at
+`max_resonance`:
+
+```text
+W' = W (w1 / w0)^4,   delta eps_inf = (W / w0^2) (1 - w1^2 / w0^2)
+```
+
+The folded medium matches the original susceptibility and its `omega^2` slope
+at low frequency and stays passive. It allows a larger timestep. Choose
+`max_resonance` well above the simulated band; compilation suggests it when a
+timestep is rejected.
+
 ## Boundaries
 
 - **PML.** A PML stretches coordinates. That amplifies the backward waves of
@@ -149,23 +163,39 @@ advance.
 
 ## Ports, monitors, and gradients
 
-- **Mode sources.** A mode source inside a medium with electric tensor poles is
-  solved at its frequency, using `eps_inf + Re chi(f)`. Broadband sources do this
-  at every profile frequency. Ports elsewhere are unaffected by the media.
-- **Mode monitors.** Projection uses one static material snapshot, so mode
-  monitors must stay outside tensor-pole media.
-- **Not yet supported at ports.** No mode port may overlap non-unit or
-  magnetic-pole permeability, or gyrotropic media.
+- **Mode sources and monitors in pole media.** Ports inside tensor-pole media
+  solve their modes at each frequency with the poles folded in:
+  `eps_inf + Re chi(f)`, and likewise `mu(f)` for magnetic poles. Broadband
+  sources fold at every profile frequency; mode monitors fold at every monitor
+  frequency. The folding data is kept in result archives.
+- **Magnetic media at ports.** 3D ports reproduce diagonal and full symmetric
+  permeability tensors with the propagation's discretization (diagonals on the
+  H sites, cross terms at cell centres). 2D ports support diagonal permeability.
+- **Not yet supported at ports.** Gyrotropic media, and 2D TM ports that overlap
+  in-plane (`xy`) magnetic coupling.
 - **Gradients.** `Simulation.differentiable()` and `TopologyProblem` (default
-  autodiff backend) differentiate through every correction on JAX. Design
-  regions must not overlap tensor-permeability or tensor-pole media, including
-  their two-cell halo. The spectral-adjoint backend is rejected.
+  autodiff backend) differentiate through every correction on JAX. Fixed tensor
+  media must not overlap a design region, including their two-cell halo. The
+  spectral-adjoint backend is rejected.
+- **Anisotropic design materials.** `TopologySpec(material_min=...,
+  material_max=...)` takes `Material` or `AnisotropicMedium` endpoints, for
+  example a tilted LiNbO3 crystal against air. The high-frequency tensor blends
+  linearly with density, and each endpoint's poles fill a cell with volume
+  fraction `rho` or `1 - rho`. Design materials must be nonmagnetic and
+  lossless apart from their poles.
 
 ## Requirements and limitations
 
-- These media run on the JAX backend, on CPU or GPU through a CUDA-enabled
-  jaxlib. Native CUDA (`cuda_streamed`, `cuda_mstep`) and sharded runs are
-  rejected.
+- These media run on JAX (CPU or GPU) and on single-device
+  `backend="cuda_streamed"`. Streamed CUDA advances the vacuum fields with its
+  native phases and applies the pole and inverse-tensor corrections with the
+  native `beamz_cuda_tensor_media` kernels. Fused multi-step schedules
+  (`cuda_mstep`, `schedule="mstep"`) and sharded runs are rejected, as are
+  CUDA gradients through these media. Gyrotropic poles, Bloch (complex) fields,
+  and boxes spanning a periodic seam keep their corrections in JAX inside the
+  streamed run.
+- Tensor-media executables compile without XLA command buffers, because XLA
+  0.9 crashes replaying CUDA graphs of some of these programs.
 - Off-diagonal `eps_inf` needs `RasterOptions(smoothing="farjadpour_full")`.
   Off-diagonal permeability or pole tensors also work with `"volume"`.
 - 2D simulations require tensors without `xz` or `yz` coupling, and gyration

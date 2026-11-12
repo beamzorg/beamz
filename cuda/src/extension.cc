@@ -24,6 +24,8 @@ NB_MODULE(_cuda, module) {
         nb::capsule(reinterpret_cast<void*>(beamz_cuda_adjoint));
     registrations[kMaterialAdjointTarget] =
         nb::capsule(reinterpret_cast<void*>(beamz_cuda_material_adjoint));
+    registrations[kTensorMediaTarget] =
+        nb::capsule(reinterpret_cast<void*>(beamz_cuda_tensor_media));
     return registrations;
   });
 }

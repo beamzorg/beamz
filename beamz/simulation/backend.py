@@ -26,6 +26,7 @@ from beamz.simulation._cuda_abi import (
     CUDA_STREAMED_TARGET,
     CUDA_STREAMED_TARGETS,
     CUDA_TEMPORAL_PAIR,
+    CUDA_TENSOR_MEDIA_TARGET,
 )
 
 ExecutionBackend = Literal[
@@ -255,6 +256,7 @@ def register_cuda_ffi_targets(module: ModuleType | None = None) -> tuple[str, ..
                     CUDA_STREAMED_TARGET,
                     CUDA_ADJOINT_TARGET,
                     CUDA_MATERIAL_ADJOINT_TARGET,
+                    CUDA_TENSOR_MEDIA_TARGET,
                 }
                 else target_traits.DEFAULT
             )
