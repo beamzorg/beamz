@@ -6,9 +6,11 @@ place to the field box. They reproduce
 :meth:`beamz.simulation.anisotropic.TensorPolarizationRegion.advance` and
 ``apply_tensor_operator`` exactly, up to float32 rounding order. The inverse
 launch also maps full static tensors (non-symmetric eps or mu, conductivity
-tensors) through their antisymmetric cross terms. CCPR regions
-(:mod:`beamz.simulation.ccpr`) add a third launch that adds the implicit
-``(dt / d) B (E^{n+1} - E^n)`` term to the pole state.
+tensors) through their antisymmetric cross terms. For CCPR regions
+(:mod:`beamz.simulation.ccpr`) the pole launch also applies the explicit half
+``k r`` of the centred ``B`` term, ``k = (dt / (2 d)) B`` and ``r`` the
+previous field change, and a third launch adds the implicit half
+``k (E^{n+1} - E^n)`` to the pole state.
 """
 
 from __future__ import annotations
@@ -69,14 +71,28 @@ def _f32(value, shape):
 
 
 def advance_poles(region, old_fields, flat):
-    """Native ``TensorPolarizationRegion.advance``: (site delta, new state)."""
+    """Native ``region.advance``: (site delta, new pole state).
+
+    For CCPR regions ``flat`` ends with the previous field change ``r``.
+    """
     from . import runtime as rt
 
     box = region.box
     poles = int(np.shape(region.c1)[0])
     coupled = region.offdiagonal is not None
     # The flat state interleaves (current, previous) per component.
-    current, previous = tuple(flat[0::2]), tuple(flat[1::2])
+    current, previous = tuple(flat[0:6:2]), tuple(flat[1:6:2])
+    edot = getattr(region, "edot_diagonal", ())
+    if edot:
+        explicit = (
+            *(_f32(v, s) for v, s in zip(flat[6:9], box.shapes, strict=True)),
+            *(_f32(d, (poles, *s)) for d, s in zip(edot, box.shapes, strict=True)),
+            _empty()
+            if region.edot_offdiagonal is None
+            else jnp.asarray(region.edot_offdiagonal, jnp.float32),
+        )
+    else:
+        explicit = (_empty(),) * 7
     arguments = (
         *(_f32(v, s) for v, s in zip(old_fields, box.shapes, strict=True)),
         *_widths(box),
@@ -89,6 +105,7 @@ def advance_poles(region, old_fields, flat):
         jnp.asarray(region.offdiagonal, jnp.float32) if coupled else _empty(),
         *current,
         *previous,
+        *explicit,
     )
     results = (
         *current,

@@ -57,18 +57,22 @@ def _without_edot(poles):
     )
 
 
-def _discrete_tensor(static, poles, omega, dt):
-    """Exact steady-state response of the implemented recurrence at ``omega``."""
+def _discrete_tensor(static, poles, omega, dt, centred=True):
+    """Exact steady-state response of the implemented recurrence at ``omega``.
+
+    The ``B`` drive is ``(dt / 2) B (E^{n+1} - E^{n-1})`` (centred) or fdtdx's
+    first-order ``dt B (E^{n+1} - E^n)``, both over ``d = 1 + gamma dt / 2``.
+    """
     z = np.exp(-1j * omega * dt)
+    difference = 0.5 * (z - 1 / z) if centred else z - 1
     value = packed_to_matrix(np.asarray(static)).astype(complex)
     for p in poles:
         den = 1 + 0.5 * p.damping * dt
         response = (
             den * z - (2 - (p.resonance * dt) ** 2) + (1 - 0.5 * p.damping * dt) / z
         )
-        value = (
-            value + (dt**2 * p.weight_matrix + dt * (z - 1) * p.edot_matrix) / response
-        )
+        drive = dt**2 * p.weight_matrix + dt * difference * p.edot_matrix
+        value = value + drive / response
     return value
 
 
@@ -232,9 +236,15 @@ def _medium(path, family, debye=None):
     return bz.AnisotropicMedium(1.0, static, magnetic_poles=poles)
 
 
-def _response(medium, family, control=None):
-    """Settled ``(x, y)`` field for a unit harmonic flux along x (2D, 4x4 cells)."""
-    dt, width = 1e-17, 0.2e-6
+def _response(medium, family, control=None, dt=1e-17):
+    """Settled ``(x, y)`` field for a unit harmonic flux along x (2D, 4x4 cells).
+
+    ``control`` breaks the scheme: ``"drop_edot"`` removes the ``B`` drive,
+    ``"drop_augmentation"`` the implicit ``eps'`` solve, and ``"first_order"``
+    runs fdtdx's forward-difference ``(dt / d) B (E^{n+1} - E^n)`` (the
+    centred update with ``2 B`` and the stored previous change held at zero).
+    """
+    width = 0.2e-6
     simulation = bz.Simulation(
         design=bz.Design(width=width, height=width, material=medium),
         resolution=width / 4,
@@ -249,11 +259,29 @@ def _response(medium, family, control=None):
     poles = medium.electric_poles if family == "E" else medium.magnetic_poles
     static = medium.epsilon_r if family == "E" else medium.mu_r
     full = region.static is None
+
+    def twin(twin_poles):
+        """The compiled region of the same medium with other poles."""
+        if family == "E":
+            material = bz.AnisotropicMedium(static, electric_poles=twin_poles)
+        else:
+            material = bz.AnisotropicMedium(1.0, static, magnetic_poles=twin_poles)
+        design = bz.Design(width=width, height=width, material=material)
+        compiled = simulation.updated_copy(design=design).compile(backend="jax")
+        (twin_region,) = getattr(compiled.dispersion.anisotropic, regions)
+        return twin_region
+
+    compiled_poles = poles
+    if control == "first_order":
+        compiled_poles = tuple(
+            replace(p, edot=tuple(2 * v for v in p.edot)) for p in poles
+        )
+        region = twin(compiled_poles)
     kernel = packed_to_matrix(np.asarray(static))[:2, :2]
     if full:  # the full-tensor kernel already includes K
         kernel = (
             kernel
-            + sum(dt / (1 + 0.5 * p.damping * dt) * p.edot_matrix for p in poles)[
+            + sum(dt / (2 + p.damping * dt) * p.edot_matrix for p in compiled_poles)[
                 :2, :2
             ]
         )
@@ -264,21 +292,7 @@ def _response(medium, family, control=None):
             edot_offdiagonal=None,
         )
     elif control == "drop_augmentation":
-        twin = bz.AnisotropicMedium(
-            static,
-            **(
-                {"electric_poles": _without_edot(poles)}
-                if family == "E"
-                else {"magnetic_poles": _without_edot(poles), "permittivity": 1.0}
-            ),
-        )
-        twin_sim = simulation.updated_copy(
-            design=bz.Design(width=width, height=width, material=twin)
-        )
-        (plain,) = getattr(
-            twin_sim.compile(backend="jax").dispersion.anisotropic, regions
-        )
-        region = replace(region, inverse=plain.inverse)
+        region = replace(region, inverse=twin(_without_edot(poles)).inverse)
         kernel = packed_to_matrix(np.asarray(static))[:2, :2]
     plan = replace(plan, anisotropic=replace(plan.anisotropic, **{regions: (region,)}))
     x, y = ("ex", "ey") if family == "E" else ("hx", "hy")
@@ -289,8 +303,15 @@ def _response(medium, family, control=None):
     # kernel advances in vacuum and the plan maps mu_inf (here unity).
     increment = np.linalg.inv(kernel)[:, 0] if family == "E" else np.array([1.0, 0.0])
     steps = 8000
+    stored = len(region.box.components)  # the trailing previous-change states
 
     def step(state, index):
+        if control == "first_order":
+            polarization = state.polarization
+            state = state._replace(
+                polarization=polarization[:-stored]
+                + tuple(jnp.zeros_like(r) for r in polarization[-stored:])
+            )
         old = state
         delta = jnp.cos(OMEGA * dt * (index + 1)) - jnp.cos(OMEGA * dt * index)
         free = state._replace(
@@ -307,10 +328,18 @@ def _response(medium, family, control=None):
     )
     times = np.arange(1, steps + 1)[-3000:] * dt
     measured = np.array([_harmonic(np.asarray(t)[-3000:], times) for t in traces])
-    discrete = np.linalg.inv(_discrete_tensor(static, poles, OMEGA, dt)[:2, :2])[:, 0]
+    centred = control != "first_order"
+    discrete = np.linalg.inv(
+        _discrete_tensor(static, poles, OMEGA, dt, centred)[:2, :2]
+    )[:, 0]
     tensor = medium.permittivity_tensor if family == "E" else medium.permeability_tensor
     exact = np.linalg.inv(tensor(OMEGA / (2 * np.pi))[:2, :2])[:, 0]
     return measured, discrete, exact, full
+
+
+# Coarse enough that the second-order error (about 7e-4) dwarfs the float32
+# floor of the measurement (about 1.5e-5), which grows as dt shrinks.
+DT = 4e-17
 
 
 @pytest.mark.parametrize(
@@ -321,16 +350,16 @@ def test_prescribed_flux_matches_discrete_and_continuous_response(family, path):
     """A harmonic D (or B) settles to eps_d(w)^-1 D for the CCPR recurrence.
 
     ``eps_d`` is the exact discrete-time response of the implemented update,
-    so the agreement is limited only by float32 rounding; the continuous
-    ``eps(w)`` differs by the first-order ``(w dt / 2) B`` term of the
-    forward-difference ``E'`` drive (fdtdx's discretization).
+    so the agreement is limited only by float32 rounding. The continuous
+    ``eps(w)`` differs by the scheme's second-order error; fdtdx's first-order
+    ``E'`` drive misses it by 4e-3 to 1e-2 here.
     """
     medium = _medium(path, family)
-    measured, discrete, exact, full = _response(medium, family)
+    measured, discrete, exact, full = _response(medium, family, dt=DT)
     assert full == (path == "full")
     scale = np.linalg.norm(discrete)
-    assert np.linalg.norm(measured - discrete) < 1e-3 * scale
-    assert np.linalg.norm(measured - exact) < 1e-2 * scale
+    assert np.linalg.norm(measured - discrete) < 1e-4 * scale
+    assert np.linalg.norm(measured - exact) < 1.5e-3 * scale
     if path != "isotropic":  # the tilt couples x to y through every pole
         assert abs(discrete[1]) > 0.05 * scale
 
@@ -339,17 +368,110 @@ def test_prescribed_flux_matches_discrete_and_continuous_response(family, path):
 def test_negative_controls_fail_the_discrete_oracle(path):
     """Dropping the B drive or the implicit eps' = eps_inf + K solve is detected.
 
-    A strong Debye (E'-only) term makes dt B / eps_inf about 0.1, so both
+    A strong Debye (E'-only) term makes dt B / (2 eps_inf) about 0.1, so both
     errors are first order in it, far above the float32 floor of the oracle.
     """
     medium = _medium(path, "E", debye=1e16)
     errors = {}
     for control in (None, "drop_edot", "drop_augmentation"):
-        measured, discrete, _, _ = _response(medium, "E", control)
+        measured, discrete, _, _ = _response(medium, "E", control, dt=DT)
         errors[control] = np.linalg.norm(measured - discrete) / np.linalg.norm(discrete)
-    assert errors[None] < 1e-3, errors
+    assert errors[None] < 1e-4, errors
     assert errors["drop_edot"] > 0.1, errors
     assert errors["drop_augmentation"] > 0.01, errors
+
+
+def _convergence(medium, control=None):
+    """Error against the continuous eps(w) at 2 DT and DT, and their ratio."""
+    errors = []
+    for dt in (2 * DT, DT):
+        measured, discrete, exact, _ = _response(medium, "E", control, dt=dt)
+        scale = np.linalg.norm(exact)
+        # The run reproduces its own discrete scheme to the float32 floor.
+        assert np.linalg.norm(measured - discrete) < 1e-4 * scale
+        errors.append(np.linalg.norm(measured - exact) / scale)
+    return errors, errors[0] / errors[1]
+
+
+@pytest.mark.parametrize("path", ["isotropic", "coupled", "full"])
+def test_centred_edot_term_converges_at_second_order(path):
+    """Halving dt cuts the error in eps(w)^-1 D by 4: the scheme is second order.
+
+    The negative control runs fdtdx's first-order forward difference
+    ``(dt / d) B (E^{n+1} - E^n)`` (the same update with ``2 B`` and no stored
+    change), which only halves the error, so this test detects it.
+    """
+    medium = _medium(path, "E")
+    errors, ratio = _convergence(medium)
+    assert 3.6 < ratio < 4.4, errors
+    old_errors, old_ratio = _convergence(medium, "first_order")
+    assert not 3.6 < old_ratio < 4.4, old_errors
+    assert old_errors[1] > 4 * errors[1], (old_errors, errors)
+
+
+def test_pure_edot_pole_is_crank_nicolson_conductivity():
+    """With omega0 = gamma = A = 0 the centred scheme is the grid conductivity.
+
+    ``p'' = B E'`` is a current ``J = eps0 B E``; the centred drive makes the
+    discrete current ``B (E^{n+1} + E^n) / 2``, which is exactly the
+    semi-implicit update ``(eps + beta) E^{n+1} = (eps - beta) E^n + curl H``
+    with ``beta = sigma dt / (2 eps0)``. (The first-order drive would give the
+    backward-Euler ``B E^{n+1}``.) From rest, the two runs agree to rounding.
+    (The source sits outside the medium: a source inside it is normalized
+    differently by the two updates.)
+    """
+    from beamz.const import EPS_0
+
+    sigma = 2e5  # S/m: dt B / (2 eps_inf) is about 0.06
+    pole = bz.TensorPole(0.0, 0.0, 0.0, (sigma / EPS_0,) * 3 + (0.0,) * 3)
+    width, spacing = 1.2e-6, 40e-9
+    dt = 0.9 * spacing / (LIGHT_SPEED * np.sqrt(2))
+    time = np.arange(301) * dt
+
+    def run(material):
+        design = bz.Design(width=width, height=width, material=bz.Material(1.0))
+        design += bz.Rectangle(
+            position=(0.5 * width, 0.5 * width),
+            width=0.4 * width,
+            height=0.4 * width,
+            material=material,
+        )
+        simulation = bz.Simulation(
+            design=design,
+            sources=[
+                bz.GaussianSource(
+                    position=(0.25 * width, 0.25 * width),
+                    width=0.2e-6,
+                    signal=bz.ramped_cosine(
+                        time,
+                        amplitude=1.0,
+                        frequency=3e14,
+                        ramp_duration=5e-15,
+                        t_max=20e-15,
+                    ),
+                )
+            ],
+            boundaries=[bz.Periodic(axes=("x", "y"))],
+            time=time,
+            resolution=spacing,
+            polarization="te",
+        )
+        state = simulation.advance(
+            state=simulation.initial_state(),
+            num_steps=300,
+            backend="jax",
+            performance=False,
+        ).state
+        return np.concatenate([np.ravel(state.ex), np.ravel(state.ey)])
+
+    pole_run = run(bz.AnisotropicMedium(2.0, electric_poles=[pole]))
+    conductor = run(bz.Material(2.0, conductivity=sigma))
+    scale = np.abs(conductor).max()
+    assert scale > 0
+    np.testing.assert_allclose(pole_run, conductor, rtol=0, atol=2e-5 * scale)
+    # Without the conductivity the fields clearly differ.
+    lossless = run(bz.Material(2.0))
+    assert np.abs(lossless - conductor).max() > 0.05 * scale
 
 
 # ---------------------------------------------------------------------------
@@ -455,10 +577,12 @@ def test_isotropic_ccpr_slab_matches_scalar_pole_residue_and_thin_film(vacuum_sl
         incident, output, _ = _slab(material)
         spectra[name] = (1 - incident / reference_in, output / reference_out)
     R, T = spectra["tensor"]
-    np.testing.assert_allclose(R, abs(reflection) ** 2, atol=0.004)
-    np.testing.assert_allclose(T, abs(transmission) ** 2, atol=0.004)
-    np.testing.assert_allclose(R, spectra["scalar"][0], atol=0.003)
-    np.testing.assert_allclose(T, spectra["scalar"][1], atol=0.003)
+    np.testing.assert_allclose(R, abs(reflection) ** 2, atol=0.003)
+    np.testing.assert_allclose(T, abs(transmission) ** 2, atol=0.003)
+    # Both second order: the centred B term matches the scalar ADE to 4e-4
+    # (the first-order drive was 1.3e-3 off).
+    np.testing.assert_allclose(R, spectra["scalar"][0], atol=0.001)
+    np.testing.assert_allclose(T, spectra["scalar"][1], atol=0.001)
     # Negative control: the same poles without their E' coupling.
     assert np.abs(spectra["without_b"][1] - abs(transmission) ** 2).max() > 0.03
 
@@ -486,9 +610,9 @@ def test_tilted_ccpr_slab_matches_jones_calculus(vacuum_slab, path, smoothing):
     t2 = _analytic_slab(other.eps_model(frequencies), WAVELENGTHS, THICKNESS)[1]
     c, s = np.cos(TILT[2]), np.sin(TILT[2])
     ratio = s * c * (t1 - t2) / (c * c * t1 + s * s * t2)
-    np.testing.assert_allclose(jones[1] / jones[0], ratio, atol=0.01)
+    np.testing.assert_allclose(jones[1] / jones[0], ratio, atol=0.005)
     np.testing.assert_allclose(
-        output / reference_out, c * c * abs(t1) ** 2 + s * s * abs(t2) ** 2, atol=0.004
+        output / reference_out, c * c * abs(t1) ** 2 + s * s * abs(t2) ** 2, atol=0.002
     )
 
 
@@ -661,7 +785,7 @@ def test_compile_rejects_unstable_ccpr_timesteps_and_singular_updates(monkeypatc
     compile_at(stiff, 0.98 * limit)
     with pytest.raises(ValueError, match="Tensor poles are unstable"):
         compile_at(stiff, 1.05 * limit)
-    # The implicit update divides by eps_inf + sum dt / (1 + gamma dt / 2) B,
+    # The implicit update divides by eps_inf + sum dt / (2 + gamma dt) B,
     # which must stay positive definite; only an active medium can violate it.
     monkeypatch.setattr(bz.AnisotropicMedium, "_require_passive", lambda self: None)
     active = bz.AnisotropicMedium(

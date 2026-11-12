@@ -55,9 +55,13 @@
   omega)`. Build them with `TensorPole.ccpr` or `TensorPole.critical_point`.
   `AnisotropicMedium.from_pole_residue(x, y, z)` converts scalar `PoleResidue`
   fits along principal axes, and `rotated()` orients them, `B` included. The
-  implicit `B` term solves with `eps_inf + sum dt/(1 + gamma dt/2) B` and runs
-  on JAX and streamed CUDA. Mode ports fold the `B` term. The timestep check
-  for such media is a von Neumann analysis of the scheme.
+  `B` term is discretized centred, `(dt / 2d) B (E^{n+1} - E^{n-1})`, so the
+  scheme is second order (fdtdx's forward difference is first order). Its
+  conductivity limit is Crank-Nicolson. Each CCPR region stores the previous
+  field change, and the implicit half solves with
+  `eps_inf + sum dt/(2 + gamma dt) B`. It runs on JAX and streamed CUDA. Mode
+  ports fold the `B` term. The timestep check for such media is a von Neumann
+  analysis of the scheme.
 - The timestep check for Lorentz, Drude and gyrotropic tensor poles is now the
   same von Neumann analysis of the implemented scheme. The analytic bound
   `S^2 + (Omega dt / 2)^2 < 1` it replaces accepted timesteps that diverge for

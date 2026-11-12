@@ -188,24 +188,35 @@ per-pole semidefinite check. Instead, the medium checks on a dense frequency
 grid that the anti-Hermitian part of `eps(omega)` and `mu(omega)` stays
 positive semidefinite, as `PoleResidue` does.
 
-**Discretization.** The pole update mirrors fdtdx:
+**Discretization.** Every term of the pole update is centred at step `n`, so
+the scheme is second order in `dt`:
 
 ```text
-p^{n+1} = c1 p^n + c2 p^{n-1} + (dt^2 / d) A E^n + (dt / d) B (E^{n+1} - E^n)
+p^{n+1} = c1 p^n + c2 p^{n-1} + (dt^2 / d) A E^n + (dt / (2 d)) B (E^{n+1} - E^{n-1})
 d = 1 + gamma dt / 2
 ```
 
-The last term is implicit. Ampere's law then solves with the static tensor
-`eps' = eps_inf + K`, where `K = sum_p (dt / d_p) B_p` carries the medium's
+This deliberately differs from fdtdx, whose CCPR update uses the first-order
+forward difference `(dt / d) B (E^{n+1} - E^n)`. That drive lags by
+`omega dt / 2`, which puts a typical fit's permittivity off by about 0.1 to 1%
+at 10 to 20 points per wavelength.
+
+The `B` term splits into an explicit half `k (E^n - E^{n-1})` and an implicit
+half `k (E^{n+1} - E^n)`, with `k = (dt / (2 d)) B`. Each CCPR region stores
+the previous field change `E^n - E^{n-1}` per site as part of its pole state
+(zero at the start, as for a field at rest). The explicit half joins the pole
+advance. For the implicit half, Ampere's law solves with the static tensor
+`eps' = eps_inf + K`. Here `K = sum_p (dt / (2 d_p)) B_p` carries the medium's
 volume fraction and the same Yee collocation as the pole drive:
 
 ```text
 (eps' + sigma dt / (2 eps0)) (E^{n+1} - E^n) = curl term - delta
-delta = sum_p (c1 p + c2 p_prev + (dt^2 / d) A E^n - p^n)
+delta = sum_p (c1 p + c2 p_prev + (dt^2 / d) A E^n + k_p (E^n - E^{n-1}) - p^n)
 ```
 
-Each pole then gains `(dt / d) B (E^{n+1} - E^n)`. `K` is symmetric, so `eps'`
-uses the existing constitutive supports:
+Each pole then gains `k_p (E^{n+1} - E^n)`, and the stored change becomes
+`E^{n+1} - E^n`. `K` is symmetric, so `eps'` uses the existing constitutive
+supports:
 
 - **Diagonal kernel.** When `eps_inf` has no off-diagonal terms, the kernel
   stays unchanged. The correction recovers the curl term from the kernel's own
@@ -215,23 +226,38 @@ uses the existing constitutive supports:
   tensors include `K` from the start.
 
 Both give `E^{n+1} - E^n = Inv(eps' + loss)(curl term - delta)`. Gyrotropic
-poles are unaffected. The `E'` drive is a forward difference, so it is first
-order: the discrete `B` term lags by `omega dt / 2`. For a typical fit this
-puts the permittivity off by about 0.1 to 1% at 10 to 20 points per
-wavelength, which is comparable to the Yee dispersion error.
+poles are unaffected.
+
+In the conductivity limit (`omega0 = gamma = A = 0`), `p'' = B E'` is a current
+`J = eps0 B E`. The centred drive makes the discrete current
+`B (E^{n+1} + E^n) / 2`, which is Crank-Nicolson conductivity. It matches the
+grid's semi-implicit `sigma = eps0 B` to rounding. The forward difference
+would give backward Euler instead.
+
+Validation:
+
+- Under a prescribed harmonic flux, the error against the continuous `eps(omega)`
+  drops by 4.0x when `dt` halves. For the first-order drive it drops by 2.0 to
+  2.4x.
+- In slab tests, the cross-polarization error against Jones calculus roughly
+  halves compared with the first-order drive. The gap to the scalar
+  `PoleResidue` run shrinks about 3x.
 
 **Timestep.** `eps'` must stay positive definite; only an active medium can
 violate this, and compilation rejects it. The von Neumann analysis of the
-[timestep check](#timestep) includes the implicit `B` term and the pointwise
-inverse of `eps'`. For CCPR media too, the predicted limit matches seeded
-simulations: stable at 0.98 of it and divergent at 1.02.
+[timestep check](#timestep) models the centred scheme, including the stored
+change, the implicit half of `B` and the pointwise inverse of `eps'`. For CCPR
+media too, the predicted limit matches seeded simulations: they are stable at
+0.995 of it and divergent at 1.005. For the stiff test crystal, the limit is
+1.4% below that of the first-order drive.
 `beamz.simulation.anisotropic.max_stable_timestep` reports it in advance.
 `fold_fast_poles` leaves CCPR poles unchanged.
 
 **Support.**
 
-- JAX, and streamed CUDA through an extra native launch that adds the `B`
-  term to the pole state. Magnetic CCPR poles also run in both.
+- JAX and streamed CUDA. Natively, the pole launch applies the explicit half
+  of the `B` term, and an extra launch adds the implicit half. Magnetic CCPR
+  poles also run in both.
 - Mode ports fold `Re chi(f)`, including the `-i omega B` term.
 - Not supported: magnetic CCPR poles with `B != 0` in a medium with
   off-diagonal static permeability, and CCPR poles with `B != 0` anywhere in a

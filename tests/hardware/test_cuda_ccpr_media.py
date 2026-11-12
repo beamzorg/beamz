@@ -1,7 +1,10 @@
 """Hardware parity of CCPR (E'-coupled) tensor poles on streamed CUDA.
 
-CCPR regions add a third native launch (op 2) that applies the implicit
-``(dt / d) B (E^{n+1} - E^n)`` term; JAX is the reference.
+The centred ``B`` term ``(dt / (2 d)) B (E^{n+1} - E^{n-1})`` runs natively:
+the pole launch (op 0) applies its explicit half from the stored previous
+field change, and a third launch (op 2) the implicit half
+``(dt / (2 d)) B (E^{n+1} - E^n)``. JAX is the reference; the compared
+polarization includes the stored change.
 
 Run explicitly on a CUDA host with the matching native component:
 JAX_PLATFORMS=cuda PYTHONPATH=. pytest -q tests/hardware/test_cuda_ccpr_media.py

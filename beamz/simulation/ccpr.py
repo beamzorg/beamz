@@ -5,21 +5,30 @@ the tensor-pole recurrence of :mod:`beamz.simulation.anisotropic`,
 
     p'' + gamma p' + omega0^2 p = A E + B E',
 
-discretized like fdtdx's diagonal CCPR update, now with full tensors::
+discretized with every term centred at step ``n``::
 
-    p^{n+1} = c1 p^n + c2 p^{n-1} + (dt^2 / d) A E^n + (dt / d) B (E^{n+1} - E^n),
+    p^{n+1} = c1 p^n + c2 p^{n-1} + (dt^2 / d) A E^n
+              + (dt / (2 d)) B (E^{n+1} - E^{n-1}),
 
-with ``d = 1 + gamma dt / 2``. The last term is implicit. Substituting it into
-Ampere's law gives, with ``K = sum_p (dt / d_p) B_p`` applied with the same
-fraction weighting and Yee collocation as the drive,
+with ``d = 1 + gamma dt / 2``, so the scheme is second order. (fdtdx's diagonal
+CCPR update uses the first-order forward difference ``(dt / d) B (E^{n+1} -
+E^n)`` instead.) For ``omega0 = gamma = A = 0`` the current ``(p^{n+1} - p^n) /
+dt`` is ``B (E^{n+1} + E^n) / 2``: Crank-Nicolson conductivity ``sigma = eps0
+B``, exactly the semi-implicit grid conductivity.
+
+The ``B`` term splits into an implicit half ``k (E^{n+1} - E^n)`` and an
+explicit half ``k r`` with ``k = (dt / (2 d)) B`` and ``r = E^n - E^{n-1}``,
+the previous field change, which each region stores per site. The explicit
+half joins the pole advance, so ``delta = sum_p (c1 p + c2 p_prev + (dt^2 / d)
+A E^n + k_p r - p^n)``. Substituting the implicit half into Ampere's law gives,
+with ``K = sum_p k_p`` applied with the same fraction weighting and Yee
+collocation as the drive,
 
     (eps_inf + beta + K) (E^{n+1} - E^n) = X - 2 beta E^n - delta,
 
-where ``X`` is the curl (and source) term, ``beta = sigma dt / (2 eps0)`` and
-``delta = sum_p (c1 p + c2 p_prev + (dt^2 / d) A E^n - p^n)`` is the usual
-Lorentz increment. ``K`` is symmetric, so ``eps' = eps_inf + K`` is a static
-symmetric tensor on the existing constitutive supports. Two equivalent
-realizations are used:
+where ``X`` is the curl (and source) term and ``beta = sigma dt / (2 eps0)``.
+``K`` is symmetric, so ``eps' = eps_inf + K`` is a static symmetric tensor on
+the existing constitutive supports. Two equivalent realizations are used:
 
 * Diagonal kernel (no off-diagonal static permittivity, and every magnetic
   family). The unchanged kernel already produced ``E'`` with
@@ -33,9 +42,9 @@ realizations are used:
   correction ``E^{n+1} = E' - Inv_{eps'}(delta)`` applies.
 
 Both give ``E^{n+1} - E^n = Inv_{eps'+beta}(X - 2 beta E^n - delta)``. Then
-every pole gains ``(dt / d_p) B_p (E^{n+1} - E^n)``. Gyrotropic poles are
-unaffected. Stability is checked with a von Neumann analysis of exactly this
-scheme (:mod:`beamz.simulation.pole_stability`).
+every pole gains ``k_p (E^{n+1} - E^n)`` and ``r`` becomes that change.
+Gyrotropic poles are unaffected. Stability is checked with a von Neumann
+analysis of exactly this scheme (:mod:`beamz.simulation.pole_stability`).
 """
 
 from __future__ import annotations
@@ -82,9 +91,25 @@ def has_edot(poles) -> bool:
 class CCPRPolarizationRegion(TensorPolarizationRegion):
     """Tensor poles with an ``E'`` coupling (see the module docstring)."""
 
-    edot_diagonal: tuple = ()  # per component (poles, *site): (dt / d) B weights
+    edot_diagonal: tuple = ()  # per component (poles, *site): dt / (2 d) B weights
     edot_offdiagonal: jax.Array | None = None  # (poles, *shared, 3)
     static: tuple | None = None  # per component eps_inf + beta, or None (full kernel)
+
+    @property
+    def state_shapes(self) -> tuple[tuple[int, ...], ...]:
+        """Pole states, then the previous field change ``E^n - E^{n-1}`` per site."""
+        return super().state_shapes + tuple(self.box.shapes)
+
+    def advance(self, fields, flat):
+        """Pole advance including the explicit half ``k r`` of the B term.
+
+        Returns (site delta p, new pole states); ``r`` is not updated here.
+        """
+        count = len(self.box.components)
+        explicit = apply_tensor_operator(
+            flat[2 * count :], self.edot_diagonal, self.edot_offdiagonal, self.box
+        )
+        return super().advance(fields, flat[: 2 * count], explicit)
 
 
 _register_fields(
@@ -98,9 +123,9 @@ _register_fields(
 
 
 def _edot_drive(poles, dt) -> np.ndarray:
-    """Packed ``(dt / (1 + gamma dt / 2)) B`` per pole, shape (poles, 6)."""
+    """Packed ``(dt / (2 (1 + gamma dt / 2))) B`` per pole, shape (poles, 6)."""
     damping = np.array([p.damping for p in poles], dtype=np.float64)
-    factor = dt / (1.0 + 0.5 * damping * dt)
+    factor = 0.5 * dt / (1.0 + 0.5 * damping * dt)
     return np.stack([p.edot_packed for p in poles]) * factor[:, None]
 
 
@@ -168,8 +193,8 @@ def _require_positive_definite(tensors, what: str) -> None:
         matrix = packed_to_matrix(np.moveaxis(np.asarray(tensor), 0, -1))
         if np.linalg.eigvalsh(matrix.reshape(-1, 3, 3))[:, 0].min() <= 0.0:
             raise ValueError(
-                f"The implicit CCPR update divides by {what} + sum_p dt/(1 + "
-                "gamma_p dt/2) B_p, which is not positive definite here; the "
+                f"The implicit CCPR update divides by {what} + sum_p dt/(2 + "
+                "gamma_p dt) B_p, which is not positive definite here; the "
                 "update is unstable. Reduce the timestep or refit the medium."
             )
 
@@ -335,7 +360,8 @@ def compile_ccpr_region(region, poles, fraction, grid, dt, periodic):
 def apply_ccpr_region(region, fields, flat, state, native=False):
     """Advance one CCPR region from the pre-kernel box ``fields``.
 
-    Returns ``(state, new pole state)``; see the module docstring.
+    ``flat`` holds the pole states and then the previous field change ``r``.
+    Returns ``(state, new flat state)``; see the module docstring.
     """
     box = region.box
     native = _use_native(native, box, state)
@@ -371,12 +397,16 @@ def apply_ccpr_region(region, fields, flat, state, native=False):
             )
         )
     change = tuple(n - o for n, o in zip(_crop(state, box), fields, strict=True))
+    count = len(box.components)
+    stored = tuple(
+        c.astype(r.dtype) for c, r in zip(change, flat[2 * count :], strict=True)
+    )
     if native:
-        return state, tensor_media.add_edot(region, change, advanced)
+        return state, tensor_media.add_edot(region, change, advanced) + stored
     coupled = apply_tensor_operator(
         change, region.edot_diagonal, region.edot_offdiagonal, box
     )
     advanced = list(advanced)
     for k, value in enumerate(coupled):
         advanced[2 * k] = advanced[2 * k] + value.astype(advanced[2 * k].dtype)
-    return state, tuple(advanced)
+    return state, tuple(advanced) + stored

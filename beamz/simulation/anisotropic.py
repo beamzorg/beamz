@@ -135,11 +135,16 @@ class TensorPolarizationRegion:
         poles = int(np.shape(self.c1)[0])
         return tuple((poles, *shape) for shape in self.box.shapes for _ in range(2))
 
-    def advance(self, fields, flat):
-        """Advance from the previous box fields; return (site delta p, new state)."""
+    def advance(self, fields, flat, extra=None):
+        """Advance from the previous box fields; return (site delta p, new state).
+
+        ``extra`` adds a per-component, per-pole drive (the explicit CCPR term).
+        """
         driven = apply_tensor_operator(
             fields, self.diagonal, self.offdiagonal, self.box
         )
+        if extra is not None:
+            driven = tuple(d + e for d, e in zip(driven, extra, strict=True))
         new_flat, delta = [], []
         for k, drive in enumerate(driven):
             current, previous = flat[2 * k], flat[2 * k + 1]

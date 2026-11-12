@@ -5,11 +5,14 @@
 // through the inverse background tensor. These kernels perform the same
 // arithmetic with two launches per region and half-step:
 //
-//   op 0 (pole):    drive = W(E_old); p_new = c1 p + c2 p_prev + drive;
+//   op 0 (pole):    drive = W(E_old) [+ K(r)]; p_new = c1 p + c2 p_prev + drive;
 //                   delta = sum_poles(p_new - p)
 //   op 1 (inverse): field = (base or field) + sign * Inv(src)
-//   op 2 (edot):    p += B(change) per pole, the implicit E' term of CCPR
-//                   poles (beamz/simulation/ccpr.py)
+//   op 2 (edot):    p += K(change) per pole, the implicit half of the centred
+//                   E' term of CCPR poles (beamz/simulation/ccpr.py)
+//
+// For CCPR poles K = dt / (2 d) B and r = E^n - E^{n-1}, the previous field
+// change, so op 0 applies the explicit half of K (E^{n+1} - E^{n-1}).
 //
 // A packed tensor acts as diagonal * own site plus cross terms on the shared
 // support (primal nodes for E, cell centers for H): symmetric terms, plus
@@ -194,6 +197,9 @@ struct PoleLaunch {
   float* current[3];         // (poles, *site), updated in place
   float* previous[3];
   float* delta[3];           // (*site)
+  Vector3 edot_change;              // (*site) previous change r, CCPR only
+  const float* edot_diagonal[3];    // (poles, *site) or nullptr
+  const float* edot_cross;          // (poles, *shared, 3) or nullptr
 };
 
 __global__ void PoleKernel(PoleLaunch launch) {
@@ -215,6 +221,14 @@ __global__ void PoleKernel(PoleLaunch launch) {
       if (launch.cross != nullptr)
         drive += CrossAtSite(box, launch.cross + p * shared_size * 3,
                              launch.old_fields, row, z, y, x);
+      if (launch.edot_diagonal[row] != nullptr) {
+        float explicit_drive =
+            launch.edot_diagonal[row][state] * launch.edot_change.data[row][site];
+        if (launch.edot_cross != nullptr)
+          explicit_drive += CrossAtSite(box, launch.edot_cross + p * shared_size * 3,
+                                        launch.edot_change, row, z, y, x);
+        drive += explicit_drive;
+      }
       const float current = launch.current[row][state];
       const float next = launch.c1[p] * current +
                          launch.c2[p] * launch.previous[row][state] + drive;
@@ -354,13 +368,15 @@ ffi::Error Launched() {
                                     cudaGetErrorString(error));
 }
 
-// args: old[3], widths[3], c1, c2, diagonal[3], cross, current[3], previous[3]
+// args: old[3], widths[3], c1, c2, diagonal[3], cross, current[3], previous[3],
+//       edot change[3], edot diagonal[3], edot cross (the last seven empty
+//       unless CCPR; edot cross also empty when uncoupled)
 // rets: current[3], previous[3], delta[3]
 ffi::Error PoleOp(cudaStream_t stream, const ffi::RemainingArgs& args,
                   const ffi::RemainingRets& rets, const Box& shape, int poles,
                   bool coupled) {
-  if (args.size() != 18 || rets.size() != 9)
-    return ffi::Error::InvalidArgument("tensor-media pole op expects 18 args, 9 rets");
+  if (args.size() != 25 || rets.size() != 9)
+    return ffi::Error::InvalidArgument("tensor-media pole op expects 25 args, 9 rets");
   PoleLaunch launch{};
   launch.box = shape;
   launch.poles = poles;
@@ -376,7 +392,16 @@ ffi::Error PoleOp(cudaStream_t stream, const ffi::RemainingArgs& args,
     const float* unused = nullptr;
     BEAMZ_TRY(Arg(args, 12 + r, poles * site, &unused, "current"));
     BEAMZ_TRY(Arg(args, 15 + r, poles * site, &unused, "previous"));
+    BEAMZ_TRY(Arg(args, 18 + r, site, &launch.edot_change.data[r],
+                  "edot change", /*optional=*/true));
+    BEAMZ_TRY(Arg(args, 21 + r, poles * site, &launch.edot_diagonal[r],
+                  "edot diagonal", /*optional=*/true));
+    if ((launch.edot_change.data[r] == nullptr) !=
+        (launch.edot_diagonal[r] == nullptr))
+      return ffi::Error::InvalidArgument("edot change and diagonal must pair");
   }
+  BEAMZ_TRY(Arg(args, 24, poles * box.SharedSize() * 3, &launch.edot_cross,
+                "edot cross terms", /*optional=*/true));
   BEAMZ_TRY(Arg(args, 6, poles, &launch.c1, "c1"));
   BEAMZ_TRY(Arg(args, 7, poles, &launch.c2, "c2"));
   BEAMZ_TRY(Arg(args, 11, poles * box.SharedSize() * 3, &launch.cross,

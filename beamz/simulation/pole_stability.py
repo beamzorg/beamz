@@ -59,10 +59,11 @@ def _statics(medium, family):
 
 
 def _pole_update(pole, step, cos):
-    """Pole recurrence ``p' = C1 p + C2 q + F E + G change`` per wave vector.
+    """Pole recurrence ``p' = C1 p + C2 q + F E + G (change + r)`` per wave vector.
 
-    ``step`` is ``c dt`` in metres; ``change`` is ``E^{n+1} - E^n``. Returns
-    the four (samples, 3, 3) operators.
+    ``step`` is ``c dt`` in metres, ``change`` is ``E^{n+1} - E^n`` and ``r``
+    the previous change ``E^n - E^{n-1}``: ``G`` is the centred CCPR ``B``
+    term. Returns the four (samples, 3, 3) operators.
     """
     from beamz.design.anisotropic import GyrotropicPole, _cross_matrix
 
@@ -83,18 +84,18 @@ def _pole_update(pole, step, cos):
     c1 = (2.0 - resonance) / d * eye
     c2 = -(1.0 - half) / d * eye
     edot = _collocated(pole.edot_matrix, cos)
-    return c1, c2, weight / d, edot * (step / (c * d))
+    return c1, c2, weight / d, edot * (step / (2.0 * c * d))
 
 
 def _implicit_static(static, poles, step) -> np.ndarray:
-    """``eps' = eps_inf + sum_p (dt / d_p) B_p`` over the tensor poles."""
+    """``eps' = eps_inf + sum_p (dt / (2 d_p)) B_p`` over the tensor poles."""
     from beamz.design.anisotropic import TensorPole, packed_to_matrix
 
     out = packed_to_matrix(np.asarray(static))
     for pole in poles:
         if isinstance(pole, TensorPole) and pole.has_edot:
             d = 1.0 + 0.5 * pole.damping / LIGHT_SPEED * step
-            out = out + pole.edot_matrix * step / (LIGHT_SPEED * d)
+            out = out + pole.edot_matrix * step / (2.0 * LIGHT_SPEED * d)
     return out
 
 
@@ -131,18 +132,23 @@ def _radius(static, other, poles, family, dt, spacings, polarization) -> float:
     plain = inverse(packed_to_matrix(np.asarray(static)))
     other_m = inverse(packed_to_matrix(np.asarray(other)))
     count = len(poles)
-    size = 6 + 6 * count
+    # The previous field change r, the centred B term's explicit half.
+    edot = any(getattr(p, "has_edot", False) for p in poles)
+    size = 6 + 6 * count + 3 * edot
+    r = slice(6 + 6 * count, size)
     current = [slice(6 + 3 * i, 9 + 3 * i) for i in range(count)]
     previous = [slice(6 + 3 * (count + i), 9 + 3 * (count + i)) for i in range(count)]
     updates = [_pole_update(p, step, cos) for p in poles]
 
     # Explicit pole increments delta_i = p_i* - p_i as rows over the state.
     deltas = []
-    for (c1, c2, drive, _), p, q in zip(updates, current, previous, strict=True):
+    for (c1, c2, drive, half_b), p, q in zip(updates, current, previous, strict=True):
         row = np.zeros((len(s), 3, size), dtype=complex)
         row[:, :, 0:3] = drive
         row[:, :, p] = c1 - eye
         row[:, :, q] = c2
+        if edot:
+            row[:, :, r] = half_b
         deltas.append(row)
     gyrotropic = [isinstance(p, GyrotropicPole) for p in poles]
     tensor_delta = sum(
@@ -163,12 +169,14 @@ def _radius(static, other, poles, family, dt, spacings, polarization) -> float:
             matrix[:, 0:3, :] -= plain @ d
     matrix[:, 3:6, 0:3] = -step * other_m @ curl
     matrix[:, 3:6, 3:6] = eye
-    for (_, _, _, edot), delta, p, q in zip(
+    for (_, _, _, half_b), delta, p, q in zip(
         updates, deltas, current, previous, strict=True
     ):
-        matrix[:, p, :] = delta + edot @ change
+        matrix[:, p, :] = delta + half_b @ change
         matrix[:, p, p] += eye
         matrix[:, q, p] = eye
+    if edot:
+        matrix[:, r, :] = change
     if polarization is not None:
         # In 2D the TE and TM systems decouple; keep the simulated one. The
         # family's own components are in-plane for E/TE and H/TM.
@@ -176,7 +184,7 @@ def _radius(static, other, poles, family, dt, spacings, polarization) -> float:
         own = (0, 1) if in_plane else (2,)
         other_axes = (2,) if in_plane else (0, 1)
         keep = [*own, *(3 + a for a in other_axes)]
-        keep += [6 + 3 * i + a for i in range(2 * count) for a in own]
+        keep += [6 + 3 * i + a for i in range(2 * count + edot) for a in own]
         matrix = matrix[:, keep][:, :, keep]
     return float(np.abs(np.linalg.eigvals(matrix)).max())
 
@@ -245,8 +253,8 @@ def check_stability(medium, family, dt, grid) -> None:
     step = LIGHT_SPEED * dt
     if np.linalg.eigvalsh(_implicit_static(static, poles, step))[0] <= 0.0:
         raise ValueError(
-            "The implicit CCPR update divides by eps_inf + sum_p dt/(1 + gamma_p "
-            f"dt/2) B_p, which is not positive definite at dt={dt:.3e} s. "
+            "The implicit CCPR update divides by eps_inf + sum_p dt/(2 + gamma_p "
+            f"dt) B_p, which is not positive definite at dt={dt:.3e} s. "
             "Reduce the timestep or refit the medium."
         )
     material_grid = grid.material_grid
