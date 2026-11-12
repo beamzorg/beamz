@@ -119,11 +119,27 @@ class TopologySpec:
         material's mean principal permittivity for fixed-structure detection
         and export. Design materials must be nonmagnetic and lossless apart
         from their poles; gradients use the autodiff backend on JAX.
+    materials : sequence of Material or AnisotropicMedium, optional
+        ``K >= 2`` design materials ``(m_0, ..., m_{K-1})``; the region picks
+        one per cell. The density then has ``K - 1`` nested channels, shape
+        ``(K - 1, *region_mask.shape)``. Channel ``k`` (1-based) is the share
+        of material ``k`` or a later one among cells already past material
+        ``k - 1``, so material ``k`` has volume fraction
+        ``w_k = c_1 ... c_k (1 - c_{k+1})``. Each channel uses the same
+        filter and projection, which drives every cell to one material.
+        ``materials=(a, b)`` is identical to ``material_min=a,
+        material_max=b``; pass one form or the other. ``m_0`` is the void
+        (``fixed_void``, and the region background on export) and ``m_{K-1}``
+        the solid (``fixed_solid``, and the filter context of fixed structures
+        outside the region); ``eps_min``/``eps_max`` take their mean principal
+        permittivities.
 
     Notes
     -----
     Optional ``fixed_solid`` and ``fixed_void`` boolean masks pin cells inside
     ``region_mask`` to physical density 1 and 0, including during export.
+    With ``K > 2`` materials they pin every channel, selecting the last and the
+    first material respectively.
     The region and fixed-structure masks are copied and made read-only. Evolving
     density and optimizer values live in :class:`TopologyState`.
     """
@@ -145,6 +161,7 @@ class TopologySpec:
     morphology_smooth_tau: float = 0.01
     material_min: Any = field(default=None, repr=False)
     material_max: Any = field(default=None, repr=False)
+    materials: Any = field(default=None, repr=False)
     fixed_solid: Any = field(default=None, repr=False, compare=False)
     fixed_void: Any = field(default=None, repr=False, compare=False)
     fixed_structure_mask: np.ndarray = field(init=False, repr=False)
@@ -171,11 +188,28 @@ class TopologySpec:
                 raise ValueError("Fixed density cells must lie inside region_mask.")
         object.__setattr__(self, "fixed_solid", solid)
         object.__setattr__(self, "fixed_void", void)
-        if self.material_min is not None or self.material_max is not None:
-            from beamz.design.materials import Material
-
-            low = self.material_min or Material(float(self.eps_min))
-            high = self.material_max or Material(float(self.eps_max))
+        materials = self.materials
+        if materials is not None:
+            materials = tuple(materials)
+            if len(materials) < 2:
+                raise ValueError("materials needs at least two design materials.")
+            # dataclasses.replace() passes back the endpoints set below.
+            endpoints = (
+                (self.material_min, materials[0]),
+                (self.material_max, materials[-1]),
+            )
+            if any(given is not None and given is not end for given, end in endpoints):
+                raise ValueError(
+                    "Pass materials or material_min/material_max, not both."
+                )
+        elif self.material_min is not None or self.material_max is not None:
+            materials = (
+                self.material_min or Material(float(self.eps_min)),
+                self.material_max or Material(float(self.eps_max)),
+            )
+        if materials is not None:
+            low, high = materials[0], materials[-1]
+            object.__setattr__(self, "materials", materials)
             object.__setattr__(self, "material_min", low)
             object.__setattr__(self, "material_max", high)
             object.__setattr__(self, "eps_min", float(np.mean(low.epsilon_r[:3])))
@@ -205,18 +239,46 @@ class TopologySpec:
         Parameters
         ----------
         density : array-like, optional
-            Initial latent density with the design-grid shape. By default,
-            optimizable cells start at 0.5 and other cells at zero.
+            Initial latent density with shape :attr:`density_shape`. By
+            default, optimizable cells start at 0.5 and other cells at zero.
         """
         if density is None:
-            density = np.zeros(self.region_mask.shape, dtype=float)
-            density[self.region_mask] = 0.5
-        elif np.shape(density) != self.region_mask.shape:
+            density = np.zeros(self.density_shape, dtype=float)
+            density[..., self.region_mask] = 0.5
+        elif np.shape(density) != self.density_shape:
             raise ValueError(
                 f"density shape {np.shape(density)} does not match mask "
-                f"shape {self.region_mask.shape}"
+                f"shape {self.density_shape}"
             )
         return TopologyState(density)
+
+    @property
+    def num_materials(self) -> int:
+        """Number of materials a design cell chooses among."""
+        return 2 if self.materials is None else len(self.materials)
+
+    @property
+    def density_shape(self) -> tuple[int, ...]:
+        """Latent and physical density shape.
+
+        The region mask shape for two materials, otherwise ``K - 1`` nested
+        channels ``(K - 1, *region_mask.shape)``.
+        """
+        if self.num_materials == 2:
+            return self.region_mask.shape
+        return (self.num_materials - 1, *self.region_mask.shape)
+
+    def _transform(self, density, beta):
+        """Filter and project latent density into traced physical density.
+
+        Every channel of a multi-material density uses the same transform.
+        """
+        import jax
+
+        options = self._transform_options
+        if self.num_materials == 2:
+            return transform_density(density, beta=beta, **options)
+        return jax.vmap(lambda d: transform_density(d, beta=beta, **options))(density)
 
     def beta(self, step: int, total_steps: int) -> float:
         """Return the projection strength for a continuation step.
@@ -245,9 +307,7 @@ class TopologySpec:
         """
         import jax.numpy as jnp
 
-        density = transform_density(
-            jnp.asarray(state.density), beta=beta, **self._transform_options
-        )
+        density = self._transform(jnp.asarray(state.density), beta)
         return _readonly_array(density, float)
 
     @property
@@ -302,6 +362,11 @@ class TopologySpec:
         """
         import jax.numpy as jnp
 
+        if self.num_materials > 2:
+            raise ValueError(
+                "apply_gradient maps a scalar permittivity gradient; use "
+                "apply_parameter_gradient for multi-material designs."
+            )
         grad_eps = self.gradient_to_design_grid(grad_eps)
         grad_physical = grad_eps * (self.eps_max - self.eps_min)
         grad_param = compute_parameter_gradient_vjp(
@@ -327,7 +392,7 @@ class TopologySpec:
         updates, opt_state = optimizer.update(-grad_param, opt_state)
         update = np.asarray(updates)
         density = np.asarray(state.density).copy()
-        density[self.region_mask] += update[self.region_mask]
+        density[..., self.region_mask] += update[..., self.region_mask]
         density = np.clip(density, 0.0, 1.0)
         return replace(state, density=density, optimizer_state=opt_state), float(
             np.max(np.abs(update))

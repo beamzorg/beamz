@@ -38,6 +38,17 @@
 - `TopologySpec(material_min=..., material_max=...)` accepts anisotropic and
   pole-dispersive design materials. Density blends the high-frequency tensors
   and fills each cell with the endpoints' poles.
+- `TopologySpec(materials=(m0, m1, m2, ...))` lets a design region choose
+  among K >= 2 materials, for example air, SiO2, Si and a tilted LiNbO3
+  crystal. Each may be a `Material`, a static tensor or a pole-dispersive
+  `AnisotropicMedium`. The density gains `K - 1` nested channels, each
+  filtered and projected like a two-material density, so binarization picks
+  one material per cell. High-frequency tensors blend linearly, and every
+  material's poles fill the cell with that material's fraction. Gradients use
+  the autodiff backend, and `export_design` paints each material.
+  `material_min`/`material_max` remain the K = 2 shorthand. Its physics is
+  unchanged, but `export_design` now writes the actual design materials
+  rather than scalar stand-ins with their mean permittivity.
 - Tensor permeability and tensor-pole media run on single-device
   `backend="cuda_streamed"`. New native kernels apply their corrections; the
   CUDA component is now version 0.31.0 / ABI 31, so rebuild it after updating.

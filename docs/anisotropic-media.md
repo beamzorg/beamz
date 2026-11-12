@@ -183,6 +183,82 @@ timestep is rejected.
   linearly with density, and each endpoint's poles fill a cell with volume
   fraction `rho` or `1 - rho`. Design materials must be nonmagnetic and
   lossless apart from their poles.
+- **Multi-material design regions.** `TopologySpec(materials=(m0, m1, m2,
+  ...))` picks one of K >= 2 materials per cell; see below.
+
+## Multi-material design regions
+
+A design region can choose among K >= 2 materials. Each may be an isotropic
+`Material`, a static tensor, or a pole-dispersive `AnisotropicMedium`:
+
+```python
+import beamz as bz
+from beamz.material_library import anisotropic_library
+from beamz.optimization import TopologyProblem, TopologySpec
+
+lnbo3 = anisotropic_library["LiNbO3"]["Zelmon1997"].rotated((0.0, 0.0, 0.4))
+topology = TopologySpec(
+    design=design,
+    region_mask=mask,
+    resolution=dx,
+    filter_radius=0.1e-6,
+    materials=(bz.Material(1.0), bz.Material(2.1), lnbo3, bz.Material(12.1)),
+)
+problem = TopologyProblem(simulation, topology, objective)
+density = topology.initial_state().density  # shape (3, *mask.shape)
+value, gradient = problem.value_and_grad(density, beta=4.0)
+```
+
+**Parametrization.** The density has `K - 1` nested channels `c_1, ...,
+c_{K-1}`, so its shape is `topology.density_shape == (K - 1, *mask.shape)`.
+Channel `c_k` answers one question for the cells already past material
+`k - 1`: is the cell material `k - 1`, or material `k` or a later one? The
+fraction holding material `k` or a later one is `Q_k = c_1 ... c_k`, and
+material `k` alone has weight `w_k = Q_k - Q_{k+1}`, so
+
+    eps_inf = m_0 + sum_k Q_k (m_k - m_{k-1}) = sum_k w_k m_k.
+
+Every channel goes through the same filter, projection and morphology as a
+two-material density. The weights are nonnegative and sum to one. Binary
+channels select exactly one material, so beta continuation drives every cell
+to a single material. With K = 2 there is one channel, and
+`materials=(a, b)` is identical to `material_min=a, material_max=b`.
+
+**Physics.** The high-frequency tensors, including their off-diagonals, blend
+linearly. Every material's poles fill the cell with volume fraction `w_k`,
+which generalizes `rho` and `1 - rho`. Identical pole media listed twice share
+one pole region. At runtime the inverse tensors and pole strengths are
+rebuilt from the traced density, so the default autodiff backend
+differentiates through every path. The spectral-adjoint backend is rejected.
+
+**Ordering.** Order matters. `m_0` is the void: `fixed_void`, the region
+background on export, and `eps_min`. `m_{K-1}` is the solid: `fixed_solid`,
+the filter context of fixed structures outside the region, and `eps_max`.
+List the cladding first and the waveguide core last; `eps_min < eps_max` is
+required. Only `c_1` has to change for a cell to go from `m_0` to `m_2`, so
+the transition need not pass through `m_1`. However, a channel stops
+receiving gradient where an earlier channel is exactly zero, so start from
+interior values. The default start (every channel at 0.5) weights earlier
+materials more heavily: 1/2, 1/4, and so on.
+
+**Scope.** Multi-material regions are available through `TopologySpec` and
+`TopologyProblem`. `TopologyDesignRegion` and `InverseDesign` keep their
+scalar `eps_bounds` and two materials. `TopologySpec.apply_gradient`, which
+maps a scalar permittivity gradient, rejects K > 2; use
+`apply_parameter_gradient`.
+
+**Export.** `TopologyProblem.export_design` lays the region down in `m_0`.
+It then paints `m_1, ..., m_{K-1}` in order where `Q_k` exceeds the
+threshold, so binarized designs export exactly with their real (anisotropic)
+materials.
+
+**Comparison with fdtdx.** fdtdx sorts materials by permittivity and maps one
+latent per cell onto that ordered axis. With more than two materials, its
+`ClosestIndex` snaps every cell to the nearest material and uses a
+straight-through gradient, and continuous blends exist only for two
+materials. The BeamZ channels stay continuous and differentiable for any K,
+and impose no ordering by permittivity. A single ordered index puts an `m_1`
+layer into every grey `m_0`/`m_2` boundary; nested channels do not have to.
 
 ## Requirements and limitations
 
