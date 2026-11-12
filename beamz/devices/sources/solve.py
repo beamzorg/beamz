@@ -6,7 +6,11 @@ from typing import Literal, cast
 
 import numpy as np
 
-from beamz.devices.modes.line import prepare_mode_line, solve_mode_line
+from beamz.devices.modes.line import (
+    cell_permeability,
+    prepare_mode_line,
+    solve_mode_line,
+)
 from beamz.devices.modes.plane import SignedAxis, solve_modes
 from beamz.devices.modes.specs import ModeData, ModeSpec
 
@@ -295,6 +299,9 @@ def solve_mode_plane(
             spec=spec,
             resolution=simulation.resolution,
             grid=geometry,
+            permeability=cell_permeability(
+                getattr(fields, "material_grid", None) or grid_view
+            ),
         )
         signed = _resolve_solver_direction(axis, direction)
         diagnostics = [{} for _ in frequencies]

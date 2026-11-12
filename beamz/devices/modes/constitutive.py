@@ -36,11 +36,12 @@ def crop_tensor_support(tensors, *, origin, shape):
             )
         if name == "eps_node":
             counts = tuple(int(n) + 1 for n in shape)
-        elif name in {"eps_x", "eps_y", "eps_z"}:
+        elif name in {"eps_x", "eps_y", "eps_z", "mu_hx", "mu_hy", "mu_hz"}:
             from beamz.lattice import component_axis_offsets_3d
 
             axes = ("z", "y", "x")[-len(shape) :]
-            offsets = component_axis_offsets_3d("E" + name[-1])
+            family = "H" if name.startswith("mu_") else "E"
+            offsets = component_axis_offsets_3d(family + name[-1])
             counts = tuple(
                 int(n) + int(offsets[a] == 0) for a, n in zip(axes, shape, strict=True)
             )

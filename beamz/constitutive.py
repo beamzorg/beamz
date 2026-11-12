@@ -42,6 +42,23 @@ def electric_tensor_coefficients(tensors):
     return diagonal, cross
 
 
+def magnetic_tensor_coefficients(tensors):
+    """Return H-site inverse diagonals and shared-cell inverse cross terms.
+
+    ``tensors`` holds packed permeability on the H supports (``mu_hx``,
+    ``mu_hy``, ``mu_hz``) and at cell centers (``mu_cell``), the shared support
+    of magnetic cross coupling, mirroring :func:`electric_tensor_coefficients`.
+    """
+    diagonal = tuple(
+        inverse_permittivity_components(expand_packed(tensors["mu_h" + axis]))[
+            ..., index
+        ]
+        for index, axis in enumerate("xyz")
+    )
+    cross = inverse_permittivity_components(expand_packed(tensors["mu_cell"]))[..., 3:]
+    return diagonal, cross
+
+
 def expand_packed(values) -> np.ndarray:
     """Expand compact ``(1|3|6, ...)`` symmetric tensors to six components."""
 
@@ -50,6 +67,45 @@ def expand_packed(values) -> np.ndarray:
         return values
     diagonal = np.broadcast_to(values, (3, *values.shape[1:]))
     return np.concatenate((diagonal, np.zeros((3, *values.shape[1:]))), axis=0)
+
+
+def lossy_tensor_inverse(support, shared_tensor, losses, shared):
+    """Invert ``T + diag(loss)`` on Yee supports and on the shared cross support.
+
+    ``support`` maps each active component to its packed tensor field at that
+    component's sites; ``shared_tensor`` is the packed tensor at the shared
+    support (``"Node"`` for E, ``"Cell"`` for H). ``losses`` maps components to
+    the dimensionless semi-implicit loss ``sigma * dt / 2`` (normalized by the
+    vacuum constant) at their own sites, or a scalar. Each loss is collocated
+    to every support before it joins that support's diagonal, so diagonal and
+    cross terms always invert the same lossy tensor. Returns
+    ``({component: inverse diagonal}, inverse cross terms (..., 3))``.
+    """
+
+    def lossy(tensor, target):
+        out = expand_packed(tensor).copy()
+        shape = out.shape[1:]
+        for component, loss in losses.items():
+            loss = np.asarray(loss, dtype=np.float64)
+            if loss.ndim:
+                loss = np.asarray(
+                    collocate_yee_component(
+                        jnp.asarray(loss), component, target, shape
+                    ),
+                    dtype=np.float64,
+                )
+            index = "xyz".index(component[-1].lower())
+            out[index] = out[index] + loss
+        return out
+
+    diagonal = {
+        component: inverse_permittivity_components(lossy(tensor, component))[
+            ..., "xyz".index(component[-1].lower())
+        ]
+        for component, tensor in support.items()
+    }
+    cross = inverse_permittivity_components(lossy(shared_tensor, shared))[..., 3:]
+    return diagonal, cross
 
 
 def fit_array_to_shape(arr, target_shape, *, pad_value=0.0):
@@ -178,31 +234,60 @@ def advance_e_tensor_dense(
     scale = jnp.asarray(dt, dtype=fields[0].dtype) / jnp.asarray(
         EPS_0, dtype=fields[0].dtype
     )
-    node_shape = inverse_offdiagonal.shape[:-1]
-    centered_curls = tuple(
+    coupled = apply_tensor_dense(
+        curls,
+        inverse_diagonals,
+        inverse_offdiagonal,
+        components,
+        "Node",
+        cell_widths=cell_widths,
+        seams=seams,
+    )
+    return tuple(
+        field + scale * value for field, value in zip(fields, coupled, strict=True)
+    )
+
+
+def apply_tensor_dense(
+    values,
+    diagonals,
+    offdiagonal,
+    components,
+    shared,
+    *,
+    cell_widths=None,
+    seams=(),
+):
+    """Apply a packed symmetric tensor to one Yee vector field.
+
+    Diagonals act on each component's own support; cross terms act on the
+    ``shared`` support (``"Node"`` for E, ``"Cell"`` for H), reached and left
+    with the reciprocal averaging of :func:`collocate_yee_component`.
+    """
+    shared_shape = offdiagonal.shape[:-1]
+    centered = tuple(
         collocate_yee_component(
-            curl, source, "Node", node_shape, cell_widths=cell_widths, seams=seams
+            value, source, shared, shared_shape, cell_widths=cell_widths, seams=seams
         )
-        for curl, source in zip(curls, components, strict=True)
+        for value, source in zip(values, components, strict=True)
     )
     cross_component = {(0, 1): 0, (0, 2): 1, (1, 2): 2}
-    updated = []
-    for row, (field, diagonal, target) in enumerate(
-        zip(fields, inverse_diagonals, components, strict=True)
+    out = []
+    for row, (value, diagonal, target) in enumerate(
+        zip(values, diagonals, components, strict=True)
     ):
-        coupled = diagonal * curls[row]
-        for column, centered_curl in enumerate(centered_curls):
+        coupled = diagonal * value
+        for column, shared_value in enumerate(centered):
             if row == column:
                 continue
             pair = (min(row, column), max(row, column))
-            centered = inverse_offdiagonal[..., cross_component[pair]] * centered_curl
             coupled = coupled + collocate_yee_component(
-                centered,
-                "Node",
+                offdiagonal[..., cross_component[pair]] * shared_value,
+                shared,
                 target,
-                field.shape,
+                value.shape,
                 cell_widths=cell_widths,
                 seams=seams,
             )
-        updated.append(field + scale * coupled)
-    return tuple(updated)
+        out.append(coupled)
+    return tuple(out)

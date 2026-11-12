@@ -71,6 +71,7 @@ def solve_tensor_mode_plane(
                     material_tensors=materials.tensors,
                     yee_materials=materials.yee_materials,
                     yee_tensors=materials.yee_tensors,
+                    magnetic_tensors=getattr(materials, "magnetic_tensors", None),
                     frequency=frequency,
                     resolution=simulation.resolution,
                     dt=simulation.dt,

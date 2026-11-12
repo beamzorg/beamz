@@ -690,7 +690,7 @@ def test_mode_ports_reject_gyrotropic_media_at_compile_time():
             )
         ],
     )
-    with pytest.raises(ValueError, match="gyrotropic or magnetic-pole"):
+    with pytest.raises(ValueError, match="gyrotropic"):
         simulation.compile(backend="jax")
 
 

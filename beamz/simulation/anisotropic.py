@@ -38,7 +38,7 @@ from beamz.constitutive import (
     _support_offsets,
     collocate_yee_component,
     expand_packed,
-    inverse_permittivity_components,
+    lossy_tensor_inverse,
 )
 from beamz.design.material_views import port_cells
 from beamz.lattice import component_axis_offsets_3d
@@ -47,44 +47,6 @@ _HALO = 2
 _PAIR = {(0, 1): 0, (0, 2): 1, (1, 2): 2}
 _SHARED = {"E": "Node", "H": "Cell"}
 _PACKED_IDENTITY = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 0.0])
-
-
-def lossy_tensor_inverse(support, shared_tensor, losses, shared):
-    """Invert ``T + diag(loss)`` on Yee supports and on the shared cross support.
-
-    ``support`` maps each active component to its packed tensor field at that
-    component's sites; ``shared_tensor`` is the packed tensor at the shared
-    support (``"Node"`` for E, ``"Cell"`` for H). ``losses`` maps components to
-    the dimensionless semi-implicit loss ``sigma * dt / 2`` (normalized by the
-    vacuum constant) at their own sites, or a scalar. Each loss is collocated
-    to every support before it joins that support's diagonal, so diagonal and
-    cross terms always invert the same lossy tensor. Returns
-    ``({component: inverse diagonal}, inverse cross terms (..., 3))``.
-    """
-
-    def lossy(tensor, target):
-        out = expand_packed(tensor).copy()
-        shape = out.shape[1:]
-        for component, loss in losses.items():
-            loss = np.asarray(loss, dtype=np.float64)
-            if loss.ndim:
-                loss = np.asarray(
-                    collocate_yee_component(
-                        jnp.asarray(loss), component, target, shape
-                    ),
-                    dtype=np.float64,
-                )
-            out[_axis_index(component)] = out[_axis_index(component)] + loss
-        return out
-
-    diagonal = {
-        component: inverse_permittivity_components(lossy(tensor, component))[
-            ..., _axis_index(component)
-        ]
-        for component, tensor in support.items()
-    }
-    cross = inverse_permittivity_components(lossy(shared_tensor, shared))[..., 3:]
-    return diagonal, cross
 
 
 def _axis_index(component: str) -> int:
@@ -952,37 +914,44 @@ def compile_anisotropic(grid, dt, periodic_axes=frozenset()) -> AnisotropicPlan 
 def validate_mode_ports(material_grid, sources, monitors) -> None:
     """Reject mode ports whose modal solve cannot reproduce the propagation media.
 
-    Mode sources and mode monitors inside electric tensor-pole media are solved
-    at each of their frequencies (see
-    :class:`beamz.design.material_views.DispersionFolding`). Ports must avoid
-    non-unit permeability and media whose poles cannot be frozen into static
-    tensors (gyrotropic or magnetic poles).
+    Mode sources and mode monitors inside tensor-pole media are solved at each
+    of their frequencies (see
+    :class:`beamz.design.material_views.DispersionFolding`), with electric
+    poles folded into permittivity and magnetic poles into permeability.
+    Diagonal and full symmetric permeability tensors are reproduced by the 3D
+    port solve; a 2D (line) port supports diagonal permeability only. Ports
+    must avoid gyrotropic media, whose poles cannot be frozen into static
+    reciprocal tensors.
     """
     from beamz.design.material_views import foldable
 
-    magnetic = np.zeros(material_grid.shape, dtype=bool)
-    if material_grid.magnetic_tensors:
+    # Only 2D TM line ports see in-plane (xy) magnetic coupling.
+    tm_2d = len(material_grid.shape) == 2 and material_grid.polarization == "tm"
+    in_plane_coupling = np.zeros(material_grid.shape, dtype=bool)
+    if material_grid.magnetic_tensors and tm_2d:
         cell = expand_packed(material_grid.magnetic_tensors["mu_cell"])
-        magnetic = np.any(
-            np.abs(cell - _PACKED_IDENTITY.reshape((6,) + (1,) * cell[0].ndim)) > 1e-10,
-            axis=0,
-        )
+        in_plane_coupling = np.abs(cell[3]) > 1e-10
     unfoldable = np.zeros(material_grid.shape, dtype=bool)
     for medium, fraction in material_grid.tensor_dispersion:
         if not foldable(medium):
             unfoldable |= np.asarray(fraction) > 1e-7
+        elif tm_2d and any(
+            np.any(np.asarray(p.weight)[3] != 0) for p in medium.magnetic_poles
+        ):
+            in_plane_coupling |= np.asarray(fraction) > 1e-7
     for kind, ports in (("ModeSource", sources), ("ModeMonitor", monitors)):
         for port in ports:
             cells = port_cells(material_grid, port.center, port.size)
-            if np.any(cells & magnetic):
+            if np.any(cells & in_plane_coupling):
                 raise ValueError(
-                    f"{kind} planes cannot yet overlap non-unit permeability; "
-                    "place the port in a nonmagnetic region."
+                    f"2D TM {kind} planes cannot yet overlap off-diagonal (xy) "
+                    "permeability; use a diagonal permeability tensor at the "
+                    "port or a 3D simulation."
                 )
             if np.any(cells & unfoldable):
                 raise ValueError(
-                    f"{kind} planes cannot yet overlap gyrotropic or magnetic-pole "
-                    "media; place the port outside them."
+                    f"{kind} planes cannot yet overlap gyrotropic media; "
+                    "place the port outside them."
                 )
 
 

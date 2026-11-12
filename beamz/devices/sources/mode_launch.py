@@ -18,7 +18,11 @@ from beamz.devices._placement import (
 )
 from beamz.devices.modes.discrete import solve_beamz_mode
 from beamz.devices.modes.fields import _modal_power, _numeric_wave_number
-from beamz.devices.modes.line import prepare_mode_line, solve_mode_line
+from beamz.devices.modes.line import (
+    cell_permeability,
+    prepare_mode_line,
+    solve_mode_line,
+)
 from beamz.devices.modes.plane import solve_mode_plane_3d, solve_modes
 from beamz.lattice import (
     common_grid_shape_3d,
@@ -198,6 +202,7 @@ def _plan_2d_entries(
     measure=None,
     dt=None,
     normal_spacing=None,
+    transverse_mu=None,
 ):
     axis = source.axis
     interval = snapped.axis_interval("y" if axis == "x" else "x")
@@ -220,6 +225,14 @@ def _plan_2d_entries(
     h_profile = h_raw * np.exp(-1j * phase_ref)
     e_profile = e_raw * np.exp(-1j * phase_ref)
     if polarization == "tm":
+        if transverse_mu is not None:
+            # A TM mode has E = (omega mu0 mu_t / beta) H_t pointwise, so its
+            # H-weighted impedance carries the transverse permeability.
+            weight = np.abs(h_profile) ** 2
+            z_target *= float(
+                np.sum(np.asarray(transverse_mu)[: weight.size] * weight)
+                / max(float(np.sum(weight)), np.finfo(float).tiny)
+            )
         e_profile = _impedance_match_e_profile(e_profile, h_profile, z_target)
     # The legacy line-mode adapter does not use the same physical flux sign for
     # both axes. Orient the pair by its Poynting flux, rather than that adapter.
@@ -334,6 +347,7 @@ def _plan_2d_mode_source(
         resolution=resolution,
         grid=grid,
         snapped=snapped,
+        permeability=cell_permeability(getattr(fields, "material_grid", None)),
     )
     neffs, electric, magnetic = solve_mode_line(
         context,
@@ -362,6 +376,10 @@ def _plan_2d_mode_source(
         return np.stack([np.interp(targets, centers, v) for v in values])
 
     e_mode, h_mode = on_support(electric[mode_index]), on_support(magnetic[mode_index])
+    # The transverse H component (Hy on x-normal, Hx on y-normal planes).
+    transverse_mu = (
+        None if context.mu is None else on_support(context.mu)[0 if axis == "y" else 1]
+    )
     measure = None
     if metric_grid is not None:
         measure = np.asarray(metric_grid.cell_widths(transverse_axis))[
@@ -387,6 +405,7 @@ def _plan_2d_mode_source(
         measure=measure,
         dt=dt,
         normal_spacing=normal_spacing,
+        transverse_mu=transverse_mu,
     )
     return Mode2DLaunchPlan(entries=entries, normal_spacing=normal_spacing)
 
@@ -446,6 +465,7 @@ def _plan_3d_mode_source(
         np.asarray(fields.permeability),
         material_tensors=getattr(fields.material_grid, "tensors", None),
         yee_tensors=getattr(fields.material_grid, "yee_tensors", None),
+        magnetic_tensors=getattr(fields.material_grid, "magnetic_tensors", None),
         yee_materials=(
             getattr(fields.material_grid, "yee_materials", None)
             if fields.material_grid.uses_direct_yee_materials

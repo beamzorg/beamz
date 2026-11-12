@@ -2,13 +2,15 @@
 
 Mode solvers need static coefficients. For grids with tensor poles, these
 views fold ``Re chi(frequency)`` into every constitutive support so a CW mode
-solved at that frequency sees the medium the time stepper propagates.
+solved at that frequency sees the medium the time stepper propagates. Electric
+poles fold into permittivity; magnetic tensor poles fold into permeability on
+the H supports and cell centers.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 
 import jax.numpy as jnp
@@ -25,23 +27,27 @@ def _axis_index(component: str) -> int:
 def foldable(medium) -> bool:
     """Whether a medium's poles can be frozen into static mode-solver tensors.
 
-    Gyrotropic (non-reciprocal) and magnetic poles cannot; ports must avoid
-    such media, which compilation enforces.
+    Symmetric electric and magnetic tensor poles can. Gyrotropic
+    (non-reciprocal) poles cannot; ports must avoid such media, which
+    compilation enforces.
     """
     from beamz.design.anisotropic import GyrotropicPole
 
-    return not medium.magnetic_poles and not any(
-        isinstance(p, GyrotropicPole) for p in medium.electric_poles
+    return not any(
+        isinstance(p, GyrotropicPole)
+        for p in (*medium.electric_poles, *medium.magnetic_poles)
     )
 
 
-def _pole_arrays(medium):
-    """Electric pole parameters of a medium as plain arrays (resonance, damping, W)."""
-    poles = medium.electric_poles
+def _pole_arrays(medium, family: str = "E"):
+    """Pole parameters of one family as plain arrays (resonance, damping, W)."""
+    poles = medium.electric_poles if family == "E" else medium.magnetic_poles
     return (
         np.array([p.resonance for p in poles], dtype=np.float64),
         np.array([p.damping for p in poles], dtype=np.float64),
-        np.stack([np.asarray(p.weight, dtype=np.float64) for p in poles]),
+        np.stack([np.asarray(p.weight, dtype=np.float64) for p in poles])
+        if poles
+        else np.zeros((0, 6)),
     )
 
 
@@ -72,6 +78,12 @@ class DispersionFolding:
     base_cell: np.ndarray  # packed (6, ...) cell eps_inf
     base_yee_materials: Mapping  # {"eps_x": array, ...} present in the source
     base_yee_tensors: Mapping  # packed support tensors, incl. eps_node, or {}
+    # Magnetic poles, present only when some folded medium has them. Cell
+    # coefficients reuse ``cell_fraction``; H sites carry their own fractions.
+    magnetic_poles: tuple = ()  # per medium: (resonance, damping, weight (P, 6))
+    h_site_fraction: tuple = ()  # per medium: {component: support array}
+    base_magnetic_tensors: Mapping = field(default_factory=dict)  # mu_h*, mu_cell
+    base_mu_yee_materials: Mapping = field(default_factory=dict)  # {"mu_hx": ...}
 
     @classmethod
     def from_material_grid(cls, material_grid) -> DispersionFolding:
@@ -139,6 +151,7 @@ class DispersionFolding:
             base_cell,
             MappingProxyType(base_yee_materials),
             MappingProxyType(base_yee_tensors),
+            **_magnetic_folding(material_grid, media, shapes),
         )
 
     def overlaps(self) -> bool:
@@ -162,7 +175,7 @@ class DispersionFolding:
                 for sites in self.site_fraction
             ),
             tuple(cut(f, supports) for f in self.node_fraction),
-            cut(self.base_cell, cells, packed=True),
+            np.asarray(self.base_cell)[(slice(None), *cells)].copy(),
             MappingProxyType(
                 {k: cut(v, supports) for k, v in self.base_yee_materials.items()}
             ),
@@ -172,11 +185,28 @@ class DispersionFolding:
                     for k, v in self.base_yee_tensors.items()
                 }
             ),
+            self.magnetic_poles,
+            tuple(
+                {c: cut(a, supports) for c, a in sites.items()}
+                for sites in self.h_site_fraction
+            ),
+            MappingProxyType(
+                {
+                    k: cut(v, cells if k == "mu_cell" else supports, packed=True)
+                    for k, v in self.base_magnetic_tensors.items()
+                }
+            ),
+            MappingProxyType(
+                {k: cut(v, supports) for k, v in self.base_mu_yee_materials.items()}
+            ),
         )
 
     def fold(self, frequency: float) -> dict:
         """Static coefficients at ``frequency``: scalar, cell, Yee, and node arrays."""
-        chis = [_packed_susceptibility(*p, frequency) for p in self.poles]
+        chis = [
+            _packed_susceptibility(resonance, damping, weight, frequency)
+            for resonance, damping, weight in self.poles
+        ]
 
         def add_packed(base, fractions):
             out = np.array(base, dtype=np.float64, copy=True)
@@ -206,12 +236,104 @@ class DispersionFolding:
             else:
                 fractions = site_fractions(name)
             yee_tensors[name] = add_packed(base, fractions)
-        return {
+        folded = {
             "permittivity": scalar,
             "epsilon": cell,
             "yee_materials": yee_materials,
             "yee_tensors": yee_tensors,
         }
+        if self.magnetic_poles:
+            folded.update(self._fold_magnetic(frequency, yee_materials))
+        return folded
+
+    def _fold_magnetic(self, frequency: float, yee_materials: dict) -> dict:
+        """Permeability ``mu_inf + sum_m fraction_m Re chi_m(f)`` on every support."""
+        chis = [
+            _packed_susceptibility(resonance, damping, weight, frequency)
+            for resonance, damping, weight in self.magnetic_poles
+        ]
+
+        def add(base, fractions, index=None):
+            out = np.array(base, dtype=np.float64, copy=True)
+            for chi, fraction in zip(chis, fractions, strict=True):
+                if index is None:
+                    out = out + chi.reshape((6,) + (1,) * fraction.ndim) * fraction
+                else:
+                    out = out + chi[index] * fraction
+            return out
+
+        def sites(component):
+            return [fractions[component] for fractions in self.h_site_fraction]
+
+        magnetic = {
+            name: add(
+                base,
+                self.cell_fraction if name == "mu_cell" else sites("H" + name[-1]),
+            )
+            for name, base in self.base_magnetic_tensors.items()
+        }
+        yee_materials.update(
+            {
+                name: add(base, sites("H" + name[-1]), "xyz".index(name[-1]))
+                for name, base in self.base_mu_yee_materials.items()
+            }
+        )
+        cell = magnetic["mu_cell"]
+        active = ["xyz".index(name[-1]) for name in magnetic if name != "mu_cell"]
+        return {
+            "mu": cell,
+            "permeability": np.mean(cell[active], axis=0),
+            "magnetic_tensors": magnetic,
+        }
+
+
+def _magnetic_folding(material_grid, media, shapes) -> dict:
+    """Magnetic-pole folding data, or nothing when no folded medium has them."""
+    if not any(medium.magnetic_poles for medium, _ in media):
+        return {}
+    if len(material_grid.shape) == 3:
+        components = ("Hx", "Hy", "Hz")
+    elif material_grid.polarization == "tm":
+        components = ("Hx", "Hy")
+    else:
+        components = ("Hz",)
+    tensors = material_grid.magnetic_tensors
+    identity = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 0.0])
+
+    def base(name, shape):
+        if name in tensors:
+            return np.array(expand_packed(tensors[name]), dtype=np.float64)
+        shape = tuple(shape)
+        return np.array(
+            np.broadcast_to(identity.reshape((6,) + (1,) * len(shape)), (6, *shape)),
+            dtype=np.float64,
+        )
+
+    names = {c: "mu_h" + c[-1].lower() for c in components}
+    base_magnetic = {name: base(name, shapes[c]) for c, name in names.items()}
+    base_magnetic["mu_cell"] = base("mu_cell", material_grid.shape)
+    h_site_fraction = tuple(
+        {
+            c: np.asarray(
+                collocate_yee_component(jnp.asarray(fraction), "Cell", c, shapes[c]),
+                dtype=np.float64,
+            )
+            for c in components
+        }
+        for _medium, fraction in media
+    )
+    return {
+        "magnetic_poles": tuple(_pole_arrays(m, "H") for m, _ in media),
+        "h_site_fraction": h_site_fraction,
+        "base_magnetic_tensors": MappingProxyType(base_magnetic),
+        "base_mu_yee_materials": MappingProxyType(
+            {
+                name: np.asarray(material_grid.yee_materials[name], dtype=np.float64)
+                for name in names.values()
+                if name in material_grid.yee_materials
+            }
+        ),
+    }
 
 
 def static_material_grid(material_grid, frequency: float):
@@ -232,6 +354,13 @@ def static_material_grid(material_grid, frequency: float):
     yee_materials.update(folded["yee_materials"])
     yee_tensors = dict(material_grid.yee_tensors)
     yee_tensors.update(folded["yee_tensors"])
+    magnetic = {}
+    if "magnetic_tensors" in folded:
+        tensors["mu"] = folded["mu"]
+        magnetic = dict(
+            permeability=folded["permeability"],
+            magnetic_tensors=folded["magnetic_tensors"],
+        )
     return replace(
         material_grid,
         permittivity=folded["permittivity"],
@@ -239,6 +368,7 @@ def static_material_grid(material_grid, frequency: float):
         yee_materials=yee_materials,
         yee_tensors=yee_tensors,
         tensor_dispersion=(),
+        **magnetic,
     )
 
 
@@ -249,6 +379,7 @@ class FrequencyFields:
         self._fields = fields
         self.material_grid = static_material_grid(fields.material_grid, frequency)
         self.permittivity = jnp.asarray(self.material_grid.permittivity)
+        self.permeability = jnp.asarray(self.material_grid.permeability)
 
     def __getattr__(self, name):
         return getattr(self._fields, name)
