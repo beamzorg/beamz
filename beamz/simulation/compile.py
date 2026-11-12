@@ -976,9 +976,20 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
                 "Full-tensor permittivity with conductive or sponge-PML loss "
                 "requires backend='jax'; native CUDA updates are lossless."
             )
-        from .anisotropic import electric_losses, lossy_tensor_inverse
+        from .anisotropic import _seam_phases, electric_losses, lossy_tensor_inverse
+        from .ccpr import electric_kernel_tensors
 
-        support_tensors = coefficient_tensors
+        # CCPR poles fold their implicit E' coupling into the kernel tensors,
+        # on top of any vacuum box owned by the static tensor plan.
+        support_tensors = (
+            electric_kernel_tensors(
+                fields,
+                dt,
+                _seam_phases(fields, boundary_data.periodic_axes),
+                base=coefficient_tensors,
+            )
+            or coefficient_tensors
+        )
         components = tuple(
             "E" + axis for axis in "xyz" if "eps_" + axis in support_tensors
         )

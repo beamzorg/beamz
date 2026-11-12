@@ -49,6 +49,15 @@
   `material_min`/`material_max` remain the K = 2 shorthand. Its physics is
   unchanged, but `export_design` now writes the actual design materials
   rather than scalar stand-ins with their mean permittivity.
+- Added general complex-conjugate pole-residue (CCPR) tensor poles, so fitted
+  pole-residue models can be anisotropic and oriented. They add an `E'`
+  coupling tensor `B`: `chi = (A - i omega B) / (omega0^2 - omega^2 - i gamma
+  omega)`. Build them with `TensorPole.ccpr` or `TensorPole.critical_point`.
+  `AnisotropicMedium.from_pole_residue(x, y, z)` converts scalar `PoleResidue`
+  fits along principal axes, and `rotated()` orients them, `B` included. The
+  implicit `B` term solves with `eps_inf + sum dt/(1 + gamma dt/2) B` and runs
+  on JAX and streamed CUDA. Mode ports fold the `B` term. The timestep check
+  for such media is a von Neumann analysis of the scheme.
 - Tensor permeability and tensor-pole media run on single-device
   `backend="cuda_streamed"`. New native kernels apply their corrections; the
   CUDA component is now version 0.31.0 / ABI 31, so rebuild it after updating.

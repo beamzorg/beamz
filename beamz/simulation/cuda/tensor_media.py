@@ -6,7 +6,9 @@ place to the field box. They reproduce
 :meth:`beamz.simulation.anisotropic.TensorPolarizationRegion.advance` and
 ``apply_tensor_operator`` exactly, up to float32 rounding order. The inverse
 launch also maps full static tensors (non-symmetric eps or mu, conductivity
-tensors) through their antisymmetric cross terms.
+tensors) through their antisymmetric cross terms. CCPR regions
+(:mod:`beamz.simulation.ccpr`) add a third launch that adds the implicit
+``(dt / d) B (E^{n+1} - E^n)`` term to the pole state.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from beamz.simulation.backend import CUDA_ABI_VERSION
 
 _OP_POLE = 0
 _OP_INVERSE = 1
+_OP_EDOT = 2
 
 
 def _empty():
@@ -129,3 +132,27 @@ def apply_inverse(state, box, inverse, source, *, base=None, sign):
         abi.CUDA_TENSOR_MEDIA_TARGET, fields, {k: k for k in range(3)}
     )(*arguments, **_attributes(box, op=_OP_INVERSE, coupled=coupled, sign=sign))
     return state._replace(**dict(zip(names, outputs, strict=True)))
+
+
+def add_edot(region, change, flat):
+    """Native CCPR update ``p += (dt / d) B change`` per pole; returns the flat state."""
+    from . import runtime as rt
+
+    box = region.box
+    poles = int(np.shape(region.c1)[0])
+    coupled = region.edot_offdiagonal is not None
+    current = tuple(flat[0::2])
+    arguments = (
+        *(_f32(v, s) for v, s in zip(change, box.shapes, strict=True)),
+        *_widths(box),
+        *(
+            _f32(d, (poles, *s))
+            for d, s in zip(region.edot_diagonal, box.shapes, strict=True)
+        ),
+        jnp.asarray(region.edot_offdiagonal, jnp.float32) if coupled else _empty(),
+        *current,
+    )
+    outputs = rt._ffi_call(
+        abi.CUDA_TENSOR_MEDIA_TARGET, current, {10 + k: k for k in range(3)}
+    )(*arguments, **_attributes(box, op=_OP_EDOT, coupled=coupled, poles=poles))
+    return tuple(x for pair in zip(outputs, flat[1::2], strict=True) for x in pair)

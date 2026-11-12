@@ -141,6 +141,104 @@ inverse. The following are rejected:
 
 Other off-diagonal permittivity must stay at least three cells away.
 
+## Fitted pole-residue (CCPR) poles
+
+A Lorentz or Drude pole couples only to the field. A general complex-conjugate
+pole-residue (CCPR) pole also couples to its time derivative through a second
+symmetric tensor `B` (rad/s):
+
+```text
+chi_p(omega) = (A_p - i omega B_p) / (omega_p^2 - omega^2 - i gamma_p omega)
+p'' + gamma_p p' + omega_p^2 p = A_p E + B_p E'
+```
+
+This is the form of any fitted pole-residue pair, so vector-fitted or
+critical-point models of metals can be anisotropic and oriented.
+
+- `TensorPole.ccpr(pole, residue, tensor=..., orientation=...)` builds the pair
+  `r / (s - q) + r* / (s - q*)`, with `s = -i omega`, as in `bz.PoleResidue`
+  and fdtdx's `CCPRPole`. It uses `omega_p = |q|`, `gamma_p = -2 Re q`,
+  `A = -2 Re(r q*) T` and `B = 2 Re(r) T`. The weighting tensor `T` is a
+  scalar, three axis weights, a symmetric tensor, or `u u^T` for a unit
+  `orientation` vector `u`.
+- `TensorPole.critical_point(amplitude, phase, resonance=..., damping=...)`
+  takes the critical-point parameters reported for metal fits.
+- `AnisotropicMedium.from_pole_residue(x, y, z)` turns scalar `bz.PoleResidue`
+  fits along the principal axes into one medium with
+  `eps_inf = diag(x, y, z)`. Pass only `x` for an isotropic medium. Rotate the
+  result with `rotated()`; both `A` and `B` transform as `R T R^T`.
+- `beamz.design.anisotropic.pole_residue_tensor_poles(model, tensor=...)`
+  returns the poles alone. Pairs of real poles merge into one second-order pole,
+  so BeamZ's two-pole Drude term becomes an exact Drude pole again. A leftover
+  real pole becomes a Debye term (`A = 0`, `B = 2 Re c`).
+
+```python
+gold_like = bz.PoleResidue(
+    1.5, [(-5e14 - 3e15j, 2e14 + 1e15j), (-5e14, 2.5e14)], frequency_range=(1e14, 8e14)
+)
+other = bz.PoleResidue(
+    3.0, [(-8e14 - 2e15j, 5e14 + 1.5e15j), (-3e14, 6e14)], frequency_range=(1e14, 8e14)
+)
+crystal = bz.AnisotropicMedium.from_pole_residue(gold_like, other, gold_like)
+tilted = crystal.rotated((0.0, 0.0, np.radians(30)))
+```
+
+One fitted pole need not be passive on its own. CCPR poles therefore skip the
+per-pole semidefinite check. Instead, the medium checks on a dense frequency
+grid that the anti-Hermitian part of `eps(omega)` and `mu(omega)` stays
+positive semidefinite, as `PoleResidue` does.
+
+**Discretization.** The pole update mirrors fdtdx:
+
+```text
+p^{n+1} = c1 p^n + c2 p^{n-1} + (dt^2 / d) A E^n + (dt / d) B (E^{n+1} - E^n)
+d = 1 + gamma dt / 2
+```
+
+The last term is implicit. Ampere's law then solves with the static tensor
+`eps' = eps_inf + K`, where `K = sum_p (dt / d_p) B_p` carries the medium's
+volume fraction and the same Yee collocation as the pole drive:
+
+```text
+(eps' + sigma dt / (2 eps0)) (E^{n+1} - E^n) = curl term - delta
+delta = sum_p (c1 p + c2 p_prev + (dt^2 / d) A E^n - p^n)
+```
+
+Each pole then gains `(dt / d) B (E^{n+1} - E^n)`. `K` is symmetric, so `eps'`
+uses the existing constitutive supports:
+
+- **Diagonal kernel.** When `eps_inf` has no off-diagonal terms, the kernel
+  stays unchanged. The correction recovers the curl term from the kernel's own
+  update and solves with the pointwise inverse of `eps' + loss`, even when a
+  tilted `B` makes `K` off-diagonal. Magnetic CCPR poles use the same path.
+- **Full-tensor kernel.** When `eps_inf` is off-diagonal, the kernel's inverse
+  tensors include `K` from the start.
+
+Both give `E^{n+1} - E^n = Inv(eps' + loss)(curl term - delta)`. Gyrotropic
+poles are unaffected. The `E'` drive is a forward difference, so it is first
+order: the discrete `B` term lags by `omega dt / 2`. For a typical fit this
+puts the permittivity off by about 0.1 to 1% at 10 to 20 points per
+wavelength, which is comparable to the Yee dispersion error.
+
+**Timestep.** `eps'` must stay positive definite; only an active medium can
+violate this, and compilation rejects it. The Lorentz bound below is not
+sufficient once `B` is non-zero. For media with CCPR poles, compilation runs a
+von Neumann analysis of exactly this scheme instead. It samples the Brillouin
+zone with the collocation factors of the shared-support operators and the
+pointwise inverse of `eps'`, and it keeps only the simulated polarization in
+2D. The predicted limit matches seeded simulations: stable at 0.98 of it and
+divergent at 1.02. `beamz.simulation.ccpr.max_stable_timestep` reports it in
+advance. `fold_fast_poles` leaves CCPR poles unchanged.
+
+**Support.**
+
+- JAX, and streamed CUDA through an extra native launch that adds the `B`
+  term to the pole state. Magnetic CCPR poles also run in both.
+- Mode ports fold `Re chi(f)`, including the `-i omega B` term.
+- Not supported: magnetic CCPR poles with `B != 0` in a medium with
+  off-diagonal static permeability, and CCPR poles with `B != 0` anywhere in a
+  topology-design program. Both are rejected with an explicit error.
+
 ## Material library
 
 `beamz.material_library.anisotropic_library` bundles four crystals. Each one is
