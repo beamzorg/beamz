@@ -40,22 +40,32 @@ def foldable(medium) -> bool:
 
 
 def _pole_arrays(medium, family: str = "E"):
-    """Pole parameters of one family as plain arrays (resonance, damping, W)."""
+    """Pole parameters of one family as plain arrays (resonance, damping, W[, B]).
+
+    The ``E'`` coupling ``B`` of CCPR poles is appended only when some pole
+    has one, so Lorentz-only foldings keep their three-array layout.
+    """
     poles = medium.electric_poles if family == "E" else medium.magnetic_poles
-    return (
+    arrays = (
         np.array([p.resonance for p in poles], dtype=np.float64),
         np.array([p.damping for p in poles], dtype=np.float64),
         np.stack([np.asarray(p.weight, dtype=np.float64) for p in poles])
         if poles
         else np.zeros((0, 6)),
     )
+    if any(getattr(p, "has_edot", False) for p in poles):
+        arrays += (np.stack([p.edot_packed for p in poles]),)
+    return arrays
 
 
-def _packed_susceptibility(resonance, damping, weight, frequency) -> np.ndarray:
-    """Real part of sum_p W_p / (w_p^2 - w^2 - i g_p w), packed (6,)."""
+def _packed_susceptibility(
+    resonance, damping, weight, frequency, edot=None
+) -> np.ndarray:
+    """Real part of sum_p (W_p - i w B_p) / (w_p^2 - w^2 - i g_p w), packed (6,)."""
     omega = 2.0 * np.pi * float(frequency)
     response = 1.0 / (resonance**2 - omega**2 - 1j * damping * omega)
-    return np.real(np.sum(response[:, None] * weight, axis=0))
+    numerator = weight if edot is None else weight - 1j * omega * np.asarray(edot)
+    return np.real(np.sum(response[:, None] * numerator, axis=0))
 
 
 @dataclass(frozen=True)
@@ -71,7 +81,7 @@ class DispersionFolding:
     """
 
     components: tuple
-    poles: tuple  # per medium: (resonance, damping, weight (P, 6))
+    poles: tuple  # per medium: (resonance, damping, weight (P, 6)[, edot (P, 6)])
     cell_fraction: tuple  # per medium: cell array
     site_fraction: tuple  # per medium: {component: support array}
     node_fraction: tuple  # per medium: node array or None
@@ -107,7 +117,7 @@ class DispersionFolding:
         poles = tuple(_pole_arrays(m) for m, _ in media)
         coupled_capable = len(components) > 1 and (
             bool(material_grid.yee_tensors)
-            or any(np.any(weight[:, 3:] != 0.0) for _, _, weight in poles)
+            or any(np.any(packed[:, 3:] != 0.0) for p in poles for packed in p[2:])
         )
         cell_fraction, site_fraction, node_fraction = [], [], []
         for _medium, fraction in media:
@@ -204,8 +214,8 @@ class DispersionFolding:
     def fold(self, frequency: float) -> dict:
         """Static coefficients at ``frequency``: scalar, cell, Yee, and node arrays."""
         chis = [
-            _packed_susceptibility(resonance, damping, weight, frequency)
-            for resonance, damping, weight in self.poles
+            _packed_susceptibility(resonance, damping, weight, frequency, *edot)
+            for resonance, damping, weight, *edot in self.poles
         ]
 
         def add_packed(base, fractions):
@@ -249,8 +259,8 @@ class DispersionFolding:
     def _fold_magnetic(self, frequency: float, yee_materials: dict) -> dict:
         """Permeability ``mu_inf + sum_m fraction_m Re chi_m(f)`` on every support."""
         chis = [
-            _packed_susceptibility(resonance, damping, weight, frequency)
-            for resonance, damping, weight in self.magnetic_poles
+            _packed_susceptibility(resonance, damping, weight, frequency, *edot)
+            for resonance, damping, weight, *edot in self.magnetic_poles
         ]
 
         def add(base, fractions, index=None):

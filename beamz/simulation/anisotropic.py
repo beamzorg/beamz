@@ -327,7 +327,11 @@ def _apply_regions(regions, old_fields, state, flat, native=False):
         count = len(region.state_shapes)
         part = flat[index : index + count]
         index += count
-        if isinstance(region, TensorPolarizationRegion) and _use_native(
+        if getattr(region, "edot_diagonal", None):
+            from beamz.simulation.ccpr import apply_ccpr_region
+
+            state, advanced = apply_ccpr_region(region, fields, part, state, native)
+        elif isinstance(region, TensorPolarizationRegion) and _use_native(
             native, region.box, state
         ):
             from beamz.simulation.cuda import tensor_media
@@ -723,6 +727,10 @@ def max_stable_timestep(medium, family, spacings) -> float:
         poles, static = medium.electric_poles, medium.epsilon_r
     else:
         poles, static = medium.magnetic_poles, medium.mu_r
+    if any(getattr(p, "edot", None) is not None for p in poles):
+        from beamz.simulation import ccpr
+
+        return ccpr.max_stable_timestep(medium, family, spacings)
     omega = coupled_pole_frequency(static, poles)
     return float(1.0 / np.sqrt(_courant_rate(medium, spacings) + 0.25 * omega**2))
 
@@ -739,6 +747,11 @@ def _courant_rate(medium, spacings) -> float:
 
 
 def _check_pole_stability(medium, family, dt, grid):
+    poles = medium.electric_poles if family == "E" else medium.magnetic_poles
+    if any(getattr(p, "edot", None) is not None for p in poles):
+        from beamz.simulation import ccpr
+
+        return ccpr.check_stability(medium, family, dt, grid)
     geometry = grid.geometry
     active = 3 if len(grid.material_grid.shape) == 3 else 2
     spacings = tuple(geometry.min_spacings[:active])
@@ -773,9 +786,16 @@ def _compile_regions(medium, fraction, family, grid, dt, periodic_axes) -> list:
     gyrotropic = [p for p in poles if isinstance(p, GyrotropicPole)]
     regions = []
     if tensor:
-        regions.append(
-            _compile_tensor_region(tensor, fraction, family, grid, dt, periodic_axes)
+        region = _compile_tensor_region(
+            tensor, fraction, family, grid, dt, periodic_axes
         )
+        if any(getattr(p, "has_edot", False) for p in tensor):
+            from beamz.simulation.ccpr import compile_ccpr_region
+
+            region = compile_ccpr_region(
+                region, tensor, fraction, grid, dt, periodic_axes
+            )
+        regions.append(region)
     if gyrotropic:
         regions.append(
             _compile_gyrotropic_region(
@@ -1003,7 +1023,9 @@ def validate_mode_ports(material_grid, sources, monitors) -> None:
         if not foldable(medium):
             unfoldable |= np.asarray(fraction) > 1e-7
         elif tm_2d and any(
-            np.any(np.asarray(p.weight)[3] != 0) for p in medium.magnetic_poles
+            p.weight[3] != 0
+            or (getattr(p, "edot", None) is not None and p.edot[3] != 0)
+            for p in medium.magnetic_poles
         ):
             in_plane_coupling |= np.asarray(fraction) > 1e-7
     for kind, ports in (("ModeSource", sources), ("ModeMonitor", monitors)):

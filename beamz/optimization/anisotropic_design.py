@@ -59,6 +59,11 @@ def _validate_design_material(material, name: str) -> None:
             raise ValueError(f"{name} cannot have magnetic poles.")
         if any(isinstance(p, GyrotropicPole) for p in material.electric_poles):
             raise ValueError(f"{name} cannot have gyrotropic poles.")
+        if any(getattr(p, "has_edot", False) for p in material.electric_poles):
+            raise ValueError(
+                f"{name} cannot have CCPR poles with an E' (edot != 0) term; "
+                "topology design supports Lorentz and Drude tensor poles."
+            )
     elif type(material) is not Material:
         raise TypeError(
             f"{name} must be a static Material or an AnisotropicMedium; scalar "
@@ -96,6 +101,15 @@ class AnisotropicDesignBinding:
     def __init__(self, material_grid, mask, material_min, material_max):
         _validate_design_material(material_min, "material_min")
         _validate_design_material(material_max, "material_max")
+        if any(
+            getattr(p, "has_edot", False)
+            for medium, _ in material_grid.tensor_dispersion
+            for p in medium.electric_poles
+        ):
+            raise ValueError(
+                "Topology design programs do not support CCPR poles with an E' "
+                "(edot != 0) term anywhere in the scene yet."
+            )
         self.material_grid = material_grid
         self.mask = np.asarray(mask, dtype=bool)
         self.components = _components(material_grid)

@@ -8,7 +8,11 @@ symmetric positive-semidefinite tensors. With the exp(-i omega t) convention,
 
 and likewise for the permeability. ``W_p`` carries units of rad^2/s^2: a
 Lorentz oscillator has ``W = delta_eps * omega_p**2`` and a Drude term has
-``omega_p = 0`` and ``W = omega_plasma**2``. Because every ``W_p`` is a
+``omega_p = 0`` and ``W = omega_plasma**2``. General complex-conjugate
+pole-residue (CCPR) poles add a second symmetric tensor ``B_p`` (rad/s) that
+couples to the field's time derivative,
+``chi_p = (W_p - i omega B_p) / (omega_p**2 - omega**2 - i gamma_p omega)``,
+which represents any fitted pole-residue pair (see :meth:`TensorPole.ccpr`). Because every ``W_p`` is a
 tensor, rotating a medium produces frequency-dependent off-diagonal terms
 (oriented poles), which grid-aligned per-axis poles cannot describe.
 
@@ -115,18 +119,29 @@ def _require_semidefinite(packed: np.ndarray, name: str) -> None:
 
 @dataclass(frozen=True, init=False)
 class TensorPole:
-    """One passive second-order resonance with a symmetric tensor strength.
+    """One second-order resonance with symmetric tensor strengths.
 
-    ``chi(omega) = weight / (resonance**2 - omega**2 - i * damping * omega)``,
-    with ``resonance`` and ``damping`` in rad/s and ``weight`` in rad^2/s^2.
-    Use :meth:`lorentz` or :meth:`drude` rather than the raw constructor.
+    ``chi(omega) = (weight - i omega edot) / (resonance**2 - omega**2 - i
+    damping omega)``, with ``resonance`` and ``damping`` in rad/s, ``weight``
+    in rad^2/s^2, and ``edot`` in rad/s. In the time domain the normalized
+    polarization obeys ``p'' + damping p' + resonance**2 p = weight E + edot E'``.
+
+    Lorentz and Drude poles (:meth:`lorentz`, :meth:`drude`) have no ``edot``
+    term and a positive-semidefinite ``weight``. General complex-conjugate
+    pole-residue (CCPR) poles (:meth:`ccpr`, :meth:`critical_point`,
+    :func:`pole_residue_tensor_poles`) carry ``edot``. One fitted CCPR pole
+    need not be passive on its own, so their tensors are not required to be
+    semidefinite; :class:`AnisotropicMedium` checks the passivity of the sum.
     """
 
     resonance: float
     damping: float
     weight: tuple[float, float, float, float, float, float]
+    edot: tuple[float, float, float, float, float, float] | None = None
 
-    def __init__(self, resonance: float, damping: float, weight: Any) -> None:
+    def __init__(
+        self, resonance: float, damping: float, weight: Any, edot: Any = None
+    ) -> None:
         resonance, damping = float(resonance), float(damping)
         if not np.isfinite(resonance) or resonance < 0.0:
             raise ValueError("Pole resonance must be finite and nonnegative.")
@@ -135,10 +150,17 @@ class TensorPole:
         packed = _packed_from_any(weight, "Pole weight")
         if not np.isfinite(packed).all():
             raise ValueError("Pole weight must be finite.")
-        _require_semidefinite(packed, "Pole weight")
+        if edot is None:
+            _require_semidefinite(packed, "Pole weight")
+        else:
+            edot = _packed_from_any(edot, "Pole edot")
+            if not np.isfinite(edot).all():
+                raise ValueError("Pole edot must be finite.")
+            edot = tuple(float(v) for v in edot)
         object.__setattr__(self, "resonance", resonance)
         object.__setattr__(self, "damping", damping)
         object.__setattr__(self, "weight", tuple(float(v) for v in packed))
+        object.__setattr__(self, "edot", edot)
 
     @classmethod
     def lorentz(
@@ -169,23 +191,163 @@ class TensorPole:
             raise ValueError("Plasma frequencies must be nonnegative.")
         return cls(0.0, damping, frequencies**2)
 
+    @classmethod
+    def ccpr(
+        cls, pole: complex, residue: complex, *, tensor: Any = 1.0, orientation=None
+    ) -> TensorPole:
+        """Complex-conjugate pole-residue pair ``r/(s-q) + r*/(s-q*)``, ``s = -i omega``.
+
+        ``pole`` ``q`` and ``residue`` ``r`` are in rad/s, as in
+        :class:`~beamz.PoleResidue` and fdtdx's ``CCPRPole``. Over a common
+        denominator the pair is ``(a - i omega b) / (omega0**2 - omega**2 - i
+        gamma omega)`` with
+
+            omega0 = |q|,  gamma = -2 Re q,  a = -2 Re(r q*),  b = 2 Re r.
+
+        The scalar response is spread over the axes by ``tensor`` (scalar,
+        three diagonal weights, six packed values, or a symmetric 3x3 matrix;
+        positive semidefinite) or by a unit ``orientation`` vector ``u``
+        (``tensor = u u^T``): ``weight = a * tensor`` and ``edot = b * tensor``.
+        Lorentz and Drude pairs have ``b = 0``.
+        """
+
+        q, r = complex(pole), complex(residue)
+        if not np.isfinite([q, r]).all():
+            raise ValueError("CCPR pole and residue must be finite.")
+        if q.real > 0.0:
+            raise ValueError("A CCPR pole needs Re(pole) <= 0 to be stable.")
+        shape = _orientation_tensor(tensor, orientation)
+        return cls(
+            abs(q),
+            -2.0 * q.real,
+            -2.0 * (r * q.conjugate()).real * shape,
+            2.0 * r.real * shape,
+        )
+
+    @classmethod
+    def critical_point(
+        cls,
+        amplitude: float,
+        phase: float,
+        *,
+        resonance: float,
+        damping: float,
+        tensor: Any = 1.0,
+        orientation=None,
+    ) -> TensorPole:
+        """Critical-point term ``A W [e^{i phi}/(W - w - i G) + e^{-i phi}/(W + w + i G)]``.
+
+        The parameterization reported for fitted metal permittivities, with
+        ``resonance`` ``W`` and ``damping`` ``G`` in rad/s, a dimensionless
+        ``amplitude`` ``A``, and ``phase`` in radians. It is the CCPR pair with
+        ``q = -G - i W`` and ``r = i A W e^{i phi}``.
+        """
+
+        q = complex(-float(damping), -float(resonance))
+        r = 1j * float(amplitude) * float(resonance) * np.exp(1j * float(phase))
+        return cls.ccpr(q, r, tensor=tensor, orientation=orientation)
+
     @property
     def weight_matrix(self) -> np.ndarray:
         return packed_to_matrix(np.asarray(self.weight))
+
+    @property
+    def edot_packed(self) -> np.ndarray:
+        """Packed ``E'`` coupling tensor ``B`` (zeros for Lorentz and Drude)."""
+        if self.edot is None:
+            return np.zeros(6)
+        return np.asarray(self.edot, dtype=np.float64)
+
+    @property
+    def edot_matrix(self) -> np.ndarray:
+        return packed_to_matrix(self.edot_packed)
+
+    @property
+    def has_edot(self) -> bool:
+        """Whether the pole couples to the field's time derivative (``B != 0``)."""
+        return self.edot is not None and any(v != 0.0 for v in self.edot)
 
     def susceptibility(self, frequencies) -> np.ndarray:
         """Complex 3x3 susceptibility at positive frequencies in Hz."""
 
         omega = 2.0 * np.pi * np.asarray(frequencies, dtype=np.float64)
         response = 1.0 / (self.resonance**2 - omega**2 - 1j * self.damping * omega)
-        return response[..., None, None] * self.weight_matrix
+        value = response[..., None, None] * self.weight_matrix
+        if self.edot is not None:
+            value = value - (1j * omega * response)[..., None, None] * self.edot_matrix
+        return value
 
     def rotated(self, rotation) -> TensorPole:
+        matrix = rotation_matrix(rotation)
         return TensorPole(
             self.resonance,
             self.damping,
-            _rotate_packed(np.asarray(self.weight), rotation_matrix(rotation)),
+            _rotate_packed(np.asarray(self.weight), matrix),
+            None if self.edot is None else _rotate_packed(self.edot_packed, matrix),
         )
+
+
+def _orientation_tensor(tensor, orientation) -> np.ndarray:
+    """Packed axis-weighting tensor from ``tensor`` or a unit ``orientation``."""
+    if orientation is not None:
+        if not (np.ndim(tensor) == 0 and float(tensor) == 1.0):
+            raise ValueError("Pass either tensor or orientation, not both.")
+        vector = np.asarray(orientation, dtype=np.float64)
+        norm = float(np.linalg.norm(vector)) if vector.shape == (3,) else 0.0
+        if not np.isfinite(norm) or norm == 0.0:
+            raise ValueError("orientation must be a finite nonzero 3-vector.")
+        vector = vector / norm
+        tensor = np.outer(vector, vector)
+    packed = _packed_from_any(tensor, "tensor")
+    if not np.isfinite(packed).all():
+        raise ValueError("tensor must be finite.")
+    _require_semidefinite(packed, "tensor")
+    return packed
+
+
+def pole_residue_tensor_poles(
+    model, *, tensor: Any = 1.0, orientation=None
+) -> tuple[TensorPole, ...]:
+    """Convert a scalar :class:`~beamz.PoleResidue` fit into tensor poles.
+
+    Complex pole/residue pairs map through :meth:`TensorPole.ccpr`. A real
+    pole ``a`` contributes the first-order term ``k / (s - a)`` with
+    ``k = 2 Re(c)``. Real poles are combined in the order given, two at a
+    time, into one second-order pole
+
+        omega0**2 = a1 a2,  gamma = -(a1 + a2),
+        weight = -(k1 a2 + k2 a1),  edot = k1 + k2,
+
+    which turns BeamZ's two-real-pole Drude term back into an exact Drude pole
+    (``edot = 0``). A leftover real pole becomes the Debye relaxation
+    ``omega0 = 0``, ``gamma = -a``, ``weight = 0``, ``edot = k``. The poles
+    carry ``model``'s susceptibility (not ``epsilon_inf``) spread over the axes
+    by ``tensor`` or ``orientation`` as in :meth:`TensorPole.ccpr`.
+    """
+
+    from beamz.design.dispersion import PoleResidue
+
+    if not isinstance(model, PoleResidue):
+        raise TypeError("model must be a PoleResidue.")
+    shape = _orientation_tensor(tensor, orientation)
+    poles, real = [], []
+    for pole, residue in model.poles:
+        if pole.imag != 0.0:
+            poles.append(TensorPole.ccpr(pole, residue, tensor=shape))
+        else:
+            real.append((pole.real, 2.0 * residue.real))
+    for index in range(0, len(real), 2):
+        a1, k1 = real[index]
+        a2, k2 = real[index + 1] if index + 1 < len(real) else (0.0, 0.0)
+        poles.append(
+            TensorPole(
+                np.sqrt(abs(a1 * a2)),
+                -(a1 + a2),
+                -(k1 * a2 + k2 * a1) * shape,
+                (k1 + k2) * shape,
+            )
+        )
+    return tuple(poles)
 
 
 def _cross_matrix(vector) -> np.ndarray:
@@ -282,11 +444,17 @@ def _pole_spec(pole):
                 list(pole.gyration),
             ]
         }
+    if pole.edot is not None:
+        return {
+            "ccpr": [pole.resonance, pole.damping, list(pole.weight), list(pole.edot)]
+        }
     return [pole.resonance, pole.damping, list(pole.weight)]
 
 
 def _pole_from_spec(spec):
     if isinstance(spec, dict):
+        if "ccpr" in spec:
+            return TensorPole(*spec["ccpr"])
         return GyrotropicPole(*spec["gyrotropic"])
     return TensorPole(*spec)
 
@@ -365,6 +533,83 @@ class AnisotropicMedium(Material):
                 raise ValueError("frequency_range must contain increasing positive Hz.")
             frequency_range = band
         object.__setattr__(self, "frequency_range", frequency_range)
+        if any(
+            getattr(p, "edot", None) is not None
+            for p in (*self.electric_poles, *self.magnetic_poles)
+        ):
+            self._require_passive()
+
+    def _require_passive(self) -> None:
+        """Sampled passivity of media with CCPR poles, which are not passive per pole.
+
+        The anti-Hermitian part of eps and mu must stay positive semidefinite,
+        checked like :class:`~beamz.PoleResidue` on a dense grid spanning every
+        pole's scale (and the declared band); a numerical check, not a proof.
+        """
+
+        poles = (*self.electric_poles, *self.magnetic_poles)
+        scales = [
+            s
+            for p in poles
+            for s in (
+                p.resonance,
+                p.damping,
+                np.sqrt(np.abs(p.weight_matrix).max()),
+                float(np.abs(getattr(p, "edot_packed", 0.0)).max()),
+            )
+            if s > 0.0
+        ]
+        if not scales:
+            return
+        frequencies = np.geomspace(min(scales) * 1e-4, max(scales) * 1e4, 8192) / (
+            2.0 * np.pi
+        )
+        if self.frequency_range is not None:
+            frequencies = np.r_[frequencies, np.linspace(*self.frequency_range, 512)]
+        for name, tensor in (
+            ("permittivity", self.permittivity_tensor(frequencies)),
+            ("permeability", self.permeability_tensor(frequencies)),
+        ):
+            loss = (tensor - np.conj(np.swapaxes(tensor, -1, -2))) / 2j
+            floor = np.linalg.eigvalsh(loss)[..., 0]
+            scale = np.maximum(1.0, np.abs(tensor).max(axis=(-2, -1)))
+            if not np.isfinite(tensor).all() or np.any(floor < -1e-7 * scale):
+                raise ValueError(
+                    f"The {name} poles fail the sampled passivity check (the "
+                    "medium would amplify); check the CCPR pole/residue signs."
+                )
+
+    @classmethod
+    def from_pole_residue(
+        cls, x, y=None, z=None, *, permeability: Any = 1.0
+    ) -> AnisotropicMedium:
+        """Tensor medium from scalar :class:`~beamz.PoleResidue` fits.
+
+        With only ``x`` the medium is isotropic. With ``x``, ``y`` and ``z``
+        each model is the response along that principal axis; ``eps_inf``
+        becomes ``diag(x.epsilon_inf, y.epsilon_inf, z.epsilon_inf)`` and axes
+        sharing one model share its poles. Use :meth:`rotated` to orient the
+        principal axes. ``frequency_range`` spans the models' fit bands.
+        """
+
+        models = (x, x, x) if y is None and z is None else (x, y, z)
+        if any(m is None for m in models):
+            raise ValueError("Pass one model (isotropic) or all three axis models.")
+        groups: dict = {}
+        for axis, model in enumerate(models):
+            groups.setdefault(model.cache_spec(), (model, []))[1].append(axis)
+        poles = []
+        for model, axes in groups.values():
+            weights = np.zeros(3)
+            weights[axes] = 1.0
+            poles.extend(pole_residue_tensor_poles(model, tensor=weights))
+        bands = np.array([m.frequency_range for m in models])
+        return cls(
+            [m.epsilon_inf for m in models],
+            permeability,
+            electric_poles=poles,
+            frequency_range=(bands[:, 0].min(), bands[:, 1].max()),
+        )
 
     @property
     def is_dispersive(self) -> bool:
@@ -433,7 +678,7 @@ class AnisotropicMedium(Material):
         ``max_resonance`` well above the band of interest and check
         ``permittivity_tensor`` against the original over that band. A declared
         ``frequency_range`` is capped at half of ``max_resonance``. Gyrotropic
-        poles are left unchanged.
+        and CCPR poles are left unchanged.
         """
 
         target = float(max_resonance)
@@ -444,7 +689,11 @@ class AnisotropicMedium(Material):
             static = np.asarray(static, dtype=np.float64).copy()
             kept = []
             for pole in poles:
-                if not isinstance(pole, TensorPole) or pole.resonance <= target:
+                if (
+                    not isinstance(pole, TensorPole)
+                    or pole.edot is not None
+                    or pole.resonance <= target
+                ):
                     kept.append(pole)
                     continue
                 ratio = target / pole.resonance
@@ -488,6 +737,7 @@ class AnisotropicMedium(Material):
                     p.resonance,
                     p.damping,
                     np.sqrt(np.abs(p.weight_matrix).max()),
+                    float(np.abs(getattr(p, "edot_packed", 0.0)).max()),
                     float(np.linalg.norm(getattr(p, "gyration", (0.0, 0.0, 0.0)))),
                 )
                 for p in poles

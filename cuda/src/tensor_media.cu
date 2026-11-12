@@ -8,6 +8,8 @@
 //   op 0 (pole):    drive = W(E_old); p_new = c1 p + c2 p_prev + drive;
 //                   delta = sum_poles(p_new - p)
 //   op 1 (inverse): field = (base or field) + sign * Inv(src)
+//   op 2 (edot):    p += B(change) per pole, the implicit E' term of CCPR
+//                   poles (beamz/simulation/ccpr.py)
 //
 // A packed symmetric tensor acts as diagonal * own site plus cross terms on the
 // shared support (primal nodes for E, cell centers for H), reached and left with
@@ -35,6 +37,7 @@ namespace {
 constexpr int kFamilyE = 0;
 constexpr int kOpPole = 0;
 constexpr int kOpInverse = 1;
+constexpr int kOpEdot = 2;
 constexpr int kThreads = 256;
 
 struct Box {
@@ -211,6 +214,38 @@ __global__ void PoleKernel(PoleLaunch launch) {
   }
 }
 
+struct EdotLaunch {
+  Box box;
+  int poles;
+  Vector3 change;            // (*site)
+  const float* diagonal[3];  // (poles, *site)
+  const float* cross;        // (poles, *shared, 3) or nullptr
+  float* current[3];         // (poles, *site), updated in place
+};
+
+__global__ void EdotKernel(EdotLaunch launch) {
+  const Box& box = launch.box;
+  int z, y, x;
+  if (!GridPoint(box, z, y, x)) return;
+  const int64_t shared_size = box.SharedSize();
+  for (int row = 0; row < 3; ++row) {
+    const int ez = box.SiteExtent(row, 0), ey = box.SiteExtent(row, 1),
+              ex = box.SiteExtent(row, 2);
+    if (z >= ez || y >= ey || x >= ex) continue;
+    const int64_t site = Offset(z, y, x, ey, ex);
+    const int64_t site_size = box.SiteSize(row);
+    const float field = launch.change.data[row][site];
+    for (int p = 0; p < launch.poles; ++p) {
+      const int64_t state = p * site_size + site;
+      float drive = launch.diagonal[row][state] * field;
+      if (launch.cross != nullptr)
+        drive += CrossAtSite(box, launch.cross + p * shared_size * 3,
+                             launch.change, row, z, y, x);
+      launch.current[row][state] += drive;
+    }
+  }
+}
+
 struct InverseLaunch {
   Box box;
   int origin[3];
@@ -338,6 +373,34 @@ ffi::Error PoleOp(cudaStream_t stream, const ffi::RemainingArgs& args,
   return Launched();
 }
 
+// args: change[3], widths[3], diagonal[3], cross, current[3]
+// rets: current[3]
+ffi::Error EdotOp(cudaStream_t stream, const ffi::RemainingArgs& args,
+                  const ffi::RemainingRets& rets, const Box& shape, int poles,
+                  bool coupled) {
+  if (args.size() != 13 || rets.size() != 3)
+    return ffi::Error::InvalidArgument("tensor-media edot op expects 13 args, 3 rets");
+  EdotLaunch launch{};
+  launch.box = shape;
+  launch.poles = poles;
+  BEAMZ_TRY(DecodeWidths(args, 3, &launch.box));
+  const Box& box = launch.box;
+  for (int r = 0; r < 3; ++r) {
+    const int64_t site = box.SiteSize(r);
+    BEAMZ_TRY(Arg(args, r, site, &launch.change.data[r], "field change"));
+    BEAMZ_TRY(Arg(args, 6 + r, poles * site, &launch.diagonal[r], "edot diagonal"));
+    BEAMZ_TRY(Ret(rets, r, poles * site, &launch.current[r], "current"));
+    const float* unused = nullptr;
+    BEAMZ_TRY(Arg(args, 10 + r, poles * site, &unused, "current"));
+  }
+  BEAMZ_TRY(Arg(args, 9, poles * box.SharedSize() * 3, &launch.cross,
+                "edot cross terms", /*optional=*/!coupled));
+  if (coupled && launch.cross == nullptr)
+    return ffi::Error::InvalidArgument("coupled edot region lacks cross terms");
+  EdotKernel<<<Blocks(box), kThreads, 0, stream>>>(launch);
+  return Launched();
+}
+
 // args: field[3], source[3], base[3], widths[3], diagonal[3], cross
 // rets: field[3]
 ffi::Error InverseOp(cudaStream_t stream, const ffi::RemainingArgs& args,
@@ -398,6 +461,10 @@ ffi::Error TensorMediaHandler(cudaStream_t stream, ffi::RemainingArgs args,
   if (op == kOpInverse) {
     const int origin[3] = {origin_z, origin_y, origin_x};
     return InverseOp(stream, args, rets, box, origin, coupled != 0, sign);
+  }
+  if (op == kOpEdot) {
+    if (poles < 1) return ffi::Error::InvalidArgument("pole count must be positive");
+    return EdotOp(stream, args, rets, box, poles, coupled != 0);
   }
   return ffi::Error::InvalidArgument("unknown tensor-media op");
 }
