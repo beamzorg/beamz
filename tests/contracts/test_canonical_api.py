@@ -849,3 +849,60 @@ def test_mode_data_dataframe_exposes_lightweight_inspection_columns():
         "mode area",
     ]
     assert df.index.names == ["f", "mode_index"]
+
+
+def test_result_normalization_reuses_waveforms_only_within_one_result(monkeypatch):
+    import beamz.simulation.observe as observe
+
+    freqs = np.array([1.9e14, 2.0e14])
+    pulse = bz.GaussianPulse(freq0=2e14, fwidth=2e13)
+    source = bz.GaussianBeamSource(
+        center=(0.0, 0.0, 0.0),
+        size=(1.0, 1.0),
+        source_time=pulse,
+        wavelength=bz.LIGHT_SPEED / pulse.freq0,
+        waist_radius=0.5,
+    )
+    monitors = [
+        bz.FluxMonitor(
+            center=(0.0, 0.0, 0.0), size=(0.0, 2.0, 2.0), freqs=freqs, name=name
+        )
+        for name in ("first", "second")
+    ]
+    sim = bz.Simulation(
+        size=(4.0, 4.0, 4.0),
+        resolution=1.0,
+        time=np.array([0.0, 1e-15]),
+        monitors=monitors,
+    )
+    grid = sim.compile(backend="jax").grid
+    sim = sim.updated_copy(sources=[source])
+    calls = []
+    original = observe._sampled_source_spectrum
+
+    def sampled(*args, **kwargs):
+        calls.append(kwargs["time"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(observe, "_sampled_source_spectrum", sampled)
+    results = bz.SimulationResults.from_run(
+        sim,
+        runtime_fields=grid,
+        monitor_results={
+            m.name: bz.MonitorResults(
+                monitor=m,
+                fields={},
+                power_history=np.empty(0),
+                power_timestamps=np.empty(0),
+                power_spectrum=np.ones(2),
+                dft_frequencies=freqs,
+            )
+            for m in monitors
+        },
+    )
+    assert len(calls) == 1
+    raw = results.renormalize(None)
+    repeated = raw.renormalize(0)
+    assert len(calls) == 2, "Normalization must not retain caches across results"
+    np.testing.assert_array_equal(repeated["first"].flux, results["first"].flux)
+    np.testing.assert_array_equal(repeated["second"].flux, results["second"].flux)

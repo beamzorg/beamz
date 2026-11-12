@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable, Mapping
-from dataclasses import fields as dataclass_fields
-from typing import Any, TypeAlias, cast
+from dataclasses import fields, is_dataclass
+from typing import TypeAlias, cast
 
 import numpy as np
 
@@ -64,19 +64,14 @@ def cache_token(value: object) -> HashToken:
         method = getattr(value, hook, None)
         if callable(method):
             return (object_kind(value), hook, cache_token(method()))
-    fields = getattr(value, "__dataclass_fields__", None)
-    if isinstance(fields, Mapping):
-        field_names = tuple(
-            field.name
-            for field in dataclass_fields(cast(Any, value))
-            if not field.name.startswith("_")
-            and field.metadata.get("beamz_cache", True)
-        )
-        return (
-            object_kind(value),
-            tuple(
-                (name, cache_token(cast(object, getattr(value, name))))
-                for name in field_names
-            ),
-        )
+    if is_dataclass(value):
+        return (object_kind(value), dataclass_cache_spec(value))
     return (object_kind(value), repr(value))
+
+
+def dataclass_cache_spec(value) -> HashToken:
+    return tuple(
+        (field.name, cache_token(getattr(value, field.name)))
+        for field in fields(value)
+        if not field.name.startswith("_") and field.metadata.get("beamz_cache", True)
+    )

@@ -98,6 +98,8 @@
     "temporal_field_workspace_input": 74,
     "temporal_psi_workspace_input": 80,
     "monitor_elapsed_steps_input": 15,
-    "mstep_plan_buffer_count": 5
+    "mstep_plan_buffer_count": 5,
+    "cpml_fusion_min_width": 384,
+    "cpml_fusion_min_cells": 12582912
   }
 }

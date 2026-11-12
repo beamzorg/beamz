@@ -61,6 +61,7 @@ from beamz.simulation.compile import simulation_memory_estimate as memory_estima
 from beamz.simulation.execute import (
     clear_execution_cache,
     execute_step,
+    initial_program_state,
     run_simulation_program,
     run_simulation_with_progress,
     run_until_terminated,
@@ -1689,7 +1690,9 @@ class Simulation:
             progress=False,
         )
         if state is None:
-            state = SimulationState.initial(program.grid, t=float(self.time[0]))
+            state = initial_program_state(
+                program, t=float(self.time[0]), current_step=0, monitor_steps=remaining
+            )
         return run_simulation_program(
             self,
             program,
