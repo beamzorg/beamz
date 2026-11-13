@@ -68,6 +68,21 @@ TEST_FREQUENCY = LIGHT_SPEED / TEST_WAVELENGTH
 # Basic Fixtures
 # =============================================================================
 @pytest.fixture
+def fresh_program_caches():
+    """Drop compiled programs and executables before a test that varies launch knobs.
+
+    Native launch settings such as ``BEAMZ_CUDA_PAIR_TILE`` are read at launch and
+    are not part of ``CompiledProgramKey``, so variants of one case share a cached
+    program. Tests that record trace-time plans per variant need a fresh cache.
+    """
+    from beamz.simulation.compile import clear_program_cache
+    from beamz.simulation.execute import clear_execution_cache
+
+    clear_program_cache()
+    clear_execution_cache()
+
+
+@pytest.fixture
 def test_wavelength():
     """Standard wavelength for physics tests (1 um)."""
     return TEST_WAVELENGTH

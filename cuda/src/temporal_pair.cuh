@@ -129,14 +129,14 @@ PairStages(float *shared, const FusedYeePhase &h, const FusedYeePhase &e,
 
 template <bool Packed, int X, int Y, int Z>
 __global__ __launch_bounds__(256) void TemporalPairCore(
-    const __grid_constant__ FusedYeePhase h,
-    const __grid_constant__ FusedYeePhase e,
-    const __grid_constant__ PairFieldOutputs final,
-    const __grid_constant__ FusedHSources hs,
-    const __grid_constant__ FusedHSources es,
-    const __grid_constant__ BeamzBuffer publication, int low, int hz, int hy,
+    BEAMZ_GRID_ARG(FusedYeePhase) h,
+    BEAMZ_GRID_ARG(FusedYeePhase) e,
+    BEAMZ_GRID_ARG(PairFieldOutputs) final,
+    BEAMZ_GRID_ARG(FusedHSources) hs,
+    BEAMZ_GRID_ARG(FusedHSources) es,
+    BEAMZ_GRID_ARG(BeamzBuffer) publication, int low, int hz, int hy,
     int hx) {
-  extern __shared__ float shared[];
+  BEAMZ_DYNAMIC_SHARED(float, shared);
   const int ox = low + 2 + blockIdx.x * X;
   const int oy = low + 2 + blockIdx.y * Y;
   const int oz = low + 2 + blockIdx.z * Z;
@@ -144,8 +144,7 @@ __global__ __launch_bounds__(256) void TemporalPairCore(
   // Most blocks do not intersect any source. Determine that once per block,
   // rather than rereading slab metadata in every stage and halo cell.
   __shared__ bool active_sources[6];
-  if (threadIdx.x < 6) {
-    const int c = threadIdx.x;
+  for (int c = threadIdx.x; c < 6; c += blockDim.x) {
     const auto &group = c < 3 ? hs.groups[c] : es.groups[c - 3];
     const auto *starts = static_cast<const int *>(group.starts.data);
     bool active = false;
@@ -170,8 +169,8 @@ __global__ __launch_bounds__(256) void TemporalPairCore(
 // interior tiles whose outputs would mostly be discarded. H neighbors are
 // recomputed from frozen inputs so blocks never depend on one another.
 template <bool Packed>
-__global__ void TemporalPairBand(FusedYeePhase h, FusedYeePhase e,
-                                 FusedHSources sources, int low, int hz, int hy,
+__global__ void TemporalPairBand(BEAMZ_ARG(FusedYeePhase) h, BEAMZ_ARG(FusedYeePhase) e,
+                                 BEAMZ_ARG(FusedHSources) sources, int low, int hz, int hy,
                                  int hx) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   const int nx = hx - low, ny = hy - low, nz = hz - low;

@@ -1,4 +1,4 @@
-#include <cuda_runtime_api.h>
+#include "gpu_runtime.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -453,10 +453,19 @@ int LaunchTemporalYeeProgram(void* raw_stream,
   auto enqueue = [&]() {
     cudaError_t error = cudaSuccess;
     for (int32_t pair = 0; pair < program.nsteps / 2; ++pair) {
+#if defined(BEAMZ_PLATFORM_CPU)
+      // The fused full step keeps H in shared memory. On the CPU the same
+      // bank rotation runs as ordinary phases: e_ab reads h_ab's outputs.
+      for (const BeamzLaunch* phase : {&h_ab, &e_ab, &h_ba, &e_ba}) {
+        error = BeamzEnqueuePhase(raw_stream, *phase);
+        if (error != cudaSuccess) return error;
+      }
+#else
       error = BeamzEnqueueFusedFullStep(stream, h_ab, e_ab);
       if (error != cudaSuccess) return error;
       error = BeamzEnqueueFusedFullStep(stream, h_ba, e_ba);
       if (error != cudaSuccess) return error;
+#endif
     }
     for (int32_t step = 2 * (program.nsteps / 2); step < program.nsteps;
          ++step) {
@@ -477,6 +486,11 @@ int LaunchTemporalYeeProgram(void* raw_stream,
 // tile tails and shell intersections without allocating multi-million-cell
 // grids.
 bool FuseCpmlCore(const BeamzProgramLaunch &program) {
+#if defined(BEAMZ_PLATFORM_CPU)
+  // The fused interior keeps a shared-memory ring; not available on the CPU.
+  (void)program;
+  return false;
+#else
   if (!ScheduleFlagEnabled(program, kNativeScheduleCombinedCpmlCore))
     return false;
   const char *override = std::getenv("BEAMZ_CUDA_CPML_CORE_FUSION");
@@ -503,6 +517,7 @@ bool FuseCpmlCore(const BeamzProgramLaunch &program) {
                              device) != cudaSuccess)
     return false;
   return major == 8 && minor == 6;
+#endif
 }
 
 // Two completed timesteps share tile-local fields in the deep interior. The
@@ -700,6 +715,9 @@ int LaunchTemporalCpmlProgram(void *raw_stream,
   const char *spatial_choice=std::getenv("BEAMZ_CUDA_CPML_SPATIAL");
   bool spatial=spatial_choice && std::strcmp(spatial_choice,"1")==0 &&
       CombinedCpmlCoreSupported(program) && !FlagEnabled(h_ab,kBeamzCpmlPair);
+#if defined(BEAMZ_PLATFORM_CPU)
+  spatial = false;  // The fused CPML step uses shared-memory tiles.
+#endif
   const int psi_type=h_ab.inputs[31].element_type;
   for(int t=0;t<6;++t)
     spatial &= h_ab.inputs[31+t].element_type==psi_type &&
@@ -825,6 +843,10 @@ int BeamzLaunchMstep(void *raw_stream, const BeamzMstepLaunch &launch) {
   if (program.h_ab.metric_kind != 0 || program.field_bank_count != 1 ||
       program.source_group_count != 9)
     return cudaErrorInvalidValue;
+  // Steps per pass. Levels 1..steps-1 of the edge region go to compact
+  // scratch (two alternating banks beyond two steps); level `steps` is final.
+  const int steps = (program.h_ab.cuda_flags & kBeamzMstepSteps4) ? 4 : 2;
+  const int banks = steps > 2 ? 2 : 1;
   int extent[3] = {};
   for (int c = 0; c < 6; ++c) {
     const auto &reference =
@@ -848,7 +870,8 @@ int BeamzLaunchMstep(void *raw_stream, const BeamzMstepLaunch &launch) {
         return cudaErrorInvalidValue;
       extent[a] = std::max(extent[a], static_cast<int>(reference.dims[a]));
     }
-    if (scratch.dims[0] != launch.scratch_fields[0].dims[0])
+    if (scratch.dims[0] != launch.scratch_fields[0].dims[0] ||
+        scratch.dims[0] % (128 * banks))
       return cudaErrorInvalidValue;
   }
   const BeamzBuffer buffers[] = {launch.bounds, launch.core_masks, launch.slots,
@@ -861,20 +884,42 @@ int BeamzLaunchMstep(void *raw_stream, const BeamzMstepLaunch &launch) {
       launch.core_masks.rank != 2 || launch.core_masks.dims[0] != qy / 2 ||
       launch.core_masks.dims[1] != qx / 2 || launch.slots.rank != 3 ||
       launch.slots.dims[0] != extent[0] || launch.slots.dims[1] != qy ||
-      launch.slots.dims[2] != qx || launch.first_cells.rank != 1 ||
-      launch.edge_cells.rank != 1 ||
-      launch.first_cells.dims[0] >
-          static_cast<int64_t>(extent[0]) * extent[1] * extent[2] ||
-      launch.edge_cells.dims[0] > launch.first_cells.dims[0])
+      launch.slots.dims[2] != qx || launch.edge_cells.rank != 1 ||
+      launch.edge_cells.dims[0] >
+          static_cast<int64_t>(extent[0]) * extent[1] * extent[2])
     return cudaErrorInvalidValue;
-  BeamzBuffer original[6], scratch[6];
+  // Intermediate levels: rank 2 (levels, padded length), padding -1; a
+  // two-step plan may also pass its single level as rank 1.
+  const auto &levels = launch.first_cells;
+  const bool leveled = levels.rank == 2;
+  if (!(leveled ? levels.dims[0] == steps - 1
+                : levels.rank == 1 && steps == 2))
+    return cudaErrorInvalidValue;
+  const int64_t level_length = leveled ? levels.dims[1] : levels.dims[0];
+  if (level_length < launch.edge_cells.dims[0] ||
+      level_length > static_cast<int64_t>(extent[0]) * extent[1] * extent[2])
+    return cudaErrorInvalidValue;
+  auto level_cells = [&](int level) {
+    BeamzBuffer cells = levels;
+    cells.rank = 1;
+    cells.dims[0] = level_length;
+    cells.dims[1] = cells.dims[2] = 1;
+    cells.data = static_cast<int32_t *>(levels.data) +
+                 static_cast<int64_t>(level - 1) * level_length;
+    return cells;
+  };
+  BeamzBuffer original[6], scratch[2][6];
+  const int64_t bank_cells = launch.scratch_fields[0].dims[0] / banks;
   for (int c = 0; c < 6; ++c) {
     original[c] = c < 3 ? program.h_ab.outputs[c] : program.e_ab.outputs[c - 3];
-    scratch[c] = original[c];
-    scratch[c].data = launch.scratch_fields[c].data;
-    scratch[c].compact_slots = static_cast<const int *>(launch.slots.data);
-    scratch[c].compact_ny = qy;
-    scratch[c].compact_nx = qx;
+    for (int b = 0; b < 2; ++b) {
+      scratch[b][c] = original[c];
+      scratch[b][c].data = static_cast<float *>(launch.scratch_fields[c].data) +
+                           (b % banks) * bank_cells;
+      scratch[b][c].compact_slots = static_cast<const int *>(launch.slots.data);
+      scratch[b][c].compact_ny = qy;
+      scratch[b][c].compact_nx = qx;
+    }
   }
   auto phases = [&](const BeamzBuffer *old, const BeamzBuffer *next) {
     auto h = program.h_ab, e = program.e_ab;
@@ -908,7 +953,8 @@ int BeamzLaunchMstep(void *raw_stream, const BeamzMstepLaunch &launch) {
       auto p = phases(f, f);
       return ObserveProgramStep(stream, program, p.first, p.second, step);
     };
-    for (int step = 0; step + 1 < program.nsteps; step += 2) {
+    int step = 0;
+    for (; step + steps <= program.nsteps; step += steps) {
       auto base = phases(current, current);
       if (auto err = inject(base, 0, step); err != cudaSuccess)
         return err;
@@ -917,43 +963,40 @@ int BeamzLaunchMstep(void *raw_stream, const BeamzMstepLaunch &launch) {
                                     launch.core_masks, launch.bounds);
           err != cudaSuccess)
         return err;
-      auto first = phases(current, scratch);
-      if (auto err = BeamzEnqueueMstepEdge(
-              stream, first.first, launch.first_cells, extent[1], extent[2]);
-          err != cudaSuccess)
-        return err;
-      if (auto err = inject(first, 1, step); err != cudaSuccess)
-        return err;
-      if (auto err = BeamzEnqueueMstepEdge(
-              stream, first.second, launch.first_cells, extent[1], extent[2]);
-          err != cudaSuccess)
-        return err;
-      if (auto err = inject(first, 2, step); err != cudaSuccess)
-        return err;
-      if (auto err = observe(scratch, step); err != cudaSuccess)
-        return err;
-      auto second = phases(scratch, dest);
-      if (auto err = inject(second, 0, step + 1); err != cudaSuccess)
-        return err;
-      if (auto err = BeamzEnqueueMstepEdge(
-              stream, second.first, launch.edge_cells, extent[1], extent[2]);
-          err != cudaSuccess)
-        return err;
-      if (auto err = inject(second, 1, step + 1); err != cudaSuccess)
-        return err;
-      if (auto err = BeamzEnqueueMstepEdge(
-              stream, second.second, launch.edge_cells, extent[1], extent[2]);
-          err != cudaSuccess)
-        return err;
-      if (auto err = inject(second, 2, step + 1); err != cudaSuccess)
-        return err;
-      if (auto err = observe(dest, step + 1); err != cudaSuccess)
-        return err;
+      // Edge levels: level k advances the cells whose step-k values later
+      // levels or monitors need, from level k-1 (the current bank first).
+      const BeamzBuffer *in = current;
+      for (int level = 1; level <= steps; ++level) {
+        const bool final_level = level == steps;
+        const BeamzBuffer *out = final_level ? dest : scratch[(level - 1) % 2];
+        const BeamzBuffer cells =
+            final_level ? launch.edge_cells : level_cells(level);
+        const int at = step + level - 1;
+        auto p = phases(in, out);
+        if (level > 1)
+          if (auto err = inject(p, 0, at); err != cudaSuccess)
+            return err;
+        if (auto err = BeamzEnqueueMstepEdge(stream, p.first, cells, extent[1],
+                                             extent[2]);
+            err != cudaSuccess)
+          return err;
+        if (auto err = inject(p, 1, at); err != cudaSuccess)
+          return err;
+        if (auto err = BeamzEnqueueMstepEdge(stream, p.second, cells, extent[1],
+                                             extent[2]);
+            err != cudaSuccess)
+          return err;
+        if (auto err = inject(p, 2, at); err != cudaSuccess)
+          return err;
+        if (auto err = observe(out, at); err != cudaSuccess)
+          return err;
+        in = out;
+      }
       current = dest;
       dest = current == original ? launch.final_fields : original;
     }
-    if (program.nsteps % 2) {
-      const int step = program.nsteps - 1;
+    // Steps left over from whole passes advance in place, one at a time.
+    for (; step < program.nsteps; ++step) {
       auto tail = phases(current, current);
       if (auto err = inject(tail, 0, step); err != cudaSuccess)
         return err;

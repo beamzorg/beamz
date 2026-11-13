@@ -1,6 +1,6 @@
 // Exact first-order transpose of the streamed Yee/CPML phase. Inputs and
 // cotangents are read-only: reverse-mode residuals must survive recomputation.
-#include <cuda_runtime_api.h>
+#include "gpu_runtime.h"
 
 #include <cstdint>
 #include <initializer_list>
@@ -12,16 +12,23 @@
 namespace {
 
 __device__ __forceinline__ void WarpAdd(float* address, float gradient) {
+  if (!BEAMZ_WAVE32) {
+    // One-lane warps (CPU) have nothing to reduce. 64-wide waves span two
+    // 32-wide block rows, so live lanes need not be contiguous: add per lane.
+    atomicAdd(address, gradient);
+    return;
+  }
   // Live lanes are contiguous: only x support bounds can split a 32-wide
   // warp for y/z profiles. A one-entry x absorber profile has one live lane.
-  const unsigned mask = __activemask();
+  const beamz_lane_mask mask = __activemask();
   const int lane = threadIdx.x & 31;
   #pragma unroll
   for (int offset = 16; offset > 0; offset >>= 1) {
     const float other = __shfl_down_sync(mask, gradient, offset);
-    if (lane + offset < 32 && (mask & (1u << (lane + offset)))) gradient += other;
+    if (lane + offset < 32 && (mask & (beamz_lane_mask{1} << (lane + offset))))
+      gradient += other;
   }
-  if (lane == __ffs(mask) - 1) atomicAdd(address, gradient);
+  if (lane == beamz_first_lane(mask) - 1) atomicAdd(address, gradient);
 }
 
 int64_t Elements(const BeamzBuffer& value) {
@@ -334,7 +341,7 @@ __device__ __forceinline__ void ComponentAdjoint(const BeamzAdjointLaunch& launc
 }
 
 template <int Phase, int CoefficientMode>
-__global__ void PhaseAdjoint(BeamzAdjointLaunch launch) {
+__global__ void PhaseAdjoint(BEAMZ_ARG(BeamzAdjointLaunch) launch) {
   const int p[3] = {static_cast<int>(blockIdx.z * blockDim.z + threadIdx.z),
                     static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y),
                     static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x)};
@@ -359,11 +366,11 @@ cudaError_t LaunchPhase(cudaStream_t stream, const BeamzAdjointLaunch& launch) {
       (uint64_t{7} << 37);
   const uint64_t coefficients = launch.gradient_mask & coefficient_bits;
   if (coefficients == 0)
-    PhaseAdjoint<Phase, 0><<<blocks, threads, 0, stream>>>(launch);
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, PhaseAdjoint<Phase, 0>)(launch);
   else if (coefficients == (uint64_t{7} << 9))
-    PhaseAdjoint<Phase, 1><<<blocks, threads, 0, stream>>>(launch);
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, PhaseAdjoint<Phase, 1>)(launch);
   else
-    PhaseAdjoint<Phase, 2><<<blocks, threads, 0, stream>>>(launch);
+    BEAMZ_LAUNCH(blocks, threads, 0, stream, PhaseAdjoint<Phase, 2>)(launch);
   return cudaPeekAtLastError();
 }
 

@@ -1,7 +1,7 @@
 #ifndef BEAMZ_CUDA_GRAPH_H_
 #define BEAMZ_CUDA_GRAPH_H_
 
-#include <cuda_runtime_api.h>
+#include "gpu_runtime.h"
 
 #include <functional>
 #include <string>

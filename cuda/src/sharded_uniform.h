@@ -2,7 +2,7 @@
 #define BEAMZ_CUDA_SHARDED_UNIFORM_H_
 #include "sharded_cell.h"
 #include "sharded_numeric.h"
-#ifdef __CUDACC__
+#ifdef BEAMZ_GPU_COMPILER
 #define BEAMZ_UNIFORM __host__ __device__ __forceinline__
 #else
 #define BEAMZ_UNIFORM inline

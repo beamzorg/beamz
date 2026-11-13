@@ -32,7 +32,8 @@
     "mstep_segment32": 23,
     "mstep_segment64": 24,
     "mstep_segment128": 25,
-    "mstep_segment256": 26
+    "mstep_segment256": 26,
+    "mstep_steps4": 27
   },
   "default_flags": [
     "graph_cache"

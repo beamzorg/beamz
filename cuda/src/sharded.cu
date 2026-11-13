@@ -1,4 +1,4 @@
-#include <cuda_runtime_api.h>
+#include "gpu_runtime.h"
 
 #include "sharded_schedule.h"
 #include "sharded_uniform.h"
@@ -7,7 +7,7 @@
 namespace {
 namespace local = beamz::cuda::sharded;
 
-__global__ void UpdateSharded(BeamzLaunch launch) {
+__global__ void UpdateSharded(BEAMZ_ARG(BeamzLaunch) launch) {
   const int64_t first = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   const int64_t stride = static_cast<int64_t>(gridDim.x) * blockDim.x;
   local::UpdateThread(launch, first, stride);
@@ -73,7 +73,7 @@ __device__ __forceinline__ void BulkComponent(const BeamzLaunch& l,
 }
 
 template<int Phase>
-__global__ void UpdateShardedTile(BeamzLaunch launch) {
+__global__ void UpdateShardedTile(BEAMZ_ARG(BeamzLaunch) launch) {
   const int p[3] = {int(blockIdx.z * blockDim.z + threadIdx.z),
                     int(blockIdx.y * blockDim.y + threadIdx.y),
                     int(blockIdx.x * blockDim.x + threadIdx.x)};
@@ -109,15 +109,15 @@ int BeamzLaunchSharded(void* raw_stream, const BeamzLaunch& launch) {
     const dim3 blocks((extent[2]+31)/32, (extent[1]+3)/4, (extent[0]+1)/2);
     if (blocks.y <= 65535 && blocks.z <= 65535) {
       if (launch.phase == 0) {
-        UpdateShardedTile<0><<<blocks, threads, 0, stream>>>(launch);
+        BEAMZ_LAUNCH(blocks, threads, 0, stream, UpdateShardedTile<0>)(launch);
       } else {
-        UpdateShardedTile<1><<<blocks, threads, 0, stream>>>(launch);
+        BEAMZ_LAUNCH(blocks, threads, 0, stream, UpdateShardedTile<1>)(launch);
       }
       return static_cast<int>(cudaPeekAtLastError());
     }
   }
   const int block_count = local::LaunchBlocks(launch);
   if (block_count == 0) return cudaSuccess;
-  UpdateSharded<<<block_count, local::kThreads, 0, stream>>>(launch);
+  BEAMZ_LAUNCH(block_count, local::kThreads, 0, stream, UpdateSharded)(launch);
   return static_cast<int>(cudaPeekAtLastError());
 }

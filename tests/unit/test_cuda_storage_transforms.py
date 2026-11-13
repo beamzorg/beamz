@@ -335,3 +335,85 @@ def test_plan_metadata_without_cpml_or_sources(axes, monitor):
     if axes == (0, 1, 2):
         assert cpml is program.boundary.cpml
         assert sources is groups
+
+
+def _block_coefficients(program, state):
+    """Constant-block E coefficients for ``program`` and the dense values they encode."""
+    from beamz.simulation.cuda.material_blocks import pack_material_blocks
+
+    rng = np.random.default_rng(3)
+    dense = {}
+    for c in "xyz":
+        value = np.full(getattr(state, "e" + c).shape, 0.5, np.float32)
+        value[:1] = 0.25
+        value.ravel()[5:40] = rng.random(35, dtype=np.float32)
+        dense[c] = value
+    packed = pack_material_blocks(tuple(dense.values()), max_bytes=1e12)
+    assert packed is not None
+    pools, headers = packed
+    assert all(np.ndim(h) == 2 for h in headers)
+    coeffs = program.coefficients._replace(
+        **{f"e_decay_{c}": pool for c, pool in zip("xyz", pools, strict=True)},
+        **{f"e_source_{c}": h for c, h in zip("xyz", headers, strict=True)},
+    )
+    return coeffs, dense
+
+
+@pytest.mark.parametrize(
+    "axes,components", [((1, 2, 0), (2, 0, 1)), ((2, 0, 1), (1, 2, 0))]
+)
+def test_rotated_native_boundary_expands_constant_block_materials(axes, components):
+    """Block headers follow the unrotated order; the native call needs dense values."""
+    program, state, context = _program_and_state(cpml=True)
+    coeffs, dense = _block_coefficients(program, state)
+    seen = []
+
+    def native(s, ctx, material, groups, monitors, nsteps):
+        seen.append(material)
+        return s
+
+    wrap_program_call(native, axes)(state, context, coeffs, (None,) * 9, None, 3)
+    (material,) = seen
+    for c, old in enumerate(components):
+        np.testing.assert_array_equal(
+            getattr(material, "e_source_" + "xyz"[c]),
+            dense["xyz"[old]].transpose(axes),
+        )
+        assert float(getattr(material, "e_decay_" + "xyz"[c])) == 1.0
+
+
+def test_identity_storage_passes_constant_block_materials_through():
+    """Without rotation the native call decodes the headers itself."""
+    program, state, context = _program_and_state(cpml=True)
+    coeffs, _ = _block_coefficients(program, state)
+    seen = []
+
+    def native(s, ctx, material, groups, monitors, nsteps):
+        seen.append(material)
+        return s
+
+    wrap_program_call(native, (0, 1, 2))(state, context, coeffs, (None,) * 9, None, 3)
+    (material,) = seen
+    assert material is coeffs
+
+
+def test_block_expansion_leaves_other_encodings_alone():
+    """Dense floats and rank-1 byte codes keep their own rotation paths."""
+    from beamz.simulation.cuda.storage import _expand_material_blocks
+
+    program, state, _ = _program_and_state(cpml=True)
+    assert _expand_material_blocks(program.coefficients, state) is program.coefficients
+    byte_codes = program.coefficients._replace(
+        **{f"e_source_{c}": jnp.zeros(7, jnp.int32) for c in "xyz"}
+    )
+    assert _expand_material_blocks(byte_codes, state) is byte_codes
+
+
+def test_block_expansion_rejects_partially_blocked_components():
+    from beamz.simulation.cuda.storage import _expand_material_blocks
+
+    program, state, _ = _program_and_state(cpml=True)
+    coeffs, _ = _block_coefficients(program, state)
+    mixed = coeffs._replace(e_source_y=jnp.zeros(7, jnp.int32))
+    with pytest.raises(ValueError, match="all three components"):
+        _expand_material_blocks(mixed, state)

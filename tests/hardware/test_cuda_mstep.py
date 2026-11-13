@@ -189,6 +189,41 @@ def test_mstep_complete_state_matches_cuda_and_jax(steps, material, boundary):
     _compare(_run(sim, state, "jax", steps), actual, 3e-5)
 
 
+@pytest.mark.parametrize("steps", [4, 9, 17])
+@pytest.mark.parametrize("material,boundary", [("binary", "all"), ("smooth", "pec")])
+def test_mstep_four_steps_per_pass_match_jax(
+    steps, material, boundary, monkeypatch, fresh_program_caches
+):
+    """Four-step passes: whole passes, a one-step tail, and every monitor step."""
+    # 8x16 tiles keep the four-step scratch within a 64 KB shared-memory GPU.
+    monkeypatch.setenv("BEAMZ_CUDA_MSTEP_STEPS", "4")
+    monkeypatch.setenv("BEAMZ_CUDA_MSTEP_TILE", "8x16")
+    sim = _simulation(material, boundary)
+    state = _seed(sim.compile(backend="jax", num_steps=steps))
+    program = sim.compile(backend="cuda_mstep", num_steps=steps)
+    report = program.cuda_schedule_report()
+    assert report["selected"] == "mstep"
+    assert report["temporal_steps"] == 4
+    actual = _run(sim, state, "cuda_mstep", steps)
+    _compare(_run(sim, state, "jax", steps), actual, 3e-5)
+
+
+def test_mstep_constant_block_e_materials_match_jax():
+    # The streamed schedule packs binary E materials as constant blocks (rank-2
+    # headers) and mstep shares those coefficients. With scalar H, mstep used to
+    # send them to its byte-code core, which read past the header array.
+    from beamz.simulation.compile import clear_program_cache
+
+    clear_program_cache()
+    sim = _simulation("binary", "all", steps=5)
+    state = _seed(sim.compile(backend="jax", num_steps=5))
+    sim.compile(backend="cuda_streamed", num_steps=5)
+    coefficients = sim.compile(backend="cuda_mstep", num_steps=5).coefficients
+    assert all(np.ndim(getattr(coefficients, f"e_source_{c}")) == 2 for c in "xyz")
+    assert all(np.ndim(getattr(coefficients, f"h_source_{c}")) == 0 for c in "xyz")
+    _compare(_run(sim, state, "jax", 5), _run(sim, state, "cuda_mstep", 5), 3e-5)
+
+
 @pytest.mark.parametrize("timing", ["pre_e", "h", "e"])
 def test_mstep_source_phases_and_continuation(timing):
     sim = _simulation()
@@ -467,17 +502,19 @@ def test_unified_cuda_schedule_matches_compatibility_alias():
 @pytest.mark.parametrize(
     "variant_flags", [0, abi.CUDA_MSTEP_TILE8X16 | abi.CUDA_MSTEP_SEGMENT32]
 )
-def test_automatic_schedule_dispatch_preserves_chunk_clocks(monkeypatch, variant_flags):
+def test_automatic_schedule_dispatch_preserves_chunk_clocks(
+    monkeypatch, variant_flags, fresh_program_caches
+):
     """Exercise automatic dispatch on a small core; model admission is tested on host."""
-    from beamz.simulation.compile import clear_program_cache
     from beamz.simulation.cuda import schedule
-    from beamz.simulation.execute import clear_execution_cache
 
-    # Each mocked policy is a different frozen decision for an equivalent case.
-    clear_program_cache()
-    clear_execution_cache()
-
+    # Each mocked policy is a different frozen decision for an equivalent case, so
+    # fresh_program_caches drops the previous variant's program.
     monkeypatch.setattr(schedule, "cuda_device_kind", lambda: "NVIDIA GeForce RTX 3090")
+    # The CPU platform reports no device memory; admission is not under test.
+    from beamz.simulation import memory
+
+    monkeypatch.setattr(memory, "cuda_available_bytes", lambda program: 16 << 30)
     monkeypatch.setattr(
         schedule,
         "automatic_candidate",

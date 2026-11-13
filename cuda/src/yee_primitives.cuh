@@ -90,7 +90,15 @@ __device__ __forceinline__ float PackedMaterialSource(
     Index linear) {
   const uint32_t word = packed[linear >> 2];
   const uint32_t code = (word >> (8 * (linear & 3))) & 0xffu;
+#if defined(BEAMZ_PLATFORM_CPU)
+  // Load at a clamped index, then select: a load guarded by the bounds check
+  // becomes a masked load, which the vectoriser cannot turn into a gather.
+  const int last = static_cast<int>(codebook_size) - 1;
+  const float value = codebook[min(static_cast<int>(code), last)];
+  return code < codebook_size ? value : 0.0f;
+#else
   return code < codebook_size ? codebook[code] : 0.0f;
+#endif
 }
 
 __device__ __forceinline__ float PackedMaterialSource(
