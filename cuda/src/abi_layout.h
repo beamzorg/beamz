@@ -32,6 +32,7 @@ inline constexpr int32_t kBeamzMstepSegment32 = 1 << 23;
 inline constexpr int32_t kBeamzMstepSegment64 = 1 << 24;
 inline constexpr int32_t kBeamzMstepSegment128 = 1 << 25;
 inline constexpr int32_t kBeamzMstepSegment256 = 1 << 26;
+inline constexpr int32_t kBeamzMstepSteps4 = 1 << 27;
 inline constexpr int32_t kBeamzDefaultFlags = kBeamzGraphCache;
 
 inline constexpr int32_t kNativeScheduleCpml = 1 << 0;

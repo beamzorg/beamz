@@ -66,6 +66,11 @@ from .sharding import (
 
 # Cache identity contains only values that affect generated code or static storage;
 # runtime field values stay excluded so one executable can serve many states.
+# Tile choices the native code reads from the environment at launch
+# (BEAMZ_CUDA_PAIR_TILE, BEAMZ_CUDA_CPML_TILE, BEAMZ_CUDA_CPML_PAIR_TILE) are
+# deliberately not key members either, so variants share material banks and
+# preparation. Tests that vary them and record trace-time plans must clear the
+# program and execution caches (the fresh_program_caches fixture).
 
 
 @dataclass(frozen=True, slots=True)
@@ -1159,6 +1164,7 @@ def compile_program(
         cuda_graph_cache_capacity_from_env,
         cuda_storage_axes_from_env,
         normalize_backend,
+        platform_cuda_flags,
         resolve_backend,
     )
     from .sharding import _jax_devices_for_config
@@ -1254,7 +1260,9 @@ def compile_program(
         raise CudaBackendUnavailable(
             "cuda_mstep requires an unsharded isotropic uniform 3D grid"
         )
-    cuda_flags = cuda_flags_from_env() if resolved_backend != "jax" else 0
+    cuda_flags = (
+        platform_cuda_flags(cuda_flags_from_env()) if resolved_backend != "jax" else 0
+    )
     if requested_schedule == "mstep":
         from .cuda.mstep_config import ALLOWED_FLAGS
 

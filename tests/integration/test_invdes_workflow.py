@@ -258,7 +258,8 @@ def test_scheduled_resume_and_material_history(
     path = tmp_path / "scheduled.npz"
     partial.save(path)
     restored = optimizer.load_result(path, objective)
-    np.testing.assert_array_equal(partial.final_params, restored.final_params)
+    np.testing.assert_array_equal(partial.params, restored.params)
+    np.testing.assert_array_equal(partial.grad, restored.grad)
     for expected_state, restored_state in zip(
         jax.tree.leaves(partial.optimizer_state),
         jax.tree.leaves(restored.optimizer_state),
@@ -267,11 +268,11 @@ def test_scheduled_resume_and_material_history(
         np.testing.assert_array_equal(expected_state, restored_state)
     assert restored.settings()["beta"] == schedule.values(1)["beta"]
     resumed = optimizer.run(objective, steps=4, resume=restored)
-    # Independent JAX compilations can differ by a few float32 ULPs, even before
-    # saving the partial run. Check serialization exactly and recomputation to
-    # float32 precision.
+    # Independent float32 solves accumulate rounding through the Adam updates,
+    # even before saving. Allow 1e-6 absolute error on densities in [0, 1]; the
+    # checkpoint parameters, gradients, and Adam state above must restore exactly.
     np.testing.assert_allclose(
-        full.params[-1], resumed.params[-1], rtol=1e-6, atol=1e-7
+        full.params[-1], resumed.params[-1], rtol=1e-6, atol=1e-6
     )
     np.testing.assert_allclose(
         [h.objective_before for h in full.history],

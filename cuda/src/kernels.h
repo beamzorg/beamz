@@ -1,7 +1,7 @@
 #ifndef BEAMZ_CUDA_KERNELS_H_
 #define BEAMZ_CUDA_KERNELS_H_
 
-#include <cuda_runtime_api.h>
+#include "gpu_runtime.h"
 
 #include "launch.h"
 

@@ -1082,7 +1082,10 @@ MstepHandler(void *stream, ffi::RemainingArgs args, ffi::RemainingRets rets,
              int32_t logical_x, int32_t temporal_steps) {
   if (abi_version != kAbiVersion || nsteps < 1 || metric_kind != 0 ||
       (cpml_enabled != 0 && cpml_enabled != 1) || monitor_count < 0 ||
-      temporal_steps != 2 || program_layout != kProgramLayoutYeeInPlace ||
+      // The pass length is a launch flag; the attribute must agree with it.
+      temporal_steps !=
+          ((cuda_flags & beamz::cuda::abi::kBeamzMstepSteps4) ? 4 : 2) ||
+      program_layout != kProgramLayoutYeeInPlace ||
       logical_z || logical_y || logical_x || graph_cache_capacity < 0 ||
       graph_cache_capacity > 4096 || coincident_source_group_mask < 0 ||
       coincident_source_group_mask >= (1 << kSourceGroupCount) ||
@@ -1214,9 +1217,24 @@ ffi::Error ProgramHandler(
 
 }  // namespace
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_streamed, StreamedHandler,
-                              ffi::Ffi::Bind()
-                                  .Ctx<ffi::PlatformStream<void*>>()
+#if defined(BEAMZ_PLATFORM_CPU)
+// XLA's host platform supplies no stream and launches run synchronously, so
+// each handler is bound without the stream context and receives nullptr.
+template <auto Handler>
+struct WithoutStream;
+template <typename... Args, ffi::Error (*Handler)(void*, Args...)>
+struct WithoutStream<Handler> {
+  static ffi::Error Call(Args... args) { return Handler(nullptr, args...); }
+};
+#define BEAMZ_FFI_HANDLER(handler) WithoutStream<&handler>::Call
+#define BEAMZ_FFI_BIND() ffi::Ffi::Bind()
+#else
+#define BEAMZ_FFI_HANDLER(handler) handler
+#define BEAMZ_FFI_BIND() ffi::Ffi::Bind().Ctx<ffi::PlatformStream<void*>>()
+#endif
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_streamed, BEAMZ_FFI_HANDLER(StreamedHandler),
+                              BEAMZ_FFI_BIND()
                                   .RemainingArgs()
                                   .RemainingRets()
                                   .Attr<int32_t>("abi_version")
@@ -1236,9 +1254,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_streamed, StreamedHandler,
 XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_sharded, ShardedHostHandler,
                               ffi::Ffi::Bind()
 #else
-XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_sharded, ShardedHandler,
-                              ffi::Ffi::Bind()
-                                  .Ctx<ffi::PlatformStream<void*>>()
+XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_sharded, BEAMZ_FFI_HANDLER(ShardedHandler),
+                              BEAMZ_FFI_BIND()
 #endif
                                   .RemainingArgs()
                                   .RemainingRets()
@@ -1252,9 +1269,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_sharded, ShardedHandler,
                                   .Attr<int32_t>("metric_kind"),
                               {ffi::Traits::kCmdBufferCompatible});
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_program, ProgramHandler,
-                              ffi::Ffi::Bind()
-                                  .Ctx<ffi::PlatformStream<void *>>()
+XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_program, BEAMZ_FFI_HANDLER(ProgramHandler),
+                              BEAMZ_FFI_BIND()
                                   .RemainingArgs()
                                   .RemainingRets()
                                   .Attr<int32_t>("abi_version")
@@ -1276,9 +1292,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_program, ProgramHandler,
                                   .Attr<int32_t>("logical_x")
                                   .Attr<int32_t>("temporal_steps"));
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_mstep, MstepHandler,
-                              ffi::Ffi::Bind()
-                                  .Ctx<ffi::PlatformStream<void *>>()
+XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_mstep, BEAMZ_FFI_HANDLER(MstepHandler),
+                              BEAMZ_FFI_BIND()
                                   .RemainingArgs()
                                   .RemainingRets()
                                   .Attr<int32_t>("abi_version")
@@ -1301,9 +1316,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_mstep, MstepHandler,
                                   .Attr<int32_t>("temporal_steps"));
 
 #ifndef BEAMZ_CUDA_CPU_CONTRACT
-XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_adjoint, AdjointHandler,
-                              ffi::Ffi::Bind()
-                                  .Ctx<ffi::PlatformStream<void*>>()
+XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_adjoint, BEAMZ_FFI_HANDLER(AdjointHandler),
+                              BEAMZ_FFI_BIND()
                                   .RemainingArgs()
                                   .RemainingRets()
                                   .Attr<int32_t>("abi_version")
@@ -1320,8 +1334,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_adjoint, AdjointHandler,
 #endif
 
 #ifndef BEAMZ_CUDA_CPU_CONTRACT
-XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_material_adjoint, MaterialAdjointHandler,
-    ffi::Ffi::Bind().Ctx<ffi::PlatformStream<void*>>().RemainingArgs().RemainingRets()
+XLA_FFI_DEFINE_HANDLER_SYMBOL(beamz_cuda_material_adjoint, BEAMZ_FFI_HANDLER(MaterialAdjointHandler),
+                              BEAMZ_FFI_BIND().RemainingArgs().RemainingRets()
         .Attr<int32_t>("abi_version").Attr<int32_t>("cuda_flags")
         .Attr<int32_t>("nterms").Attr<float>("dt").Attr<float>("resolution")
         .Attr<int32_t>("boundary_code_h").Attr<int32_t>("boundary_code_e")

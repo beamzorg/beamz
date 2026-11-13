@@ -98,6 +98,195 @@ registers it lazily; `backend="cuda_streamed"` requests it explicitly. The first
 release supports float32 3D grids. `auto` retains JAX for multi-GPU and 2D
 simulations; only the explicitly selected CPML recurrence state may use BF16.
 
+## AMD GPUs (HIP)
+
+The same sources build for AMD GPUs as `beamz._hip`. CUDA spelling is the
+source dialect. Two prelude headers absorb the platform, in the way Futhark's
+HIP backend reuses its CUDA prelude:
+
+- `src/gpu_runtime.h` aliases every CUDA runtime name the component uses onto
+  its HIP twin. Add a name there before using a new runtime API.
+- `src/gpu_device.h` gives neutral names where CUDA and HIP disagree:
+  `BEAMZ_GPU_COMPILER` and `BEAMZ_DEVICE_COMPILE` (instead of `__CUDACC__` and
+  `__CUDA_ARCH__`, which hip-clang never defines), `beamz_bf16`,
+  `beamz_lane_mask` (64-bit on HIP), `BEAMZ_LAUNCH_BOUNDS(threads, min_blocks)`
+  (HIP reads the second argument differently and drops it), and
+  `BEAMZ_ASYNC_COPY_F32` (a synchronous copy on HIP).
+
+`tests/unit/test_cuda_portability.py` rejects platform-specific spellings
+outside the preludes and checks that every `cuda*` name in the sources has a
+HIP alias. Launch-bound arguments containing template commas need parentheses,
+because HIP's `__launch_bounds__` is a macro.
+
+Differences the preludes absorb, for whoever adds the next runtime call:
+
+- CUDA 12's three-argument `cudaGraphInstantiate` is HIP's
+  `hipGraphInstantiateWithFlags`.
+- `hipFuncSetAttribute` takes `const void*`, not a kernel symbol; a template
+  wrapper casts.
+- HIP's `*_sync` warp builtins take 64-bit lane masks.
+- `__float2bfloat16` already rounds to nearest even, like CUDA's `_rn`.
+- HIP compiles device code without relocatable device code (`-fgpu-rdc`), so
+  every device symbol must live in the translation unit that uses it.
+- ROCm's PJRT `platform_version` spans two lines (`"PJRT C API\nrocm 70200"`);
+  platform detection checks every line.
+
+Build with ROCm in an environment holding JAX's ROCm plugin:
+
+```console
+cmake -S cuda -B build-hip -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DBEAMZ_GPU_PLATFORM=HIP -DBEAMZ_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_HIP_COMPILER=/opt/rocm/lib/llvm/bin/clang++ \
+  -DPython_EXECUTABLE="$(which python)" -Dnanobind_DIR="$(python -m nanobind --cmake_dir)"
+cmake --build build-hip
+cp build-hip/_hip*.so beamz/
+```
+
+HIP device code compiles with `-ffp-contract=off`; the kernels pin their
+rounding and must agree with the CUDA build and JAX.
+
+The kernels do not assume a wave width. ROCm no longer exposes it to the
+preprocessor, so width-dependent code branches on `BEAMZ_WAVE32`
+(`warpSize == 32`, folded to a constant during code generation, as in HIP's
+own `*_sync` builtins). Only RDNA (wave32) has run on hardware, so CMake
+rejects 64-wide targets, `gfx9*` (GCN/CDNA) and `-mwavefrontsize64`, unless
+`-DBEAMZ_HIP_ALLOW_WAVE64=ON`.
+
+BeamZ loads `beamz._hip` when JAX's GPU client is ROCm and registers its FFI
+targets for XLA's `ROCM` platform. `backend="auto"` keeps JAX on AMD; request
+`backend="cuda_streamed"` (or `"cuda"`, `"cuda_mstep"`) explicitly. The
+`cuda_*` backend names are historical and select the native component on
+either vendor. AMD GPUs
+take the conservative schedule: the tuned paths are gated on SM86 and
+environment overrides remain available for experiments.
+
+Realistic workload (mode source, 12-cell CPML on all faces, two field monitors
+with three frequencies, binary material), 256 steps, median of 5 warm samples,
+GCUPS, measured 2026-11-06 with the Futhark branch's backend benchmark. RX 7600 XT
+(RDNA3, 288 GB/s, ROCm 7.2, JAX 0.9.1, untuned) beside a Quadro RTX 5000
+(Turing, 448 GB/s, CUDA 13.4, JAX 0.9.0, SM75 build):
+
+| Shape (z×y×x) | AMD JAX | AMD streamed | AMD mstep | NVIDIA JAX | NVIDIA streamed | NVIDIA mstep |
+|---|---:|---:|---:|---:|---:|---:|
+| 64×96×128 | 1.45 | 1.55 | 1.47 | 1.34 | 2.11 | 1.82 |
+| 96×160×256 | 1.31 | 1.90 | 1.95 | 1.46 | 2.57 | 2.58 |
+| 128×256×512 | 1.17 | 2.14 | 2.43 | 1.61 | 2.69 | 3.32 |
+
+The HIP build passes the same hardware parity suite as CUDA, with an identical set
+of pre-existing failures on both platforms. Run AMD suites only when the card
+does not drive a display: a faulting kernel resets the GPU.
+
+## CPU (OpenMP)
+
+The same sources also build for JAX's CPU client as `beamz._cpu`. A third
+prelude branch, `src/cpu_launch.h`, compiles the kernels as C++ and runs every
+`BEAMZ_LAUNCH` through an OpenMP block scheduler: blocks are spread over
+threads, and the threads of a block run one after another with `x` fastest.
+Warps are one lane wide, `atomicAdd` maps to OpenMP atomics, and `blockIdx`,
+`threadIdx`, `blockDim` and `gridDim` are thread-local.
+
+```console
+cmake -S cuda -B build-cpu -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DBEAMZ_GPU_PLATFORM=CPU \
+  -DPython_EXECUTABLE="$(which python)" -Dnanobind_DIR="$(python -m nanobind --cmake_dir)"
+cmake --build build-cpu
+cp build-cpu/_cpu*.so beamz/
+```
+
+`BEAMZ_CPU_FLAGS` (default `-O3;-march=native`) sets the optimisation and target
+flags; `-ffp-contract=off` is always added. `-march=native` ties the binary to
+the build machine's ISA, which suits a local build; a wheel built for
+distribution should pass a portable baseline (e.g. `-O3;-march=x86-64-v3`).
+In a process without GPUs, BeamZ loads `beamz._cpu` and registers its targets
+for XLA's CPU platform. `backend="auto"` keeps JAX; request
+`backend="cuda_streamed"` or `backend="cuda_mstep"` explicitly.
+
+OpenMP and XLA keep separate thread pools. XLA's pool mostly sleeps while a
+native step runs, so the default (`OMP_NUM_THREADS` unset: one thread per
+logical CPU) is the fastest setting measured on a 7950X; 16 threads bound to
+cores were slightly slower. Lower `OMP_NUM_THREADS` when other work shares the
+machine. Do not set `OMP_WAIT_POLICY=active`: spinning workers compete with
+XLA's threads, and throughput fell tenfold.
+
+Kernels whose threads meet at `__syncthreads` (two-step tiles, the CPML core
+tiles, `cuda_mstep`) run on the CPU as one-thread blocks. A barrier cannot be
+honoured between threads that run one after another, but these kernels cover
+each stage with block-stride loops and keep nothing per thread across a
+barrier, so a single thread runs every stage in order and the barrier has
+nobody to wait for. Their launches pass the thread count through
+`BEAMZ_BARRIER_BLOCK(n)`, which is `n` on GPUs and 1 on the CPU, and each
+OpenMP worker supplies the dynamic shared memory from a reusable scratch
+buffer that stays in cache. The launcher still rejects shared memory in larger
+blocks, and `__syncthreads` in a block of more than one thread aborts with a
+message rather than racing. `BEAMZ_TILE_LOOP` walks a tile stage: on GPUs it
+is the usual block-stride loop, on the CPU a row/column nest that the compiler
+vectorises along x. The fused CPML step (`BEAMZ_CUDA_CPML_SPATIAL`) and the
+complete CPML pair (`BEAMZ_CUDA_CPML_TEMPORAL`) are not converted yet and still
+fall back on the CPU.
+
+The CPU build is single-device; the sharded target is not registered. Under
+`--xla_force_host_platform_device_count`, sharded runs through `beamz._cpu`
+were wrong (relative error about 1.3, the same for every sharded axis). They
+were correct at `-O0`, under UBSan, and when a global mutex serialised
+launches, and wrong at `-O1` to `-O3` with GCC and clang. Thread-local launch
+indices were ruled out. Buffer logs showed concurrent calls from different
+device threads touching the same addresses, which points at buffer reuse
+across simulated devices in XLA's host runtime that only a fast native call
+exposes. Multi-device CPU is a test configuration, so this is left alone.
+
+Two details make the CPU build fast and reproducible. Struct kernel parameters
+use `BEAMZ_ARG(T)` / `BEAMZ_GRID_ARG(T)`, which bind by reference on the CPU
+(GPUs keep by-value parameters); copying the 4 KB launch descriptor once per
+CUDA thread had spent more than half the time in `memcpy`. OpenMP workers also
+adopt the calling XLA thread's flush-to-zero and denormals-are-zero modes, so
+results do not depend on which thread ran a block. That copy reads x86's
+MXCSR; other ISAs build with a warning and without it, until an FPCR
+equivalent exists.
+
+Same realistic workload as above (256 steps, median of 5 warm samples) on a
+Ryzen 9 7950X (16 cores, DDR5), JAX 0.9.0 CPU, GCUPS:
+
+| Shape (z×y×x) | JAX | native CPU build |
+|---|---:|---:|
+| 64×96×128 | 0.14 | 0.31 |
+| 96×160×256 | 0.11 | 0.32 |
+| 128×256×512 | 0.12 | 0.35 |
+
+`cuda_mstep` is the fastest CPU schedule. Ryzen 9 7950X, 128×256×512, GCUPS:
+
+| Boundaries | streamed | mstep |
+|---|---:|---:|
+| PEC walls | 0.49 | 0.53 |
+| one CPML wall | 0.41 | 0.50 |
+| CPML on every face | 0.35 | 0.39 |
+
+The gain grows with the domain, where the mstep core dominates: per cell, the
+core runs at about 1.5× the streamed kernels, while its edge phases (CPML,
+sources, monitors) cost about 2.5× and shrink with the surface-to-volume
+ratio. On one thread the core is compute-bound (a DRAM-sized domain runs as
+fast per cell as a cache-resident one). It scales sublinearly, 7× on 16
+cores, because threads then stall on DRAM; more steps per pass would cut that
+traffic. Parallel efficiency inside a launch is 92–95%, so load balance is not
+the limit.
+
+Two CPU-only details help the core. The packed E material lookup loads at a
+clamped index and then selects, because a bounds-checked load becomes a
+masked load that the vectoriser cannot turn into a gather; the core also
+prefetches the next plane's rows, since a wave reads more short streams than
+the hardware prefetchers follow. Which stages vectorise depends on the
+target's tuning: GCC enables gathers for Intel targets (Sapphire Rapids
+vectorises every stage) and leaves the E lookups scalar on Zen, where forcing
+gathers was 5% slower. Pass the target CPU in `BEAMZ_CPU_FLAGS`.
+
+Launches below 32,768 CUDA threads (source injection, DFT phase tables) run on
+the calling thread, since waking the OpenMP team costs more than the work
+(`BEAMZ_CPU_PARALLEL_THRESHOLD`). Building with `-DBEAMZ_CPU_PROFILE` in
+`BEAMZ_CPU_FLAGS` prints wall time and parallel efficiency per kernel at exit.
+
+CI (`.github/workflows/cuda.yml`) builds this component and runs the hardware
+parity suite against JAX on CPU for every PR, and compiles the HIP component
+in a ROCm container.
+
 ## Streamed and multistep schedules
 
 `backend="cuda"` uses one CUDA component (**0.30.0 / ABI 30**) with two schedules.
@@ -138,7 +327,20 @@ Experimental settings retain the same two-step ownership/dependency plan:
 |---|---|
 | `BEAMZ_CUDA_MSTEP_TILE` | `16x32`, `8x32`, `8x16`, `16x16` |
 | `BEAMZ_CUDA_MSTEP_SEGMENT` | `whole`, `32`, `64`, `128`, `256` z planes |
+| `BEAMZ_CUDA_MSTEP_STEPS` | `2`, `4` steps per pass |
 | `BEAMZ_CUDA_STORAGE_AXES` | `012`, `120`, `201` right-handed cyclic orders |
+
+Four steps per pass read and write each field once per four steps instead of
+two, at the cost of a four-cell margin around CPML, sources and walls (more
+edge cells) and more shared memory: about 49 KB for 8×16 tiles and 80 KB or
+more for the larger ones, so 64 KB GPUs such as Turing can run only 8×16. A
+tile that does not fit fails at launch. On a 7950X at 256×384×768 with PEC
+walls, four steps run the core 1.65× faster than two, and the whole run at
+0.61 against 0.52 GCUPS; with CPML on every face of a small domain the extra
+edge cells cancel the gain. On a Quadro RTX 5000 with 8×16 tiles, four steps
+are 17% (PEC) and 9% (CPML on every face) faster than two at 192×384×768, but
+two steps with 16×32 tiles stay fastest there (4.3 against 3.6 GCUPS); four
+steps with 16×32 tiles need a GPU with about 80 KB of shared memory per block.
 
 Segments overlap frozen inputs and publish only owned results. Storage transforms
 are shared with streamed execution. Automatic selection changes tile/segment only

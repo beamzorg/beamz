@@ -5,9 +5,9 @@
 
 ## Install
 
-BeamZ requires Python 3.11–3.14. Python 3.10 is no longer supported because
-the patched Pillow image backend requires Python 3.11 or newer. Upgrade your
-Python environment before installing this version.
+BeamZ supports Python 3.11.5 through 3.14. The patched Pillow image backend
+requires Python 3.11, and the patched SoupSieve notebook HTML backend requires
+Python 3.11.5. Upgrade older Python environments before installing this version.
 
 Install BEAMZ using pip:
 
