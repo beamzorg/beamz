@@ -305,17 +305,19 @@ def _build_port_projection_2d(
         getattr(monitor, "mode_spec", spec.mode_spec), mode_index=spec.mode_index
     )
     profile_slice = _monitor_profile_slice(sim, monitor, parts["axis"], mode_spec)
-    if len(profile_slice) == 4:
-        eps_profile, local_idx, dl, context = profile_slice
+    eps_profile, local_idx, dl = profile_slice[:3]
+    context = profile_slice[3] if len(profile_slice) == 4 else None
+    if isinstance(context, ModeLineContext):
         grid_edges = context.edges
     else:
-        eps_profile, local_idx, dl = profile_slice
-        grid_edges = None
+        grid_edges = context
         context = ModeLineContext(
             np.asarray(eps_profile),
             slice(0, len(eps_profile)),
             slice(int(np.min(local_idx)), int(np.max(local_idx)) + 1),
-            np.arange(len(eps_profile) + 1) * sim.resolution,
+            np.asarray(grid_edges)
+            if grid_edges is not None
+            else np.arange(len(eps_profile) + 1) * sim.resolution,
             None,
             "y" if parts["axis"] == "x" else "x",
         )
