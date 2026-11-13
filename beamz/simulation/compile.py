@@ -18,6 +18,7 @@ import numpy as np
 import beamz.simulation.kernels as ops
 from beamz._cache_tokens import HashToken, cache_token
 from beamz._region_array import RegionArray, constant_array, tiles, uniform_value
+from beamz.design.discretization import MaterialGrid
 from beamz.devices._boundary_compile import (
     CPML_3D_E_DERIVATIVES,
     CPML_3D_H_DERIVATIVES,
@@ -72,7 +73,7 @@ class CompiledProgramKey:
 
     run: RunConfig
     domain: tuple[bool, str, str]
-    materials: HashToken
+    materials: MaterialGrid
     sources: tuple[HashToken, ...]
     monitors: tuple[HashToken, ...]
     boundaries: tuple[HashToken, ...]
@@ -80,7 +81,7 @@ class CompiledProgramKey:
 
     @classmethod
     def from_request(cls, request: SimulationRequest) -> CompiledProgramKey:
-        # Arrays enter keys by content tokens; evolving field values never do.
+        # Owned material snapshots compare contents lazily when identities differ.
         return cls(
             request.run,
             (
@@ -88,7 +89,7 @@ class CompiledProgramKey:
                 request.domain.plane_2d,
                 request.domain.polarization_2d,
             ),
-            cache_token(request.materials),
+            request.materials,
             tuple(cache_token(source) for source in request.sources),
             tuple(cache_token(monitor) for monitor in request.monitors),
             tuple(cache_token(boundary) for boundary in request.boundaries),
