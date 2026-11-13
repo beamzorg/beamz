@@ -172,7 +172,7 @@ def solve_mode_plane(
             raise ValueError("2D mode previews require lossless materials")
         polarization = spec.polarization or getattr(grid_view, "polarization", None)
         if polarization is None:
-            polarization = simulation.coordinates.polarization_2d
+            polarization = getattr(simulation, "polarization", "tm")
         context = prepare_mode_line(
             permittivity=grid_view.permittivity,
             center=center,
