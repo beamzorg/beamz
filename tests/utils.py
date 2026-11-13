@@ -18,7 +18,6 @@ from beamz.simulation.model import DomainSpec, RunConfig, SimulationRequest
 # Constants
 # =============================================================================
 TEST_WAVELENGTH = 1.0 * um  # Standard test wavelength (1 micron)
-TEST_FREQUENCY = LIGHT_SPEED / TEST_WAVELENGTH
 
 
 def compiled_grid(
@@ -191,9 +190,6 @@ def analytical_fresnel_t(n1, n2):
     return 4 * n1 * n2 / (n1 + n2) ** 2
 
 
-# =============================================================================
-# Poynting Vector / Energy Functions
-# =============================================================================
 # =============================================================================
 # Analytical Formulas
 # =============================================================================
@@ -646,60 +642,3 @@ def measure_resonance_frequency(field_history, time_array, freq_range=None):
     peak_idx = np.argmax(masked_spectrum)
 
     return freqs[peak_idx]
-
-
-# =============================================================================
-# Quantitative Validation Helpers
-# =============================================================================
-def fit_exponential_decay(data, time, start_fraction=0.0, end_fraction=0.8):
-    """Fit exponential decay A * exp(-t/tau) to data.
-
-    Args:
-        data: 1D array of values (e.g., field envelope)
-        time: 1D array of time values
-        start_fraction: Fraction of data to skip at start (0-1)
-        end_fraction: Fraction of data to use (0-1)
-
-    Returns:
-        Tuple (tau, amplitude, r_squared) or (None, None, None) if fit fails
-    """
-    data = np.asarray(data).flatten()
-    time = np.asarray(time).flatten()
-
-    n = len(data)
-    start_idx = int(start_fraction * n)
-    end_idx = int(end_fraction * n)
-
-    if end_idx - start_idx < 5:
-        return None, None, None
-
-    t_fit = time[start_idx:end_idx] - time[start_idx]
-    d_fit = data[start_idx:end_idx]
-
-    # Filter positive values only
-    valid = d_fit > 1e-20
-    if np.sum(valid) < 5:
-        return None, None, None
-
-    t_fit = t_fit[valid]
-    d_fit = d_fit[valid]
-
-    try:
-        # Linear fit to log(data)
-        log_d = np.log(d_fit)
-        coeffs = np.polyfit(t_fit, log_d, 1)
-        slope = coeffs[0]
-        intercept = coeffs[1]
-
-        tau = -1.0 / slope if slope < 0 else None
-        amplitude = np.exp(intercept)
-
-        # Compute R²
-        fitted = intercept + slope * t_fit
-        ss_res = np.sum((log_d - fitted) ** 2)
-        ss_tot = np.sum((log_d - np.mean(log_d)) ** 2)
-        r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0
-
-        return tau, amplitude, r_squared
-    except (ValueError, np.linalg.LinAlgError):
-        return None, None, None

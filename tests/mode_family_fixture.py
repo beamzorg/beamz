@@ -25,7 +25,17 @@ def mode_family(*, n_complex, field_components, solver_info=None):
         },
         Grid(*edges, normal_axis="xyz".index(normal)),
         np.asarray(n_complex.coords["f"]),
-        solver_info=solver_info,
+        solver_info={
+            **(solver_info or {}),
+            **(
+                {"cell_centres": True}
+                if all(
+                    data.attrs.get("grid_sampling") == "cell_centres"
+                    for data in field_components.values()
+                )
+                else {}
+            ),
+        },
     )
 
 

@@ -86,6 +86,8 @@ def _source_launch_power_ratio(source, freqs, *, fields=None, dt=None):
 
 
 def _signal_dft_spectrum(signal, sample_times, freqs):
+    from beamz.devices.sources.time import _discrete_spectrum
+
     freqs = np.asarray(freqs, dtype=float).reshape(-1)
     times = np.asarray(sample_times, dtype=float).reshape(-1)
     signal = np.asarray(signal, dtype=float).reshape(-1)
@@ -93,8 +95,7 @@ def _signal_dft_spectrum(signal, sample_times, freqs):
     if freqs.size == 0 or n == 0:
         return None
     times, signal = times[:n], signal[:n]
-    phase = np.exp(1j * 2.0 * np.pi * times[:, None] * freqs[None, :])
-    spectrum = (2.0 / float(n)) * np.sum(signal[:, None] * phase, axis=0)
+    spectrum = (2.0 / float(n)) * _discrete_spectrum(signal, times, freqs)
     return spectrum if np.any(np.abs(spectrum) > 1e-12) else None
 
 
@@ -125,17 +126,29 @@ def _sampled_source_spectrum(source, freqs, *, time):
 
 def source_normalization(sources, freqs, *, time=None, fields=None, dt=None):
     """Interpret source configuration as a frequency-domain normalization."""
+    return _source_normalization(
+        sources, freqs, time=time, fields=fields, dt=dt, spectra={}
+    )
+
+
+def _source_normalization(sources, freqs, *, time, fields, dt, spectra):
     freqs = np.asarray(freqs, dtype=float).reshape(-1)
     if freqs.size == 0:
         return None
     for source in sources or ():
-        spectrum = (
-            _sampled_source_spectrum(source, freqs, time=time)
-            if time is not None
-            else None
-        )
-        if spectrum is None and isinstance(source, (ModeSource, GaussianBeamSource)):
-            spectrum = source.source_spectrum(freqs, normalize=True)
+        key = (id(source), tuple(freqs))
+        if key not in spectra:
+            spectrum = (
+                _sampled_source_spectrum(source, freqs, time=time)
+                if time is not None
+                else None
+            )
+            if spectrum is None and isinstance(
+                source, (ModeSource, GaussianBeamSource)
+            ):
+                spectrum = source.source_spectrum(freqs, normalize=True)
+            spectra[key] = spectrum
+        spectrum = spectra[key]
         if spectrum is None:
             continue
         spectrum = np.asarray(spectrum, dtype=np.complex128).reshape(-1)
@@ -234,16 +247,17 @@ def monitor_dft_flux(monitor):
     return 0.5 * np.real(np.sum(sign * component, axis=1)) * measure
 
 
-def normalization_from_result(results, result, *, source=None):
+def normalization_from_result(results, result, *, source=None, spectra=None):
     """Derive source normalization from a raw run and monitor result."""
     materials = results.metadata.fields.materials or result.material_region
     sources = results.sources if source is None else (results.sources[int(source)],)
-    return source_normalization(
+    return _source_normalization(
         sources,
         monitor_frequencies(result),
         time=results.metadata.time,
         fields=materials,
         dt=results.metadata.dt,
+        spectra={} if spectra is None else spectra,
     )
 
 
@@ -291,8 +305,13 @@ def renormalize_result(result, source: int | None):
         return raw_result
 
     normalized = {}
+    # Waveforms share one acquisition window; spatial launch calibration remains
+    # monitor-specific. Keep this reuse local to one normalization operation.
+    spectra = {}
     for name, monitor in raw_monitors.items():
-        normalization = normalization_from_result(raw_result, monitor, source=source)
+        normalization = normalization_from_result(
+            raw_result, monitor, source=source, spectra=spectra
+        )
         if normalization is None:
             normalized[name] = monitor
             continue

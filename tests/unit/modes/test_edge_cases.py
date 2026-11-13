@@ -239,8 +239,6 @@ def test_discrete_helpers_cover_degenerate_and_reverse_paths():
     assert discrete_module._boundary_refractive_index(np.empty((0, 0))) == 0.0
     assert discrete_module._polarization_fraction({}, "x", None) == 1.0
     assert discrete_module._dominant_phase(np.empty(0)) == 0.0
-    singleton = np.ones((1, 2))
-    assert discrete_module._stagger_half(singleton, axis=0) is singleton
     assert discrete_module._tukey(0, 0.2).size == 0
 
     profiles = {"Ey": np.zeros(1), "Hz": np.zeros(1)}
@@ -278,9 +276,10 @@ def test_negative_y_profile_build_flips_electric_components():
         direction="-y",
         solver_direction="-y",
         transverse_axes=("z", "x"),
+        scalar_permittivity=np.ones((5, 5)),
     )
     fields = {
-        name: np.ones((3, 3), dtype=np.complex128)
+        name: np.ones((5, 5), dtype=np.complex128)
         for name in discrete_module._COMPONENTS
     }
     profiles, _indices, _extra = discrete_module._build_profiles(fields, spec)
@@ -341,8 +340,8 @@ def test_refinement_failure_preserves_seed_mode(monkeypatch, raises):
             lambda *_args, **_kwargs: (False, {"rejection_reason": "rejected"}),
         )
     spec = _mode_plane_spec(
-        component_permittivity={"Ex": np.ones(1)},
-        component_permeability={"Hx": np.ones(1)},
+        component_permittivity={"Ex": np.ones((6, 6, 5))},
+        component_permeability={"Hx": np.ones((5, 5, 6))},
     )
     result = discrete_module.solve_beamz_mode(spec)
     assert not result.diagnostics["yee_refinement_accepted"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,11 +18,11 @@ _PHASE_H = 0
 _PHASE_E = 1
 _COMPONENT_CODE = {name: index for index, name in enumerate(("Hx", "Hy", "Hz"))}
 _COMPONENT_CODE.update({name: index for index, name in enumerate(("Ex", "Ey", "Ez"))})
-_EMPTY = jnp.empty((0,), dtype=jnp.float32)
+_EMPTY = np.empty((0,), dtype=np.float32)
 _EMPTY_SOURCE_GROUP = (
-    jnp.zeros((0, 1, 1, 1), dtype=jnp.float32),
-    jnp.zeros((0, 1), dtype=jnp.float32),
-    jnp.zeros((0, 3), dtype=jnp.int32),
+    np.zeros((0, 1, 1, 1), dtype=np.float32),
+    np.zeros((0, 1), dtype=np.float32),
+    np.zeros((0, 3), dtype=np.int32),
 )
 _METRIC_KIND_CODE = {
     "isotropic_uniform": 0,
@@ -777,7 +778,7 @@ def _combined_cpml_core_supported(state, ctx, coeffs) -> bool:
     )
 
 
-def _temporal_cpml_fields_supported(ctx, coeffs, nsteps: int) -> bool:
+def _temporal_cpml_fields_supported(ctx, coeffs, nsteps: int, state=None) -> bool:
     """Prove that a second field bank can preserve the CPML timestep order."""
     if (
         getattr(ctx, "low_memory", False)
@@ -787,6 +788,27 @@ def _temporal_cpml_fields_supported(ctx, coeffs, nsteps: int) -> bool:
         or _uniform_cpml_thickness(ctx) <= 0
     ):
         return False
+    if (
+        state is not None
+        and ctx.config.cuda_memory_policy == "auto"
+        and ctx.config.cuda_storage_axes == (0, 1, 2)
+        and not ctx.config.cuda_flags & (abi.CUDA_FIELD_PAD32 | abi.CUDA_FIELD_PAD64)
+    ):
+        shape = tuple(min(f.shape[a] for f in _fields(state)[3:]) for a in range(3))
+        forced = os.environ.get("BEAMZ_CUDA_CPML_CORE_FUSION")
+        # Match the native fusion gate before reserving an alternate field bank.
+        # Explicit temporal experiments and speed policy retain their workspace.
+        if not ctx.config.cuda_flags & abi.CUDA_TEMPORAL_PAIR and (
+            forced == "0"
+            or (
+                forced != "1"
+                and (
+                    shape[2] < abi.CPML_FUSION_MIN_WIDTH
+                    or np.prod(shape) < abi.CPML_FUSION_MIN_CELLS
+                )
+            )
+        ):
+            return False
     h_values = _phase_materials(coeffs, "h")
     e_sources = (coeffs.e_source_x, coeffs.e_source_y, coeffs.e_source_z)
     return all(value.ndim == 0 for value in h_values) and all(
@@ -806,8 +828,15 @@ def _temporal_yee_supported(ctx, coeffs, nsteps: int) -> bool:
         or _metallic_edge_mask(ctx.boundary.cpml.metallic_edges) != 63
     ):
         return False
-    values = (*_phase_materials(coeffs, "h"), *_phase_materials(coeffs, "e"))
-    return all(value.ndim in (0, 3) for value in values)
+    # The frozen-field layout supports scalar damping only; dense damping uses
+    # the general schedule so conductive media retain correct field updates.
+    return all(
+        getattr(coeffs, f"{phase}_{kind}_{axis}").ndim
+        in ((0,) if kind == "decay" else (0, 3))
+        for phase in "he"
+        for kind in ("decay", "source")
+        for axis in "xyz"
+    )
 
 
 def _native_schedule_flags(
@@ -846,7 +875,7 @@ def _native_schedule_plan(
     """Choose every native fast path once and serialize that proof through FFI."""
     cpml = bool(ctx.boundary.cpml.enabled)
     combined_cpml_core = _combined_cpml_core_supported(state, ctx, coeffs)
-    temporal_cpml = _temporal_cpml_fields_supported(ctx, coeffs, nsteps)
+    temporal_cpml = _temporal_cpml_fields_supported(ctx, coeffs, nsteps, state)
     if kind == "steps":
         if temporal_cpml:
             layout = abi.PROGRAM_LAYOUT_SOURCE_TEMPORAL_CPML

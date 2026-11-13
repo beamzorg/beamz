@@ -547,6 +547,13 @@ def test_cuda_storage_axes_are_snapshotted_and_cache_separated(monkeypatch):
     assert permuted.config.cuda_storage_axes == (1, 2, 0)
     assert canonical is not permuted
     monkeypatch.setenv("BEAMZ_CUDA_STORAGE_AXES", "012")
+    # Explicit canonical storage disables automatic layout selection. Preserve
+    # that intent even when its resolved axes match the default program.
+    explicit = simulation.compile(backend="cuda_streamed")
+    assert explicit.config.cuda_storage_axes == (0, 1, 2)
+    assert explicit is not canonical
+    assert simulation.compile(backend="cuda_streamed") is explicit
+    monkeypatch.delenv("BEAMZ_CUDA_STORAGE_AXES")
     assert simulation.compile(backend="cuda_streamed") is canonical
 
 

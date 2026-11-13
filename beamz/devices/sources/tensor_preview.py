@@ -1,17 +1,29 @@
-"""Public 3D previews of the same discrete modes used by port launches."""
+"""Solver and prepared-launch views of the shared 3D mode family."""
 
 from __future__ import annotations
 
 import numpy as np
 
 from beamz.devices._placement import mode_source_region
+from beamz.devices.modes.discrete import (
+    _SolverMode,
+    solve_beamz_mode,
+    solve_solver_mode,
+)
 from beamz.devices.modes.plane import bind_material_mode_plane
 from beamz.devices.modes.specs import ModeData
 from beamz.lattice import component_axis_offsets_3d
 
 
 def solve_tensor_mode_plane(
-    *, simulation, materials, plane, spec, frequencies, direction
+    *,
+    simulation,
+    materials,
+    plane,
+    spec,
+    frequencies,
+    direction,
+    field_representation="solver",
 ):
     from .solve import _resolve_solver_direction
     from .specs import plane_axis_and_spans
@@ -50,10 +62,15 @@ def solve_tensor_mode_plane(
             dt=simulation.dt,
             grid=grid,
             frequency=frequency,
+            solver=solve_solver_mode
+            if field_representation == "solver"
+            else solve_beamz_mode,
         )
         solved.append([family.solve(index) for index in range(spec.num_modes)])
 
     def collocated(mode, prefix):
+        if isinstance(mode, _SolverMode):
+            return np.stack([mode.fields[prefix + a] for a in "xyz"])
         fields = []
         for component in (prefix + a for a in "xyz"):
             values = np.asarray(mode.profiles[component])
@@ -67,15 +84,23 @@ def solve_tensor_mode_plane(
         return np.stack(fields)
 
     first = solved[0][0]
-    normal_component = "E" + axis
-    index = first.component_indices[normal_component]
-    crop = tuple(
-        slice(
-            index[{"z": 0, "y": 1, "x": 2}[a]].start,
-            index[{"z": 0, "y": 1, "x": 2}[a]].stop - 1,
+    if isinstance(first, _SolverMode):
+        crop = tuple(
+            slice(
+                int(np.argmin(abs(grid.axis_edges(a) - edges[0]))),
+                int(np.argmin(abs(grid.axis_edges(a) - edges[-1]))),
+            )
+            for a, edges in zip(transverse, first.grid_edges, strict=True)
         )
-        for a in transverse
-    )
+    else:
+        index = first.component_indices["E" + axis]
+        crop = tuple(
+            slice(
+                index[{"z": 0, "y": 1, "x": 2}[a]].start,
+                index[{"z": 0, "y": 1, "x": 2}[a]].stop - 1,
+            )
+            for a in transverse
+        )
     profile = np.take(
         np.asarray(materials.permittivity),
         snapped.plane_index,
@@ -105,7 +130,9 @@ def solve_tensor_mode_plane(
         diagnostics=tuple(
             {
                 **modes[0].diagnostics,
-                "contract": "discrete_tensor_preview"
+                "contract": "solver_preview"
+                if field_representation == "solver"
+                else "discrete_tensor_preview"
                 if materials.uses_full_permittivity
                 else "discrete_preview",
                 "modes": tuple(m.diagnostics for m in modes),

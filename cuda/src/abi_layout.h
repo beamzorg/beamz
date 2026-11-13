@@ -93,6 +93,8 @@ inline constexpr size_t kTemporalFieldWorkspaceInput = 74;
 inline constexpr size_t kTemporalPsiWorkspaceInput = 80;
 inline constexpr size_t kMonitorElapsedStepsInput = 15;
 inline constexpr size_t kMstepPlanBufferCount = 5;
+inline constexpr size_t kCpmlFusionMinWidth = 384;
+inline constexpr size_t kCpmlFusionMinCells = 12582912;
 
 }  // namespace beamz::cuda::abi
 

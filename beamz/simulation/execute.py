@@ -350,10 +350,10 @@ def _configured_dft_weight_sum(simulation, spec) -> float:
 
 
 def _complete_converged_dft_weights(
-    results: SimulationResults, simulation, program: CompiledProgram
-) -> SimulationResults:
-    """Normalize converged DFTs as though their negligible tail had been sampled."""
-    monitors = dict(results.monitors)
+    monitors: dict[str, MonitorResults], simulation, program: CompiledProgram
+) -> dict[str, MonitorResults]:
+    """Complete raw DFT weights before the final source normalization."""
+    monitors = dict(monitors)
     for spec in program.monitors:
         if not spec.dft_enabled or spec.freq_count <= 0:
             continue
@@ -363,15 +363,7 @@ def _complete_converged_dft_weights(
         total_weight = _configured_dft_weight_sum(simulation, spec)
         weights = np.full(result.dft_weight_sum.shape, total_weight, dtype=np.float64)
         monitors[name] = replace(result, dft_weight_sum=weights)
-    # The DFT denominator now covers the configured window. Source spectra
-    # must use that same window, including its negligible unsimulated tail.
-    # Actual executed steps remain available in the termination report.
-    completed = replace(
-        results,
-        monitors=monitors,
-        metadata=replace(results.metadata, time=np.asarray(simulation.time)),
-    )
-    return completed.renormalize(results.normalization_source)
+    return monitors
 
 
 def compiled_source_batches(
@@ -1357,37 +1349,39 @@ def initial_program_state(
 
     old_h = () if continuation is None else continuation.cpml_psi_h_terms
     old_e = () if continuation is None else continuation.cpml_psi_e_terms
-    monitor_values = monitor_runtime.empty_monitor_values(
-        program,
-        num_steps=max(
-            1,
-            int(program.config.num_steps if monitor_steps is None else monitor_steps),
-        ),
+    recorder_shapes = tuple(
+        shape
+        for spec in program.monitors
+        if spec.recorder_index >= 0
+        for shape in spec.field_shapes
     )
-    recorder_buffers = monitor_values["recorded_fields"]
-    recorder_compatible = (
-        continuation is not None
-        and len(continuation.recorded_fields) == len(recorder_buffers)
-        and all(
-            old.shape[1:] == new.shape[1:]
-            for old, new in zip(
-                continuation.recorded_fields, recorder_buffers, strict=True
-            )
-        )
-    )
-    # Reuse monitor history only when its compiled shapes still match this program.
+    # Check metadata before allocating: compatible histories can be much larger
+    # than the fields, and must not need a second bank just to restore a state.
     if (
         program.monitors
         and continuation is not None
-        and all(
-            getattr(continuation, name).shape == monitor_values[name].shape
-            for name in ("dft_vec_re", "dft_vec_im", "dft_weight_sum")
-        )
-        and recorder_compatible
+        and continuation.dft_vec_re.shape
+        == (monitor_runtime.monitor_dft_value_size(program.monitors),)
+        and continuation.dft_vec_im.shape
+        == (monitor_runtime.monitor_dft_value_size(program.monitors),)
+        and continuation.dft_weight_sum.shape
+        == (monitor_runtime.monitor_dft_weight_size(program.monitors),)
+        and tuple(value.shape[1:] for value in continuation.recorded_fields)
+        == recorder_shapes
     ):
         monitor_values = {
             name: getattr(continuation, name) for name in monitor_runtime.MONITOR_FIELDS
         }
+    else:
+        monitor_values = monitor_runtime.empty_monitor_values(
+            program,
+            num_steps=max(
+                1,
+                int(
+                    program.config.num_steps if monitor_steps is None else monitor_steps
+                ),
+            ),
+        )
     # A continuation can promote the fields (for example, Periodic -> Bloch).
     # Promote recorder storage too, retaining all previous samples and metadata.
     recorded_fields = list(monitor_values["recorded_fields"])
@@ -1818,6 +1812,7 @@ def run_until_terminated(
     """Run reusable chunks until convergence, failure, or the configured time limit."""
     if not isinstance(policy, AutoTermination):
         raise TypeError("termination must be an AutoTermination instance or None.")
+    wall_start = perf_counter()
     chunk_steps = min(int(policy.chunk_steps), int(simulation.num_steps))
     first_program = simulation.compile(
         num_steps=chunk_steps,
@@ -1862,6 +1857,13 @@ def run_until_terminated(
 
     try:
         while int(state.current_step) < int(simulation.num_steps):
+            if (
+                monitor_results is not None
+                and policy.max_wall_time is not None
+                and perf_counter() - wall_start >= policy.max_wall_time
+            ):
+                reason = "wall_time_limit"
+                break
             current_step = int(state.current_step)
             remaining = int(simulation.num_steps) - current_step
             steps = min(chunk_steps, remaining)
@@ -1970,15 +1972,18 @@ def run_until_terminated(
         max_field=max_field,
         consecutive_checks=successful_checks,
     )
+    if reason == "converged":
+        monitor_results = _complete_converged_dft_weights(
+            monitor_results, simulation, first_program
+        )
     results = _run_results(
         simulation,
         program,
         state,
         store_full_materials,
         monitor_results=monitor_results,
+        completed_steps=int(state.current_step) if reason == "wall_time_limit" else None,
     )
-    if reason == "converged":
-        results = _complete_converged_dft_weights(results, simulation, first_program)
     stats = (
         _performance_for(
             first_program, runtime_s=runtime_s, steps=int(state.current_step)

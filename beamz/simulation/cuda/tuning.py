@@ -19,7 +19,7 @@ import threading
 import time
 from collections import OrderedDict
 from contextlib import suppress
-from dataclasses import asdict, replace
+from dataclasses import fields, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -27,6 +27,7 @@ from typing import Any
 import jax
 import numpy as np
 
+from beamz._cache_tokens import cache_token
 from beamz.simulation import _cuda_abi as abi
 
 _SCHEMA = 2
@@ -311,9 +312,12 @@ def _implementation_identity():
 
 
 def _cache_path(signature, device, policy, hardware=None):
-    program_identity = asdict(signature)
     # Cache location and refresh mode do not change numerical workload identity.
-    program_identity.pop("cuda_tuning_policy", None)
+    program_identity = {
+        field.name: cache_token(getattr(signature, field.name))
+        for field in fields(signature)
+        if field.name != "cuda_tuning_policy"
+    }
     identity = dict(
         schema=_SCHEMA,
         program=program_identity,

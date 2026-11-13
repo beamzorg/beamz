@@ -3,27 +3,35 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal, cast
+from typing import Any, Callable, Literal, cast
 
 import numpy as np
 
 from beamz.design.grid import RectilinearGrid
-from beamz.devices._placement import SnappedRegion, snap_centered_extent
+from beamz.devices._placement import (
+    SnappedRegion,
+    snap_centered_extent,
+    snap_rectilinear_edge_interval,
+)
 from beamz.lattice import (
     component_shape_3d,
     sample_voxel_grid_at_component_3d,
     sample_voxel_grid_at_e_component_3d_centered,
 )
 
+from ._sampling import cell_material_samples, collocate_result
 from ._symmetry import project_mode_symmetry
 from .constitutive import crop_tensor_support, has_cross_terms, require_diagonal_support
 from .discrete import (
     AxisName,
     DiscreteMode,
     ModePlaneSpec,
+    _SolverMode,
     solve_beamz_mode,
+    solve_solver_mode,
 )
 from .models import Materials
+from .policy import solve_interval
 from .solver import solve_grid
 
 _AXIS_POS_3D = {"z": 0, "y": 1, "x": 2}
@@ -34,7 +42,7 @@ _TRANSVERSE_AXES_3D: dict[str, tuple[AxisName, AxisName]] = {
 }
 MODE_PLANE_APERTURE_PAD_CELLS = 2
 TENSOR_MODE_NORMAL_HALO = 2
-MODE_PLANE_APERTURE_WINDOW_ALPHA = 0.2
+MODE_PLANE_APERTURE_WINDOW_ALPHA = 0.0
 SignedAxis = Literal["+x", "-x", "+y", "-y", "+z", "-z"]
 _SIGNED_AXES = frozenset({"+x", "-x", "+y", "-y", "+z", "-z"})
 
@@ -47,6 +55,7 @@ def solve_modes(
     m: int = 1,
     direction: SignedAxis = "+x",
     filter_pol: Literal["te", "tm"] | None = None,
+    return_fields: bool = True,
     target_neff: float | None = None,
     *,
     eps_yy: np.ndarray | None = None,
@@ -128,6 +137,16 @@ def solve_modes(
         solver_plane(eps if eps_zz is None else eps_zz),
     )
     permeability = tuple(solver_plane(v) for v in (mu_xx, mu_yy, mu_zz))
+    # Line solves need the same cell-to-Yee material sampling as planes.
+    solver_axes = tuple(a for a in "xyz" if a != axis)
+    epsilon = tuple(
+        cell_material_samples(value, "E" + a, solver_axes)
+        for a, value in zip("xyz", epsilon, strict=True)
+    )
+    permeability = tuple(
+        None if value is None else cell_material_samples(value, "H" + a, solver_axes)
+        for a, value in zip("xyz", permeability, strict=True)
+    )
     result = solve_grid(
         material_grid=Materials.from_components(
             eps_xx=cast(np.ndarray, epsilon[order[0]]),
@@ -145,6 +164,10 @@ def solve_modes(
         num_modes=2 * int(m) + 5,
         target_neff=target_neff,
         pml=(int(npml), int(npml)),
+    )
+    sampling_axes = result.axes if is_plane else (result.axes[0],)
+    result = collocate_result(
+        result, sampling_axes, tuple(np.asarray(v) for v in edges[: len(sampling_axes)])
     )
     fields = result.planes()
     if is_plane:
@@ -212,7 +235,9 @@ def solve_modes(
     if diagnostics is not None:
         diagnostics.update(symmetry_diagnostics)
         diagnostics["processing_stage"] = (
-            "solver_fields_before_yee_interpolation_and_refinement"
+            "solver_fields_colocated_before_launch_preparation"
+            if is_plane
+            else "solver_fields_before_yee_interpolation_and_refinement"
         )
     if axis_index == 1:
         magnetic = -magnetic
@@ -220,7 +245,14 @@ def solve_modes(
         electric = electric[..., 0]
         magnetic = magnetic[..., 0]
 
-    return neffs, electric, magnetic, axis_index
+    if return_fields:
+        return neffs, electric, magnetic, axis_index
+    dominant = np.argmax(
+        np.linalg.norm(electric.reshape(len(order), 3, -1), axis=2), axis=1
+    )
+    return neffs, np.column_stack(
+        [np.ravel(electric[i, c]) for i, c in enumerate(dominant)]
+    )
 
 
 def _mode_order(neffs, fields, axis, polarization):
@@ -242,13 +274,6 @@ def _mode_order(neffs, fields, axis, polarization):
     )
 
 
-def mode_plane_outer_pad_cells(width, height, resolution) -> int:
-    """Return the shared finite-domain padding for 3D modal solves."""
-    extent = max(float(width), float(width if height is None else height))
-    res = max(float(resolution), 1e-30)
-    return int(np.clip(np.ceil(0.5 * extent / res), 8, 48))
-
-
 def _axis_counts_from_grid_shape(grid_shape):
     nz, ny, nx = (int(v) for v in grid_shape)
     return {"z": nz, "y": ny, "x": nx}
@@ -267,17 +292,7 @@ def _plane_extent_by_axis(axis, width, height):
 
 
 def _ensure_min_interval(start, stop, limit, min_cells=2):
-    start = max(0, min(int(start), int(limit)))
-    stop = max(start, min(int(stop), int(limit)))
-    need = max(1, int(min_cells))
-    while stop - start < need and (start > 0 or stop < int(limit)):
-        if start > 0:
-            start -= 1
-        if stop - start >= need:
-            break
-        if stop < int(limit):
-            stop += 1
-    return start, stop
+    return solve_interval(start, stop, limit, min_cells=min_cells)
 
 
 def _local_mode_plane_spec(
@@ -321,7 +336,9 @@ def _local_mode_plane_spec(
     extents = _plane_extent_by_axis(axis, width, height)
 
     for transverse_axis in _TRANSVERSE_AXES_3D[axis]:
-        if snapped_region is None:
+        if snapped_region is not None:
+            interval = snapped_region.intervals[transverse_axis]
+        elif grid is None:
             interval = snap_centered_extent(
                 centers[transverse_axis],
                 extents[transverse_axis],
@@ -330,7 +347,13 @@ def _local_mode_plane_spec(
                 min_cells=2,
             )
         else:
-            interval = snapped_region.intervals[transverse_axis]
+            half = 0.5 * extents[transverse_axis]
+            interval = snap_rectilinear_edge_interval(
+                centers[transverse_axis] - half,
+                centers[transverse_axis] + half,
+                grid.axis_edges(transverse_axis),
+                min_cells=2,
+            )
         pad = max(0, int(pads[transverse_axis]))
         start = int(interval.start) - pad
         stop = int(interval.stop) + pad
@@ -408,6 +431,34 @@ def bind_mode_plane_3d(
     permittivity,
     permeability,
     *,
+    solver: Callable[..., DiscreteMode] = solve_beamz_mode,
+    **kwargs,
+) -> DiscreteMode:
+    """Solve a finite 3D plane and return globally indexed launch fields."""
+    return cast(
+        DiscreteMode,
+        _solve_mode_plane_3d(permittivity, permeability, solver=solver, **kwargs),
+    )
+
+
+def solve_solver_plane_3d(
+    permittivity,
+    permeability,
+    *,
+    solver: Callable[..., _SolverMode] = solve_solver_mode,
+    **kwargs,
+) -> _SolverMode:
+    """Solve the same finite material plane before launch preparation."""
+    return cast(
+        _SolverMode,
+        _solve_mode_plane_3d(permittivity, permeability, solver=solver, **kwargs),
+    )
+
+
+def _solve_mode_plane_3d(
+    permittivity,
+    permeability,
+    *,
     material_tensors=None,
     yee_materials=None,
     yee_tensors=None,
@@ -432,7 +483,7 @@ def bind_mode_plane_3d(
     solver=solve_beamz_mode,
     grid=None,
     force_symmetry=False,
-    min_aperture_fraction: float | None = 0.5,
+    min_aperture_fraction: float | None = None,
     solver_padding_cells: int | tuple[int, int] | None = None,
 ) -> BoundModePlane:
     """Bind constitutive supports and a candidate family before selecting members."""
@@ -451,9 +502,7 @@ def bind_mode_plane_3d(
         resolution=resolution,
         snapped_region=snapped_region,
         aperture_pad_cells=(
-            mode_plane_outer_pad_cells(width, height, resolution)
-            if solver_padding_cells is None
-            else solver_padding_cells
+            0 if solver_padding_cells is None else solver_padding_cells
         ),
         normal_halo_cells=TENSOR_MODE_NORMAL_HALO if yee_tensors else 0,
         material_origin_zyx=material_origin_zyx,
@@ -608,6 +657,8 @@ class BoundModePlane:
         )
         if self.solver is solve_beamz_mode:
             mode = _solve_beamz_mode(spec, basis_cache=self.candidate_basis)
+        elif self.solver is solve_solver_mode:
+            mode = solve_solver_mode(spec, basis_cache=self.candidate_basis)
         elif self.solver is _solve_cached_beamz_mode:
             mode = self.solver(spec, basis_cache=self.candidate_basis)
         else:
@@ -620,6 +671,16 @@ class BoundModePlane:
                 "solver_bounds": self.bounds,
             },
         )
+        if isinstance(mode, _SolverMode):
+            return replace(
+                mode,
+                grid_edges=tuple(
+                    edge + self.local_plane["axis_origins"][axis]
+                    for axis, edge in zip(
+                        mode.transverse_axes, mode.grid_edges, strict=True
+                    )
+                ),
+            )
         return _shift_discrete_mode_to_global(
             mode,
             origin_zyx=self.local_plane["origin_zyx"],

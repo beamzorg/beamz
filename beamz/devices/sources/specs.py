@@ -165,8 +165,20 @@ class ModeSource(Replaceable):
             )
         )
 
-    def solve_modes(self, simulation, freqs=None, mode_spec=None) -> ModeData:
-        """Solve modal fields on this source plane."""
+    def solve_modes(
+        self,
+        simulation,
+        freqs=None,
+        mode_spec=None,
+        *,
+        field_representation: Literal["solver", "launch"] = "solver",
+    ) -> ModeData:
+        """Preview solver fields, or prepared 3D launch fields with ``'launch'``.
+
+        Solver fields retain eigensolver normalization on common transverse cell
+        centres, before launch Yee interpolation, refinement, and power scaling. This display choice
+        does not change the fields used for injection.
+        """
         from .solve import solve_mode_plane
 
         frequencies = (
@@ -182,6 +194,7 @@ class ModeSource(Replaceable):
             mode_spec=self.mode_spec if mode_spec is None else mode_spec,
             freqs=frequencies,
             direction=self.signed_direction,
+            field_representation=field_representation,
         )
 
     def source_spectrum(self, freqs, *, normalize: bool = True) -> np.ndarray | None:

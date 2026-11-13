@@ -149,6 +149,9 @@ class CompiledGrid:
 
 
 def _copy_initial_field(value):
+    # A compiled zero lattice is metadata, not a second resident field bank.
+    if isinstance(value, np.ndarray) and value.size and not any(value.strides):
+        return jnp.full(value.shape, value.flat[0], dtype=value.dtype)
     # Commit placement before copying: jnp.array(..., device=source.sharding)
     # can execute the copy on the default accelerator before moving it back.
     placement = getattr(value, "sharding", None)
@@ -345,9 +348,9 @@ class CpmlTerm:
     component: str
     axis: int
     sign: float
-    a: jnp.ndarray
-    b: jnp.ndarray
-    inv_kappa: jnp.ndarray
+    a: jax.Array | np.ndarray
+    b: jax.Array | np.ndarray
+    inv_kappa: jax.Array | np.ndarray
     slab: CpmlPackedSlabSpec
 
 
@@ -380,6 +383,11 @@ class AutoTermination:
         Post-source energy increase considered a growth event.
     growth_checks : int, default=3
         Consecutive growth events that terminate the run as divergent.
+    max_wall_time : float or None, default=None
+        Elapsed seconds allowed for setup and chunked execution. Stop at the next
+        chunk boundary and return accumulated measurements. An in-flight chunk
+        and final result construction may exceed this budget. At least one chunk
+        executes so measurements are available even if setup exhausts the budget.
 
     Notes
     -----
@@ -396,8 +404,16 @@ class AutoTermination:
     monitor_names: tuple[str, ...] = ()
     growth_factor: float = 1.05
     growth_checks: int = 3
+    max_wall_time: float | None = None
 
     def __post_init__(self) -> None:
+        if self.max_wall_time is not None:
+            wall_time = float(self.max_wall_time)
+            if not np.isfinite(wall_time) or wall_time <= 0:
+                raise ValueError(
+                    "AutoTermination.max_wall_time must be finite and positive."
+                )
+            object.__setattr__(self, "max_wall_time", wall_time)
         for name in ("field_decay", "source_decay"):
             value = float(getattr(self, name))
             if not np.isfinite(value) or value < 0.0:

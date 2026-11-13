@@ -241,6 +241,30 @@ def _resolve_design_time_and_grid(
     return resolution, grid, time, use_realized_grid
 
 
+def _shift_grid_spec_to_domain(grid_spec, offset):
+    """Translate public mesh constraints with their geometry and devices."""
+    return replace(
+        grid_spec,
+        overrides=tuple(
+            replace(
+                item,
+                center=tuple(
+                    value + delta
+                    for value, delta in zip(item.center, offset, strict=True)
+                ),
+            )
+            for item in grid_spec.overrides
+        ),
+        snapping_points=tuple(
+            tuple(
+                None if value is None else value + delta
+                for value, delta in zip(point, offset, strict=True)
+            )
+            for point in grid_spec.snapping_points
+        ),
+    )
+
+
 def _prepare_design(
     design,
     *,
@@ -982,7 +1006,26 @@ class Simulation:
             "run_time" in changes or self.run_time is not None
         ):
             values["time"] = None
+        public_grid_spec = values["grid_spec"]
+        if (
+            self.material_grid is None
+            and not material_source_changed
+            and public_grid_spec is not None
+            and offset != (0.0, 0.0, 0.0)
+        ):
+            # The retained design is already in domain coordinates, while mesh
+            # requests remain in public coordinates, just like replacement devices.
+            grid_offset = (
+                offset
+                if self.is_3d
+                else physical_vector_to_grid_2d(offset, self.plane_2d)
+            )
+            values["grid_spec"] = _shift_grid_spec_to_domain(
+                public_grid_spec, grid_offset
+            )
         result = type(self)(**values)
+        # Keep constraints public so subsequent copies translate them exactly once.
+        object.__setattr__(result, "grid_spec", public_grid_spec)
         if self.material_grid is None and not material_source_changed:
             preserved_offset = offset
             target_plane = str(values["plane_2d"])
@@ -1632,6 +1675,15 @@ class Simulation:
         >>> results = sim.run(termination=AutoTermination(chunk_steps=200))
         >>> results.termination.reason in {"converged", "time_limit"}
         True
+
+        Limit elapsed execution time while retaining partial measurements:
+
+        >>> results = sim.run(termination=AutoTermination(max_wall_time=600.0))
+
+        The elapsed-time budget includes compilation and is checked between
+        chunks. A time-limited run returns its acquired results with termination
+        reason ``"wall_time_limit"``; finishing a chunk and constructing the result
+        may take execution beyond the budget.
 
         Notes
         -----

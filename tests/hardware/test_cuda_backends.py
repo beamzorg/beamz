@@ -1268,3 +1268,47 @@ def test_sharded_streamed_extended_features(axis, profile):
         sharding=dict(axis=axis, num_devices=2, backend="gpu"),
     ).state
     _assert_state_close(reference, actual)
+
+
+def test_manual_fusion_override_invalidates_small_program_cache(monkeypatch):
+    simulation = H100Workload(
+        name="fusion_override",
+        shape_zyx=(12, 14, 16),
+        timesteps=4,
+        resolution=100e-9,
+        pml_cells=2,
+        heterogeneous=True,
+        cpml=True,
+        source=True,
+        monitor=False,
+    ).build()
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", "0")
+    ordinary = simulation.compile(backend="cuda_streamed")
+    monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", "1")
+    fused = simulation.compile(backend="cuda_streamed")
+    assert fused is not ordinary
+
+
+def test_native_zero_lattice_is_host_metadata_until_state_allocation():
+    simulation = H100Workload(
+        name="zero_lattice",
+        shape_zyx=(12, 14, 16),
+        timesteps=4,
+        resolution=100e-9,
+        pml_cells=2,
+        heterogeneous=True,
+        cpml=True,
+        source=True,
+        monitor=True,
+    ).build()
+    program = simulation.compile(backend="cuda_streamed")
+    for name in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz"):
+        value = getattr(program.grid, name)
+        assert isinstance(value, np.ndarray)
+        assert not any(value.strides)
+        assert not value.flags.writeable
+    state = initial_program_state(program, t=0, current_step=0, monitor_steps=4)
+    for name in ("ex", "ey", "ez", "hx", "hy", "hz"):
+        value = getattr(state, name)
+        assert isinstance(value, jax.Array)
+        np.testing.assert_array_equal(value, 0)

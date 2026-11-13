@@ -24,6 +24,7 @@ from beamz.devices._boundary_compile import (
     BoundaryData,
     lower_boundaries,
 )
+from beamz.devices._immutable import immutable_snapshot
 from beamz.devices.boundaries import Periodic, bloch_storage_phases, bloch_wavevector
 from beamz.devices.monitors.compiler import compile_monitor_specs
 from beamz.devices.sources.compiler import compile_source_specs
@@ -487,23 +488,14 @@ def _compile_grid(
     field_dtype = jnp.complex64 if any(vector) else jnp.float32
     components = {
         component: (
-            constant_array(shape, 0)
-            if region_setup
+            constant_array(shape, 0, dtype=field_dtype)
+            if region_setup or request.run.backend in {"cuda_streamed", "cuda_mstep"}
             else jnp.zeros(shape, dtype=field_dtype)
         )
         for component, shape in shapes.items()
     }
-    pml_data = (
-        None
-        if profiles is None
-        else MappingProxyType(
-            {
-                key: jnp.asarray(value) if hasattr(value, "__array__") else value
-                for key, value in profiles.items()
-            }
-        )
-    )
     array = np.asarray if region_setup else jnp.asarray
+    pml_data = immutable_snapshot(profiles)
     values = {
         "material_grid": material_grid,
         "geometry": local_geometry,
@@ -533,43 +525,28 @@ def _compile_grid(
     )
     if direct:
         values_by_name = dict(materials.items())
-        for source, target in (
-            ("eps_x", "eps_x"),
-            ("eps_y", "eps_y"),
-            ("eps_z", "eps_z"),
-            ("sig_x", "sig_x"),
-            ("sig_y", "sig_y"),
-            ("sig_z", "sig_z"),
-            ("mu_hx", "mu_hx"),
-            ("mu_hy", "mu_hy"),
-            ("mu_hz", "mu_hz"),
-        ):
-            if source in direct:
-                value = array(direct[source])
-                if region_setup and value.ndim:
-                    value = RegionArray(value.shape, value.dtype, value.__getitem__)
-                if (
-                    source.startswith("sig_")
-                    and assembly.has_pml
-                    and not assembly.has_cpml
-                ):
-                    component = {"sig_x": "Ex", "sig_y": "Ey", "sig_z": "Ez"}[source]
-                    if assembly.conductivity.ndim == 0:
-                        centered = assembly.conductivity
-                    elif assembly.permittivity.ndim == 3:
-                        centered = sample_voxel_grid_at_e_component_3d_centered(
-                            assembly.conductivity,
-                            component,
-                        )
-                    else:
-                        centered = sample_voxel_grid_at_component_2d(
-                            assembly.conductivity,
-                            component,
-                            "xy",
-                            assembly.polarization_2d,
-                        )
-                    value = value + values_by_name[target] - centered
-                values_by_name[target] = value
+        for source, direct_value in direct.items():
+            value = array(direct_value)
+            if region_setup and value.ndim:
+                value = RegionArray(value.shape, value.dtype, value.__getitem__)
+            if source.startswith("sig_") and assembly.has_pml and not assembly.has_cpml:
+                component = {"sig_x": "Ex", "sig_y": "Ey", "sig_z": "Ez"}[source]
+                if assembly.conductivity.ndim == 0:
+                    centered = assembly.conductivity
+                elif assembly.permittivity.ndim == 3:
+                    centered = sample_voxel_grid_at_e_component_3d_centered(
+                        assembly.conductivity,
+                        component,
+                    )
+                else:
+                    centered = sample_voxel_grid_at_component_2d(
+                        assembly.conductivity,
+                        component,
+                        "xy",
+                        assembly.polarization_2d,
+                    )
+                value = value + values_by_name[source] - centered
+            values_by_name[source] = value
         values_by_name.update(
             eps_ex=values_by_name["eps_x"],
             eps_ey=values_by_name["eps_y"],
@@ -1132,13 +1109,7 @@ def compile_program(
         from .cuda.tuning import tuning_policy_from_env
 
         tuning_policy = tuning_policy_from_env()
-        if (
-            metric_kind == "isotropic_uniform"
-            and steps >= 16
-            and steps * expected_runs >= 32
-            and np.prod(material_grid.shape) >= 8 * 1024 * 1024
-        ):
-            signature = replace(signature, cuda_tuning_policy=tuning_policy)
+        signature = replace(signature, cuda_tuning_policy=tuning_policy)
     if cached := _PROGRAM_CACHE.get(signature):
         _PROGRAM_CACHE.move_to_end(signature)
         return cached

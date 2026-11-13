@@ -5,6 +5,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, cast
 
 import jax
@@ -71,13 +72,6 @@ class BoundaryData:
     periodic_axes: frozenset[int]
 
 
-class _ComponentSupport:
-    """Shape-only component view used while compiling staggered profiles."""
-
-    def __init__(self, shape) -> None:
-        self.shape = tuple(int(value) for value in shape)
-
-
 def _scalar_constants_allowed(material_grid, boundaries) -> bool:
     """Return whether uniform loss and permeability may be stored as scalars."""
     # Deliberately conservative scope: CPML keeps its damping in psi state and its
@@ -131,7 +125,9 @@ class _BoundaryGrid:
             for name, value in material_grid.yee_materials.items()
         }
         for component, shape in component_shapes.items():
-            setattr(self, component, _ComponentSupport(shape))
+            setattr(
+                self, component, SimpleNamespace(shape=tuple(int(v) for v in shape))
+            )
 
 
 def resolve_metallic_edges(boundaries, is_3d: bool) -> frozenset[str]:
@@ -258,9 +254,6 @@ class _AbsorberCompiler:
         self.spec = spec
         self.cell_thickness = cell_thickness
 
-    def _get_edges_for_dimensionality(self, is_3d):
-        return list(edges_for_dimension(self.spec.edges, is_3d))
-
     def _physical_thickness(self) -> float:
         thickness = self.spec.thickness
         if thickness is None:
@@ -327,23 +320,20 @@ class _AbsorberCompiler:
         material = np.asarray(fields.permittivity)
         if material.size == 0:
             return []
-        bad_edges = []
-        for edge, axis, side, count in self._pml_material_edge_counts(
-            material, pml_data
-        ):
-            if count <= 0 or count >= material.shape[axis]:
-                continue
-            if self._pml_edge_material_varies(material, axis, side, count):
-                bad_edges.append(edge)
-        return bad_edges
+        return [
+            edge
+            for edge, axis, side, count in self._pml_material_edge_counts(
+                material, pml_data
+            )
+            if 0 < count < material.shape[axis]
+            and self._pml_edge_material_varies(material, axis, side, count)
+        ]
 
     def _pml_material_edge_counts(self, material, pml_data):
         """Return active absorber-cell counts for material extrusion checks."""
         # 1. Map public wall names to storage axes for the current dimensionality; 2D
         # planes omit one physical axis and therefore need a plane-specific mapping.
         mat = np.asarray(material)
-        axis_map_3d = {"z": 0, "y": 1, "x": 2}
-        axis_map_2d = {"y": 0, "x": 1}
         edge_axes = {
             "left": ("x", "low"),
             "right": ("x", "high"),
@@ -353,11 +343,11 @@ class _AbsorberCompiler:
             "back": ("z", "high"),
         }
         is_3d = mat.ndim == 3
-        axis_map = axis_map_3d if is_3d else axis_map_2d
+        axis_map = {axis: i for i, axis in enumerate("zyx" if is_3d else "yx")}
         # 2. For each active wall, collapse its sigma grid transversely to a 1D activity
         # profile and count contiguous absorber cells inward from that wall.
         edge_counts = []
-        for edge in self._get_edges_for_dimensionality(is_3d):
+        for edge in edges_for_dimension(self.spec.edges, is_3d):
             axis_name, side = edge_axes.get(edge, (None, None))
             if axis_name not in axis_map:
                 continue
@@ -369,11 +359,8 @@ class _AbsorberCompiler:
                 np.asarray(sigma) > 0.0,
                 axis=tuple(i for i in range(material.ndim) if i != axis),
             )
-            if side == "low":
-                count = int(np.argmax(~active_1d)) if np.any(~active_1d) else 0
-            else:
-                rev = active_1d[::-1]
-                count = int(np.argmax(~rev)) if np.any(~rev) else 0
+            inward = active_1d if side == "low" else active_1d[::-1]
+            count = int(np.argmax(~inward)) if np.any(~inward) else 0
             edge_counts.append((edge, axis, side, count))
         return edge_counts
 
@@ -440,13 +427,16 @@ class _AbsorberCompiler:
         if self.spec.sigma_max is None:
             raise ValueError("PML profile parameters must be resolved before sampling.")
 
-        if low_active:
-            dist = jnp.clip(thickness - coords, 0.0, None)
-            sigma = sigma + self.spec.sigma_max * (dist / thickness) ** self.spec.m
-
-        if high_active:
-            dist = jnp.clip(coords - (length - thickness), 0.0, None)
-            sigma = sigma + self.spec.sigma_max * (dist / thickness) ** self.spec.m
+        for active, distance in (
+            (low_active, thickness - coords),
+            (high_active, coords - (length - thickness)),
+        ):
+            if active:
+                sigma = (
+                    sigma
+                    + self.spec.sigma_max
+                    * (jnp.clip(distance, 0.0, None) / thickness) ** self.spec.m
+                )
 
         return sigma
 
@@ -612,7 +602,7 @@ class _AbsorberCompiler:
                 ("x", width, 1, "left", "right"),
             )
 
-        edges = set(self._get_edges_for_dimensionality(len(shape) == 3))
+        edges = set(edges_for_dimension(self.spec.edges, len(shape) == 3))
         profiles = {f"sigma_{name}": jnp.zeros(shape) for name in "xyz"}
         mask = jnp.zeros(shape, dtype=bool)
         for name, length, axis, low_edge, high_edge in axes:
@@ -647,7 +637,7 @@ class _AbsorberCompiler:
                 )[:ndim]
             )
         }
-        edges = set(self._get_edges_for_dimensionality(ndim == 3))
+        edges = set(edges_for_dimension(self.spec.edges, ndim == 3))
         geometry = _rectilinear_geometry(fields)
 
         def compact(axis, value):
@@ -742,22 +732,14 @@ def _extrusion_changes_material(material, edge_counts):
     for _edge, axis, side, count in edge_counts:
         if count <= 0 or count >= material.shape[axis]:
             continue
-        slab = [slice(None)] * material.ndim
-        slab[axis] = (
-            slice(0, count)
-            if side == "low"
-            else slice(material.shape[axis] - count, None)
+        slab, reference = _absorber_slices(material.shape, axis, side, count)
+        values = material[slab]
+        ref = np.broadcast_to(
+            np.expand_dims(material[reference], axis=axis), values.shape
         )
-        reference = [slice(None)] * material.ndim
-        reference[axis] = (
-            slice(count, count + 1)
-            if side == "low"
-            else slice(material.shape[axis] - count - 1, material.shape[axis] - count)
-        )
-        values = material[tuple(slab)]
-        ref = np.broadcast_to(material[tuple(reference)], values.shape)
         for tile in tiles(values.shape, values.dtype):
-            if not np.array_equal(values[tile], ref[tile], equal_nan=True):
+            a, b = values[tile], ref[tile]
+            if not np.array_equal(a, b) and not np.array_equal(a, b, equal_nan=True):
                 return True
     return False
 

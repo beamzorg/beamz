@@ -35,6 +35,7 @@ def synthetic_result(edges, skew=0.3):
                 value.T[..., None, None, None],
                 dims=("y", "z", "x", "f", "mode_index"),
                 coords={"z": z / 1e-6, "y": y / 1e-6},
+                attrs={"grid_sampling": "cell_centres"},
             )
             for name, value in fields.items()
         },
@@ -374,7 +375,7 @@ def test_public_preview_records_immutable_processing_diagnostics(monkeypatch):
     monkeypatch.setattr(solve, "mode_plane_context", lambda **kw: context)
     data = solve.solve_mode_plane(
         simulation=SimpleNamespace(
-            resolution=1e-7, _material_grid=lambda: SimpleNamespace(shape=(5, 5))
+            resolution=1e-7, _material_grid=lambda: SimpleNamespace(shape=(5,))
         ),
         plane=None,
         mode_spec=ModeSpec(force_symmetry=True),
@@ -384,7 +385,7 @@ def test_public_preview_records_immutable_processing_diagnostics(monkeypatch):
     assert data.diagnostics[0]["force_symmetry_applied"]
     assert (
         data.diagnostics[0]["processing_stage"]
-        == "solver_fields_before_yee_interpolation_and_refinement"
+        == "solver_fields_colocated_before_launch_preparation"
     )
     with pytest.raises(TypeError):
         data.diagnostics[0]["force_symmetry_applied"] = False

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import colorsys
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -225,37 +226,20 @@ def _draw_monitor(ax, monitor):
 
 
 def _draw_boundaries(ax, sim):
-    from matplotlib.patches import Rectangle
-
     design = sim.design
     width, height = float(design.width), float(design.height)
     for boundary in getattr(sim, "boundaries", ()) or ():
-        thickness = float(getattr(boundary, "thickness", 0.0) or 0.0)
-        if thickness <= 0:
-            continue
-        edges = getattr(boundary, "_get_edges_for_dimensionality", lambda _is_3d: ())(
-            bool(getattr(design, "is_3d", False))
+        thicknesses = _boundary_face_thicknesses(sim, boundary)
+        overlay_boundaries(
+            ax,
+            (0.0, width, 0.0, height),
+            thicknesses,
+            facecolor="none",
+            edgecolor="red",
+            linestyle=":",
+            linewidth=1.0,
+            alpha=0.6,
         )
-        rectangles = {
-            "left": (0.0, 0.0, thickness, height),
-            "right": (width - thickness, 0.0, thickness, height),
-            "bottom": (0.0, 0.0, width, thickness),
-            "top": (0.0, height - thickness, width, thickness),
-        }
-        for edge in edges:
-            if edge not in rectangles:
-                continue
-            ax.add_patch(
-                Rectangle(
-                    rectangles[edge][:2],
-                    *rectangles[edge][2:],
-                    facecolor="none",
-                    edgecolor="red",
-                    linestyle=":",
-                    linewidth=1.0,
-                    alpha=0.6,
-                )
-            )
 
 
 def plot_design(
@@ -588,8 +572,41 @@ def _material_levels(sim):
     return core, substrate
 
 
+def _boundary_face_thicknesses(sim, boundary):
+    """Resolve physical layer widths on each selected face without compiling."""
+    from beamz.devices.boundaries import PML
+
+    thickness = getattr(boundary, "thickness", 0.0)
+    if thickness is not None and thickness <= 0.0:
+        return {}
+    if thickness is None and not isinstance(boundary, PML):
+        return {}
+    edges = boundary._get_edges_for_dimensionality(sim.is_3d)
+    if thickness is not None:
+        return {edge: float(thickness) for edge in edges}
+    faces = {
+        "left": ("x", False),
+        "right": ("x", True),
+        "bottom": ("y", False),
+        "top": ("y", True),
+        "front": ("z", False),
+        "back": ("z", True),
+    }
+    widths = {}
+    for edge in edges:
+        axis, high = faces[edge]
+        coordinates = np.asarray(sim.grid.axis_edges(axis))
+        cells = min(boundary.DEFAULT_CELLS, coordinates.size - 1)
+        widths[edge] = float(
+            coordinates[-1] - coordinates[-1 - cells]
+            if high
+            else coordinates[cells] - coordinates[0]
+        )
+    return widths
+
+
 def _pml_section_layers(sim, normal):
-    """Yield PML thickness and visible edges for a plotted section."""
+    """Yield PML widths in micrometres on the visible section edges."""
     from beamz.devices.boundaries import PML
 
     edge_map = (
@@ -597,18 +614,17 @@ def _pml_section_layers(sim, normal):
         if normal == "z"
         else {"left": "left", "right": "right", "front": "bottom", "back": "top"}
     )
+    visible = {}
     for boundary in getattr(sim, "boundaries", ()) or ():
         if not isinstance(boundary, PML):
             continue
-        thickness = boundary.thickness
-        if thickness is None or thickness <= 0.0:
-            continue
-        boundary_edges = boundary._get_edges_for_dimensionality(sim.is_3d)
-        visible_edges = tuple(
-            edge_map[edge] for edge in boundary_edges if edge in edge_map
-        )
-        if visible_edges:
-            yield float(thickness), visible_edges
+        thicknesses = _boundary_face_thicknesses(sim, boundary)
+        for edge, value in thicknesses.items():
+            if edge in edge_map:
+                section_edge = edge_map[edge]
+                visible[section_edge] = max(visible.get(section_edge, 0.0), value / _UM)
+    if visible:
+        yield visible
 
 
 def _field_eps_slice(simulation, *, plane="z", index=None, plane_position=None):
@@ -761,8 +777,10 @@ def _draw_device_slice_overlay(ax, device, *, normal, origin, color, source):
         )
 
 
-def overlay_boundaries(ax, extent, thickness, *, edges=None, **style):
-    """Draw cross-section PML bands without letting side bands cover corners."""
+def overlay_boundaries(
+    ax, extent, thickness: float | Mapping[str, float], *, edges=None, **style
+):
+    """Draw PML bands from a scalar width or widths keyed by section edge."""
     from matplotlib.patches import Rectangle
 
     x0, x1, y0, y1 = (float(v) for v in extent)
@@ -771,24 +789,27 @@ def overlay_boundaries(ax, extent, thickness, *, edges=None, **style):
     if width <= 0.0 or height <= 0.0:
         return ()
 
-    px = min(max(float(thickness), 0.0), 0.5 * width)
-    py = min(max(float(thickness), 0.0), 0.5 * height)
-    if px <= 0.0 and py <= 0.0:
-        return ()
-
-    selected = frozenset(("left", "right", "bottom", "top") if edges is None else edges)
+    names = ("left", "right", "bottom", "top")
+    selected = frozenset(names if edges is None else edges)
+    values = (
+        thickness if isinstance(thickness, Mapping) else dict.fromkeys(names, thickness)
+    )
+    left, right, bottom, top = (
+        min(max(float(values.get(edge, 0.0)), 0.0), 0.5 * length)
+        if edge in selected
+        else 0.0
+        for edge, length in zip(names, (width, width, height, height), strict=True)
+    )
     specs = []
-    side_height = max(height - 2.0 * py, 0.0)
-    if px > 0.0 and side_height:
-        if "left" in selected:
-            specs.append((x0, y0 + py, px, side_height))
-        if "right" in selected:
-            specs.append((x1 - px, y0 + py, px, side_height))
-    if py > 0.0:
-        if "bottom" in selected:
-            specs.append((x0, y0, width, py))
-        if "top" in selected:
-            specs.append((x0, y1 - py, width, py))
+    side_height = max(height - bottom - top, 0.0)
+    if left > 0.0 and side_height:
+        specs.append((x0, y0 + bottom, left, side_height))
+    if right > 0.0 and side_height:
+        specs.append((x1 - right, y0 + bottom, right, side_height))
+    if bottom > 0.0:
+        specs.append((x0, y0, width, bottom))
+    if top > 0.0:
+        specs.append((x0, y1 - top, width, top))
     rectangles = tuple(Rectangle(spec[:2], *spec[2:], **style) for spec in specs)
     for rect in rectangles:
         ax.add_patch(rect)
@@ -1253,12 +1274,11 @@ def _overlay_layout_devices(
 
 
 def _overlay_layout_pml(ax, sim, *, normal, extent):
-    for thickness, edges in _pml_section_layers(sim, normal):
+    for thicknesses in _pml_section_layers(sim, normal):
         overlay_boundaries(
             ax,
             extent,
-            thickness / _UM,
-            edges=edges,
+            thicknesses,
             facecolor="#666666",
             alpha=0.22,
             hatch="///",

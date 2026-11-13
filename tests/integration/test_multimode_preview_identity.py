@@ -10,6 +10,7 @@ import beamz as bz
 from beamz.design.discretization import MaterialGrid
 from beamz.design.grid import RectilinearGrid
 from beamz.devices.modes import discrete, plane
+from beamz.devices.modes._sampling import collocate_result
 from beamz.devices.modes.plane import bind_material_mode_plane
 
 
@@ -30,6 +31,13 @@ def preview_fixture():
             center, size = (
                 (center[1], center[0], center[2]),
                 (size[1], size[0], size[2]),
+            )
+        elif axis == "z":
+            eps = eps.transpose(2, 0, 1)
+            edges = edges[1], edges[2], edges[0]
+            center, size = (
+                (center[1], center[2], center[0]),
+                (size[1], size[2], size[0]),
             )
         material = MaterialGrid(
             eps,
@@ -73,6 +81,79 @@ def discrete_overlap(left, right):
     return abs(np.vdot(a, b)) ** 2 / (np.vdot(a, a).real * np.vdot(b, b).real)
 
 
+@pytest.mark.parametrize("axis,direction", [("x", "+"), ("y", "-"), ("z", "+")])
+def test_default_preview_returns_eigenfields_without_launch_preparation(
+    preview_fixture, axis, direction
+):
+    sim, source = preview_fixture(axis=axis, direction=direction)
+    results = []
+    solve = discrete.solve_grid
+
+    def capture(**kwargs):
+        result = solve(**kwargs)
+        results.append(result)
+        return result
+
+    with (
+        patch.object(discrete, "solve_grid", side_effect=capture),
+        patch.object(
+            discrete,
+            "_prepare_discrete_mode",
+            side_effect=AssertionError(
+                "Solver previews must bypass launch preparation"
+            ),
+        ),
+    ):
+        preview = source.solve_modes(sim)
+    assert len(results) == 1
+    result = collocate_result(
+        results[0],
+        preview.transverse_axes,
+        tuple(e / bz.um for e in preview.grid_edges),
+    )
+    assert preview.diagnostics[0]["field_representation"] == "solver"
+    assert preview.e_fields.shape[-2:] == tuple(len(e) - 1 for e in preview.grid_edges)
+    for mode in range(3):
+        index = int(np.argmin(abs(result.n_complex.values[0] - preview.neffs[0, mode])))
+        expected = np.stack(
+            [
+                result.field_components[prefix + a]
+                .isel({axis: 0, "f": 0, "mode_index": index})
+                .transpose(*preview.transverse_axes)
+                .values
+                for prefix in "EH"
+                for a in "xyz"
+            ]
+        )
+        actual = np.concatenate((preview.e_fields[0, mode], preview.h_fields[0, mode]))
+        gauge = np.vdot(expected, actual) / np.vdot(expected, expected)
+        assert abs(abs(gauge) - 1) < 1e-12
+        np.testing.assert_allclose(actual, gauge * expected, atol=1e-12, rtol=1e-10)
+    assert not preview.e_fields.flags.writeable
+
+
+@pytest.mark.parametrize("representation", ["prepared", "raw", None])
+def test_preview_rejects_unknown_field_representation(preview_fixture, representation):
+    sim, source = preview_fixture()
+    with pytest.raises(ValueError, match="field_representation"):
+        source.solve_modes(sim, field_representation=representation)
+
+
+def test_prepared_launch_preview_requires_3d():
+    from types import SimpleNamespace
+
+    from beamz.devices.sources.solve import solve_mode_plane
+
+    with pytest.raises(ValueError, match="3D"):
+        solve_mode_plane(
+            simulation=SimpleNamespace(),
+            plane=None,
+            mode_spec=None,
+            freqs=[2e14],
+            field_representation="launch",
+        )
+
+
 @pytest.mark.parametrize("num_modes", [1, 2, 3])
 def test_preview_solves_each_candidate_pool_once(preview_fixture, num_modes):
     sim, source = preview_fixture(num_modes)
@@ -113,7 +194,7 @@ def test_preparing_modes_does_not_mutate_the_shared_candidates(
         return basis
 
     monkeypatch.setattr(discrete, "_resolve_mode_basis", observe)
-    source.solve_modes(sim)
+    source.solve_modes(sim, field_representation="launch")
     assert len(captured) == 1
     basis, original = captured[0]
     for candidate, fields in zip(basis.candidates, original, strict=True):
@@ -137,6 +218,7 @@ def test_preview_resolves_a_separate_basis_at_each_frequency(preview_fixture):
 
 def test_unrestricted_preview_retains_radiation_candidates_for_inspection(
     preview_fixture,
+    caplog,
 ):
     sim, source = preview_fixture()
     material = sim._material_grid()
@@ -154,15 +236,16 @@ def test_unrestricted_preview_retains_radiation_candidates_for_inspection(
         ),
     )
     preview = source.solve_modes(sim)
+    assert "does not decay at the solve boundaries" in caplog.text
     assert preview.neffs.shape == (1, 3)
     # Tutorials may deliberately inspect alternatives below the light line.
     assert np.any(preview.neffs[0].real < 1.444)
     assert any(
-        mode["aperture_fraction"] < 0.5 for mode in preview.diagnostics[0]["modes"]
+        not mode["fields_decay_at_boundary"] for mode in preview.diagnostics[0]["modes"]
     )
 
 
-@pytest.mark.parametrize("padding", [None, 0, (2, 4)])
+@pytest.mark.parametrize("padding", [None, (2, 4)])
 @pytest.mark.parametrize("axis,direction", [("x", "+"), ("y", "-")])
 def test_preview_launch_and_projection_share_the_mode_family(
     preview_fixture, axis, direction, padding
@@ -183,6 +266,7 @@ def test_preview_launch_and_projection_share_the_mode_family(
     )
     sim = sim.updated_copy(monitors=[monitor])
     preview = source.solve_modes(sim)
+    prepared = source.solve_modes(sim, field_representation="launch")
     launched = []
 
     def launch(*args, **kwargs):
@@ -213,6 +297,9 @@ def test_preview_launch_and_projection_share_the_mode_family(
             mode.diagnostics["solver_bounds"] == preview.diagnostics[0]["solver_bounds"]
         )
     np.testing.assert_allclose(preview.neffs[0], [m.neff for m in launched], rtol=1e-9)
+    np.testing.assert_allclose(prepared.neffs, preview.neffs, rtol=1e-9)
+    assert prepared.diagnostics[0]["field_representation"] == "launch"
+    assert preview.diagnostics[0]["field_representation"] == "solver"
     # The short run supplies real stored monitor/material metadata; these checks
     # concern basis identity, not converged transmission or propagated power.
     result = sim.run(backend="jax", progress=False)
@@ -258,7 +345,7 @@ def test_preview_launch_and_projection_share_the_mode_family(
     )
 
 
-@pytest.mark.parametrize("padding", [None, 0, (2, 2)])
+@pytest.mark.parametrize("padding", [None, (2, 2), (100, 100)])
 @pytest.mark.parametrize("outside", ["neighbor", "substrate"])
 def test_preview_and_launch_share_material_window_and_select_wire(
     preview_fixture, outside, padding
@@ -296,8 +383,8 @@ def test_preview_and_launch_share_material_window_and_select_wire(
     np.testing.assert_array_equal(
         preview_material, solve.call_args.kwargs["material_grid"].eps_tensor[0, 0]
     )
-    assert label(preview_material > 5)[1] == (2 if padding is None else 1)
-    assert label(preview.eps_profiles[0] > 5)[1] == 1
+    assert label(preview_material > 5)[1] == (2 if padding == (100, 100) else 1)
+    assert label(preview.eps_profiles[0] > 5)[1] == (2 if padding == (100, 100) else 1)
     peaks = [
         sim.grid.z_edges[
             term.slab_starts[0]
@@ -309,3 +396,50 @@ def test_preview_and_launch_share_material_window_and_select_wire(
         if term.component == "Ey"
     ]
     assert peaks and all(expected_peak[0] < z < expected_peak[1] for z in peaks)
+
+
+@pytest.mark.parametrize("wavelength_um", [1.9375, 1.823529411764706])
+def test_graded_soi_mode_refinement_tracks_long_wavelength_guided_branch(wavelength_um):
+    """The modal tutorial must not fall back to a continuum seed at band edges."""
+    um = bz.um
+    silicon = bz.Material(permittivity=3.48**2)
+    silica = bz.Material(permittivity=1.45**2)
+    design = bz.Design(background=bz.Material(permittivity=1.0))
+    design += bz.Box(
+        center=(0, 0, -3 * um), size=(bz.inf, bz.inf, 6 * um), material=silica
+    )
+    design += bz.Box(
+        center=(0, 0, 0.11 * um), size=(bz.inf, 0.45 * um, 0.22 * um), material=silicon
+    )
+    frequency = bz.LIGHT_SPEED / (1.55 * um)
+    source = bz.ModeSource(
+        center=(-2 * um, 0, 0),
+        size=(0, 3 * um, 2 * um),
+        direction="+",
+        source_time=bz.GaussianPulse(freq0=frequency, fwidth=frequency / 10),
+        mode_spec=bz.ModeSpec(
+            num_modes=3, target_neff=0.98 * 3.48, min_aperture_fraction=None
+        ),
+    )
+    simulation = bz.Simulation(
+        domain=(8 * um, 7 * um, 6 * um),
+        design=design,
+        grid_spec=bz.GridSpec.auto(
+            wavelength=1.55 * um, min_steps_per_wvl=10, max_scale=1.25
+        ),
+        sources=[source],
+        run_time=1e-15,
+    )
+    modes = source.solve_modes(
+        simulation,
+        freqs=[bz.LIGHT_SPEED / (wavelength_um * um)],
+        field_representation="launch",
+    )
+    diagnostic = modes.diagnostics[0]["modes"][0]
+    assert diagnostic["solver_padding_cells"] == (0, 0)
+    assert not diagnostic["force_symmetry_applied"]
+    assert diagnostic["yee_refinement_accepted"]
+    validation = diagnostic["yee_refinement_validation"]
+    assert validation["magnetic_overlap"] > 0.5
+    assert validation["faraday_residual"] < 5e-8
+    assert validation["ampere_residual"] < 5e-8

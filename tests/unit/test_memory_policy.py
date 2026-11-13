@@ -16,7 +16,9 @@ def test_auto_schedule_uses_budget_not_donation(
     monkeypatch, donate, available, capacity
 ):
     program, _, context = _program_and_state(cpml=True)
-    program = replace(program, config=context.config)
+    program = replace(
+        program, config=replace(context.config, cuda_memory_policy="auto")
+    )
     device = SimpleNamespace(
         platform="gpu",
         memory_stats=lambda: dict(
@@ -86,6 +88,47 @@ def test_initial_state_copies_each_field_only_once(monkeypatch):
     assert len(copies) == 6
 
 
+def test_monitor_continuation_does_not_allocate_discarded_history(monkeypatch):
+    import numpy as np
+
+    import beamz as bz
+    from beamz.simulation import observe
+
+    sim = bz.Simulation(
+        size=(0.8e-6, 0.6e-6, 0.4e-6),
+        resolution=0.1e-6,
+        time=np.arange(8) * 1e-17,
+        monitors=[
+            bz.FieldRecorder(("Ez",), interval=1, name="frames"),
+            bz.FieldMonitor(
+                center=(0, 0, 0),
+                size=(0, 0.2e-6, 0.2e-6),
+                freqs=(2e14,),
+                fields=("Ez",),
+                name="dft",
+            ),
+        ],
+    )
+    original = observe.empty_monitor_values
+    allocations = []
+
+    def allocate(*args, **kwargs):
+        allocations.append(kwargs.get("num_steps"))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(observe, "empty_monitor_values", allocate)
+    first = sim.advance(num_steps=4, backend="jax", performance=False)
+    second = sim.advance(
+        state=first.state, num_steps=4, backend="jax", performance=False
+    )
+    np.testing.assert_array_equal(second.results["frames"].field_steps, np.arange(1, 9))
+    assert int(second.state.recorded_counts[0]) == 8
+    assert np.all(np.asarray(second.state.dft_weight_sum) == 8)
+    assert allocations == [8], (
+        "Compatible monitor history must be reused before allocation"
+    )
+
+
 def test_memory_policy_does_not_disable_layout_selection(monkeypatch):
     from beamz.simulation.cuda.tuning import tuning_policy_from_env
 
@@ -121,7 +164,9 @@ def test_mstep_estimate_counts_compact_fields_and_plan():
     import math
 
     program, _, context = _program_and_state(cpml=True)
-    program = replace(program, config=context.config)
+    program = replace(
+        program, config=replace(context.config, cuda_memory_policy="auto")
+    )
     plan = SimpleNamespace(summary=lambda: {"scratch_bytes": 8192, "plan_bytes": 1024})
     fields = sum(
         math.prod(shape) * 4 for shape in program.sharding.layout.padded_shapes.values()

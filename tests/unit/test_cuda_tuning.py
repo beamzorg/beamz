@@ -38,7 +38,7 @@ def test_persistent_identity_changes_for_workload_build_and_hardware(
     @dataclass
     class Signature:
         num_steps: int = 256
-        materials: str = "binary"
+        materials: object = "binary"
         cuda_tuning_policy: tuple = ()
 
     device = SimpleNamespace(
@@ -60,6 +60,21 @@ def test_persistent_identity_changes_for_workload_build_and_hardware(
     )
     monkeypatch.setattr(tuning, "_implementation_identity", lambda: "build2")
     assert tuning._cache_path(Signature(), device, policy)[1] != base
+
+    from beamz.design import MaterialGrid
+
+    material = MaterialGrid(np.ones((2, 3)), 0.0, 1.0, 1e-7, (2, 3))
+    material_key = tuning._cache_path(Signature(materials=material), device, policy)[1]
+    equal_material = replace(material, permittivity=np.ones((2, 3)))
+    changed_material = replace(material, permittivity=np.full((2, 3), 2.0))
+    assert (
+        tuning._cache_path(Signature(materials=equal_material), device, policy)[1]
+        == material_key
+    )
+    assert (
+        tuning._cache_path(Signature(materials=changed_material), device, policy)[1]
+        != material_key
+    )
 
 
 def test_apply_changes_only_layout_and_shell():

@@ -35,8 +35,8 @@ class ModeSpec:
         Project 2D transverse solver planes about validated physical material/grid
         mirrors. One-dimensional line profiles remain unprojected.
         Applied before Yee interpolation and independent Maxwell refinement.
-    min_aperture_fraction : float or None, default=0.5
-        In 3D, prefer modes with at least this fraction of area-weighted transverse
+    min_aperture_fraction : float or None, default=None
+        Prefer modes with at least this fraction of cell-weighted transverse
         electric intensity inside the aperture, within the requested polarization.
         Preserve decreasing-neff order within that group. A heterogeneous plane
         adaptively searches up to at least 64 candidates, then fails explicitly
@@ -44,14 +44,16 @@ class ModeSpec:
         polarization/neff ordering. This fraction is not modal power or energy.
 
     solver_padding_cells : int or tuple[int, int] or None, default=None
-        Extra cells on each side of the 3D solve aperture. None retains automatic
-        padding; zero disables extra padding. A pair specifies (width, height):
+        Extra cells on each side of the solve aperture. None and zero add no
+        padding; the default solves only the outward-snapped requested aperture.
+        A pair specifies (width, height):
         (y, z) for x-normal, (x, z) for y-normal, (x, y) for z-normal planes.
         Counts refer to actual cells, including on nonuniform grids. Bounds clip
         to the simulation domain; the minimum two-cell solver support remains.
-        The declared aperture stays fixed. Small padding can clip returned Yee
-        field support and move the taper inward; its parameter stays fixed.
-        Two-dimensional line solves do not use this setting.
+        Injection/integration support follows the aperture and available Yee
+        samples; no taper is applied. Fields should decay at the solve boundaries.
+        A 2D line uses the width entry (y for x-normal, x for y-normal);
+        the height entry is unused. Preview, launch and measurement share bounds.
 
     Examples
     --------
@@ -73,26 +75,27 @@ class ModeSpec:
     target_neff: float | None = None
     num_freqs: int | None = None
     force_symmetry: bool = False
-    min_aperture_fraction: float | None = 0.5
+    min_aperture_fraction: float | None = None
 
     solver_padding_cells: int | tuple[int, int] | None = None
 
     def __post_init__(self) -> None:
-        padding = self.solver_padding_cells
-        if padding is not None:
-            values = padding if isinstance(padding, tuple) else (padding, padding)
-            if len(values) != 2 or any(
-                isinstance(value, bool) or not isinstance(value, Integral)
-                for value in values
-            ):
-                raise TypeError(
-                    "solver_padding_cells must be an integer, a pair of integers, or None"
-                )
-            if any(value < 0 for value in values):
-                raise ValueError("solver_padding_cells must be nonnegative")
-            object.__setattr__(
-                self, "solver_padding_cells", tuple(int(value) for value in values)
+        padding = (
+            (0, 0) if self.solver_padding_cells is None else self.solver_padding_cells
+        )
+        values = padding if isinstance(padding, tuple) else (padding, padding)
+        if len(values) != 2 or any(
+            isinstance(value, bool) or not isinstance(value, Integral)
+            for value in values
+        ):
+            raise TypeError(
+                "solver_padding_cells must be an integer, a pair of integers, or None"
             )
+        if any(value < 0 for value in values):
+            raise ValueError("solver_padding_cells must be nonnegative")
+        object.__setattr__(
+            self, "solver_padding_cells", tuple(int(value) for value in values)
+        )
         if self.min_aperture_fraction is not None and (
             not np.isfinite(self.min_aperture_fraction)
             or not 0 <= self.min_aperture_fraction <= 1
@@ -128,7 +131,9 @@ class ModeData:
     h_fields : array-like
         Complex magnetic modal fields matching ``e_fields``.
     eps_profiles : array-like
-        Relative-permittivity cross sections used by the eigensolver.
+        Scalar cell-centred relative-permittivity cross sections. Three-dimensional
+        solves derive component-specific native Yee material samples from the
+        simulation material supports.
     resolution : float
         Cross-section cell size in metres.
     solver_direction : str, optional

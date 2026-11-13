@@ -1,5 +1,79 @@
 # Changelog
 
+## Unreleased
+
+## v0.6.2 - 2026-11-04
+
+- Corrected native Yee material and field sampling for 3D mode ports. Solver
+  results now carry component-specific coordinates; previews colocate fields
+  before launch preparation. Symmetric dielectric ports no longer require forced
+  mirror projection to remove sampling-induced mode asymmetry.
+- Kept automatic-grid snapping points and mesh overrides in the same physical
+  positions when copying centered simulations, including source attachment.
+- Updated the cosine-crossing example with 20-cell-per-wavelength automatic
+  meshing and PML padding outside the physical region.
+- Corrected the 1×4 MMI example to excite the fundamental TM-like slot mode,
+  with mode-identity checks and separate Ex, Ey, and Ez previews of mode 0.
+  The notebook now uses automatic rectilinear meshing at 16 points per wavelength,
+  five source frequency profiles, and 401 monitor wavelengths. Added convergence
+  checks with a 20-minute execution budget and explicit provisional-spectrum labels.
+- Refreshed executed modal-source, microring, and MMI notebook results.
+- Added `AutoTermination(max_wall_time=...)` to stop at a chunk boundary while
+  retaining acquired measurements and reporting `wall_time_limit`. Updated the
+  microring add-drop notebook to 15 cells per wavelength with a 600-second budget
+  and convergence-based early stopping.
+
+### Migration notes
+
+- Code consuming raw 3D `solve_grid()` fields must use each component's own
+  coordinates rather than assume colocated samples. Port previews already
+  interpolate the native Yee fields onto common cell centres.
+- Recheck selected mode identities and numerical results after upgrading:
+  corrected 3D sampling can change them, and symmetric dielectric ports no longer
+  need forced mirror projection to correct sampling-induced asymmetry.
+
+**Full Changelog**: https://github.com/beamzorg/beamz/compare/v0.6.1...v0.6.2
+
+## v0.6.1 - 2026-11-03
+
+- 2D mode preview, launch and measurement now share aperture bounds, explicit
+  padding, target indices and optional confinement. Fixed x-directed previews
+  and transverse Yee sampling; removed full-domain launch solves and tapering.
+
+- Mode previews now show solver fields by default, retaining eigensolver sampling
+  and normalization. Use `ModeSource.solve_modes(..., field_representation="launch")`
+  to inspect prepared 3D launch fields. The preview choice does not change injection.
+
+- 3D mode sources, previews, and monitors now solve on their mesh-snapped aperture
+  by default, without automatic transverse padding or tapering. Additional solve
+  cells require `ModeSpec.solver_padding_cells`; nondecaying raw fields produce
+  edge diagnostics and a warning. Aperture-confinement selection is opt-in.
+
+### Additional fixes and maintenance
+
+- Shared multimode candidate selection to prevent duplicate preview modes and
+  repeated eigensolves; improved Yee refinement and rectilinear-grid metrics.
+- Fixed S-parameter interpolation when source and destination frequency grids
+  have different lengths, and simplified complex interpolation and residuals.
+- Consolidated shared ring and circular-bend geometry operations.
+- Updated locked numerical and development dependencies, including JAX/JAXlib
+  0.10.2, and patched msgpack and Tornado security updates.
+- Restricted release-workflow token permissions and refreshed documentation,
+  the mode-source notebook, and regression coverage.
+
+### Migration notes
+
+- Mode solves no longer add automatic transverse padding or apply aperture
+  tapering. Existing simulations may select different modes or produce different
+  numerical results. Enlarge the source/monitor aperture or explicitly set
+  `ModeSpec.solver_padding_cells` and check aperture convergence. Use matching
+  mode specifications for source launch and modal measurement.
+- Default previews retain raw solver sampling and normalization. Request
+  `field_representation="launch"` for prepared 3D launch fields.
+- The optional CUDA component remains version 0.30.0 / ABI 30.
+
+**Full Changelog**: https://github.com/beamzorg/beamz/compare/v0.6.0...v0.6.1
+
 ## v0.6.0 - 2026-10-25
 
 ### Added
