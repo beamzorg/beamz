@@ -1,0 +1,174 @@
+{
+  "main_commit": "387cc8fa8a48f3f1e69077bb50c299df21940916",
+  "gpu": "RTX 3090",
+  "power_limit_w": 250,
+  "field_precision": "FP32",
+  "cpml_cells_per_face": 12,
+  "warm_repeats": 1,
+  "memory_scope": "Peak process RSS/NVML during fresh cold execution, before validation export; decimal GB",
+  "all134_inputs_unchanged": true,
+  "all30_states_unchanged": true,
+  "per_geometry_solver_selectors": false,
+  "rows": [
+    {
+      "case": "mie",
+      "shape": [
+        384,
+        384,
+        384
+      ],
+      "steps": 9260,
+      "frequencies": 1,
+      "main": {
+        "warm_engine_s": 88.91048155003227,
+        "cold_engine_s": 88.24712382582948,
+        "cold_wall_s": 94.83581644808874,
+        "setup_decode_s": 6.03756246319972,
+        "host_gb": 4.944818176,
+        "gpu_gb": 8.977907712,
+        "all_runs_host_gb": 4.944818176,
+        "all_runs_gpu_gb": 9.000976384
+      },
+      "candidate": {
+        "warm_engine_s": 38.48628320614807,
+        "cold_engine_s": 42.70808839984238,
+        "cold_wall_s": 51.7580203472171,
+        "setup_decode_s": 8.337845196248963,
+        "host_gb": 5.373243392,
+        "gpu_gb": 4.909432832,
+        "all_runs_host_gb": 5.306494976,
+        "all_runs_gpu_gb": 4.909432832
+      },
+      "speedup": 2.310186231125303,
+      "previous_speedup": 1.0024446548264636,
+      "module": "/home/quentinwach/.t3/worktrees/beamz/t3-273958bc/.cache/cuda-four-geometries-2026-11-14-1409/masked-lazy-zero/_cuda_native.cpython-311-x86_64-linux-gnu.so",
+      "module_sha256": "511dfe2a7651dae7bc23249e8a8b0b98e7885cca88e0e0393950a8c0a48d78dc",
+      "max_observable_relative_l2": 2.2866366238190443e-06,
+      "max_flux_peak_scaled_error": 1.4426119804093506e-07,
+      "all134_inputs_unchanged": true,
+      "all30_states_unchanged": true,
+      "main_directory": "/home/quentinwach/.t3/worktrees/beamz/t3-273958bc/.cache/cuda-four-geometries-2026-11-14-1409/mie-main",
+      "candidate_directory": "/home/quentinwach/.t3/worktrees/beamz/t3-273958bc/.cache/cuda-four-geometries-2026-11-14-1409/mie-accepted"
+    },
+    {
+      "case": "cosine",
+      "shape": [
+        481,
+        481,
+        90
+      ],
+      "steps": 17484,
+      "frequencies": 101,
+      "main": {
+        "warm_engine_s": 68.01780190924183,
+        "cold_engine_s": 67.25989025877789,
+        "cold_wall_s": 85.98188530420884,
+        "setup_decode_s": 13.535602274117991,
+        "host_gb": 6.573518848,
+        "gpu_gb": 2.711617536,
+        "all_runs_host_gb": 6.54553088,
+        "all_runs_gpu_gb": 2.751463424
+      },
+      "candidate": {
+        "warm_engine_s": 36.21283039404079,
+        "cold_engine_s": 38.08315651095472,
+        "cold_wall_s": 51.75670588412322,
+        "setup_decode_s": 8.38345528091304,
+        "host_gb": 5.816659968,
+        "gpu_gb": 2.675965952,
+        "all_runs_host_gb": 5.805604864,
+        "all_runs_gpu_gb": 2.675965952
+      },
+      "speedup": 1.8782790842119559,
+      "previous_speedup": 1.0349491037060443,
+      "module": "/home/quentinwach/.t3/worktrees/beamz/t3-273958bc/.cache/cuda-four-geometries-2026-11-14-1409/masked-lazy-zero/_cuda_native.cpython-311-x86_64-linux-gnu.so",
+      "module_sha256": "511dfe2a7651dae7bc23249e8a8b0b98e7885cca88e0e0393950a8c0a48d78dc",
+      "max_observable_relative_l2": 1.621924503375526e-05,
+      "max_flux_peak_scaled_error": 2.757258609365701e-07,
+      "all134_inputs_unchanged": true,
+      "all30_states_unchanged": true,
+      "main_directory": "/home/quentinwach/.t3/worktrees/beamz/t3-273958bc/.cache/cuda-four-geometries-2026-11-14-1409/cosine-main",
+      "candidate_directory": "/home/quentinwach/.t3/worktrees/beamz/t3-273958bc/.cache/cuda-four-geometries-2026-11-14-1409/cosine-accepted"
+    },
+    {
+      "case": "ring",
+      "shape": [
+        344,
+        385,
+        96
+      ],
+      "steps": 20981,
+      "frequencies": 31,
+      "main": {
+        "warm_engine_s": 45.42600990389474,
+        "cold_engine_s": 45.04304517712444,
+        "cold_wall_s": 56.6413557510823,
+        "setup_decode_s": 10.72594001982361,
+        "host_gb": 4.56742912,
+        "gpu_gb": 2.61095424,
+        "all_runs_host_gb": 4.50863104,
+        "all_runs_gpu_gb": 2.61095424
+      },
+      "candidate": {
+        "warm_engine_s": 28.291946509853005,
+        "cold_engine_s": 29.42670625494793,
+        "cold_wall_s": 39.733722070930526,
+        "setup_decode_s": 9.20214796694927,
+        "host_gb": 3.888140288,
+        "gpu_gb": 1.811939328,
+        "all_runs_host_gb": 3.856515072,
+        "all_runs_gpu_gb": 1.811939328
+      },
+      "speedup": 1.605616279815692,
+      "previous_speedup": 1.0403796887139263,
+      "module": "/home/quentinwach/.t3/worktrees/beamz/t3-273958bc/.cache/cuda-four-geometries-2026-11-14-1409/masked-lazy-zero/_cuda_native.cpython-311-x86_64-linux-gnu.so",
+      "module_sha256": "511dfe2a7651dae7bc23249e8a8b0b98e7885cca88e0e0393950a8c0a48d78dc",
+      "max_observable_relative_l2": 1.0001564146098591e-06,
+      "max_flux_peak_scaled_error": 7.520672515791284e-08,
+      "all134_inputs_unchanged": true,
+      "all30_states_unchanged": true,
+      "main_directory": "/home/quentinwach/.t3/worktrees/beamz/t3-273958bc/.cache/cuda-four-geometries-2026-11-14-1409/ring-main",
+      "candidate_directory": "/home/quentinwach/.t3/worktrees/beamz/t3-273958bc/.cache/cuda-four-geometries-2026-11-14-1409/ring-accepted"
+    },
+    {
+      "case": "mmi",
+      "shape": [
+        674,
+        267,
+        84
+      ],
+      "steps": 12239,
+      "frequencies": 31,
+      "main": {
+        "warm_engine_s": 39.697493526153266,
+        "cold_engine_s": 39.524038202129304,
+        "cold_wall_s": 102.8597678069491,
+        "setup_decode_s": 62.59420340391807,
+        "host_gb": 7.095701504,
+        "gpu_gb": 2.816475136,
+        "all_runs_host_gb": 6.98300416,
+        "all_runs_gpu_gb": 2.816475136
+      },
+      "candidate": {
+        "warm_engine_s": 21.918574704788625,
+        "cold_engine_s": 24.219777379883453,
+        "cold_wall_s": 38.078513231826946,
+        "setup_decode_s": 13.060271731112152,
+        "host_gb": 4.442308608,
+        "gpu_gb": 2.336227328,
+        "all_runs_host_gb": 4.410847232,
+        "all_runs_gpu_gb": 2.336227328
+      },
+      "speedup": 1.8111348051057545,
+      "previous_speedup": 1.058441788324347,
+      "module": "/home/quentinwach/.t3/worktrees/beamz/t3-273958bc/.cache/cuda-four-geometries-2026-11-14-1409/masked-lazy-zero/_cuda_native.cpython-311-x86_64-linux-gnu.so",
+      "module_sha256": "511dfe2a7651dae7bc23249e8a8b0b98e7885cca88e0e0393950a8c0a48d78dc",
+      "max_observable_relative_l2": 1.1398127882563193e-06,
+      "max_flux_peak_scaled_error": 1.639651118625707e-07,
+      "all134_inputs_unchanged": true,
+      "all30_states_unchanged": true,
+      "main_directory": "/home/quentinwach/.t3/worktrees/beamz/t3-273958bc/.cache/cuda-four-geometries-2026-11-14-1409/mmi-main",
+      "candidate_directory": "/home/quentinwach/.t3/worktrees/beamz/t3-273958bc/.cache/cuda-four-geometries-2026-11-14-1409/mmi-accepted"
+    }
+  ]
+}

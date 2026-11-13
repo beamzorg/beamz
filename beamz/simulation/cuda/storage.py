@@ -240,7 +240,21 @@ def wrap_program_call(original, axes):
             for c, old in enumerate(components):
                 decay = getattr(coeffs, f"{phase}_decay_{'xyz'[old]}")
                 source = getattr(coeffs, f"{phase}_source_{'xyz'[old]}")
-                if phase == "e" and source.ndim == 1 and source.dtype == jnp.int32:
+                if phase == "e" and source.ndim == 2 and source.dtype == jnp.int32:
+                    # Headers describe runs in the OLD component's flat order,
+                    # not a spatial tensor that can itself be transposed. A
+                    # shared preparation cache can supply this encoding even
+                    # when the rotated request normally prefers byte IDs.
+                    # Expand exactly on device and keep the transposition inside
+                    # the timed invocation. The generic dense core is valid;
+                    # retaining the old pool as decay would change the physics.
+                    shape = getattr(state, "e" + "xyz"[old]).shape
+                    linear = jnp.arange(math.prod(shape), dtype=jnp.int32)
+                    headers = source.reshape(-1)[linear >> 5]
+                    indices = jnp.where(headers < 0, ~headers, headers + (linear & 31))
+                    source = decay[indices].reshape(shape).transpose(axes)
+                    decay = jnp.float32(1)
+                elif phase == "e" and source.ndim == 1 and source.dtype == jnp.int32:
                     shape = getattr(state, "e" + "xyz"[old]).shape
                     source = repack(source, shape)
                 else:

@@ -15,6 +15,7 @@ inline constexpr char kProgramTarget[] = "beamz_cuda_program";
 inline constexpr char kAdjointTarget[] = "beamz_cuda_adjoint";
 inline constexpr char kMaterialAdjointTarget[] = "beamz_cuda_material_adjoint";
 inline constexpr char kMstepTarget[] = "beamz_cuda_mstep";
+inline constexpr char kMstepFullIntermediatesTarget[] = "beamz_cuda_mstep_full_intermediates_v1";
 
 inline constexpr int32_t kBeamzGraphCache = 1 << 7;
 inline constexpr int32_t kBeamzBf16Psi = 1 << 12;

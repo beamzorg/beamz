@@ -64,7 +64,8 @@ def pack_material_blocks(values, *, max_bytes):
         if array.ndim != 3 or not array.size or not np.isfinite(array).all():
             return None
         bits = array.ravel().view(np.uint32)
-        padded = np.pad(bits, (0, -bits.size % BLOCK_SIZE), mode="edge")
+        padding = -bits.size % BLOCK_SIZE
+        padded = np.pad(bits, (0, padding), mode="edge") if padding else bits
         pages = padded.reshape(-1, BLOCK_SIZE)
         blocks.append(pages)
         constant.append(np.all(pages == pages[:, :1], axis=1))

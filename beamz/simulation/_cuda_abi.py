@@ -9,6 +9,7 @@ __all__ = [
     "CUDA_ADJOINT_TARGET",
     "CUDA_MATERIAL_ADJOINT_TARGET",
     "CUDA_MSTEP_TARGET",
+    "CUDA_MSTEP_FULL_INTERMEDIATES_TARGET",
     "CUDA_STREAMED_TARGETS",
     "CUDA_GRAPH_CACHE",
     "CUDA_BF16_PSI",
@@ -94,6 +95,7 @@ CUDA_PROGRAM_TARGET = "beamz_cuda_program"
 CUDA_ADJOINT_TARGET = "beamz_cuda_adjoint"
 CUDA_MATERIAL_ADJOINT_TARGET = "beamz_cuda_material_adjoint"
 CUDA_MSTEP_TARGET = "beamz_cuda_mstep"
+CUDA_MSTEP_FULL_INTERMEDIATES_TARGET = "beamz_cuda_mstep_full_intermediates_v1"
 
 CUDA_STREAMED_TARGETS = frozenset(
     (

@@ -894,15 +894,40 @@ def test_guided_3d_launch_is_equivalent_under_xy_reflection(direction):
 
 @pytest.mark.parametrize("axis", ("x", "y", "z"))
 @pytest.mark.parametrize("direction", (-1, 1))
-@pytest.mark.parametrize("plane", (2, 25))
+@pytest.mark.parametrize("plane", (2, 25, "upper"))
+@pytest.mark.parametrize(
+    "grid_kind", ("uniform", "graded", "uniform-crop", "anisotropic_uniform")
+)
 def test_local_launch_power_matches_dense_yee_diagnostic(
-    monkeypatch, axis, direction, plane
+    monkeypatch, axis, direction, plane, grid_kind
 ):
     """Cropping must preserve staggering, launch direction, and outer Yee edges."""
     fields = _uniform_3d_fields(shape=(48, 52, 56))
     normal = {"x": 2, "y": 1, "z": 0}[axis]
-    center = [28.0, 26.0, 24.0]
+    if plane == "upper":
+        plane = fields.permittivity.shape[normal] - 2
+    center_indices = [28, 26, 24]
+    center_indices[2 - normal] = plane
+    center = [float(i) for i in center_indices]
     center[2 - normal] = plane + 0.5
+    grid = None
+    if grid_kind != "uniform":
+        edges = []
+        for count, origin in zip((56, 52, 48), (-3.0, 1.25, -2.0), strict=True):
+            widths = np.ones(count)
+            if grid_kind == "graded":
+                widths += 0.15 * np.sin(np.linspace(0.0, 3.0, count))
+            elif grid_kind == "uniform-crop":
+                widths[:3] = 0.8
+                widths[-3:] = 1.2
+            else:
+                widths *= {56: 1.0, 52: 1.25, 48: 0.75}[count]
+            edges.append(origin + np.r_[0.0, np.cumsum(widths)])
+        grid = RectilinearGrid(*edges)
+        fields.geometry = grid
+        center = [
+            grid.centers(a)[i] for a, i in zip("xyz", center_indices, strict=True)
+        ]
     size = tuple(0.0 if name == axis else 6.0 for name in ("x", "y", "z"))
     source = _mode_source(
         center=tuple(center), size=size, direction="+" if direction > 0 else "-"
@@ -911,7 +936,8 @@ def test_local_launch_power_matches_dense_yee_diagnostic(
     components, indices = {}, {}
     for name in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz"):
         index = [
-            slice(int(center[2 - d]) - 5, int(center[2 - d]) + 5) for d in range(3)
+            slice(center_indices[2 - d] - 5, center_indices[2 - d] + 5)
+            for d in range(3)
         ]
         index[normal] = plane
         indices[name] = tuple(index)
@@ -926,11 +952,19 @@ def test_local_launch_power_matches_dense_yee_diagnostic(
         direction_sign=float(direction),
         omega=2.0e8,
         k_axis=direction * 1.0,
-        phase_ref_coord=plane + 1.0,
-        phase_plane_coord=plane + 0.5,
+        phase_ref_coord=plane + 1.0
+        if grid is None
+        else grid.axis_edges(axis)[plane + 1],
+        phase_plane_coord=plane + 0.5 if grid is None else grid.centers(axis)[plane],
+        grid=grid,
     )
     planar = mode_launch_module.planar_tfsf
     dt = 1e-10
+    context = planar.local_3d_phasor_context(
+        profile, fields, resolution=1.0, max_shift=12
+    )
+    assert context is not None
+    assert np.prod(context[1].Ex.shape) < np.prod(fields.Ex.shape) / 2
     residuals = planar.compute_discrete_3d_h_phasor_residuals(
         profile,
         fields,
@@ -957,6 +991,21 @@ def test_local_launch_power_matches_dense_yee_diagnostic(
         source, profile, residuals, fields, resolution=1.0, dt=dt, requested_power=1.0
     )
     monkeypatch.setattr(planar, "local_3d_phasor_context", lambda *a, **kw: None)
+    dense_residuals = planar.compute_discrete_3d_h_phasor_residuals(
+        profile, fields, resolution=1.0, max_shift=12, dt=dt
+    ) + planar.compute_discrete_3d_e_phasor_residuals(
+        profile, fields, resolution=1.0, max_shift=12, dt=dt
+    )
+    assert len(residuals) == len(dense_residuals)
+    for local_residual, dense_residual in zip(residuals, dense_residuals, strict=True):
+        assert (
+            local_residual.component,
+            local_residual.timing,
+            local_residual.index,
+        ) == (dense_residual.component, dense_residual.timing, dense_residual.index)
+        np.testing.assert_allclose(
+            local_residual.residual, dense_residual.residual, rtol=2e-6, atol=1e-10
+        )
     dense = _launch_power_diagnostics_3d(
         source, profile, residuals, fields, resolution=1.0, dt=dt, requested_power=1.0
     )

@@ -674,16 +674,19 @@ def _launch_power_diagnostics_3d(
                     )
                     for residual in residuals
                 )
-                origin = tuple(int(s.start or 0) for s in slices["Ex"])
-                diagnostic_source = replace(
-                    source,
-                    center=tuple(
-                        float(coord) - offset * float(resolution)
-                        for coord, offset in zip(
-                            source.center, reversed(origin), strict=True
-                        )
-                    ),
-                )
+                # Metric crops retain world-coordinate edges and phase gauges.
+                # Legacy uniform crops use a translated zero-origin frame.
+                if getattr(diagnostic_fields, "geometry", None) is None:
+                    origin = tuple(int(s.start or 0) for s in slices["Ex"])
+                    diagnostic_source = replace(
+                        source,
+                        center=tuple(
+                            float(coord) - offset * float(resolution)
+                            for coord, offset in zip(
+                                source.center, reversed(origin), strict=True
+                            )
+                        ),
+                    )
             state = _reconstructed_3d_launch_phasor_state(
                 diagnostic_profile,
                 diagnostic_residuals,

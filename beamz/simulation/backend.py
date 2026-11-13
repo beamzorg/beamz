@@ -226,9 +226,11 @@ def _validated_registrations(extension: ModuleType) -> dict[str, object]:
             "beamz._cuda is missing required streamed FFI targets: "
             + ", ".join(missing)
         )
-    from ._cuda_abi import CUDA_MSTEP_TARGET
+    from ._cuda_abi import CUDA_MSTEP_FULL_INTERMEDIATES_TARGET, CUDA_MSTEP_TARGET
 
-    known = CUDA_STREAMED_TARGETS | ({CUDA_MSTEP_TARGET} & targets)
+    known = CUDA_STREAMED_TARGETS | (
+        {CUDA_MSTEP_TARGET, CUDA_MSTEP_FULL_INTERMEDIATES_TARGET} & targets
+    )
     return {name: registrations[name] for name in sorted(known)}
 
 

@@ -251,6 +251,17 @@ def _pack_cuda_lossless_e_coefficients(decays, sources, *, blocks=False):
         for value in decay_arrays
     ):
         return None
+    if blocks:
+        from .cuda.material_blocks import pack_material_blocks
+
+        # A byte encoding needs at least one four-byte table entry plus one
+        # byte per sample, rounded to int32 words. If blocks beat even this
+        # lower bound, their selection is already certain: avoid constructing
+        # and then discarding three domain-sized byte-ID buffers.
+        byte_lower_bound = sum(4 + 4 * ((value.size + 3) // 4) for value in sources)
+        tiled = pack_material_blocks(sources, max_bytes=0.75 * byte_lower_bound)
+        if tiled is not None:
+            return tiled
     packed = tuple(_pack_cuda_coefficient_ids(value) for value in sources)
     values = tuple(value for value in packed if value is not None)
     if blocks:

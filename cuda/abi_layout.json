@@ -7,7 +7,8 @@
     "program": "beamz_cuda_program",
     "adjoint": "beamz_cuda_adjoint",
     "material_adjoint": "beamz_cuda_material_adjoint",
-    "mstep": "beamz_cuda_mstep"
+    "mstep": "beamz_cuda_mstep",
+    "mstep_full_intermediates": "beamz_cuda_mstep_full_intermediates_v1"
   },
   "streamed_targets": [
     "streamed",

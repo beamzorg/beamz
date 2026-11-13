@@ -289,7 +289,10 @@ def run_mstep(
     arguments, values, aliases = rt._graph_io(state, ctx, coeffs)
     state_count = len(values)
     final = tuple(jnp.empty_like(f) for f in fields)
-    scratch = tuple(jnp.zeros((plan.scratch_cells,), jnp.float32) for _ in fields)
+    from .capabilities import mstep_allocation_contract
+
+    target, scratch_cells = mstep_allocation_contract(plan.scratch_cells)
+    scratch = tuple(jnp.zeros((scratch_cells,), jnp.float32) for _ in fields)
     for value in (*final, *scratch):
         aliases[len(arguments)] = len(values)
         arguments = (*arguments, value)
@@ -316,7 +319,7 @@ def run_mstep(
         disjoint_source_group_mask=rt._disjoint_source_group_mask(groups),
         temporal_steps=2,
     )
-    outputs = rt._ffi_call(abi.CUDA_MSTEP_TARGET, values, aliases)(
+    outputs = rt._ffi_call(target, values, aliases)(
         *arguments, **rt._program_attributes(ctx, nsteps, schedule)
     )
     bank = state_count if (nsteps // 2) % 2 else 0

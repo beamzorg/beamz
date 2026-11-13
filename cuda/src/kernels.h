@@ -12,6 +12,20 @@ cudaError_t BeamzEnqueueMstepCore(cudaStream_t stream, const BeamzLaunch &h,
                                   const BeamzBuffer &bounds);
 cudaError_t BeamzEnqueueMstepEdge(cudaStream_t stream, const BeamzLaunch &phase,
                                   const BeamzBuffer &cells, int ny, int nx);
+// Optional internal schedule. External FFI buffers and the Python plan stay
+// unchanged; packed/scalar-H cores publish only allocated intermediate cells.
+bool BeamzMstepCanPublish(const BeamzLaunch &h, const BeamzLaunch &e);
+cudaError_t BeamzEnqueueMstepCorePublish(
+    cudaStream_t stream, const BeamzLaunch &h, const BeamzLaunch &e,
+    const BeamzBuffer *final_fields, const BeamzBuffer *publication_fields,
+    const BeamzBuffer &slots, const BeamzBuffer &masks, const BeamzBuffer &bounds);
+cudaError_t BeamzEnqueueMstepEdgeAndPublish(
+    cudaStream_t stream, const BeamzLaunch &phase, const BeamzBuffer &cells,
+    const BeamzBuffer *publication_fields, const BeamzBuffer &slots,
+    const BeamzBuffer &masks, const BeamzBuffer &bounds, int ny, int nx);
+cudaError_t BeamzEnqueueMstepEdgeFull(
+    cudaStream_t stream, const BeamzLaunch &phase, const BeamzBuffer &cells,
+    int ny, int nx);
 
 cudaError_t BeamzEnqueueTemporalCpml(cudaStream_t stream, const BeamzLaunch &h,
     const BeamzLaunch &e, const BeamzBuffer *final_fields,

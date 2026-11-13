@@ -131,6 +131,8 @@ include = [
     { path = "beamz/material_library/data/*", format = ["sdist", "wheel"] },
     { path = "cuda/CMakeLists.txt", format = "sdist" },
     { path = "cuda/README.md", format = "sdist" },
+    { path = "cuda/NATIVE_RUNTIME.md", format = "sdist" },
+    { path = "cuda/SYSTOLIC_SCHEDULE.md", format = "sdist" },
     { path = "cuda/abi_layout.json", format = "sdist" },
     { path = "cuda/pyproject.toml", format = "sdist" },
     { path = "cuda/src/**/*", format = "sdist" },

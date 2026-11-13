@@ -14,6 +14,25 @@ import jax
 from beamz.simulation import _cuda_abi as abi
 
 
+def _rotated_block_workspace_bytes(program) -> int:
+    """Budget dense coefficient expansion and index scratch for rotated headers.
+
+    Constant-block headers encode canonical flat order. Rotation currently
+    restores dense float32 source coefficients; the original tiny codebooks
+    cannot stand in for the size of these runtime arrays.
+    """
+    if program.config.cuda_storage_axes == (0, 1, 2):
+        return 0
+    return 2 * sum(
+        math.prod(program.boundary.logical_component_shapes["E" + c]) * 4
+        for c in "xyz"
+        if (
+            getattr(program.coefficients, "e_source_" + c).ndim == 2
+            and str(getattr(program.coefficients, "e_source_" + c).dtype) == "int32"
+        )
+    )
+
+
 def cuda_memory_policy_from_env() -> str:
     policy = os.environ.get("BEAMZ_CUDA_MEMORY_POLICY", "auto").strip().lower()
     if policy not in {"auto", "speed", "capacity"}:
@@ -59,8 +78,16 @@ def cuda_workspace_estimate(
         # dependency arrays. Retained caller state is accounted for below.
         workspace = state + fields
         if mstep_plan is not None:
+            from .cuda.capabilities import mstep_allocation_contract
+
             summary = mstep_plan.summary()
-            workspace += summary["scratch_bytes"] + summary["plan_bytes"]
+            _, placeholder_cells = mstep_allocation_contract(0)
+            scratch_bytes = (
+                6 * placeholder_cells * 4
+                if placeholder_cells
+                else summary["scratch_bytes"]
+            )
+            workspace += scratch_bytes + summary["plan_bytes"]
         workspace += sum(
             int(m.freq_count) * int(m.dft_point_count) * 6 * 2 * 4
             for m in program.monitors
@@ -102,6 +129,7 @@ def cuda_workspace_estimate(
             // count
         )
         workspace += 2 * state + materials
+        workspace += _rotated_block_workspace_bytes(program)
     if not donate_state:
         workspace += state
     return workspace

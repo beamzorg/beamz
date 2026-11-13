@@ -167,6 +167,8 @@ struct BeamzProgramLaunch {
 int BeamzLaunchStreamed(void* stream, const BeamzLaunch& launch);
 int BeamzLaunchSharded(void* stream, const BeamzLaunch& launch);
 int BeamzLaunchProgram(void* stream, const BeamzProgramLaunch& program);
+// Shared complete-packet validation for native experimental schedulers.
+int BeamzValidateNativeProgram(const BeamzProgramLaunch &program);
 int BeamzLaunchAdjoint(void* stream, const BeamzAdjointLaunch& launch);
 
 struct BeamzMstepLaunch {
@@ -180,5 +182,11 @@ struct BeamzMstepLaunch {
   BeamzBuffer edge_cells;
 };
 int BeamzLaunchMstep(void *stream, const BeamzMstepLaunch &launch);
+
+// Experimental native schedulers can enqueue a tail at an explicit step within
+// the current chunk, preserving source/DFT clocks without nesting graph capture.
+// The caller supplies validated in-place H/E views and chunk-base clock buffers.
+int BeamzEnqueueProgramStepAt(void *stream, const BeamzProgramLaunch &program,
+                            int32_t step);
 
 #endif  // BEAMZ_CUDA_LAUNCH_H_

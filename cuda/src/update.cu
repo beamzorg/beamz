@@ -11,6 +11,12 @@
 #include "kernels.h"
 #include "launch.h"
 #include "yee_primitives.cuh"
+#ifndef BEAMZ_CUDA_MSTEP_TRACED_CELL
+#define BEAMZ_CUDA_MSTEP_TRACED_CELL 0
+#endif
+#if BEAMZ_CUDA_MSTEP_TRACED_CELL
+#include "yee_cell_generated.cuh"
+#endif
 
 namespace {
 
@@ -490,7 +496,7 @@ __device__ __forceinline__ float CorrectCpml(float derivative, int z, int y,
 template <int Phase, int Component, bool Cpml, int MetricKind,
           bool HasMetallicEdges = true, bool UniformCpml = false,
           int PsiType = -1, bool PackedLosslessMaterial = false, bool Compact = false,
-          bool Tensor = false>
+          bool Tensor = false, int ActiveAxes = -1, int CoefficientLayout = 0>
 __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
                                                 int z, int y, int x,
                                                 const BeamzTensorLaunch* tensor = nullptr) {
@@ -532,10 +538,25 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
   }
   float curl;
   if constexpr (Cpml) {
-    curl = CorrectCpml<2 * Component, UniformCpml, PsiType>(
-               derivative0, z, y, x, launch) +
-           CorrectCpml<2 * Component + 1, UniformCpml, PsiType>(
-               derivative1, z, y, x, launch);
+    if constexpr (ActiveAxes < 0) {
+      curl = CorrectCpml<2 * Component, UniformCpml, PsiType>(
+                 derivative0, z, y, x, launch) +
+             CorrectCpml<2 * Component + 1, UniformCpml, PsiType>(
+                 derivative1, z, y, x, launch);
+    } else {
+      float corrected0, corrected1;
+      if constexpr (ActiveAxes & (1 << first_term.derivative_axis))
+        corrected0 = CorrectCpml<2 * Component, UniformCpml, PsiType>(
+            derivative0, z, y, x, launch);
+      else
+        corrected0 = beamz::cuda::yee::CpmlSign(2 * Component) * derivative0;
+      if constexpr (ActiveAxes & (1 << second_term.derivative_axis))
+        corrected1 = CorrectCpml<2 * Component + 1, UniformCpml, PsiType>(
+            derivative1, z, y, x, launch);
+      else
+        corrected1 = beamz::cuda::yee::CpmlSign(2 * Component + 1) * derivative1;
+      curl = corrected0 + corrected1;
+    }
   } else {
     curl = derivative0 - derivative1;
   }
@@ -560,8 +581,24 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
   float source;
   if constexpr (PackedLosslessMaterial) {
     decay = 1.0f;
-    source = beamz::cuda::yee::PackedMaterialSource(
-        launch.inputs[6 + Component], launch.inputs[9 + Component], linear);
+    if constexpr (CoefficientLayout == 1) {
+      const auto& table = launch.inputs[6 + Component];
+      const auto* words = static_cast<const uint32_t*>(launch.inputs[9 + Component].data);
+      const uint32_t code = (words[linear >> 2] >> (8 * (linear & 3))) & 255u;
+      source = code < static_cast<uint32_t>(table.dims[0])
+                   ? static_cast<const float*>(table.data)[code] : 0.0f;
+    } else if constexpr (CoefficientLayout == 2) {
+      const auto* headers = static_cast<const int32_t*>(launch.inputs[9 + Component].data);
+      const int header = headers[linear >> 5];
+      const int index = header < 0 ? ~header : header + (linear & 31);
+      source = static_cast<const float*>(launch.inputs[6 + Component].data)[index];
+    } else {
+      source = beamz::cuda::yee::PackedMaterialSource(
+          launch.inputs[6 + Component], launch.inputs[9 + Component], linear);
+    }
+  } else if constexpr (CoefficientLayout == -1) {
+    decay = *static_cast<const float*>(launch.inputs[6 + Component].data);
+    source = *static_cast<const float*>(launch.inputs[9 + Component].data);
   } else {
     decay = Read<Compact>(launch.inputs[6 + Component], z, y, x);
     source = Read<Compact>(launch.inputs[9 + Component], z, y, x);
@@ -1727,12 +1764,47 @@ cudaError_t LaunchMstepColumn(cudaStream_t stream, const BeamzLaunch &h,
   return cudaGetLastError();
 }
 
-template <int X, int Y>
+template <int Layout, int X, int Y, bool Publish = false>
+cudaError_t LaunchMstepPackedView(cudaStream_t stream,
+                                 const MstepPackedCoreView &view,
+                                 const BeamzBuffer &masks,
+                                 const BeamzBuffer &bounds, int nz, int segment) {
+  const dim3 blocks(masks.dims[1] * (32 / X), masks.dims[0] * (16 / Y),
+                    segment ? (nz + segment - 1) / segment : 1);
+#if BEAMZ_CUDA_MSTEP_REGISTER_CORE
+  if constexpr (Publish) return cudaErrorNotSupported;
+  if (auto error = cudaFuncSetAttribute(
+          MstepRegisterColumnCore<X, Y, Layout>,
+          cudaFuncAttributeMaxDynamicSharedMemorySize,
+          MstepRegisterTile<X, Y>::shared_bytes); error != cudaSuccess)
+    return error;
+  MstepRegisterColumnCore<X, Y, Layout>
+      <<<blocks, MstepRegisterTile<X, Y>::threads,
+         MstepRegisterTile<X, Y>::shared_bytes, stream>>>(
+          view, static_cast<const int *>(masks.data),
+          static_cast<const int *>(bounds.data), masks.dims[1], segment);
+#else
+  if (auto error = cudaFuncSetAttribute(
+          MstepPackedColumnCore<X, Y, Layout, Publish>,
+          cudaFuncAttributeMaxDynamicSharedMemorySize,
+          MstepTile<X, Y>::packed_shared); error != cudaSuccess)
+    return error;
+  MstepPackedColumnCore<X, Y, Layout, Publish>
+      <<<blocks, MstepTile<X, Y>::threads, MstepTile<X, Y>::packed_shared, stream>>>(
+          view, static_cast<const int *>(masks.data),
+          static_cast<const int *>(bounds.data), masks.dims[1], segment);
+#endif
+  return cudaGetLastError();
+}
+
+template <int X, int Y, bool Publish = false>
 cudaError_t EnqueueMstepTile(cudaStream_t stream, const BeamzLaunch &h,
                                   const BeamzLaunch &e,
                                   const BeamzBuffer *final_fields,
                                   const BeamzBuffer &masks,
-                                  const BeamzBuffer &bounds, int segment) {
+                                  const BeamzBuffer &bounds, int segment,
+                                  const BeamzBuffer *publication_fields = nullptr,
+                                  const BeamzBuffer *publication_slots = nullptr) {
   PairFieldOutputs final{};
   bool scalar_h = true;
   for (int c = 0; c < 6; ++c) {
@@ -1744,6 +1816,11 @@ cudaError_t EnqueueMstepTile(cudaStream_t stream, const BeamzLaunch &h,
       MstepPackedCoreView v{};
       v.min_y = v.min_x = std::numeric_limits<int>::max();
       v.inv = h.inv_resolution;
+#if BEAMZ_CUDA_MSTEP_INPLACE_EDGES
+      if constexpr (Publish)
+        v.publication = MakeMstepPublicationView(publication_fields, *publication_slots,
+                                                 masks, bounds);
+#endif
       for (int c = 0; c < 6; ++c) {
         const auto &in = h.inputs[c];
         const auto &out = final_fields[c];
@@ -1756,40 +1833,98 @@ cudaError_t EnqueueMstepTile(cudaStream_t stream, const BeamzLaunch &h,
         v.codes[c] = static_cast<const uint32_t *>(e.inputs[9 + c].data);
         v.tables[c] = static_cast<const float *>(e.inputs[6 + c].data);
         v.table_sizes[c] = static_cast<int>(e.inputs[6 + c].dims[0]);
+        v.code_ranks[c] = e.inputs[9 + c].rank;
         v.h_decay[c] = static_cast<const float *>(h.inputs[6 + c].data);
         v.h_source[c] = static_cast<const float *>(h.inputs[9 + c].data);
       }
-      if (auto err = cudaFuncSetAttribute(MstepPackedColumnCore<X,Y>,
-                        cudaFuncAttributeMaxDynamicSharedMemorySize, MstepTile<X,Y>::packed_shared);
-          err != cudaSuccess) return err;
-      const dim3 blocks(masks.dims[1] * (32 / X), masks.dims[0] * (16 / Y), segment ? (h.inputs[0].dims[0] + segment - 1) / segment : 1);
-      MstepPackedColumnCore<X,Y><<<blocks, MstepTile<X,Y>::threads, MstepTile<X,Y>::packed_shared, stream>>>(
-          v, static_cast<const int *>(masks.data),
-          static_cast<const int *>(bounds.data), masks.dims[1], segment);
-      return cudaGetLastError();
+#if BEAMZ_CUDA_MSTEP_LAYOUT_SPECIALIZE
+      // Prove a homogeneous representation once on the host, avoiding a rank
+      // branch at every E1/E2 material sample. Mixed component layouts remain
+      // supported by one dynamic fallback rather than eight kernel patterns.
+      if (v.code_ranks[0] == 1 && v.code_ranks[1] == 1 && v.code_ranks[2] == 1)
+        return LaunchMstepPackedView<1, X, Y, Publish>(stream, v, masks, bounds,
+                                            h.inputs[0].dims[0], segment);
+      if (v.code_ranks[0] == 2 && v.code_ranks[1] == 2 && v.code_ranks[2] == 2)
+        return LaunchMstepPackedView<2, X, Y, Publish>(stream, v, masks, bounds,
+                                            h.inputs[0].dims[0], segment);
+#endif
+      return LaunchMstepPackedView<0, X, Y, Publish>(stream, v, masks, bounds,
+                                          h.inputs[0].dims[0], segment);
     }
+    if constexpr (Publish) return cudaErrorNotSupported;
     return LaunchMstepColumn<true, false, X, Y>(stream, h, e, final, masks, bounds, segment);
   }
+  if constexpr (Publish) return cudaErrorNotSupported;
   if (scalar_h)
     return LaunchMstepColumn<false, true, X, Y>(stream, h, e, final, masks, bounds, segment);
   return LaunchMstepColumn<false, false, X, Y>(stream, h, e, final, masks, bounds, segment);
 }
 
-cudaError_t BeamzEnqueueMstepCore(cudaStream_t stream, const BeamzLaunch &h,
+template <bool Publish>
+cudaError_t EnqueueMstepCoreImpl(cudaStream_t stream, const BeamzLaunch &h,
     const BeamzLaunch &e, const BeamzBuffer *final_fields,
-    const BeamzBuffer &masks, const BeamzBuffer &bounds) {
+    const BeamzBuffer &masks, const BeamzBuffer &bounds,
+    const BeamzBuffer *publication_fields, const BeamzBuffer *publication_slots) {
   const int segment = (h.cuda_flags & beamz::cuda::abi::kBeamzMstepSegment32) ? 32 :
       (h.cuda_flags & beamz::cuda::abi::kBeamzMstepSegment64) ? 64 :
       (h.cuda_flags & beamz::cuda::abi::kBeamzMstepSegment128) ? 128 :
       (h.cuda_flags & beamz::cuda::abi::kBeamzMstepSegment256) ? 256 : 0;
   if (h.cuda_flags & beamz::cuda::abi::kBeamzMstepTile8x32)
-    return EnqueueMstepTile<32,8>(stream,h,e,final_fields,masks,bounds,segment);
+    return EnqueueMstepTile<32,8,Publish>(stream,h,e,final_fields,masks,bounds,segment,publication_fields,publication_slots);
   if (h.cuda_flags & beamz::cuda::abi::kBeamzMstepTile8x16)
-    return EnqueueMstepTile<16,8>(stream,h,e,final_fields,masks,bounds,segment);
+    return EnqueueMstepTile<16,8,Publish>(stream,h,e,final_fields,masks,bounds,segment,publication_fields,publication_slots);
   if (h.cuda_flags & beamz::cuda::abi::kBeamzMstepTile16x16)
-    return EnqueueMstepTile<16,16>(stream,h,e,final_fields,masks,bounds,segment);
-  return EnqueueMstepTile<32,16>(stream,h,e,final_fields,masks,bounds,segment);
+    return EnqueueMstepTile<16,16,Publish>(stream,h,e,final_fields,masks,bounds,segment,publication_fields,publication_slots);
+  return EnqueueMstepTile<32,16,Publish>(stream,h,e,final_fields,masks,bounds,segment,publication_fields,publication_slots);
 }
+
+cudaError_t BeamzEnqueueMstepCore(cudaStream_t stream, const BeamzLaunch &h,
+    const BeamzLaunch &e, const BeamzBuffer *final_fields,
+    const BeamzBuffer &masks, const BeamzBuffer &bounds) {
+  return EnqueueMstepCoreImpl<false>(stream, h, e, final_fields, masks, bounds,
+                                    nullptr, nullptr);
+}
+
+#if BEAMZ_CUDA_MSTEP_INPLACE_EDGES
+bool BeamzMstepCanPublish(const BeamzLaunch &h, const BeamzLaunch &e) {
+#if BEAMZ_CUDA_MSTEP_REGISTER_CORE
+  return false;
+#else
+  if (!HasPackedLosslessMaterial(e)) return false;
+  for (int c = 0; c < 6; ++c)
+    if (h.inputs[6 + c].rank != 0) return false;
+  return true;
+#endif
+}
+
+cudaError_t BeamzEnqueueMstepCorePublish(
+    cudaStream_t stream, const BeamzLaunch &h, const BeamzLaunch &e,
+    const BeamzBuffer *final_fields, const BeamzBuffer *publication_fields,
+    const BeamzBuffer &slots, const BeamzBuffer &masks, const BeamzBuffer &bounds) {
+#if BEAMZ_CUDA_MSTEP_REGISTER_CORE
+  return cudaErrorNotSupported;
+#else
+  return EnqueueMstepCoreImpl<true>(stream, h, e, final_fields, masks, bounds,
+                                   publication_fields, &slots);
+#endif
+}
+
+cudaError_t BeamzEnqueueMstepEdgeAndPublish(
+    cudaStream_t stream, const BeamzLaunch &phase, const BeamzBuffer &cells,
+    const BeamzBuffer *publication_fields, const BeamzBuffer &slots,
+    const BeamzBuffer &masks, const BeamzBuffer &bounds, int ny, int nx) {
+  return LaunchMstepFullEdge<true>(stream, phase, cells, ny, nx,
+      MakeMstepPublicationView(publication_fields, slots, masks, bounds));
+}
+#endif
+
+#if BEAMZ_CUDA_MSTEP_INPLACE_EDGES || BEAMZ_CUDA_MSTEP_FULL_INTERMEDIATES
+cudaError_t BeamzEnqueueMstepEdgeFull(
+    cudaStream_t stream, const BeamzLaunch &phase, const BeamzBuffer &cells,
+    int ny, int nx) {
+  return LaunchMstepFullEdge<false>(stream, phase, cells, ny, nx, {});
+}
+#endif
 
 cudaError_t BeamzEnqueueMstepEdge(cudaStream_t stream,
                                   const BeamzLaunch &launch,
@@ -1800,36 +1935,49 @@ cudaError_t BeamzEnqueueMstepEdge(cudaStream_t stream,
   if (launch.uniform_cpml_thickness > 0) {
     // Reuse the existing symmetric-slab specialization instead of fetching
     // per-term CPML metadata for every compact edge cell.
+#if BEAMZ_CUDA_MSTEP_EDGE_SPECIALIZE
+    if (launch.phase == 0)
+      LaunchMstepUniformEdge<0, false>(stream, launch, cells, ny, nx, blocks);
+    else if (launch.inputs[9].element_type == kBeamzS32)
+      LaunchMstepUniformEdge<1, true>(stream, launch, cells, ny, nx, blocks);
+    else
+      LaunchMstepUniformEdge<1, false>(stream, launch, cells, ny, nx, blocks);
+#else
     if (launch.phase == 0)
       MstepEdgePhase<0, true, false, true>
-          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx);
+          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, MakeMstepIndexDecode(ny, nx));
     else if (launch.inputs[9].element_type == kBeamzS32)
       MstepEdgePhase<1, true, true, true>
-          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx);
+          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, MakeMstepIndexDecode(ny, nx));
     else
       MstepEdgePhase<1, true, false, true>
-          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx);
+          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, MakeMstepIndexDecode(ny, nx));
+#endif
   } else if (launch.phase == 0) {
     if (launch.nterms)
       MstepEdgePhase<0, true, false>
-          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx);
+          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, MakeMstepIndexDecode(ny, nx));
     else
       MstepEdgePhase<0, false, false>
-          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx);
+          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, MakeMstepIndexDecode(ny, nx));
   } else if (launch.inputs[9].element_type == kBeamzS32) {
     if (launch.nterms)
       MstepEdgePhase<1, true, true>
-          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx);
+          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, MakeMstepIndexDecode(ny, nx));
     else
       MstepEdgePhase<1, false, true>
-          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx);
+          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, MakeMstepIndexDecode(ny, nx));
   } else {
     if (launch.nterms)
       MstepEdgePhase<1, true, false>
-          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx);
+          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, MakeMstepIndexDecode(ny, nx));
     else
       MstepEdgePhase<1, false, false>
-          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx);
+          <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, MakeMstepIndexDecode(ny, nx));
   }
   return cudaGetLastError();
 }
+
+#if defined(BEAMZ_CUDA_DEEP_D4) && BEAMZ_CUDA_DEEP_D4
+#include "deep_temporal_warp_generated.cuh"
+#endif

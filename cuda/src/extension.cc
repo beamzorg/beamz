@@ -20,6 +20,12 @@ NB_MODULE(_cuda, module) {
         nb::capsule(reinterpret_cast<void*>(beamz_cuda_program));
     registrations[kMstepTarget] =
         nb::capsule(reinterpret_cast<void *>(beamz_cuda_mstep));
+#if BEAMZ_CUDA_MSTEP_FULL_INTERMEDIATES
+    // Additive capability contract: this implementation never dereferences
+    // compact field scratch. Older callers/registrations remain unchanged.
+    registrations[kMstepFullIntermediatesTarget] =
+        nb::capsule(reinterpret_cast<void *>(beamz_cuda_mstep));
+#endif
     registrations[kAdjointTarget] =
         nb::capsule(reinterpret_cast<void*>(beamz_cuda_adjoint));
     registrations[kMaterialAdjointTarget] =

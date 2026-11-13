@@ -12,6 +12,13 @@
 #include "kernels.h"
 #include "launch.h"
 
+#ifndef BEAMZ_CUDA_MSTEP_INPLACE_EDGES
+#define BEAMZ_CUDA_MSTEP_INPLACE_EDGES 0
+#endif
+#ifndef BEAMZ_CUDA_MSTEP_FULL_INTERMEDIATES
+#define BEAMZ_CUDA_MSTEP_FULL_INTERMEDIATES 0
+#endif
+
 namespace {
 
 using namespace beamz::cuda::abi;
@@ -792,6 +799,10 @@ int LaunchTemporalCpmlProgram(void *raw_stream,
 
 }  // namespace
 
+int BeamzValidateNativeProgram(const BeamzProgramLaunch &program) {
+  return static_cast<int>(ValidateProgram(program));
+}
+
 int BeamzLaunchProgram(void* raw_stream, const BeamzProgramLaunch& program) {
   if (cudaError_t error = ValidateProgram(program); error != cudaSuccess) {
     return static_cast<int>(error);
@@ -807,6 +818,29 @@ int BeamzLaunchProgram(void* raw_stream, const BeamzProgramLaunch& program) {
     return LaunchTemporalCpmlProgram(raw_stream, program);
   }
   return cudaErrorInvalidValue;
+}
+
+int BeamzEnqueueProgramStepAt(void *raw_stream,
+                            const BeamzProgramLaunch &program, int32_t step) {
+  if (step < 0) return cudaErrorInvalidValue;
+  const auto stream = reinterpret_cast<cudaStream_t>(raw_stream);
+  const auto &h = program.h_ab;
+  const auto &e = program.e_ab;
+  for (const int timing : {0, 1, 2}) {
+    if (timing == 1) {
+      if (const auto error = BeamzEnqueuePhase(raw_stream, h);
+          error != cudaSuccess)
+        return error;
+    } else if (timing == 2) {
+      if (const auto error = BeamzEnqueuePhase(raw_stream, e);
+          error != cudaSuccess)
+        return error;
+    }
+    if (const auto error = EnqueueProgramSources(stream, program, h, e, timing, step);
+        error != cudaSuccess)
+      return error;
+  }
+  return ObserveProgramStep(stream, program, h, e, step);
 }
 
 int BeamzLaunchMstep(void *raw_stream, const BeamzMstepLaunch &launch) {
@@ -889,7 +923,17 @@ int BeamzLaunchMstep(void *raw_stream, const BeamzMstepLaunch &launch) {
     return std::pair<BeamzLaunch, BeamzLaunch>(h, e);
   };
   auto stream = reinterpret_cast<cudaStream_t>(raw_stream);
-  std::string key = BeamzGraphKey("mstep-column-k2", raw_stream, program);
+  const bool use_full_intermediates = BEAMZ_CUDA_MSTEP_FULL_INTERMEDIATES;
+  const bool use_inplace_edges =
+#if BEAMZ_CUDA_MSTEP_INPLACE_EDGES
+      use_full_intermediates || BeamzMstepCanPublish(program.h_ab, program.e_ab);
+#else
+      use_full_intermediates;
+#endif
+  std::string key = BeamzGraphKey(
+      use_full_intermediates ? "mstep-full-intermediates-k2" :
+      (use_inplace_edges ? "mstep-inplace-edges-k2" : "mstep-column-k2"),
+      raw_stream, program);
   for (const auto &b : buffers)
     BeamzAppendBufferKey(&key, b);
   for (int c = 0; c < 6; ++c) {
@@ -908,42 +952,72 @@ int BeamzLaunchMstep(void *raw_stream, const BeamzMstepLaunch &launch) {
       auto p = phases(f, f);
       return ObserveProgramStep(stream, program, p.first, p.second, step);
     };
+    auto enqueue_core = [&](const auto &p, const BeamzBuffer *next) {
+#if BEAMZ_CUDA_MSTEP_INPLACE_EDGES
+      if (use_inplace_edges && !use_full_intermediates)
+        return BeamzEnqueueMstepCorePublish(
+            stream, p.first, p.second, next, launch.scratch_fields,
+            launch.slots, launch.core_masks, launch.bounds);
+#endif
+      return BeamzEnqueueMstepCore(stream, p.first, p.second, next,
+                                    launch.core_masks, launch.bounds);
+    };
+    auto first_edge = [&](const BeamzLaunch &phase) {
+#if BEAMZ_CUDA_MSTEP_FULL_INTERMEDIATES
+      if (use_full_intermediates)
+        return BeamzEnqueueMstepEdgeFull(
+            stream, phase, launch.first_cells, extent[1], extent[2]);
+#endif
+#if BEAMZ_CUDA_MSTEP_INPLACE_EDGES
+      if (use_inplace_edges)
+        return BeamzEnqueueMstepEdgeAndPublish(
+            stream, phase, launch.first_cells, launch.scratch_fields,
+            launch.slots, launch.core_masks, launch.bounds, extent[1], extent[2]);
+#endif
+      return BeamzEnqueueMstepEdge(
+          stream, phase, launch.first_cells, extent[1], extent[2]);
+    };
+    auto second_edge = [&](const BeamzLaunch &phase) {
+#if BEAMZ_CUDA_MSTEP_INPLACE_EDGES || BEAMZ_CUDA_MSTEP_FULL_INTERMEDIATES
+      if (use_inplace_edges)
+        return BeamzEnqueueMstepEdgeFull(
+            stream, phase, launch.edge_cells, extent[1], extent[2]);
+#endif
+      return BeamzEnqueueMstepEdge(
+          stream, phase, launch.edge_cells, extent[1], extent[2]);
+    };
     for (int step = 0; step + 1 < program.nsteps; step += 2) {
       auto base = phases(current, current);
       if (auto err = inject(base, 0, step); err != cudaSuccess)
         return err;
-      if (auto err =
-              BeamzEnqueueMstepCore(stream, base.first, base.second, dest,
-                                    launch.core_masks, launch.bounds);
-          err != cudaSuccess)
+      if (auto err = enqueue_core(base, dest); err != cudaSuccess)
         return err;
-      auto first = phases(current, scratch);
-      if (auto err = BeamzEnqueueMstepEdge(
-              stream, first.first, launch.first_cells, extent[1], extent[2]);
-          err != cudaSuccess)
+      // All frozen-input core reads finish before first_cells updates A. The
+      // publication variant copies core H1/E1; FULL_INTERMEDIATES recomputes
+      // all S=first_cells directly. The latter only promises correct values
+      // at actual second-step/observation dependencies, not discarded halos.
+      const BeamzBuffer *first_fields = use_inplace_edges ? current : scratch;
+      auto first = phases(current, first_fields);
+      if (auto err = first_edge(first.first); err != cudaSuccess)
         return err;
       if (auto err = inject(first, 1, step); err != cudaSuccess)
         return err;
-      if (auto err = BeamzEnqueueMstepEdge(
-              stream, first.second, launch.first_cells, extent[1], extent[2]);
-          err != cudaSuccess)
+      if (auto err = first_edge(first.second); err != cudaSuccess)
         return err;
       if (auto err = inject(first, 2, step); err != cudaSuccess)
         return err;
-      if (auto err = observe(scratch, step); err != cudaSuccess)
+      if (auto err = observe(first_fields, step); err != cudaSuccess)
         return err;
-      auto second = phases(scratch, dest);
+      // E2 must read H2 from the complete destination bank, not from the
+      // partially advanced input bank. phases(A,B) preserves that distinction.
+      auto second = phases(first_fields, dest);
       if (auto err = inject(second, 0, step + 1); err != cudaSuccess)
         return err;
-      if (auto err = BeamzEnqueueMstepEdge(
-              stream, second.first, launch.edge_cells, extent[1], extent[2]);
-          err != cudaSuccess)
+      if (auto err = second_edge(second.first); err != cudaSuccess)
         return err;
       if (auto err = inject(second, 1, step + 1); err != cudaSuccess)
         return err;
-      if (auto err = BeamzEnqueueMstepEdge(
-              stream, second.second, launch.edge_cells, extent[1], extent[2]);
-          err != cudaSuccess)
+      if (auto err = second_edge(second.second); err != cudaSuccess)
         return err;
       if (auto err = inject(second, 2, step + 1); err != cudaSuccess)
         return err;

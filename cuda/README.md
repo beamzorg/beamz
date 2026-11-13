@@ -6,6 +6,11 @@ registers typed JAX FFI targets while BeamZ remains usable with JAX alone. The
 component's packaging metadata contains the `Private :: Do Not Upload` classifier,
 so package indexes reject accidental publication.
 
+An optional [independent native runner](NATIVE_RUNTIME.md) builds directly with
+CMake and runs prepared NumPy inputs without JAX. It shares the compiled CUDA
+core with the FFI frontend. The [moving-subdomain design](SYSTOLIC_SCHEDULE.md)
+documents the next communication schedule and its CPU dependency proof.
+
 The streamed backend replaces JAX's elementwise 3D Yee/CPML programs with fused
 magnetic and electric CUDA launches. Bounded multi-step CUDA graphs own complete
 3D runs, and one grouped program path covers arbitrary source batches and DFT
@@ -114,16 +119,26 @@ result = simulation.advance(num_steps=256, backend="cuda", schedule="mstep")
 Mstep ports [Pepijn de Vos's PR #308](https://github.com/beamzorg/beamz/pull/308).
 It advances eligible columns by two timesteps using shared plane rings. The
 16×32 default tile owns 8×16 quadrants, excluding CPML, PEC and source halos.
-Compact first-step scratch holds boundary dependencies and DFT samples; a second
-field bank holds pair outputs. Edges, sources and monitors use the shared CUDA
+The default edge path recomputes the first-step dependency envelope into the
+current full field bank after the core finishes reading frozen inputs. A second
+bank holds pair outputs. This removes compact field-address lookups from the
+edge kernels without publishing extra core intermediates. Only intermediates
+needed by final fields and DFT samples must be valid; discarded outer halo
+values are never observed. Edges, sources and monitors use the shared CUDA
 operations. Odd tails and domains without eligible columns use ordinary updates.
 Returned logical state, absolute clocks and continuation semantics are preserved.
 
 Packed-E/scalar-H specialization hoists metadata, advances linear addresses and
 prefetches two E planes using 61,392 shared bytes per block. Other coefficients
 use the general core. Both share Yee/material arithmetic; streamed kernels keep
-their original addressing. Plan arrays are runtime inputs, with a bounded host
-cache of two plans / 256 MiB, rather than embedded compiled constants.
+their original addressing. Both byte IDs and exact constant-block material
+headers are decoded correctly, including shared preparation-cache reuse.
+The cell arithmetic is generated deterministically from a Python stencil trace;
+its CUDA lowering retains the established rounding points. Plan arrays are
+runtime inputs, with a bounded host
+cache of two plans / 256 MiB, rather than embedded compiled constants. The current
+ABI still allocates compact scratch although the default full-bank path does
+not use it; memory admission retains that conservative workspace budget.
 
 Mstep supports unsharded isotropic uniform float32 3D grids, diagonal materials,
 batched slab sources and vector DFT monitors, including asymmetric CPML,
@@ -170,6 +185,14 @@ comparison, RTX3090 tile/startup study and H100 performance/capacity checks.
 Small/narrow shapes can favor streamed, and mstep uses extra memory. These
 measurements do not establish a universal optimum or expand the automatic model
 to H100. OpenCL remains a separate portability task sharing the schedule contract.
+
+The [2026-11-11 optimization log](../docs/reviews/cuda-autoresearch-2026-11-11.md)
+records the fixed-12-cell-CPML nanoparticle benchmark, matched native controls,
+accepted/rejected experiments and hardware limits. The
+[custom tracing design](../docs/reviews/cuda-tracing-2026-11-11/custom-tracing.md)
+distinguishes production Yee arithmetic from generated scheduling probes and
+the next work on complete temporal CPML. Research register-history and
+core-publication schedules remain disabled by default.
 
 ## Experimental sharded streamed execution
 

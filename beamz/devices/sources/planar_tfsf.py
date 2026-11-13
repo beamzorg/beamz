@@ -9,6 +9,7 @@ from typing import cast
 import jax.numpy as jnp
 import numpy as np
 
+from beamz.design.grid import RectilinearGrid
 from beamz.devices._immutable import readonly_array
 from beamz.devices.modes.discrete import ComponentIndex
 from beamz.devices.modes.fields import _axis_coordinate, _axis_index, _phase_delay
@@ -34,6 +35,17 @@ _STAGGERED_ALONG_AXIS = {
     "y": {"Ey", "Hx", "Hz"},
     "z": {"Ez", "Hx", "Hy"},
 }
+
+
+class _CroppedMetricGrid(RectilinearGrid):
+    """Retain world coordinates even when a graded grid's crop is uniform."""
+
+    @property
+    def metric_kind(self):
+        return "rectilinear"
+
+    def metric_kind_for(self, axes):
+        return "rectilinear"
 
 
 def _shift_component_indices_along_axis(
@@ -378,11 +390,7 @@ def local_3d_phasor_context(
     max_shift: int,
 ):
     geometry = getattr(fields, "geometry", None)
-    if geometry is not None and geometry.metric_kind != "isotropic_uniform":
-        # A cropped component support may omit one outer edge, while derivative
-        # metrics are cell based. Keep the exact full-grid metric alignment for
-        # rectilinear launches; compact uniform launches retain the fast path.
-        return None
+    metric_crop = geometry is not None and geometry.metric_kind != "isotropic_uniform"
     axis = field_profile.axis
     axis_pos = _AXIS_POS_3D[axis]
     field_shapes = {
@@ -396,6 +404,10 @@ def local_3d_phasor_context(
     grid_shape = tuple(
         max(shape[d] for shape in field_shapes.values()) for d in range(3)
     )
+    if metric_crop:
+        # Component slices add the node endpoints required by each staggering.
+        # The metric crop itself needs exactly one edge more than its cells.
+        grid_shape = tuple(reversed(geometry.shape))
     lows = [int(v) for v in grid_shape]
     highs = [0, 0, 0]
     found = False
@@ -458,6 +470,16 @@ def local_3d_phasor_context(
         boundaries=getattr(fields, "boundaries", None),
         permittivity=np.empty(cell_shape, dtype=fields.permittivity.dtype),
     )
+    if metric_crop:
+        # Preserve physical coordinates and spacing instead of translating by
+        # nominal resolution. Halo cells keep artificial crop boundaries clear
+        # of the one-step incident-field update and source-plane quadrature.
+        local_fields.geometry = _CroppedMetricGrid(
+            *(
+                geometry.axis_edges(axis)[lo : hi + 1]
+                for axis, (lo, hi) in zip("xyz", reversed(cell_bounds), strict=True)
+            )
+        )
 
     def local_material_attr(
         attr: str,
@@ -514,20 +536,22 @@ def local_3d_phasor_context(
         tensors = getattr(material_grid, "yee_tensors", {})
     tensor_crop = tuple(slice(int(lo), int(hi) + 1) for lo, hi in cell_bounds)
     local_fields.yee_tensors = {
-        name: np.asarray(values)[
-            (
-                slice(None),
-                *(
-                    tensor_crop
-                    if name == "eps_node"
-                    else component_slices["E" + name[-1]]
-                ),
-            )
-        ]
+        name: np.asarray(
+            values[
+                (
+                    slice(None),
+                    *(
+                        tensor_crop
+                        if name == "eps_node"
+                        else component_slices["E" + name[-1]]
+                    ),
+                )
+            ]
+        )
         for name, values in tensors.items()
     }
 
-    offset = float(cell_bounds[axis_pos][0]) * float(resolution)
+    offset = 0.0 if metric_crop else float(cell_bounds[axis_pos][0]) * float(resolution)
     local_indices = {
         component: shift_3d_component_index_to_local(
             index,

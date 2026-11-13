@@ -843,7 +843,12 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
         donate_state=donate_state,
     )
     if mstep_plan is not None:
+        from beamz.simulation.cuda.capabilities import mstep_allocation_contract
         from beamz.simulation.cuda.mstep_config import ALLOWED_FLAGS, variant_summary
+
+        target, scratch_cells = mstep_allocation_contract(mstep_plan.scratch_cells)
+        schedule_decision["mstep_ffi_target"] = target
+        schedule_decision["allocated_scratch_bytes"] = 6 * scratch_cells * 4
 
         step_context = replace(
             step_context,
