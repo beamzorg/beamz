@@ -350,3 +350,26 @@ def test_grid_solve_rejects_invalid_options(kwargs):
         solve_grid(
             **mode_grid_inputs(eps_xx=eps, x_edges=x_edges, y_edges=y_edges, **kwargs)
         )
+
+
+def test_mode_result_exposes_component_yee_coordinates():
+    from beamz.devices.modes._sampling import collocate_result
+    from beamz.devices.modes.models import Grid
+    from beamz.devices.modes.result import Result
+
+    x_edges = np.array([0.0, 1.0, 3.0])
+    y_edges = np.array([0.0, 2.0, 5.0])
+    grid = Grid(tuple(x_edges), tuple(y_edges), normal_axis=2)
+    result = Result(
+        neffs=np.ones((1, 1)),
+        fields={name: np.ones((1, 1, 2, 2)) for name in ("Ex", "Ey")},
+        grid=grid,
+        frequencies=np.ones(1),
+    )
+    np.testing.assert_array_equal(result.field_components["Ex"].x, [0.5, 2.0])
+    np.testing.assert_array_equal(result.field_components["Ex"].y, [0.0, 2.0])
+    np.testing.assert_array_equal(result.field_components["Ey"].x, [0.0, 1.0])
+    assert result.field_components["Ex"].attrs["grid_sampling"] == "native_yee"
+    centered = collocate_result(result, ("x", "y"), (x_edges, y_edges))
+    np.testing.assert_array_equal(centered.field_components["Ex"].y, [1.0, 3.5])
+    assert centered.field_components["Ex"].attrs["grid_sampling"] == "cell_centres"

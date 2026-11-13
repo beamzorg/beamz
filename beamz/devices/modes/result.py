@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import xarray as xr
 
+from ._sampling import native_coordinates
 from .models import Grid
 
 
@@ -76,15 +77,29 @@ class Result:
             self.axes, (self.grid.x_edges, self.grid.y_edges), strict=True
         ):
             coords[axis + "_width"] = (axis, np.diff(edges))
-        return {
-            name: xr.DataArray(
+        collocated = (self.solver_info or {}).get("cell_centres", False)
+        edges = tuple(np.asarray(e) for e in (self.grid.x_edges, self.grid.y_edges))
+        result = {}
+        for name, values in self.fields.items():
+            component_coords = dict(coords)
+            if not collocated:
+                component_coords.update(
+                    zip(
+                        self.axes,
+                        native_coordinates(name, self.axes, edges),
+                        strict=True,
+                    )
+                )
+            result[name] = xr.DataArray(
                 values.transpose(2, 3, 0, 1)[:, :, None],
                 dims=(*self.axes, normal, "f", "mode_index"),
-                coords=coords,
-                attrs={"normal_dim": normal},
+                coords=component_coords,
+                attrs={
+                    "normal_dim": normal,
+                    "grid_sampling": "cell_centres" if collocated else "native_yee",
+                },
             )
-            for name, values in self.fields.items()
-        }
+        return result
 
     @property
     def n_eff(self) -> xr.DataArray:
