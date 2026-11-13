@@ -14,8 +14,12 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.optimize import LinearConstraint, OptimizeResult, minimize, minimize_scalar
 
-from beamz.const import LIGHT_SPEED
-from beamz.design.dispersion import PoleResidue, _validate_nk
+from beamz.design.dispersion import (
+    PoleResidue,
+    _optical_samples,
+    _stack,
+    _validate_nk,
+)
 
 
 def _basis(omega, poles) -> NDArray[np.complex128]:
@@ -64,10 +68,6 @@ def _canonical_poles(roots):
             root = (root + conjugate.conjugate()) / 2
             poles.append(complex(-max(abs(root.real), 1e-10), -abs(root.imag)))
     return np.asarray(sorted(poles, key=lambda p: (abs(p.imag), p.real)))
-
-
-def _stack(values, weights):
-    return np.concatenate((values.real * weights[0], values.imag * weights[1]))
 
 
 def _least_squares(matrix, rhs):
@@ -151,14 +151,18 @@ def _audit_grid(omega, poles):
     return np.unique(grid[grid > 0])
 
 
-def _refined_minima(poles, coefficients, grid, loss):
-    """Locate between-sample loss minima in log frequency."""
-    indices = (
+def _local_minima(loss, limit):
+    return (
         np.flatnonzero(
-            (loss[1:-1] < loss[:-2]) & (loss[1:-1] < loss[2:]) & (loss[1:-1] < 1e-7)
+            (loss[1:-1] < loss[:-2]) & (loss[1:-1] < loss[2:]) & (loss[1:-1] < limit)
         )
         + 1
     )
+
+
+def _refined_minima(poles, coefficients, grid, loss):
+    """Locate between-sample loss minima in log frequency."""
+    indices = _local_minima(loss, 1e-7)
     # Ignore roundoff-only oscillations in the asymptotic tails unless negative.
     indices = indices[np.argsort(loss[indices])[:64]]
     frequencies, values = [], []
@@ -192,8 +196,9 @@ def _passive_residues(omega, target, poles, coefficients, epsilon_inf, weights):
     audit_basis = _basis(audit, poles).imag / (audit / (1 + audit**2))[:, None]
     loss = audit_basis @ coefficients
     extra, minima = _refined_minima(poles, coefficients, audit, loss)
-    if min(loss.min(), minima.min(initial=np.inf)) >= -1e-10:
-        return coefficients, float(min(loss.min(), minima.min(initial=np.inf)))
+    floor = float(min(loss.min(), minima.min(initial=np.inf)))
+    if floor >= -1e-10:
+        return coefficients, floor
     # Whiten the quadratic objective so near-collinear real-pole bases do not
     # make SLSQP operate on a poorly conditioned Hessian.
     u, singular, vt = np.linalg.svd(matrix, full_matrices=False)
@@ -221,12 +226,7 @@ def _passive_residues(omega, target, poles, coefficients, epsilon_inf, weights):
         minimum = min(loss.min(), refined.min(initial=np.inf))
         if result.success and minimum >= -1e-10:
             return transform @ x, float(minimum)
-        minima = (
-            np.flatnonzero(
-                (loss[1:-1] < loss[:-2]) & (loss[1:-1] < loss[2:]) & (loss[1:-1] < 0)
-            )
-            + 1
-        )
+        minima = _local_minima(loss, 0)
         checks = np.unique(np.r_[checks, extra, audit[minima], audit[np.argmin(loss)]])
     return None
 
@@ -274,10 +274,7 @@ def fit_nk_vector(
         )
     weights = weights / weights.mean()
     order = np.argsort(wl)
-    frequency = LIGHT_SPEED / wl[order]
-    scale = 2 * np.pi * np.sqrt(frequency.min() * frequency.max())
-    omega = 2 * np.pi * frequency / scale
-    target = (n[order] + 1j * k[order]) ** 2
+    frequency, scale, omega, target = _optical_samples(wl[order], n[order], k[order])
     best = None
     trials = 0
     for count in range(1, max_poles + 1):
