@@ -6,21 +6,44 @@ from typing import Literal, cast
 
 import numpy as np
 
-from beamz.devices.modes.line import prepare_mode_line, solve_mode_line
+from beamz.devices.modes.line import (
+    cell_permeability,
+    prepare_mode_line,
+    solve_mode_line,
+)
 from beamz.devices.modes.plane import SignedAxis, solve_modes
 from beamz.devices.modes.specs import ModeData, ModeSpec
 
 from .specs import plane_axis_and_spans
 
 
-def _require_cell_mode_materials(material_grid, *, operation: str) -> None:
-    """Reject material grids whose propagation coefficients cannot be reproduced."""
+def _require_cell_mode_materials(material_grid, *, operation: str, port=None) -> None:
+    """Reject material grids whose propagation coefficients cannot be reproduced.
 
-    if material_grid is not None and material_grid.uses_full_permittivity:
-        raise ValueError(
-            f"{operation} cannot yet reproduce full off-diagonal permittivity. "
-            "Use farjadpour_diagonal or solve the mode with a full-tensor path."
+    With ``port`` (an object with ``center`` and ``size``) only cells near the
+    port plane matter: off-diagonal media elsewhere do not enter the mode solve.
+    """
+
+    if material_grid is None or not material_grid.uses_full_permittivity:
+        return
+    if port is not None and "epsilon" in material_grid.tensors:
+        from scipy.ndimage import binary_dilation
+
+        from beamz.design.material_views import port_cells
+
+        cell = np.asarray(material_grid.tensors["epsilon"])
+        if cell.shape[0] != 6:
+            return
+        # One extra cell covers Yee supports shared with neighbouring cells.
+        coupled = binary_dilation(
+            np.any(np.abs(cell[3:]) > 1e-10, axis=0), iterations=1
         )
+        if not np.any(coupled & port_cells(material_grid, port.center, port.size)):
+            return
+    raise ValueError(
+        f"{operation} cannot yet reproduce full off-diagonal permittivity. "
+        "Use farjadpour_diagonal or solve the mode with a full-tensor path."
+    )
 
 
 def _profile_crop_slices(eps_profile, *, profile_axes, center, size, resolution):
@@ -276,6 +299,9 @@ def solve_mode_plane(
             spec=spec,
             resolution=simulation.resolution,
             grid=geometry,
+            permeability=cell_permeability(
+                getattr(fields, "material_grid", None) or grid_view
+            ),
         )
         signed = _resolve_solver_direction(axis, direction)
         diagnostics = [{} for _ in frequencies]

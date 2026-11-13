@@ -595,7 +595,25 @@ def forward_step(
             logical_shapes=ctx.boundary.logical_component_shapes,
         )
         state = state._replace(ex=ex, ey=ey, ez=ez)
+    anisotropic = (
+        program.dispersion is not None and program.dispersion.anisotropic is not None
+    )
+    if anisotropic:
+        from beamz.simulation.anisotropic import snapshot_electric, snapshot_magnetic
+        from beamz.simulation.dispersion import (
+            update_anisotropic_electric,
+            update_anisotropic_magnetic,
+        )
+
+        # Streamed CUDA runs the corrections as native kernels.
+        native_tensor = cfg.backend == "cuda_streamed" and not cfg.sharding.enabled
+        old_h_boxes = snapshot_magnetic(state, program.dispersion.anisotropic)
     state = update_kernel.update_h(state, ctx, coeffs)
+    if anisotropic:
+        # Map the vacuum increment through mu^-1 before H sources inject.
+        state = update_anisotropic_magnetic(
+            old_h_boxes, state, program.dispersion, native_tensor
+        )
 
     # 2. H-phase sources may overwrite constrained cells, so reapply the compiled masks
     # before E consumes the half-step magnetic fields.
@@ -646,7 +664,17 @@ def forward_step(
 
     # 3. Advance E, inject its sources, and restore its masks before observation.
     old_e_state = state
+    if anisotropic:
+        old_e_boxes = snapshot_electric(state, program.dispersion.anisotropic)
     state = update_kernel.update_e(state, ctx, coeffs)
+    if anisotropic:
+        from beamz.simulation.anisotropic import update_static_electric
+
+        # Map the vacuum increment through the full static tensors before E
+        # sources inject, mirroring the permeability mapping above.
+        state = update_static_electric(
+            old_e_boxes, state, program.dispersion.anisotropic, native_tensor
+        )
     state = apply_source_phase(
         state,
         state.current_step,
@@ -660,6 +688,10 @@ def forward_step(
 
     if program.dispersion is not None:
         state = update_dispersion(old_e_state, state, program.dispersion)
+    if anisotropic:
+        state = update_anisotropic_electric(
+            old_e_boxes, state, program.dispersion, native_tensor
+        )
     if not kernel_owns_pec:
         ex, ey, ez = update_runtime.apply_post_source_boundaries(
             (state.ex, state.ey, state.ez),
@@ -747,6 +779,21 @@ class _BoundedCompileScan:
         return getattr(self.compiled, name)
 
 
+def scan_compiler_options(program) -> dict:
+    """Per-executable XLA options for a compiled scan."""
+    # Empirical fusion autotuning allocates full-sized trial inputs/outputs during
+    # compilation, outside executable.memory_analysis(). Use default emitters for
+    # both FDTD backends so an otherwise fitting run can compile near capacity.
+    options = {"xla_gpu_autotune_level": 0}
+    if program.dispersion is not None and program.dispersion.anisotropic is not None:
+        # XLA (jax 0.9) segfaults on the host executing CUDA graphs of some
+        # tensor-media scans, depending on region sizes and on both backends.
+        # Plain kernel launches cost about 10% on JAX and nothing measurable on
+        # the per-step CUDA path.
+        options["xla_gpu_enable_command_buffer"] = ""
+    return options
+
+
 def build_step_context(program, *, donate_state: bool = False):
     """Bind the shared source, boundary, and memory plan for one timestep."""
     cfg = program.config
@@ -830,6 +877,8 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
     cuda_multi_step = (
         cfg.backend in {"cuda_streamed", "cuda_mstep"}
         and not cfg.sharding.enabled
+        # Tensor-media corrections run in JAX between per-step CUDA phases.
+        and (program.dispersion is None or program.dispersion.anisotropic is None)
         and (not program.monitors or packed_graph_monitors is not None)
         and (not program.sources or source_groups_supported)
     )
@@ -894,13 +943,21 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
         coeffs: UpdateCoefficients,
         dispersion_coefficients=None,
         mstep_buffers=None,
+        anisotropic_plan=None,
     ):
         runtime_program = program
+        if anisotropic_plan is not None:
+            # Design-dependent tensor media (topology optimization) rebuild the
+            # plan from traced parameters; it is a pytree with static boxes.
+            runtime_program = replace(
+                runtime_program,
+                dispersion=replace(program.dispersion, anisotropic=anisotropic_plan),
+            )
         if dispersion_coefficients is not None:
             runtime_program = replace(
-                program,
+                runtime_program,
                 dispersion=replace(
-                    program.dispersion,
+                    runtime_program.dispersion,
                     coefficients=tuple(
                         (record[0], *values)
                         for record, values in zip(
@@ -1137,9 +1194,6 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
     # preserves its input state; callers may opt into the lower-memory variant when
     # they no longer need that continuation value.
     donate_argnums = (0,) if donate_state else ()
-    # Empirical fusion autotuning allocates full-sized trial inputs/outputs during
-    # compilation, outside executable.memory_analysis(). Use default emitters for
-    # both FDTD backends so an otherwise fitting run can compile near capacity.
     # JAX and the plan adapters expose a dynamic callable/lowering interface.
     scan: Any
     if "compiler_options" in inspect.signature(jax.jit).parameters:
@@ -1148,7 +1202,7 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
             jax.jit(
                 run_scan,
                 donate_argnums=donate_argnums,
-                compiler_options={"xla_gpu_autotune_level": 0},
+                compiler_options=scan_compiler_options(program),
             ),
         )
     # Older supported JAX releases lack per-executable options. Preserve their

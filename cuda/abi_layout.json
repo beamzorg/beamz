@@ -1,20 +1,22 @@
 {
-  "abi_version": 30,
-  "component_version": "0.30.0",
+  "abi_version": 31,
+  "component_version": "0.31.0",
   "targets": {
     "streamed": "beamz_cuda_streamed",
     "sharded": "beamz_cuda_sharded",
     "program": "beamz_cuda_program",
     "adjoint": "beamz_cuda_adjoint",
     "material_adjoint": "beamz_cuda_material_adjoint",
-    "mstep": "beamz_cuda_mstep"
+    "mstep": "beamz_cuda_mstep",
+    "tensor_media": "beamz_cuda_tensor_media"
   },
   "streamed_targets": [
     "streamed",
     "sharded",
     "program",
     "adjoint",
-    "material_adjoint"
+    "material_adjoint",
+    "tensor_media"
   ],
   "flags": {
     "graph_cache": 7,

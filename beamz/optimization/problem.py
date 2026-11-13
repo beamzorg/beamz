@@ -28,7 +28,6 @@ from beamz.simulation.execute import (
 from beamz.simulation.results import SimulationResults
 
 from ._validation import check_density, step_count
-from .autodiff import transform_density
 from .objectives import ModePower, WeightedObjective
 from .polygonize import density_to_polygons
 from .result import TopologyResult, load_result
@@ -110,7 +109,18 @@ class TopologyProblem:
             else tuple((name, None) for name in output_monitor_names or ())
         )
         self.checkpoint_interval = checkpoint_interval
-        self.program = simulation.compile(backend="jax")
+        self._design = None
+        compile_simulation = simulation
+        if topology.materials is not None:
+            from .anisotropic_design import AnisotropicDesignBinding
+
+            self._design = AnisotropicDesignBinding(
+                simulation._material_grid(), topology.region_mask, topology.materials
+            )
+            compile_simulation = simulation.updated_copy(
+                material_grid=self._design.compile_grid()
+            )
+        self.program = compile_simulation.compile(backend="jax")
         self._validate()
         self._mask = jnp.asarray(topology.region_mask)
         self._base_eps = jnp.asarray(self.program.grid.material_grid.permittivity)
@@ -140,6 +150,12 @@ class TopologyProblem:
         scan = build_scan(self.program, checkpoint_interval=checkpoint_interval)
 
         def simulate(density, beta):
+            if self._design is not None:
+                rho = self._physical_density(density, beta)
+                supports = self._design.supports(rho)
+                coefficients = self._design.coefficients(self.program, supports)
+                plan = self._design.plan(self.program, rho, supports)
+                return scan(self._initial, coefficients, None, None, plan)
             eps = self._permittivity(density, beta)
             coefficients = topology_coefficients(self.program, eps, self._mask)
             return scan(self._initial, coefficients)
@@ -202,8 +218,8 @@ class TopologyProblem:
                 self._binding_results, self.program, names
             )
         values = jnp.asarray(density, dtype=jnp.float32)
-        if values.shape != self.topology.region_mask.shape:
-            raise ValueError("Density must match the topology mask shape.")
+        if values.shape != self.topology.density_shape:
+            raise ValueError("Density must match the topology density shape.")
         if not isinstance(values, Tracer):
             values = self._density(values)
         if self._spectral_adjoint is None:
@@ -289,15 +305,23 @@ class TopologyProblem:
             raise ValueError("filter_radius must be finite and nonnegative.")
         if not 0 < spec.projection_eta < 1:
             raise ValueError("projection_eta must lie strictly between zero and one.")
-        if grid.material_grid.uses_full_permittivity:
-            raise ValueError("TopologyProblem requires scalar permittivity.")
+        if grid.material_grid.uses_full_permittivity and self._design is None:
+            raise ValueError(
+                "TopologyProblem requires scalar permittivity; use TopologySpec "
+                "materials (or material_min/material_max) for anisotropic designs."
+            )
         for axis in "xyz":
             if np.any(np.asarray(getattr(grid, f"sig_{axis}")) != 0):
                 raise ValueError(
                     "TopologyProblem requires lossless materials; use CPML instead of sponge PML."
                 )
-            if not np.allclose(getattr(grid, f"mu_h{axis}"), 1):
+            if not grid.material_grid.uses_magnetic_tensors and not np.allclose(
+                getattr(grid, f"mu_h{axis}"), 1
+            ):
                 raise ValueError("TopologyProblem requires relative permeability one.")
+        _require_design_clear_of_tensor_media(
+            program, spec.region_mask, self.gradient_backend, self._design
+        )
         if len(sim.sources) != 1 or not isinstance(
             sim.sources[0], (ModeSource, GaussianBeamSource)
         ):
@@ -323,7 +347,12 @@ class TopologyProblem:
                 and term.reference_monitor not in monitor_names
             ):
                 raise ValueError("Reference monitor is not present in the simulation.")
-        min_eps = min(spec.eps_min, float(np.min(grid.permittivity)))
+        # Every design material's smallest principal permittivity bounds dt.
+        min_eps = min(
+            spec.eps_min,
+            float(np.min(grid.permittivity)),
+            getattr(self._design, "min_permittivity", np.inf),
+        )
         cfl = (
             sim.resolution
             * np.sqrt(min_eps / (3 if program.config.is_3d else 2))
@@ -392,11 +421,7 @@ class TopologyProblem:
                 raise ValueError("The design region must not overlap the absorber.")
 
     def _physical_density(self, density, beta):
-        return transform_density(
-            jnp.where(self._mask, density, 0.0),
-            beta=beta,
-            **self.topology._transform_options,
-        )
+        return self.topology._transform(jnp.where(self._mask, density, 0.0), beta)
 
     def _permittivity(self, density, beta):
         physical = self._physical_density(density, beta)
@@ -409,7 +434,7 @@ class TopologyProblem:
 
     def _density(self, density):
         density = np.asarray(density, dtype=np.float32)
-        check_density(density, self.topology.region_mask.shape)
+        check_density(density, self.topology.density_shape)
         return jnp.asarray(density)
 
     def value(self, density, *, beta=1.0):
@@ -569,11 +594,15 @@ class TopologyProblem:
             design=self,
             fingerprint=self.fingerprint,
             optimizer=self.topology._optimizer(),
-            shape=self.topology.region_mask.shape,
+            shape=self.topology.density_shape,
         )
 
     def material_simulation(self, density, *, beta=1.0):
         """Create an ordinary simulation with the identical density material map."""
+        if self._design is not None:
+            rho = self._physical_density(self._density(density), self._beta(beta))
+            materials = self._design.material_grid_at(np.asarray(rho))
+            return self.simulation.updated_copy(material_grid=materials)
         eps = self._permittivity(self._density(density), self._beta(beta))
         materials = topology_material_grid(self.program, eps, self._mask)
         return self.simulation.updated_copy(material_grid=materials)
@@ -593,6 +622,11 @@ class TopologyProblem:
         The base design must contain only fixed structures in the design region's
         background. A low-index region polygon overwrites any initial geometry in
         that region before adding solid topology contours.
+
+        With design materials the region polygon uses the first material. Each
+        later material ``k`` adds the contour where the nested fraction ``Q_k``
+        of material ``k`` or later exceeds ``threshold``, in order, so binarized
+        multi-material designs export exactly.
         """
         if self.program.config.is_3d:
             raise ValueError(
@@ -606,24 +640,87 @@ class TopologyProblem:
         dx = float(self.simulation.resolution)
         kwargs = {"dx": dx, "x0": origin[0], "y0": origin[1]}
         design = spec.design
+        if spec.materials is None:
+            background = Material(permittivity=spec.eps_min)
+            layers = [(physical, Material(permittivity=spec.eps_max))]
+        else:
+            from .anisotropic_design import solid_fractions
+
+            background = spec.materials[0]
+            fractions = solid_fractions(physical, len(spec.materials))
+            layers = list(zip(fractions, spec.materials[1:], strict=True))
         for polygon in density_to_polygons(
             spec.region_mask.astype(float),
             level=0.5,
-            material=Material(permittivity=spec.eps_min),
+            material=background,
             mode="pixel_exact",
             **kwargs,
         ):
             design += polygon
-        for polygon in density_to_polygons(
-            np.where(spec.region_mask, physical, spec.fixed_structure_mask),
-            level=threshold,
-            material=Material(permittivity=spec.eps_max),
-            mode=mode,
-            sample_spacing=sample_spacing,
-            region_mask=spec.region_mask,
-            fixed_solid=spec.fixed_solid,
-            fixed_void=spec.fixed_void,
-            **kwargs,
-        ):
-            design += polygon
+        for fraction, material in layers:
+            for polygon in density_to_polygons(
+                np.where(spec.region_mask, fraction, spec.fixed_structure_mask),
+                level=threshold,
+                material=material,
+                mode=mode,
+                sample_spacing=sample_spacing,
+                region_mask=spec.region_mask,
+                fixed_solid=spec.fixed_solid,
+                fixed_void=spec.fixed_void,
+                **kwargs,
+            ):
+                design += polygon
         return design
+
+
+def _require_design_clear_of_tensor_media(
+    program, mask, gradient_backend, design=None
+) -> None:
+    """Allow tensor permeability and tensor-pole media only outside the design.
+
+    Their corrections use static compile-time constitutive coefficients, so
+    the design density must not reach their supports. The default
+    differentiable scan differentiates through them; the spectral adjoint
+    replays bare Yee kernels and cannot.
+    """
+    if design is not None and gradient_backend == "adjoint":
+        raise ValueError(
+            "TopologySpec design materials require the default autodiff "
+            "gradient backend."
+        )
+    plan = None if program.dispersion is None else program.dispersion.anisotropic
+    if plan is None:
+        return
+    if plan.electric is not None:
+        # Design bindings rebuild E coefficients from the grid, which would
+        # undo the vacuum coefficients the full static-tensor box relies on.
+        raise ValueError(
+            "TopologyProblem does not yet support media with non-symmetric "
+            "tensors or off-diagonal conductivity."
+        )
+    if gradient_backend == "adjoint":
+        raise ValueError(
+            "gradient_backend='adjoint' does not support tensor permeability or "
+            "tensor-pole media; use the default differentiable scan."
+        )
+    mask = np.asarray(mask, dtype=bool)
+    # The design media's own regions are rebuilt from the density each run.
+    owners = (
+        design._electric_region_owners(program)
+        if design is not None
+        else [None] * len(plan.electric_regions)
+    )
+    boxes = [
+        region.box
+        for region, owner in zip(plan.electric_regions, owners, strict=True)
+        if owner is None or owner.indices is None
+    ]
+    boxes += [region.box for region in plan.magnetic_regions]
+    if plan.magnetic is not None:
+        boxes.append(plan.magnetic.box)
+    for box in boxes:
+        if np.any(mask[box.cell_slices]):
+            raise ValueError(
+                "TopologyProblem design regions must not overlap tensor permeability "
+                "or tensor-pole media (including their two-cell coupling halo)."
+            )

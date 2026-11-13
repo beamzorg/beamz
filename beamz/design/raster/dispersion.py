@@ -126,3 +126,64 @@ def rasterize_dispersion(
                 supports[component] = weight * (1 - normal_weights[component])
         regions.append((medium, supports))
     return tuple(regions), tuple(interfaces)
+
+
+def rasterize_tensor_dispersion(
+    scene,
+    grid,
+    *,
+    kind,
+    polarization,
+    quality,
+    resolution,
+    cache_directory,
+    periodic_axes=(),
+):
+    """Return ``(medium, cell_fraction)`` for every dispersive tensor medium.
+
+    Media whose static tensors need the box-local update (non-symmetric
+    tensors, off-diagonal or magnetic conductivity) are included too. Painter
+    order is preserved by rasterizing one indicator scene per medium; the
+    volume-smoothed indicator is the medium's fraction of each cell.
+    """
+    entries = []
+    for index, medium in enumerate(scene.materials):
+        if not _needs_fraction(medium):
+            continue
+        indicators = tuple(
+            Material(1.0, conductivity=float(i == index))
+            for i in range(len(scene.materials))
+        )
+        result = rasterize(
+            replace(scene, materials=indicators),
+            grid,
+            options=RasterOptions(
+                quality=quality,
+                smoothing="volume",
+                periodic_axes=periodic_axes,
+                components="all" if kind == "3d" else f"two_dimensional_{polarization}",
+            ),
+            cache_directory=cache_directory,
+        )
+        indicator_grid = MaterialGrid.from_raster_result(
+            result,
+            dimensions=3 if kind == "3d" else 2,
+            polarization=polarization,
+            resolution=resolution,
+        )
+        fraction = np.clip(np.asarray(indicator_grid.conductivity, dtype=float), 0, 1)
+        entries.append((medium, fraction))
+    return tuple(entries)
+
+
+def has_tensor_dispersion(scene) -> bool:
+    return any(_needs_fraction(m) for m in scene.materials)
+
+
+def _needs_fraction(medium) -> bool:
+    """Tensor poles and box-local static tensor terms both need a cell fraction."""
+    from beamz.design.anisotropic import AnisotropicMedium
+
+    return isinstance(medium, AnisotropicMedium) and (
+        medium.is_dispersive or medium.requires_static_correction
+    )

@@ -27,6 +27,7 @@ from beamz.const import (
 )
 
 # Import design-related classes and functions
+from beamz.design.anisotropic import AnisotropicMedium, GyrotropicPole, TensorPole
 from beamz.design.core import Design
 from beamz.design.dispersion import PoleResidue, fit_nk
 from beamz.design.grid import AxisGridQuality, Grid, GridQualityReport, RectilinearGrid
@@ -89,6 +90,9 @@ __all__ = [
     "μm",
     "Material",
     "PoleResidue",
+    "AnisotropicMedium",
+    "TensorPole",
+    "GyrotropicPole",
     "fit_nk",
     "fit_nk_vector",
     "material_library",

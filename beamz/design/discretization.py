@@ -65,6 +65,14 @@ class MaterialGrid:
     polarization : {"tm", "te"}, optional
         Active component family for a two-dimensional solver grid. Three-dimensional
         grids leave this unset.
+    magnetic_tensors : mapping, optional
+        Packed symmetric relative-permeability tensors at the magnetic Yee
+        supports (``mu_hx``, ``mu_hy``, ``mu_hz``) and at cell centers
+        (``mu_cell``), the shared location of magnetic cross coupling. Present
+        only when some permeability differs from one.
+    tensor_dispersion : tuple, optional
+        ``(AnisotropicMedium, cell_fraction)`` pairs for media with tensor
+        poles; ``cell_fraction`` is the medium's volume fraction per cell.
     grid : RectilinearGrid, optional
         Realized physical cell edges. When omitted, a uniform grid is constructed
         from ``shape``, ``resolution``, and ``origin``.
@@ -88,6 +96,8 @@ class MaterialGrid:
     grid: RectilinearGrid | None = None
     dispersion: tuple = ()
     dispersion_interfaces: tuple = ()
+    magnetic_tensors: Mapping[str, npt.ArrayLike] = field(default_factory=dict)
+    tensor_dispersion: tuple = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "permittivity", readonly_array(self.permittivity))
@@ -116,7 +126,7 @@ class MaterialGrid:
                 continue
             if actual != shape:
                 raise ValueError(f"{name} has shape {actual}, expected {shape}.")
-        for name in ("yee_materials", "tensors", "yee_tensors"):
+        for name in ("yee_materials", "tensors", "yee_tensors", "magnetic_tensors"):
             values = {
                 str(key): readonly_array(value)
                 for key, value in dict(getattr(self, name)).items()
@@ -276,6 +286,55 @@ class MaterialGrid:
                         f"{name} tensor has shape {actual}, expected compact "
                         f"(1|3|6, {', '.join(map(str, expected))})."
                     )
+
+        self._validate_magnetic_tensors(shapes)
+        self._validate_tensor_dispersion()
+
+    def _validate_magnetic_tensors(self, shapes):
+        expected_shapes = {
+            "mu_hx": shapes["Hx"],
+            "mu_hy": shapes["Hy"],
+            "mu_hz": shapes["Hz"],
+            "mu_cell": tuple(self.shape),
+        }
+        unknown = set(self.magnetic_tensors) - set(expected_shapes)
+        if unknown:
+            raise ValueError(f"Unknown magnetic tensors: {', '.join(sorted(unknown))}.")
+        if self.magnetic_tensors and "mu_cell" not in self.magnetic_tensors:
+            raise ValueError(
+                "Magnetic tensors require the cell-centered mu_cell tensor."
+            )
+        for name, values in self.magnetic_tensors.items():
+            actual = np.asarray(values).shape
+            expected = expected_shapes[name]
+            if actual[0:1] not in ((1,), (3,), (6,)) or actual[1:] != expected:
+                raise ValueError(
+                    f"{name} tensor has shape {actual}, expected compact "
+                    f"(1|3|6, {', '.join(map(str, expected))})."
+                )
+
+    def _validate_tensor_dispersion(self):
+        from beamz.design.anisotropic import AnisotropicMedium
+
+        entries = []
+        for medium, fraction in self.tensor_dispersion:
+            if not isinstance(medium, AnisotropicMedium) or not (
+                medium.is_dispersive or medium.requires_static_correction
+            ):
+                raise TypeError(
+                    "Tensor dispersion entries require dispersive AnisotropicMedium values."
+                )
+            fraction = np.asarray(fraction, dtype=np.float64)
+            if (
+                fraction.shape != tuple(self.shape)
+                or not np.isfinite(fraction).all()
+                or np.any((fraction < 0) | (fraction > 1 + 1e-6))
+            ):
+                raise ValueError(
+                    "Tensor dispersion fractions must be finite cell fractions in [0,1]."
+                )
+            entries.append((medium, readonly_array(np.clip(fraction, 0.0, 1.0))))
+        object.__setattr__(self, "tensor_dispersion", tuple(entries))
 
     def _validate_dispersion(self):
         from beamz.design.dispersion import PoleResidue
@@ -454,26 +513,34 @@ class MaterialGrid:
             if "epsilon_node" not in support_tensors:
                 raise ValueError(
                     "Full-tensor permittivity requires the node-centered "
-                    "off-diagonal raster tensor."
+                    "off-diagonal raster tensor; rasterize with "
+                    "smoothing='farjadpour_full'."
                 )
             yee_tensors["eps_node"] = np.asarray(support_tensors["epsilon_node"])
         else:
             yee_tensors = {}
-        if has_full_permittivity and np.any(np.abs(conductivity_tensor) > 1e-10):
-            raise ValueError(
-                "Full-tensor permittivity currently requires zero conductivity."
-            )
         mu_diagonal = _tensor_diagonal(mu_tensor)
-        if not (
-            np.allclose(mu_diagonal, 1.0, rtol=1e-10, atol=1e-12)
-            and np.allclose(
-                _tensor_off_diagonal(mu_tensor), 0.0, rtol=1e-10, atol=1e-12
-            )
-        ):
-            raise ValueError(
-                "BeamZ's current FDTD update supports only unit permeability. "
-                "The tensor raster remains available for standalone use."
-            )
+        magnetic_tensors = {}
+        mu_supports = {
+            name: np.asarray(support_tensors[name])
+            for name in ("mu_hx", "mu_hy", "mu_hz")
+            if name in support_tensors
+        }
+        unit_mu = all(
+            np.allclose(_tensor_diagonal(values), 1.0, rtol=1e-10, atol=1e-12)
+            and np.allclose(_tensor_off_diagonal(values), 0.0, rtol=1e-10, atol=1e-12)
+            for values in (mu_tensor, *mu_supports.values())
+        )
+        if not unit_mu:
+            if (
+                dimensions == 2
+                and mu_tensor.shape[0] == 6
+                and np.any(np.abs(mu_tensor[[4, 5]]) > 1e-10)
+            ):
+                raise ValueError(
+                    "A 2D simulation requires permeability without xz or yz coupling."
+                )
+            magnetic_tensors = {**mu_supports, "mu_cell": mu_tensor}
         epsilon_diagonal = _tensor_diagonal(epsilon_tensor)
         conductivity_diagonal = _tensor_diagonal(conductivity_tensor)
         epsilon = np.mean(epsilon_diagonal, axis=0)
@@ -499,6 +566,10 @@ class MaterialGrid:
             yee_tensors = {
                 name: np.asarray(value)[:, 0] for name, value in yee_tensors.items()
             }
+            magnetic_tensors = {
+                name: np.asarray(value)[:, 0]
+                for name, value in magnetic_tensors.items()
+            }
         return cls(
             epsilon,
             conductivity,
@@ -516,6 +587,7 @@ class MaterialGrid:
             polarization if dimensions == 2 else None,
             yee_tensors=yee_tensors,
             grid=grid,
+            magnetic_tensors=magnetic_tensors,
         )
 
     def field_arrays(self) -> tuple[npt.ArrayLike, npt.ArrayLike, npt.ArrayLike]:
@@ -565,6 +637,12 @@ class MaterialGrid:
             for values in self.yee_tensors.values()
         )
 
+    @property
+    def uses_magnetic_tensors(self) -> bool:
+        """Return whether propagation needs a non-unit permeability update."""
+
+        return bool(self.magnetic_tensors)
+
     def canonical_spec(self):
         """Return values defining material-grid cache identity."""
         return (
@@ -576,6 +654,8 @@ class MaterialGrid:
             self.smoothing,
             self.polarization,
             self.yee_tensors,
+            self.magnetic_tensors,
+            tuple((m.cache_spec(), f) for m, f in self.tensor_dispersion),
             tuple((m.cache_spec(), weights) for m, weights in self.dispersion),
             tuple(i.cache_spec() for i in self.dispersion_interfaces),
         )

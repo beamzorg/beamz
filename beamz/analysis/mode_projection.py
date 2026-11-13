@@ -24,7 +24,12 @@ from beamz.devices.modes.discrete import (
     _solve_cached_beamz_mode as solve_beamz_mode,
 )
 from beamz.devices.modes.fields import _modal_overlap, _normalize_profiles
-from beamz.devices.modes.line import ModeLineContext, prepare_mode_line, solve_mode_line
+from beamz.devices.modes.line import (
+    ModeLineContext,
+    cell_permeability,
+    prepare_mode_line,
+    solve_mode_line,
+)
 from beamz.devices.modes.plane import solve_mode_plane_3d, solve_modes
 from beamz.devices.modes.specs import ModeSpec
 from beamz.devices.monitors.monitors import ModeMonitor
@@ -111,6 +116,7 @@ def _monitor_profile_slice(sim, monitor, axis, mode_spec=None):
         grid=grid,
         origin=origin,
         full_shape=full_shape,
+        permeability=cell_permeability(sim.materials),
     )
     # Acquisition samples retain their own Yee support; they do not redefine
     # the cell-material eigenproblem or add an independent solve halo.
@@ -226,6 +232,7 @@ def _build_discrete_port_projection_3d(
         material_tensors=sim.materials.material_tensors,
         yee_materials=sim.materials.yee_materials,
         yee_tensors=sim.materials.yee_tensors,
+        magnetic_tensors=sim.materials.magnetic_tensors,
         frequency=frequency,
         resolution=sim.resolution,
         dt=sim.dt,
@@ -594,6 +601,10 @@ def _build_port_projection(
     if cached is not None:
         return cached
 
+    materials = getattr(sim, "materials", None)
+    if materials is not None and materials.dispersion_folding is not None:
+        # Tensor-pole media: the mode at this frequency sees eps_inf + Re chi(f).
+        sim = replace(sim, materials=materials.at_frequency(frequency))
     parts = _mode_components_for_port(spec)
     if sim.is_3d:
         analysis_coords0, analysis_coords1 = _monitor_analysis_plane_3d(

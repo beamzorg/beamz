@@ -2,6 +2,101 @@
 
 ## Unreleased
 
+- Added `AnisotropicMedium`, `TensorPole` and `GyrotropicPole`. They provide
+  full symmetric permittivity and permeability tensors, tensor-valued
+  Lorentz/Drude resonances (oriented poles via `rotated()`), and
+  non-reciprocal gyrotropic resonances such as magnetized plasmas. Hyperbolic
+  media take their negative branch from a pole. These features run on JAX,
+  CPU or GPU.
+- FDTD now honours non-unit permeability, including off-diagonal tensors, which
+  rasterization previously rejected.
+- Full-tensor permittivity accepts conductive and sponge-PML loss on JAX. The
+  update applies loss semi-implicitly through `(eps + sigma dt / 2 eps0)^-1`.
+  `bz.Absorber` therefore now works with every tensor medium and absorbs the
+  backward waves that a PML amplifies in hyperbolic media. BeamZ warns when
+  such a medium overlaps a PML.
+- Periodic and Bloch seams average tensor cross terms with the seam phase. This
+  also covers the full-tensor permittivity kernel, and rectilinear full-tensor
+  grids may now use periodic or Bloch boundaries on JAX.
+- Mode sources and mode monitors inside media with tensor poles are solved at
+  each frequency with the poles folded in. Mode ports outside tensor media are
+  no longer rejected.
+- Added `AnisotropicMedium.fold_fast_poles(max_resonance)`. It replaces
+  ultraviolet poles with a static shift plus a slower, passive pole that
+  matches the low-frequency response, which relaxes the pole timestep limit.
+- Mode sources and mode monitors may now sit in magnetic media. 3D ports
+  reproduce diagonal and full symmetric permeability tensors with the
+  propagation's own discretization, which puts diagonals on the H sites and
+  cross terms at cell centres. 2D ports support diagonal permeability; 2D TM
+  ports overlapping in-plane (xy) magnetic coupling are still rejected. Magnetic
+  tensor poles fold into `mu(f)` for both sources and monitors, and the folding
+  is kept in result archives. 3D mode-source launches now map their incident H
+  increment through `mu^-1`, so the launched power is correct in magnetic media.
+  Ports overlapping gyrotropic media are still rejected.
+- `Simulation.differentiable()` and `TopologyProblem` differentiate through
+  tensor media that lie outside the design region.
+- `TopologySpec(material_min=..., material_max=...)` accepts anisotropic and
+  pole-dispersive design materials. Density blends the high-frequency tensors
+  and fills each cell with the endpoints' poles.
+- `TopologySpec(materials=(m0, m1, m2, ...))` lets a design region choose
+  among K >= 2 materials, for example air, SiO2, Si and a tilted LiNbO3
+  crystal. Each may be a `Material`, a static tensor or a pole-dispersive
+  `AnisotropicMedium`. The density gains `K - 1` nested channels, each
+  filtered and projected like a two-material density, so binarization picks
+  one material per cell. High-frequency tensors blend linearly, and every
+  material's poles fill the cell with that material's fraction. Gradients use
+  the autodiff backend, and `export_design` paints each material.
+  `material_min`/`material_max` remain the K = 2 shorthand. Its physics is
+  unchanged, but `export_design` now writes the actual design materials
+  rather than scalar stand-ins with their mean permittivity.
+- Added general complex-conjugate pole-residue (CCPR) tensor poles, so fitted
+  pole-residue models can be anisotropic and oriented. They add an `E'`
+  coupling tensor `B`: `chi = (A - i omega B) / (omega0^2 - omega^2 - i gamma
+  omega)`. Build them with `TensorPole.ccpr` or `TensorPole.critical_point`.
+  `AnisotropicMedium.from_pole_residue(x, y, z)` converts scalar `PoleResidue`
+  fits along principal axes, and `rotated()` orients them, `B` included. The
+  `B` term is discretized centred, `(dt / 2d) B (E^{n+1} - E^{n-1})`, so the
+  scheme is second order (fdtdx's forward difference is first order). Its
+  conductivity limit is Crank-Nicolson. Each CCPR region stores the previous
+  field change, and the implicit half solves with
+  `eps_inf + sum dt/(2 + gamma dt) B`. It runs on JAX and streamed CUDA. Mode
+  ports fold the `B` term. The timestep check for such media is a von Neumann
+  analysis of the scheme.
+- The timestep check for Lorentz, Drude and gyrotropic tensor poles is now the
+  same von Neumann analysis of the implemented scheme. The analytic bound
+  `S^2 + (Omega dt / 2)^2 < 1` it replaces accepted timesteps that diverge for
+  some multi-pole anisotropic media; for one tilted crystal the true limit is
+  11% lower. The analysis is cached and independent of grid size.
+  `beamz.simulation.anisotropic.max_stable_timestep` takes an optional 2D
+  `polarization`.
+- Tensor permeability and tensor-pole media run on single-device
+  `backend="cuda_streamed"`. New native kernels apply their corrections; the
+  CUDA component is now version 0.31.0 / ABI 31, so rebuild it after updating.
+  Tensor-media executables compile without XLA command buffers, which crashed
+  on replay for some of these programs.
+- `AnisotropicMedium` accepts full 3x3 tensors, given as nine row-major values
+  or a nested matrix. Permittivity and permeability may be non-symmetric
+  (non-Hermitian, so BeamZ warns). Electric `conductivity` and the new
+  `magnetic_conductivity` take full tensors with a passive symmetric part; an
+  antisymmetric part is lossless and non-reciprocal. `rotated()` now rotates
+  conductivity instead of rejecting it.
+- Added `AnisotropicMedium.from_complex_permittivity()`, which mirrors fdtdx.
+  A complex `eps` or `mu` (scalar, three values, or 3x3) at a reference
+  frequency or wavelength becomes real tensors plus
+  `sigma = omega0 eps0 Im(eps)`. A Hermitian `eps` therefore becomes an
+  antisymmetric conductivity. Added `complex_permittivity()` and
+  `complex_permeability()`, which include conduction.
+- These terms are applied by a box-local, semi-implicit full-tensor update on
+  JAX and on `backend="cuda_streamed"`. Inside the box, the E kernel runs in
+  vacuum. The native tensor-media inverse kernel gains antisymmetric cross
+  terms. Mode ports must avoid these media.
+- Added `anisotropic_library` with sapphire, lithium niobate, hBN, and
+  alpha-MoO3 crystal models.
+- Added `examples/anisotropic/`: asymmetric refraction in tilted hyperbolic
+  calcite, permittivity and permeability iso-frequency contours, and a one-way
+  surface magnetoplasmon. Added the "Anisotropic, Hyperbolic, and Gyrotropic
+  Media" guide.
+
 ## v0.6.2 - 2026-11-04
 
 - Corrected native Yee material and field sampling for 3D mode ports. Solver

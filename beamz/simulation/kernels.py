@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from beamz.const import EPS_0, MU_0
-from beamz.constitutive import advance_e_tensor_dense
+from beamz.constitutive import advance_e_tensor_dense, periodic_seams
 from beamz.constitutive import collocate_yee_component as collocate_yee_component
 from beamz.constitutive import fit_array_to_shape as fit_array_to_shape
 from beamz.lattice import (
@@ -41,9 +41,21 @@ def advance_e_centered_tensor(
     dt,
     *,
     cell_widths=None,
+    conductivities=None,
+    seams=(),
 ):
-    """Advance E with diagonal terms on E sites and cross terms on dual centers."""
+    """Advance E with diagonal terms on E sites and cross terms on dual centers.
 
+    With ``conductivities`` the inverse tensors must already include the
+    semi-implicit ``sigma dt / (2 eps0)`` diagonal; the explicit half of the
+    loss then enters as the current ``sigma E`` subtracted from each curl.
+    """
+
+    if conductivities is not None:
+        curls = tuple(
+            curl if np.size(sigma) == 0 else curl - material_values(sigma) * field
+            for curl, sigma, field in zip(curls, conductivities, fields, strict=True)
+        )
     inverse_diagonals = tuple(material_values(v) for v in inverse_diagonals)
     scale = jnp.asarray(dt, dtype=fields[0].dtype) / jnp.asarray(
         EPS_0, dtype=fields[0].dtype
@@ -87,7 +99,7 @@ def advance_e_centered_tensor(
         local_curls = tuple(
             curl[part] for curl, part in zip(curls, slices, strict=True)
         )
-        local = _tensor_cross_curls(local_curls, values, components, widths)
+        local = _tensor_cross_curls(local_curls, values, components, widths, seams)
         return tuple(
             field
             + scale
@@ -113,15 +125,16 @@ def advance_e_centered_tensor(
         components,
         dt,
         cell_widths=cell_widths,
+        seams=seams,
     )
 
 
-def _tensor_cross_curls(curls, inverse_offdiagonal, components, cell_widths):
+def _tensor_cross_curls(curls, inverse_offdiagonal, components, cell_widths, seams=()):
     """Sum cross terms at their shared support before interpolating once per E."""
     node_shape = inverse_offdiagonal.shape[:-1]
     centered_curls = tuple(
         collocate_yee_component(
-            curl, source, "Node", node_shape, cell_widths=cell_widths
+            curl, source, "Node", node_shape, cell_widths=cell_widths, seams=seams
         )
         for curl, source in zip(curls, components, strict=True)
     )
@@ -136,7 +149,12 @@ def _tensor_cross_curls(curls, inverse_offdiagonal, components, cell_widths):
         )
         updated.append(
             collocate_yee_component(
-                centered, "Node", target, curl.shape, cell_widths=cell_widths
+                centered,
+                "Node",
+                target,
+                curl.shape,
+                cell_widths=cell_widths,
+                seams=seams,
             )
         )
     return tuple(updated)
@@ -374,6 +392,7 @@ def fused_update_e_lossy_3d_material(
     boundary_views,
     inverse_diagonals=None,
     inverse_offdiagonal=None,
+    seams=(),
 ):
     """Advance all electric components directly from collocated material grids."""
     del hx, hy, hz
@@ -402,6 +421,8 @@ def fused_update_e_lossy_3d_material(
             inverse_offdiagonal,
             ("Ex", "Ey", "Ez"),
             dt,
+            conductivities=(conductivity_x, conductivity_y, conductivity_z),
+            seams=seams,
         )
     out = []
     for field, conductivity, inv_permittivity, curl in zip(
@@ -440,6 +461,7 @@ def fused_update_e_lossy_3d_material_metric(
     boundary_views,
     inverse_diagonals=None,
     inverse_offdiagonal=None,
+    seams=(),
 ):
     """Advance 3D E fields using staggered center-to-edge distances."""
     del hx, hy, hz
@@ -471,6 +493,8 @@ def fused_update_e_lossy_3d_material_metric(
             ("Ex", "Ey", "Ez"),
             dt,
             cell_widths=constitutive_cell_widths(metrics),
+            conductivities=(conductivity_x, conductivity_y, conductivity_z),
+            seams=seams,
         )
     out = []
     for field, conductivity, inv_permittivity, curl in zip(
@@ -659,6 +683,8 @@ def cpml_update_e_from_h_3d(
             inverse_offdiagonal,
             ("Ex", "Ey", "Ez"),
             dt,
+            conductivities=conductivities,
+            seams=periodic_seams(periodic_axes, periodic_phases, 3),
         )
         return *updated, tuple(next_psi)
     if source_scales is not None:
@@ -752,6 +778,8 @@ def cpml_update_e_from_h_3d_metric(
             ("Ex", "Ey", "Ez"),
             dt,
             cell_widths=constitutive_cell_widths(metrics),
+            conductivities=conductivities,
+            seams=periodic_seams(periodic_axes, periodic_phases, 3),
         )
         return *updated, tuple(next_psi)
     one = jnp.asarray(1.0, dtype=ex.dtype)
@@ -1466,6 +1494,9 @@ def update_e_3d_yee(eng, ctx, coeffs):
         inverse_offdiagonal=(
             coeffs.e_inverse_offdiagonal if coeffs.e_inverse_offdiagonal.size else None
         ),
+        seams=periodic_seams(
+            ctx.boundary.periodic_axes, ctx.boundary.periodic_phases, 3
+        ),
     )
     return _replace_e(eng, ex, ey, ez)
 
@@ -1583,6 +1614,10 @@ def _update_e_te_from_curls(eng, ctx, coeffs, curls, psi_e=None):
             ("Ex", "Ey"),
             ctx.dt_scalar,
             cell_widths=constitutive_cell_widths(ctx.metrics),
+            conductivities=(coeffs.e_conductivity_x, coeffs.e_conductivity_y),
+            seams=periodic_seams(
+                ctx.boundary.periodic_axes, ctx.boundary.periodic_phases, 2
+            ),
         )
     else:
         ex = advance_e_from_coefficients(
@@ -1739,6 +1774,9 @@ def update_e_3d_yee_metric(eng, ctx, coeffs):
         ),
         inverse_offdiagonal=(
             coeffs.e_inverse_offdiagonal if coeffs.e_inverse_offdiagonal.size else None
+        ),
+        seams=periodic_seams(
+            ctx.boundary.periodic_axes, ctx.boundary.periodic_phases, 3
         ),
     )
     return _replace_e(eng, ex, ey, ez)

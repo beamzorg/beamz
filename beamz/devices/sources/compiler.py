@@ -662,9 +662,11 @@ def _lower_mode_source(
     ):
         return _lower_broadband_mode_source(source, ctx)
 
+    from beamz.design.material_views import fields_at_frequency
+
     launch_plan = plan_mode_source_launch(
         source,
-        ctx.fields,
+        fields_at_frequency(ctx.fields, source.frequency, source),
         resolution=ctx.resolution,
         dt=ctx.dt,
         **({"grid": ctx.grid} if ctx.grid is not None else {}),
@@ -717,6 +719,8 @@ def _lower_broadband_mode_source(
     ctx: SourceLoweringContext,
 ) -> CompiledInjectionPlan:
     """Lower a broadband mode into frequency-partitioned injection entries."""
+    from beamz.design.material_views import fields_at_frequency
+
     sampled = _sample_temporal_waveform(src.source_time, ctx)
     analytic = np.asarray(sampled.values, dtype=np.float64) + 1j * np.asarray(
         sampled.quadrature, dtype=np.float64
@@ -735,7 +739,7 @@ def _lower_broadband_mode_source(
         )
         plan = plan_mode_source_launch(
             profile_src,
-            ctx.fields,
+            fields_at_frequency(ctx.fields, float(freq), src),
             resolution=ctx.resolution,
             dt=ctx.dt,
             **({"grid": ctx.grid} if ctx.grid is not None else {}),
@@ -788,14 +792,23 @@ def _mode_launch_injection_plan(
     if isinstance(plan, Mode2DLaunchPlan):
         entries = []
         normal_spacing = float(plan.normal_spacing or ctx.resolution)
+        magnetic = getattr(
+            getattr(ctx.fields, "material_grid", None), "magnetic_tensors", None
+        )
         for entry in plan.entries:
             component = entry.component
             material_scale = MU_0 if component.startswith("H") else EPS_0
-            denominator = (
-                material_scale
-                * np.asarray(component_material_at(ctx.fields, component, entry.index))
-                * normal_spacing
-            )
+            if magnetic and component.startswith("H"):
+                # Propagation maps H increments through the packed support
+                # tensor, not the scalar-mean permeability. Ports reject
+                # in-plane coupling, so its diagonal is the local inverse.
+                tensor = np.asarray(magnetic["mu_h" + component[-1].lower()])
+                material = tensor[
+                    min("xyz".index(component[-1].lower()), tensor.shape[0] - 1)
+                ][entry.index]
+            else:
+                material = component_material_at(ctx.fields, component, entry.index)
+            denominator = material_scale * np.asarray(material) * normal_spacing
             target = np.asarray(getattr(ctx.fields, component)[entry.index])
             values = (
                 _match_shape(np.asarray(entry.profile), target.shape)

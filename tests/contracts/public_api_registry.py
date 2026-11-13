@@ -71,6 +71,23 @@ CONFIGURATION_CASES = (
         ),
     ),
     PublicConfigCase(
+        "AnisotropicMedium",
+        lambda: bz.AnisotropicMedium(
+            (2.0, 3.0, 2.5),
+            electric_poles=[bz.TensorPole.drude((2e15, 0.0, 0.0), damping=1e13)],
+        ).rotated((0.0, 0.0, 0.3)),
+    ),
+    PublicConfigCase(
+        "TensorPole",
+        lambda: bz.TensorPole.lorentz((1.0, 0.5, 0.0), resonance=1e15, damping=1e13),
+    ),
+    PublicConfigCase(
+        "GyrotropicPole",
+        lambda: bz.GyrotropicPole.magnetized_plasma(
+            2e15, (0.0, 0.0, 5e14), damping=1e13
+        ),
+    ),
+    PublicConfigCase(
         "PlaneWaveSource",
         lambda: bz.PlaneWaveSource(
             center=(0.0, 0.0, 0.0),

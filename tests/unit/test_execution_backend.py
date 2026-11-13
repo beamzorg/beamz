@@ -338,6 +338,7 @@ def test_typed_ffi_registrations_use_cuda_api_v1(monkeypatch, include_mstep):
         "beamz_cuda_program",
         "beamz_cuda_sharded",
         "beamz_cuda_streamed",
+        "beamz_cuda_tensor_media",
     )
     assert {name for name, _, _ in registrations} == set(targets)
     for name, _, kwargs in registrations:
@@ -348,6 +349,7 @@ def test_typed_ffi_registrations_use_cuda_api_v1(monkeypatch, include_mstep):
                 backend_runtime.CUDA_STREAMED_TARGET,
                 backend_runtime.CUDA_ADJOINT_TARGET,
                 backend_runtime.CUDA_MATERIAL_ADJOINT_TARGET,
+                backend_runtime.CUDA_TENSOR_MEDIA_TARGET,
             }
             else 0
         )
