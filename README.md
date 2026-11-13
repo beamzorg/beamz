@@ -107,23 +107,23 @@ The simplest way to support the project of course is by **giving this repo a sta
 If you use BeamZ in your research, please cite:
 
 Quentin Wach (2026). *BeamZ: CUDA-accelerated Differentiable FDTD for Photonics*
-(v0.6.0). Zenodo. https://doi.org/10.5281/zenodo.23641945
+(v0.6.2). Zenodo. https://doi.org/10.5281/zenodo.23963249
 
 ```bibtex
 @software{wach_beamz,
   author = {Wach, Quentin},
   title = {{BeamZ}: {CUDA}-accelerated Differentiable {FDTD} for Photonics},
   year = {2026},
-  version = {v0.6.0},
+  version = {v0.6.2},
   publisher = {Zenodo},
-  doi = {10.5281/zenodo.23641945},
-  url = {https://doi.org/10.5281/zenodo.23641945}
+  doi = {10.5281/zenodo.23963249},
+  url = {https://doi.org/10.5281/zenodo.23963249}
 }
 ```
 
 Citation metadata is available in [CITATION.cff](CITATION.cff). For reproducible
 research, cite the DOI of the specific release you used; the citation above is
-for v0.6.0. If using an unreleased version, also report the commit hash.
+for v0.6.2. If using an unreleased version, also report the commit hash.
 To reference BeamZ across all versions, use the
 [all-versions DOI](https://doi.org/10.5281/zenodo.23085101).
 
