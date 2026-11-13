@@ -71,6 +71,21 @@ def _fit_array_to_shape(arr, target_shape, *, pad_value, xp):
     )
 
 
+_NODE_OFFSETS = {"z": 0.0, "y": 0.0, "x": 0.0}
+
+
+def _site_offsets(name: str) -> dict[str, float]:
+    return _NODE_OFFSETS if name == "Node" else component_axis_offsets_3d(name)
+
+
+def _neighbor_slices(ndim: int, axis: int):
+    low = [slice(None)] * ndim
+    high = [slice(None)] * ndim
+    low[axis] = slice(0, -1)
+    high[axis] = slice(1, None)
+    return tuple(low), tuple(high)
+
+
 def collocate_yee_component(
     value, source: str, target: str, target_shape, *, cell_widths=None
 ):
@@ -84,50 +99,35 @@ def collocate_yee_component(
 
     out = jnp.asarray(value)
     axes = ("z", "y", "x")[-out.ndim :]
-    source_offsets = (
-        {"z": 0.0, "y": 0.0, "x": 0.0}
-        if source == "Node"
-        else component_axis_offsets_3d(source)
-    )
-    target_offsets = (
-        {"z": 0.0, "y": 0.0, "x": 0.0}
-        if target == "Node"
-        else component_axis_offsets_3d(target)
-    )
+    source_offsets = _site_offsets(source)
+    target_offsets = _site_offsets(target)
     for axis_index, axis in enumerate(axes):
         source_offset = source_offsets[axis]
         target_offset = target_offsets[axis]
         if source_offset == target_offset:
             continue
+        low, high = _neighbor_slices(out.ndim, axis_index)
         if source_offset == 0.0 and target_offset == 0.5:
-            low = [slice(None)] * out.ndim
-            high = [slice(None)] * out.ndim
-            low[axis_index] = slice(0, -1)
-            high[axis_index] = slice(1, None)
-            out = 0.5 * (out[tuple(low)] + out[tuple(high)])
-        elif source_offset == 0.5 and target_offset == 0.0:
-            first = jnp.take(out, jnp.asarray([0]), axis=axis_index)
-            last = jnp.take(out, jnp.asarray([-1]), axis=axis_index)
-            low = [slice(None)] * out.ndim
-            high = [slice(None)] * out.ndim
-            low[axis_index] = slice(0, -1)
-            high[axis_index] = slice(1, None)
-            widths = None if cell_widths is None else cell_widths["xyz".index(axis)]
-            if widths is None or jnp.ndim(widths) == 0 or jnp.size(widths) == 0:
-                middle = 0.5 * (out[tuple(low)] + out[tuple(high)])
-            else:
-                widths = jnp.asarray(widths, dtype=out.real.dtype)
-                if widths.shape != (out.shape[axis_index],):
-                    raise ValueError(
-                        "Constitutive cell widths must match the electric support"
-                    )
-                shape = [1] * out.ndim
-                shape[axis_index] = widths.size - 1
-                weight = (widths[:-1] / (widths[:-1] + widths[1:])).reshape(shape)
-                middle = weight * out[tuple(low)] + (1.0 - weight) * out[tuple(high)]
-            out = jnp.concatenate((first, middle, last), axis=axis_index)
-        else:  # pragma: no cover - canonical Yee offsets are binary
+            out = 0.5 * (out[low] + out[high])
+            continue
+        if source_offset != 0.5 or target_offset != 0.0:  # pragma: no cover
             raise ValueError("Unsupported Yee colocation offset.")
+        first = jnp.take(out, jnp.asarray([0]), axis=axis_index)
+        last = jnp.take(out, jnp.asarray([-1]), axis=axis_index)
+        widths = None if cell_widths is None else cell_widths["xyz".index(axis)]
+        if widths is None or jnp.ndim(widths) == 0 or jnp.size(widths) == 0:
+            middle = 0.5 * (out[low] + out[high])
+        else:
+            widths = jnp.asarray(widths, dtype=out.real.dtype)
+            if widths.shape != (out.shape[axis_index],):
+                raise ValueError(
+                    "Constitutive cell widths must match the electric support"
+                )
+            shape = [1] * out.ndim
+            shape[axis_index] = widths.size - 1
+            weight = (widths[:-1] / (widths[:-1] + widths[1:])).reshape(shape)
+            middle = weight * out[low] + (1.0 - weight) * out[high]
+        out = jnp.concatenate((first, middle, last), axis=axis_index)
     return fit_array_to_shape(out, target_shape)
 
 

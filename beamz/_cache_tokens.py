@@ -26,6 +26,10 @@ def array_cache_token(value: object) -> HashToken | None:
     return ("array", tuple(int(v) for v in arr.shape), str(arr.dtype), digest)
 
 
+def _by_repr(tokens: Iterable[HashToken]) -> HashToken:
+    return tuple(sorted(tokens, key=repr))
+
+
 def cache_token(value: object) -> HashToken:
     if isinstance(value, np.generic):
         value = cast(object, value.item())
@@ -39,21 +43,11 @@ def cache_token(value: object) -> HashToken:
             return token
     if isinstance(value, Mapping):
         mapping = cast(Mapping[object, object], value)
-        return tuple(
-            sorted(
-                ((cache_token(k), cache_token(v)) for k, v in mapping.items()),
-                key=repr,
-            )
-        )
+        return _by_repr((cache_token(k), cache_token(v)) for k, v in mapping.items())
     if isinstance(value, tuple | list):
         return tuple(cache_token(v) for v in cast(Iterable[object], value))
     if isinstance(value, set | frozenset):
-        return tuple(
-            sorted(
-                (cache_token(v) for v in cast(Iterable[object], value)),
-                key=repr,
-            )
-        )
+        return _by_repr(cache_token(v) for v in cast(Iterable[object], value))
     if callable(value):
         return (
             "callable",
