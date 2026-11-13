@@ -1272,50 +1272,6 @@ def _axis_edges(spec: ModePlaneSpec, axis: AxisName) -> np.ndarray:
     return np.asarray(spec.grid.axis_edges(axis), dtype=float)
 
 
-def _axis_sampling(
-    spec: ModePlaneSpec, axis: AxisName
-) -> tuple[np.ndarray, np.ndarray]:
-    edges = _axis_edges(spec, axis)
-    return 0.5 * (edges[:-1] + edges[1:]), edges[1:-1]
-
-
-def _stagger_half(
-    field: np.ndarray,
-    axis: int,
-    coordinates: tuple[np.ndarray, np.ndarray] | None = None,
-) -> np.ndarray:
-    if field.shape[axis] <= 1:
-        return field
-    low = np.take(field, np.arange(field.shape[axis] - 1), axis=axis)
-    high = np.take(field, np.arange(1, field.shape[axis]), axis=axis)
-    if coordinates is None:
-        alpha = np.full(field.shape[axis] - 1, 0.5, dtype=float)
-    else:
-        source, target = coordinates
-        source = np.asarray(source, dtype=float)[: field.shape[axis]]
-        target = np.asarray(target, dtype=float)[: field.shape[axis] - 1]
-        alpha = (target - source[:-1]) / np.maximum(
-            source[1:] - source[:-1], np.finfo(float).tiny
-        )
-    shape = [1] * field.ndim
-    shape[axis] = alpha.size
-    weights = alpha.reshape(shape)
-    return (1.0 - weights) * low + weights * high
-
-
-def _stagger_both(
-    field: np.ndarray, *, spec: ModePlaneSpec | None = None
-) -> np.ndarray:
-    out = field
-    sampling1 = None if spec is None else _axis_sampling(spec, spec.transverse_axes[1])
-    sampling0 = None if spec is None else _axis_sampling(spec, spec.transverse_axes[0])
-    if out.shape[1] > 1:
-        out = _stagger_half(out, 1, sampling1)
-    if out.shape[0] > 1:
-        out = _stagger_half(out, 0, sampling0)
-    return out
-
-
 def _padded_bounds(
     center_value: float,
     extent: float,
