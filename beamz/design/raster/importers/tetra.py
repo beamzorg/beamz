@@ -1,4 +1,4 @@
-"""Design implementation."""
+"""Extract oriented boundary faces from tetrahedral meshes."""
 
 from __future__ import annotations
 

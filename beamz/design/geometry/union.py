@@ -1,13 +1,11 @@
-"""Design implementation."""
+"""Merge compatible geometry within painter-order runs."""
 
 from itertools import groupby
 
 from shapely.ops import unary_union
 
-from beamz.design._geometry import planar_geometry
-from beamz.design.structures import (
-    Polygon,
-)
+from beamz.design.geometry.bounds import planar_geometry
+from beamz.design.geometry.primitives import Polygon
 
 
 def _material_key(material):

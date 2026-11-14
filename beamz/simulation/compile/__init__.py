@@ -26,7 +26,7 @@ from beamz._region_array import RegionArray as RegionArray
 from beamz._region_array import constant_array as constant_array
 from beamz._region_array import tiles as tiles
 from beamz._region_array import uniform_value as uniform_value
-from beamz.design.discretization import MaterialGrid
+from beamz.design.grid.discretization import MaterialGrid
 from beamz.devices._boundary_compile import (
     CPML_3D_E_DERIVATIVES as CPML_3D_E_DERIVATIVES,
 )

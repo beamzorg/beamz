@@ -1,4 +1,4 @@
-"""Design implementation."""
+"""Extract meshing features from polygon geometry."""
 
 from __future__ import annotations
 
@@ -6,14 +6,14 @@ from typing import cast
 
 import numpy as np
 
-from beamz.design._geometry import planar_geometry
+from beamz.design.geometry.bounds import planar_geometry
+from beamz.design.geometry.shapes import Shape
 from beamz.design.grid.features.constraints import (
     _clamp_spacing,
     _MeshFeatureRegion,
     _OpposingFeature,
 )
 from beamz.design.grid.spec import AxisValues, GridSpec, OptionalAxisValues
-from beamz.design.structures import Shape
 
 _AXIS_NORMAL_THRESHOLD = 0.2
 

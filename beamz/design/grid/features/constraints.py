@@ -1,8 +1,9 @@
-"""Design implementation."""
+"""Region spacing constraints for graded grids."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 
@@ -48,7 +49,7 @@ def _clamp_spacing(value: float, spec: GridSpec) -> float:
 
 def _unique_coordinates(values: list[float], extent: float) -> np.ndarray:
     tolerance = 64.0 * np.finfo(float).eps * max(1.0, abs(extent))
-    result = []
+    result: list[float] = []
     for value in sorted(float(np.clip(item, 0.0, extent)) for item in values):
         if not result or value - result[-1] > tolerance:
             result.append(value)
@@ -86,9 +87,9 @@ def _axis_constraints(
                 not region.enforced
                 and region.lower[axis] <= midpoint <= region.upper[axis]
             ):
-                limit = min(limit, float(region.spacing[axis]))
+                limit = min(limit, float(cast(float, region.spacing[axis])))
         for region in effective_regions:
             if region.enforced and region.lower[axis] <= midpoint <= region.upper[axis]:
-                limit = float(region.spacing[axis])
+                limit = float(cast(float, region.spacing[axis]))
         limits[index] = _clamp_spacing(limit, spec)
     return coords, limits

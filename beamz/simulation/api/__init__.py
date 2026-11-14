@@ -21,16 +21,14 @@ from beamz._helpers import positive_float
 # ``Simulation`` is an immutable specification; explicit ``SimulationState`` values
 # carry all mutable runtime data.
 from beamz.const import µm
-from beamz.design.core import Design
-from beamz.design.discretization import MaterialGrid
-from beamz.design.discretization import build_material_grid as build_material_grid
+from beamz.design.geometry.core import Design
+from beamz.design.geometry.primitives import Box as Box
 from beamz.design.grid import RectilinearGrid
-from beamz.design.grid_spec import (
-    GridSpec,
-)
+from beamz.design.grid.discretization import MaterialGrid
+from beamz.design.grid.discretization import build_material_grid as build_material_grid
+from beamz.design.grid.spec import GridSpec
 from beamz.design.materials import Material as Material
 from beamz.design.materials import MaterialProtocol as MaterialProtocol
-from beamz.design.structures import Box as Box
 from beamz.devices.boundaries import (
     normalize_boundaries,
     validate_boundary_compatibility,

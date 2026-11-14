@@ -1,4 +1,4 @@
-"""Design implementation."""
+"""Immutable photonic designs and rasterization orchestration."""
 
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -139,7 +139,7 @@ class Design:
 
     @staticmethod
     def _validate_structure(structure):
-        from beamz.design.structures import Structure
+        from beamz.design.geometry.shapes import Structure
 
         if not isinstance(structure, Structure):
             raise TypeError(
@@ -235,7 +235,7 @@ class Design:
         **kwargs,
     ):
         """Rasterize this design on a scalar spacing or realized grid."""
-        from beamz.design.raster.integration import _rasterize_design
+        from beamz.design.raster.internal.integration import _rasterize_design
 
         return _rasterize_design(
             self,
@@ -256,7 +256,7 @@ class Design:
         **kwargs
             Additional options forwarded to :func:`build_material_grid`.
         """
-        from beamz.design.discretization import build_material_grid
+        from beamz.design.grid.discretization import build_material_grid
 
         return build_material_grid(self, resolution, **kwargs)
 

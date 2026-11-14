@@ -16,7 +16,7 @@ from types import MappingProxyType
 import numpy as np
 from numpy.typing import NDArray
 
-from beamz.design.dispersion import PoleResidue
+from beamz.design.material.dispersion import PoleResidue
 
 
 @dataclass(frozen=True)

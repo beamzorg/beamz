@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 import numpy as np
 
@@ -35,7 +35,10 @@ def _tensor(
     elif array.shape == (3,):
         packed = (float(array[0]), float(array[1]), float(array[2]), 0.0, 0.0, 0.0)
     elif array.shape == (6,):
-        packed = tuple(float(component) for component in array)
+        packed = cast(
+            tuple[float, float, float, float, float, float],
+            tuple(float(component) for component in array),
+        )
     elif array.shape == (3, 3):
         if not np.allclose(array, array.T, rtol=1e-12, atol=1e-14):
             raise ValueError(f"{name} must be symmetric.")

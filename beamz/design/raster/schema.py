@@ -9,10 +9,10 @@ from typing import Any
 
 import numpy as np
 
+from beamz.design.geometry.primitives import Polygon as _Polygon
+from beamz.design.geometry.shapes import Shape
 from beamz.design.grid import RectilinearGrid as Grid
 from beamz.design.materials import Material
-from beamz.design.structures import Polygon as _Polygon
-from beamz.design.structures import Shape
 
 from . import _native  # type: ignore[attr-defined]
 

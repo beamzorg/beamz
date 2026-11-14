@@ -5,17 +5,10 @@ from typing import Any, cast
 
 import numpy as np
 
-from beamz.design._gds_decode import (
-    material_lookup as _material_lookup,
-)
-from beamz.design._gds_decode import (
-    polygon_points,
-    vertical_bounds,
-)
-from beamz.design._gds_decode import (
-    polygons_by_layer as _polygons_by_layer,
-)
-from beamz.design.structures import Shape
+from beamz.design.geometry.shapes import Shape
+from beamz.design.io.decode import material_lookup as _material_lookup
+from beamz.design.io.decode import polygon_points, vertical_bounds
+from beamz.design.io.decode import polygons_by_layer as _polygons_by_layer
 
 from ..schema import (
     Material,

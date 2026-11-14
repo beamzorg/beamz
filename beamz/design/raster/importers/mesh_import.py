@@ -1,4 +1,4 @@
-"""Design implementation."""
+"""Import external mesh arrays and tagged mesh files."""
 
 from __future__ import annotations
 

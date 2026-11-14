@@ -9,9 +9,9 @@ from dataclasses import replace
 
 import numpy as np
 
-from beamz.design.discretization import MaterialGrid
-from beamz.design.dispersion import PoleResidue
-from beamz.design.dispersive_interfaces import DispersiveInterface
+from beamz.design.grid.discretization import MaterialGrid
+from beamz.design.material.dispersion import PoleResidue
+from beamz.design.material.interfaces import DispersiveInterface
 from beamz.design.materials import Material
 from beamz.lattice import component_shapes
 

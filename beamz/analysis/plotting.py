@@ -13,7 +13,7 @@ import numpy as np
 from beamz._helpers import get_si_scale_and_label
 from beamz.analysis._coordinates import recorded_plane
 from beamz.analysis.data import AnalysisData, analysis_inputs, static_fields
-from beamz.design._geometry import extrusion_bounds, planar_geometry
+from beamz.design.geometry.bounds import extrusion_bounds, planar_geometry
 from beamz.devices.visualization import visual_spec_from_device
 from beamz.lattice import plane_axes_3d
 from beamz.simulation.results.observe import source_field_amplitude_normalization

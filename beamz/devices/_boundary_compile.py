@@ -14,7 +14,7 @@ import numpy as np
 
 from beamz._region_array import SeparableMask, tiles, uniform_value
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
-from beamz.design.discretization import MaterialGrid
+from beamz.design.grid.discretization import MaterialGrid
 from beamz.devices.boundaries import (
     PEC,
     PML,

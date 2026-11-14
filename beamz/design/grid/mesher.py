@@ -60,7 +60,7 @@ class _SpacingProfile:
                 )
             )
         tolerance = 64.0 * np.finfo(float).eps * max(1.0, abs(lower), abs(upper))
-        coordinates = []
+        coordinates: list[float] = []
         for value in sorted(candidates):
             clipped = float(np.clip(value, lower, upper))
             if not coordinates or clipped - coordinates[-1] > tolerance:

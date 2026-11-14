@@ -1,11 +1,11 @@
-"""Design implementation."""
+"""Fit optical material response with stable pole residues."""
 
 from itertools import product
 
 import numpy as np
 from numpy.typing import NDArray
 
-from beamz.design.dispersion import (
+from beamz.design.material.dispersion import (
     PoleResidue,
     _optical_samples,
     _stack,

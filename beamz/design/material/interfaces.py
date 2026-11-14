@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from beamz.design.dispersion import PoleResidue
+from beamz.design.material.dispersion import PoleResidue
 from beamz.devices._immutable import readonly_array
 
 

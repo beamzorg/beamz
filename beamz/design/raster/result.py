@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy as np
 
-from beamz.design._material_layout import CELL_TENSORS, material_fields, support_shapes
+from beamz.design.material.layout import CELL_TENSORS, material_fields, support_shapes
 
 from .schema import _CACHE_SCHEMA_VERSION, _ENGINE_VERSION, Grid
 

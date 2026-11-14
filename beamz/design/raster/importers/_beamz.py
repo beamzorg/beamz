@@ -5,8 +5,9 @@ from typing import Any
 import numpy as np
 
 from beamz._cache_tokens import cache_token
-from beamz.design._geometry import extrusion_bounds, polygon_rings
-from beamz.design.structures import Polygon, Shape
+from beamz.design.geometry.bounds import extrusion_bounds, polygon_rings
+from beamz.design.geometry.primitives import Polygon
+from beamz.design.geometry.shapes import Shape
 
 from ..schema import Box, Cylinder, Material, Object, Scene
 
@@ -116,7 +117,7 @@ def from_beamz(
         if padded_size is None
         else padded_size
     )
-    materials = []
+    materials: list[Material] = []
     material_ids = {}
 
     def add_material(value):

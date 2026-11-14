@@ -1,4 +1,4 @@
-"""Design implementation."""
+"""Physics- and geometry-aware grid specification."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any, cast
 import numpy as np
 
 from beamz.const import LIGHT_SPEED
-from beamz.design.grid import RectilinearGrid
+from beamz.design.grid import Axis, RectilinearGrid
 
 AxisValues = tuple[float, float, float]
 
@@ -301,7 +301,9 @@ class GridSpec:
             Courant-limited time step in seconds.
         """
         if isinstance(resolution, RectilinearGrid):
-            active_axes = ("x", "y", "z") if int(dims) == 3 else ("x", "y")
+            active_axes: tuple[Axis, ...] = (
+                ("x", "y", "z") if int(dims) == 3 else ("x", "y")
+            )
             return resolution.cfl_time_step(
                 self.courant,
                 active_axes=active_axes,

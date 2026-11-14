@@ -1,4 +1,4 @@
-"""Design implementation."""
+"""Realize uniform and geometry-aware rectilinear grids."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from beamz.design.grid.features.regions import (
     _geometry_regions,
     _material_index,
 )
+from beamz.design.grid.mesher import _GradedMesher
 from beamz.design.grid.spec import AxisValues, GridSpec, _validate_grid_shape_budget
-from beamz.design.mesher import _GradedMesher
 
 
 def _realize_uniform_grid(

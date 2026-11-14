@@ -1,4 +1,4 @@
-"""Design implementation."""
+"""Translate imported layout port metadata into BeamZ ports."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from beamz.const import µm
-from beamz.design._gds_decode import material as _material  # noqa: F401
-from beamz.design.core import Design
+from beamz.design.geometry.core import Design
+from beamz.design.geometry.primitives import Rectangle
+from beamz.design.io.decode import material as _material  # noqa: F401
 from beamz.design.materials import Material
-from beamz.design.structures import Rectangle
 from beamz.devices.ports import Port
 
 

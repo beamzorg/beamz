@@ -1,4 +1,4 @@
-"""Design implementation."""
+"""Numerical routines for passive vector fitting."""
 
 from typing import cast
 
@@ -6,9 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.optimize import LinearConstraint, OptimizeResult, minimize, minimize_scalar
 
-from beamz.design.dispersion import (
-    _stack,
-)
+from beamz.design.material.dispersion import _stack
 
 
 def _basis(omega, poles) -> NDArray[np.complex128]:

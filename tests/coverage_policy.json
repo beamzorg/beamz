@@ -5,9 +5,11 @@
     "public_configuration": {
       "minimum": 87.0,
       "files": [
-        "beamz/design/core.py",
+        "beamz/design/geometry/core.py",
+        "beamz/design/geometry/union.py",
         "beamz/design/materials.py",
-        "beamz/design/structures.py",
+        "beamz/design/geometry/shapes.py",
+        "beamz/design/geometry/primitives.py",
         "beamz/devices/boundaries.py",
         "beamz/devices/modes/specs.py",
         "beamz/devices/ports.py",

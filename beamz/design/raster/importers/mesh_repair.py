@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -55,9 +55,11 @@ def _repair_tolerance(vertices: np.ndarray, requested: float | None) -> float:
     coordinate_scale = max(
         float(np.max(np.abs(vertices))),
         extent,
-        np.finfo(np.float64).tiny,
+        float(np.finfo(np.float64).tiny),
     )
-    return max(extent * 1e-12, 32.0 * np.finfo(np.float64).eps * coordinate_scale)
+    return cast(
+        float, max(extent * 1e-12, 32.0 * np.finfo(np.float64).eps * coordinate_scale)
+    )
 
 
 def _remaining_issues(

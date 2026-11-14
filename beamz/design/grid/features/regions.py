@@ -1,4 +1,4 @@
-"""Design implementation."""
+"""Derive meshing regions from structures and overrides."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import numpy as np
 
-from beamz.design._geometry import structure_bounds as _structure_bounds
+from beamz.design.geometry.bounds import structure_bounds as _structure_bounds
 from beamz.design.grid.features.constraints import _clamp_spacing, _Region
 from beamz.design.grid.features.polygons import _polygon_mesh_feature_regions
 from beamz.design.grid.spec import AxisValues, GridSpec, OptionalAxisValues
@@ -169,13 +169,13 @@ def _geometry_regions(
                     continue
                 gap = gap_upper - gap_lower
                 gap_spacing = _clamp_spacing(gap / spec.min_feature_cells, spec)
-                lower = [0.0, 0.0, 0.0]
-                upper = list(extents)
-                lower[axis], upper[axis] = gap_lower, gap_upper
+                gap_region_lower = [0.0, 0.0, 0.0]
+                gap_region_upper = list(extents)
+                gap_region_lower[axis], gap_region_upper[axis] = gap_lower, gap_upper
                 regions.append(
                     _Region(
-                        cast(AxisValues, tuple(lower)),
-                        cast(AxisValues, tuple(upper)),
+                        cast(AxisValues, tuple(gap_region_lower)),
+                        cast(AxisValues, tuple(gap_region_upper)),
                         cast(
                             OptionalAxisValues,
                             tuple(
@@ -194,11 +194,16 @@ def _geometry_regions(
         if any(upper[axis] <= lower[axis] for axis in range(active_count)):
             continue
         override_spacing = cast(OptionalAxisValues, override.dl)
-        spacing = tuple(
+        override_axis_spacing = tuple(
             None if value is None else _clamp_spacing(value, spec)
             for value in override_spacing
         )
         regions.append(
-            _Region(lower, upper, cast(OptionalAxisValues, spacing), override.enforced)
+            _Region(
+                lower,
+                upper,
+                cast(OptionalAxisValues, override_axis_spacing),
+                override.enforced,
+            )
         )
     return regions

@@ -13,8 +13,8 @@ import numpy as np
 
 from beamz._helpers import positive_integer
 from beamz._region_array import RegionArray
-from beamz.design.discretization import MaterialGrid
 from beamz.design.grid import RectilinearGrid
+from beamz.design.grid.discretization import MaterialGrid
 from beamz.devices.monitors.compiler import CompiledMonitorSpec
 from beamz.devices.monitors.monitors import _Monitor
 from beamz.devices.sources.compiler import CompiledSourceSpec

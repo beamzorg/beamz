@@ -11,9 +11,9 @@ from typing import Any
 import numpy as np
 
 from beamz._helpers import env_bool
-from beamz.design.discretization import MaterialGrid
 from beamz.design.grid import RectilinearGrid
-from beamz.design.grid_spec import _realize_uniform_grid
+from beamz.design.grid.discretization import MaterialGrid
+from beamz.design.grid.realize import _realize_uniform_grid
 from beamz.design.raster.engine import RasterOptions, rasterize
 from beamz.design.raster.importers._beamz import from_beamz
 from beamz.lattice import normalize_polarization_2d
@@ -125,7 +125,7 @@ def _rasterize_design(
         cache_directory = None
 
     polarization = normalize_polarization_2d(polarization)
-    from beamz.design.dispersion import PoleResidue
+    from beamz.design.material.dispersion import PoleResidue
 
     has_dispersion = any(isinstance(m, PoleResidue) for m in scene.materials)
     result = rasterize(

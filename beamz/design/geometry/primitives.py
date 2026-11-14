@@ -1,4 +1,4 @@
-"""Design implementation."""
+"""Construct canonical photonic geometry primitives."""
 
 from __future__ import annotations
 

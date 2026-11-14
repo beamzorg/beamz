@@ -2,13 +2,14 @@
 
 Module to define the design of complex structures parametrically as well as mesh it into grids of material values.
 
-- `core.py`: Main design API and rasterization orchestration.
-- `discretization.py`: Design-to-`MaterialGrid` material placement API.
-- `structures.py`: Geometry primitives (rectangle, circle, ring, polygon, taper, etc.).
+- `geometry/`: Design API, shape primitives, bounds, and polygon unions.
+- `grid/`: Rectilinear grids, spacing policies, meshing, and `MaterialGrid` placement.
 - `materials.py`: the homogeneous `Material` value accepted by geometric designs.
+- `material/`: Dispersive materials, fitting, and material-layout helpers.
 - `raster/`: Rust-backed geometry rasterization and external-format importers.
-- `gds.py`: Optional gdsfactory-backed component and GDS import/export.
-- `gdsfactory.py`: Transparent component-to-native-BeamZ simulation preparation.
+- `io/`: Optional GDS import/export and gdsfactory simulation preparation.
+
+The existing `beamz.design` API and legacy submodule imports remain available.
 
 Spatial coefficient arrays enter the solver through `MaterialGrid`; geometric
 designs use homogeneous materials and the Rust rasterizer. Geometry errors abort
@@ -55,7 +56,7 @@ the vertical geometry. BeamZ does not discover or patch vendor PDK packages.
 For a complete, inspectable local-FDTD workflow, use the design submodule:
 
 ```python
-from beamz.design.gdsfactory import Settings, prepare
+from beamz.design.io.gdsfactory import Settings, prepare
 
 setup = prepare(
     "straight",

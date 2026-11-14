@@ -9,7 +9,8 @@ import numpy as np
 import numpy.typing as npt
 
 from beamz._cache_tokens import HashToken, dataclass_cache_spec
-from beamz.design._material_layout import (
+from beamz.design.grid import Axis, RectilinearGrid
+from beamz.design.material.layout import (
     CELL_TENSORS,
     SUPPORTS,
     active_supports,
@@ -17,7 +18,6 @@ from beamz.design._material_layout import (
     support_shapes,
     supports_by_cell,
 )
-from beamz.design.grid import RectilinearGrid
 from beamz.devices._immutable import readonly_array
 from beamz.lattice import component_shapes, normalize_polarization_2d
 
@@ -199,7 +199,9 @@ class MaterialGrid:
         active_spacings = (
             grid.min_spacings if len(shape) == 3 else grid.min_spacings[:2]
         )
-        active_axes = ("x", "y", "z") if len(shape) == 3 else ("x", "y")
+        active_axes: tuple[Axis, ...] = (
+            ("x", "y", "z") if len(shape) == 3 else ("x", "y")
+        )
         realized_resolution = min(active_spacings)
         if grid.metric_kind_for(active_axes) == "isotropic_uniform" and np.isclose(
             resolution,
@@ -233,7 +235,7 @@ class MaterialGrid:
                 )
 
     def _validate_dispersion(self):
-        from beamz.design.dispersion import PoleResidue
+        from beamz.design.material.dispersion import PoleResidue
 
         shapes = component_shapes(self.shape, self.polarization or "tm")
         dispersion = []
@@ -257,7 +259,7 @@ class MaterialGrid:
                 weights[name] = readonly_array(value)
             dispersion.append((medium, MappingProxyType(weights)))
         object.__setattr__(self, "dispersion", tuple(dispersion))
-        from beamz.design.dispersive_interfaces import DispersiveInterface
+        from beamz.design.material.interfaces import DispersiveInterface
 
         for interface in self.dispersion_interfaces:
             if not isinstance(interface, DispersiveInterface):
@@ -428,7 +430,9 @@ class MaterialGrid:
     ) -> Literal["isotropic_uniform", "axis_uniform", "rectilinear"]:
         """Return the derivative specialization required by active solver axes."""
         assert self.grid is not None
-        active_axes = ("x", "y", "z") if len(self.shape) == 3 else ("x", "y")
+        active_axes: tuple[Axis, ...] = (
+            ("x", "y", "z") if len(self.shape) == 3 else ("x", "y")
+        )
         return self.grid.metric_kind_for(active_axes)
 
     @property

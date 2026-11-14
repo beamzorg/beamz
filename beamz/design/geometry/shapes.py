@@ -1,4 +1,4 @@
-"""Design implementation."""
+"""Immutable geometry values and common shape operations."""
 
 from __future__ import annotations
 

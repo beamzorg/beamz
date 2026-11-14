@@ -21,8 +21,8 @@ import numpy as np
 
 from beamz.analysis import SParameterResult, s_parameters
 from beamz.const import LIGHT_SPEED, µm
-from beamz.design.gds import ImportedComponent, import_component
-from beamz.design.grid_spec import GridSpec
+from beamz.design.grid.spec import GridSpec
+from beamz.design.io.gds import ImportedComponent, import_component
 from beamz.design.materials import Material
 from beamz.devices.boundaries import PML
 from beamz.devices.modes import ModeSpec

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from beamz.design.core import Design
+from beamz.design.geometry.core import Design
+from beamz.design.geometry.shapes import Structure
 from beamz.design.materials import Material
-from beamz.design.structures import Structure
 
 
 def create_optimization_mask(grid, region_structure):

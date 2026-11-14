@@ -1,4 +1,4 @@
-"""Design implementation."""
+"""Import GDS and gdsfactory components into BeamZ designs."""
 
 from __future__ import annotations
 
@@ -9,16 +9,11 @@ from typing import Any, Mapping
 import numpy as np
 
 from beamz.const import µm
-from beamz.design._gds_decode import material as _material  # noqa: F401
-from beamz.design._gds_decode import (
-    material_lookup,
-    polygon_points,
-    vertical_bounds,
-)
-from beamz.design._gds_decode import (
-    polygons_by_layer as _polygons_by_layer,
-)
-from beamz.design.core import Design
+from beamz.design.geometry.core import Design
+from beamz.design.geometry.primitives import Polygon, Rectangle
+from beamz.design.io.decode import material as _material  # noqa: F401
+from beamz.design.io.decode import material_lookup, polygon_points, vertical_bounds
+from beamz.design.io.decode import polygons_by_layer as _polygons_by_layer
 from beamz.design.io.ports import (
     _beamz_ports,
     _component_ports,
@@ -27,7 +22,6 @@ from beamz.design.io.ports import (
     _VerticalProfile,
 )
 from beamz.design.materials import Material
-from beamz.design.structures import Polygon, Rectangle
 from beamz.devices.ports import Port
 
 Layer = tuple[int, int]

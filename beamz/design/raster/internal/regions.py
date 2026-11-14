@@ -12,12 +12,12 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from beamz.design.dispersion import PoleResidue
+from beamz.design.geometry.shapes import Shape
+from beamz.design.material.dispersion import PoleResidue
 from beamz.design.materials import Material
 from beamz.design.raster.engine import RasterOptions, compile_scene
 from beamz.design.raster.result import RasterResult
 from beamz.design.raster.schema import Grid, Mesh, Object, Scene, _integer
-from beamz.design.structures import Shape
 
 
 def _validate_region_inputs(scene: Scene, grid: Grid, options: RasterOptions) -> None:
@@ -251,8 +251,8 @@ def rasterize_tiled_x(scene, grid, options, tile_cells: int, guard_cells: int = 
     background = scene.materials[scene.background_material]
     fill_values = _fill_values(background)
     compiled = compile_scene(scene)
-    tensors = {}
-    yee_tensors = {}
+    tensors: dict[str, np.ndarray] = {}
+    yee_tensors: dict[str, np.ndarray] = {}
     tiles = []
     tile_diagnostics = []
     native_seconds = 0.0
@@ -401,8 +401,8 @@ def rasterize_split_substrate(
     started = perf_counter()
     background = scene.materials[scene.background_material]
     silicon = scene.materials[substrate.material_id]
-    filled_tensors = {}
-    filled_yee = {}
+    filled_tensors: dict[str, np.ndarray] = {}
+    filled_yee: dict[str, np.ndarray] = {}
     for group_name, destination in (
         ("tensors", filled_tensors),
         ("yee_tensors", filled_yee),

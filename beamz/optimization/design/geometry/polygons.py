@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from shapely.geometry import Polygon as ShapelyPolygon
 
-from beamz.design.structures import Polygon
+from beamz.design.geometry.primitives import Polygon
 from beamz.optimization.design.geometry.contour import _iter_shapely_polygons
 from beamz.optimization.design.geometry.density import density_to_shapely_geometry
 

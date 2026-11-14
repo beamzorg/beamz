@@ -27,14 +27,8 @@ from beamz.const import (
 )
 
 # Import design-related classes and functions
-from beamz.design.core import Design
-from beamz.design.dispersion import PoleResidue, fit_nk
-from beamz.design.grid import AxisGridQuality, Grid, GridQualityReport, RectilinearGrid
-
-# Import simulation-related classes and functions
-from beamz.design.grid_spec import GridSpec, MeshOverride
-from beamz.design.materials import Material
-from beamz.design.structures import (
+from beamz.design.geometry.core import Design
+from beamz.design.geometry.primitives import (
     Box,
     Circle,
     CircularBend,
@@ -44,7 +38,13 @@ from beamz.design.structures import (
     Sphere,
     Taper,
 )
-from beamz.design.vector_fit import fit_nk_vector
+from beamz.design.grid import AxisGridQuality, Grid, GridQualityReport, RectilinearGrid
+
+# Import simulation-related classes and functions
+from beamz.design.grid.spec import GridSpec, MeshOverride
+from beamz.design.material.dispersion import PoleResidue, fit_nk
+from beamz.design.material.vector_fit import fit_nk_vector
+from beamz.design.materials import Material
 from beamz.devices.boundaries import PEC, PML, Absorber, Bloch, Periodic
 from beamz.devices.monitors import FieldMonitor, FieldRecorder, FluxMonitor, ModeMonitor
 from beamz.devices.ports import Port

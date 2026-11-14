@@ -1,4 +1,4 @@
-"""Design implementation."""
+"""Export BeamZ structures as GDS layouts."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from typing import Any, Mapping
 import numpy as np
 
 from beamz.const import µm
-from beamz.design._gds_decode import material as _material  # noqa: F401
-from beamz.design._geometry import polygon_rings
-from beamz.design.core import Design
+from beamz.design.geometry.bounds import polygon_rings
+from beamz.design.geometry.core import Design
+from beamz.design.io.decode import material as _material  # noqa: F401
 from beamz.design.io.gds import Layer, _gdsfactory
 from beamz.design.materials import Material
 

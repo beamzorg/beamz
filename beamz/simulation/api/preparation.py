@@ -14,15 +14,12 @@ from beamz._helpers import env_bool, positive_float
 
 # ``Simulation`` is an immutable specification; explicit ``SimulationState`` values
 # carry all mutable runtime data.
-from beamz.design.core import Design
-from beamz.design.discretization import MaterialGrid
-from beamz.design.grid_spec import (
-    GridSpec,
-    _realize_uniform_grid,
-    _validate_grid_budget,
-)
+from beamz.design.geometry.core import Design
+from beamz.design.geometry.primitives import Box
+from beamz.design.grid.discretization import MaterialGrid
+from beamz.design.grid.realize import _realize_uniform_grid
+from beamz.design.grid.spec import GridSpec, _validate_grid_budget
 from beamz.design.materials import Material, MaterialProtocol
-from beamz.design.structures import Box
 from beamz.devices.boundaries import (
     periodic_storage_axes,
 )
@@ -434,7 +431,7 @@ def _rasterize_scene_for_simulation(
     )
     if dimensions == 3 and polarization != "tm":
         raise ValueError("polarization applies only to 2D simulations.")
-    from beamz.design.dispersion import PoleResidue
+    from beamz.design.material.dispersion import PoleResidue
 
     has_dispersion = any(isinstance(m, PoleResidue) for m in scene.materials)
     options = replace(

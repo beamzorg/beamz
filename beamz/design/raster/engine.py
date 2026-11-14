@@ -63,7 +63,7 @@ class RasterOptions:
 
 def staircase_materials(scene: Scene, options: RasterOptions) -> tuple[int, ...]:
     """Resolve optical metal identity before replacing media by indicator fields."""
-    from beamz.design.dispersion import PoleResidue
+    from beamz.design.material.dispersion import PoleResidue
 
     if options.metal_smoothing == "inherit":
         return ()

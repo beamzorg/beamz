@@ -3,19 +3,41 @@ Design module for BEAMZ - Contains components for designing photonic structures.
 """
 
 import sys as _sys
+from collections.abc import Mapping as _Mapping
 from importlib import import_module as _import_module
+from types import MappingProxyType as _MappingProxyType
 from types import ModuleType as _ModuleType
+from typing import Any as _Any
 
 
 class _LegacyModule(_ModuleType):
-    """Resolve pre-refactor module names to their implementation modules."""
-
-    def __init__(self, name: str, default: str, symbols: dict[str, str]) -> None:
+    def __init__(
+        self,
+        name: str = "",
+        default: str = "",
+        symbols: _Mapping[str, str] = _MappingProxyType({}),
+    ) -> None:
         super().__init__(name)
         self.__dict__["_default"] = default
         self.__dict__["_symbols"] = symbols
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str = "") -> _Any:
+        if name == "__all__":
+            explicit = {
+                "beamz.design.gds": [
+                    "ImportedComponent",
+                    "export_gds",
+                    "import_component",
+                    "import_gds",
+                ],
+                "beamz.design.grid_spec": ["GridSpec", "MeshOverride"],
+            }
+            if self.__name__ in explicit:
+                return explicit[self.__name__]
+            target = _import_module(self.__dict__["_default"])
+            if hasattr(target, "__all__"):
+                return target.__all__
+            return [n for n in self.__dir__() if not n.startswith("_")]
         if name.startswith("__"):
             raise AttributeError(name)
         target = self.__dict__["_symbols"].get(name, self.__dict__["_default"])
@@ -29,6 +51,9 @@ class _LegacyModule(_ModuleType):
         setattr(_import_module(target), name, value)
 
     def __delattr__(self, name: str) -> None:
+        if name.startswith("__") or name in {"_default", "_symbols"}:
+            super().__delattr__(name)
+            return
         target = self.__dict__["_symbols"].get(name, self.__dict__["_default"])
         delattr(_import_module(target), name)
 
@@ -161,40 +186,50 @@ for _name, (_target, _symbols) in _LEGACY_MODULES.items():
     if "." not in _name:
         globals()[_name] = _legacy
 
-from beamz.design.core import Design
-from beamz.design.discretization import MaterialGrid, build_material_grid
-from beamz.design.dispersion import PoleResidue, fit_nk
-from beamz.design.gds import ImportedComponent, export_gds, import_component, import_gds
-from beamz.design.gdsfactory import (
-    ComponentSimulationResults,
-    PortMetadata,
-    PreparedComponent,
+from beamz.design.geometry.core import Design  # noqa: E402
+from beamz.design.geometry.primitives import (  # noqa: E402
+    Box,  # noqa: E402
+    Circle,  # noqa: E402
+    CircularBend,  # noqa: E402
+    Polygon,  # noqa: E402
+    Rectangle,  # noqa: E402
+    Ring,  # noqa: E402
+    Taper,  # noqa: E402
 )
-from beamz.design.gdsfactory import (
-    Settings as GDSFactorySettings,
-)
-from beamz.design.gdsfactory import (
-    prepare as prepare_gdsfactory,
-)
-from beamz.design.grid import (
+from beamz.design.geometry.shapes import Shape  # noqa: E402
+from beamz.design.grid import (  # noqa: E402
     AxisGridQuality,
     Grid,
     GridQualityReport,
     RectilinearGrid,
 )
-from beamz.design.grid_spec import GridSpec, MeshOverride
-from beamz.design.materials import Material
-from beamz.design.structures import (
-    Box,
-    Circle,
-    CircularBend,
-    Polygon,
-    Rectangle,
-    Ring,
-    Shape,
-    Taper,
+from beamz.design.grid.discretization import (  # noqa: E402
+    MaterialGrid,  # noqa: E402
+    build_material_grid,  # noqa: E402
 )
-from beamz.design.vector_fit import fit_nk_vector
+from beamz.design.grid.spec import (  # noqa: E402
+    GridSpec,  # noqa: E402
+    MeshOverride,  # noqa: E402
+)
+from beamz.design.io.gds import (  # noqa: E402
+    ImportedComponent,  # noqa: E402
+    import_component,  # noqa: E402
+    import_gds,  # noqa: E402
+)
+from beamz.design.io.gds_export import export_gds  # noqa: E402
+from beamz.design.io.gdsfactory import (  # noqa: E402
+    ComponentSimulationResults,  # noqa: E402
+    PortMetadata,  # noqa: E402
+    PreparedComponent,  # noqa: E402
+)
+from beamz.design.io.gdsfactory import Settings as GDSFactorySettings  # noqa: E402
+from beamz.design.io.gdsfactory import prepare as prepare_gdsfactory  # noqa: E402
+from beamz.design.material.dispersion import (  # noqa: E402
+    PoleResidue,  # noqa: E402
+    fit_nk,  # noqa: E402
+)
+from beamz.design.material.vector_fit import fit_nk_vector  # noqa: E402
+from beamz.design.materials import Material  # noqa: E402
 
 __all__ = [
     "Material",
