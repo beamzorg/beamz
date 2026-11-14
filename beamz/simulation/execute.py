@@ -43,6 +43,16 @@ from beamz.simulation.preparation_trace import trace_preparation
 from . import kernels as update_runtime
 from . import observe as monitor_runtime
 from . import sharding as sharding_runtime
+from .execution.termination import (
+    _complete_converged_dft_weights,
+    _energy_terms,
+    _field_diagnostics,
+    _monitor_vectors,
+    _relative_monitor_change,
+    _remaining_source_activity,
+    _selected_monitor_names,
+    _source_residual,
+)
 from .memory import cuda_capacity_schedule
 from .results import (
     MonitorResults,
@@ -69,301 +79,6 @@ SourceBatchMap = dict[
 # enough to instantiate predictably, then replay the same executable from an XLA loop.
 # The even bound also keeps the temporal ping-pong kernel on its fast return layout.
 CUDA_GRAPH_MAX_STEPS = 256
-
-
-_COMPONENT_OFFSETS_2D = {
-    "Ex": (0.0, 0.5),
-    "Ey": (0.5, 0.0),
-    "Ez": (0.0, 0.0),
-    "Hx": (0.5, 0.0),
-    "Hy": (0.0, 0.5),
-    "Hz": (0.5, 0.5),
-}
-
-
-def _axis_integration_weights(edges, offset: float, count: int) -> np.ndarray:
-    """Return control-volume widths for one edge- or center-aligned Yee axis."""
-    edges = np.asarray(edges, dtype=np.float64)
-    widths = np.diff(edges)
-    count = int(count)
-    if offset == 0.5:
-        if count != widths.size:
-            raise ValueError("Center-aligned Yee support does not match the grid.")
-        return widths
-    if offset != 0.0 or count != edges.size:
-        raise ValueError("Edge-aligned Yee support does not match the grid.")
-    out = np.empty(count, dtype=np.float64)
-    out[0] = 0.5 * widths[0]
-    out[-1] = 0.5 * widths[-1]
-    if count > 2:
-        out[1:-1] = 0.5 * (widths[:-1] + widths[1:])
-    return out
-
-
-def _component_integration_weights(program: CompiledProgram, component: str):
-    """Return physical integration weights on one native Yee support."""
-    shape = tuple(int(value) for value in getattr(program.grid, component).shape)
-    geometry = program.grid.geometry
-    if program.config.is_3d:
-        from beamz.lattice import component_axis_offsets_3d
-
-        offsets = component_axis_offsets_3d(component)
-        z = _axis_integration_weights(geometry.z_edges, offsets["z"], shape[0])
-        y = _axis_integration_weights(geometry.y_edges, offsets["y"], shape[1])
-        x = _axis_integration_weights(geometry.x_edges, offsets["x"], shape[2])
-        return jnp.asarray(z[:, None, None] * y[None, :, None] * x[None, None, :])
-    y_offset, x_offset = _COMPONENT_OFFSETS_2D[component]
-    y = _axis_integration_weights(geometry.y_edges, y_offset, shape[0])
-    x = _axis_integration_weights(geometry.x_edges, x_offset, shape[1])
-    return jnp.asarray(y[:, None] * x[None, :])
-
-
-def _node_integration_weights(program: CompiledProgram, shape: tuple[int, ...]):
-    """Return physical integration weights on the shared Yee-node support."""
-    geometry = program.grid.geometry
-    if program.config.is_3d:
-        z = _axis_integration_weights(geometry.z_edges, 0.0, shape[0])
-        y = _axis_integration_weights(geometry.y_edges, 0.0, shape[1])
-        x = _axis_integration_weights(geometry.x_edges, 0.0, shape[2])
-        return jnp.asarray(z[:, None, None] * y[None, :, None] * x[None, None, :])
-    y = _axis_integration_weights(geometry.y_edges, 0.0, shape[0])
-    x = _axis_integration_weights(geometry.x_edges, 0.0, shape[1])
-    return jnp.asarray(y[:, None] * x[None, :])
-
-
-def _energy_terms(program: CompiledProgram):
-    """Precompute field, material, and measure names for energy diagnostics."""
-    active = (
-        {"Ex", "Ey", "Ez", "Hx", "Hy", "Hz"}
-        if program.config.is_3d
-        else (
-            {"Ez", "Hx", "Hy"}
-            if program.config.polarization_2d == "tm"
-            else {"Ex", "Ey", "Hz"}
-        )
-    )
-    extent = program.grid.geometry.extent
-    domain_measure = float(
-        extent[0] * extent[1] * (extent[2] if program.config.is_3d else 1.0)
-    )
-    terms = tuple(
-        (
-            component.lower(),
-            getattr(program.grid, material),
-            _component_integration_weights(program, component) / domain_measure,
-            constant,
-        )
-        for component, material, constant in (
-            ("Ex", "eps_ex", EPS_0),
-            ("Ey", "eps_ey", EPS_0),
-            ("Ez", "eps_ez", EPS_0),
-            ("Hx", "mu_hx", MU_0),
-            ("Hy", "mu_hy", MU_0),
-            ("Hz", "mu_hz", MU_0),
-        )
-        if component in active
-    )
-    cross_terms = ()
-    material_grid = program.grid.material_grid
-    if material_grid.uses_full_permittivity:
-        node_tensor = np.asarray(material_grid.yee_tensors["eps_node"])
-        node_shape = tuple(int(value) for value in node_tensor.shape[1:])
-        node_measure = _node_integration_weights(program, node_shape) / domain_measure
-        cross_terms = tuple(
-            (
-                left.lower(),
-                left,
-                right.lower(),
-                right,
-                jnp.asarray(node_tensor[tensor_index]),
-                node_measure,
-            )
-            for left, right, tensor_index in (
-                ("Ex", "Ey", 3),
-                ("Ex", "Ez", 4),
-                ("Ey", "Ez", 5),
-            )
-            if left in active and right in active
-        )
-    widths = tuple(
-        jnp.asarray(program.grid.geometry.cell_widths(a)) for a in ("x", "y", "z")
-    )
-    return terms, cross_terms, domain_measure, widths
-
-
-def _field_diagnostics(state: SimulationState, plan) -> tuple[float, float, bool]:
-    """Compute integrated electromagnetic energy, maximum field, and finiteness."""
-    terms, cross_terms, domain_measure, widths = plan
-    energy_density = jnp.asarray(0.0, dtype=jnp.float32)
-    max_field = jnp.asarray(0.0, dtype=jnp.float32)
-    finite = jnp.asarray(True)
-    for field_name, material, measure, constant in terms:
-        values = jnp.asarray(getattr(state, field_name))
-        finite = finite & jnp.all(jnp.isfinite(values))
-        max_field = jnp.maximum(max_field, jnp.max(jnp.abs(values), initial=0.0))
-        density = jnp.asarray(material) * jnp.abs(values) ** 2
-        energy_density = energy_density + 0.5 * float(constant) * jnp.sum(
-            density * jnp.asarray(measure)
-        )
-    centered = {}
-    for (
-        left_name,
-        left_component,
-        right_name,
-        right_component,
-        material,
-        measure,
-    ) in cross_terms:
-        node_shape = tuple(int(value) for value in material.shape)
-        for field_name, component in (
-            (left_name, left_component),
-            (right_name, right_component),
-        ):
-            if component not in centered:
-                centered[component] = update_runtime.collocate_yee_component(
-                    getattr(state, field_name),
-                    component,
-                    "Node",
-                    node_shape,
-                    cell_widths=widths,
-                )
-        energy_density = energy_density + float(EPS_0) * jnp.sum(
-            material
-            * jnp.real(centered[left_component] * jnp.conj(centered[right_component]))
-            * jnp.asarray(measure)
-        )
-    return float(energy_density) * domain_measure, float(max_field), bool(finite)
-
-
-def _remaining_source_activity(
-    program: CompiledProgram, total_steps: int
-) -> np.ndarray:
-    """Return the maximum future source amplitude relative to each term's peak."""
-    total_steps = int(total_steps)
-    activity = np.zeros(total_steps, dtype=np.float64)
-    for source in program.sources:
-        waveform = np.abs(np.asarray(source.waveform).reshape(-1))
-        if waveform.size == 0:
-            continue
-        peak = float(np.max(waveform, initial=0.0))
-        if peak > 0.0:
-            sampled = np.empty(total_steps, dtype=np.float64)
-            copied = min(total_steps, waveform.size)
-            sampled[:copied] = waveform[:copied]
-            if copied < total_steps:
-                sampled[copied:] = waveform[-1]
-            activity = np.maximum(activity, sampled / peak)
-    return np.maximum.accumulate(activity[::-1])[::-1] if activity.size else activity
-
-
-def _source_residual(remaining_activity: np.ndarray, current_step: int) -> float:
-    """Return the largest normalized source drive at or after ``current_step``."""
-    index = int(current_step)
-    if index < 0:
-        raise ValueError("current_step must be non-negative.")
-    return float(remaining_activity[index]) if index < remaining_activity.size else 0.0
-
-
-def _selected_monitor_names(program: CompiledProgram, policy: AutoTermination):
-    available = {
-        spec.name
-        for spec in program.monitors
-        if spec.dft_enabled
-        and spec.freq_count > 0
-        and spec.dft_point_count > 0
-        and np.any(np.asarray(spec.dft_component_mask) > 0.0)
-    }
-    if policy.monitor_names:
-        missing = set(policy.monitor_names) - available
-        if missing:
-            names = ", ".join(sorted(missing))
-            raise ValueError(
-                "Automatic termination monitors must be applicable "
-                f"frequency-domain monitors: {names}."
-            )
-        return policy.monitor_names
-    return tuple(spec.name for spec in program.monitors if spec.name in available)
-
-
-def _monitor_vectors(
-    monitors: dict[str, MonitorResults], names: tuple[str, ...]
-) -> dict[tuple[str, str, int], np.ndarray]:
-    """Return one raw DFT convergence vector per monitor, component, and frequency."""
-    values = {}
-    for name in names:
-        monitor = monitors[name]
-        fields = monitor._raw_dft_fields or monitor.dft_fields
-        for component in sorted(fields):
-            field = np.asarray(fields[component], dtype=np.complex128)
-            for frequency, vector in enumerate(field.reshape(field.shape[0], -1)):
-                values[(name, component, frequency)] = vector
-    if names and not values:
-        raise ValueError("Automatic termination monitors produced no DFT data.")
-    return values
-
-
-def _relative_monitor_change(
-    current: dict[tuple[str, str, int], np.ndarray],
-    previous: dict[tuple[str, str, int], np.ndarray] | None,
-):
-    """Return the largest scale-safe change among cumulative monitor values."""
-    if previous is None:
-        return None
-    if current.keys() != previous.keys():
-        raise ValueError("Automatic termination monitor values changed structure.")
-    changes = []
-    for key, current_value in current.items():
-        previous_value = previous[key]
-        if current_value.shape != previous_value.shape:
-            raise ValueError("Automatic termination monitor values changed shape.")
-        numerator = float(np.linalg.norm(current_value - previous_value))
-        denominator = max(
-            float(np.linalg.norm(current_value)),
-            float(np.linalg.norm(previous_value)),
-        )
-        changes.append(
-            0.0
-            if denominator <= np.finfo(float).tiny and numerator <= np.finfo(float).tiny
-            else numerator / denominator
-        )
-    return max(changes, default=0.0)
-
-
-def _configured_dft_weight_sum(simulation, spec) -> float:
-    """Return a monitor's DFT window weight through the configured time limit."""
-    steps = np.arange(int(simulation.num_steps), dtype=np.int64)
-    times = float(simulation.time[0]) + (steps.astype(np.float64) + 1.0) * float(
-        simulation.dt
-    )
-    selected = (
-        (steps % max(1, int(spec.dft_record_interval)) == 0)
-        & (times >= float(spec.dft_t_start))
-        & (times <= float(spec.dft_t_end))
-    )
-    if not np.any(selected):
-        return 0.0
-    if int(spec.dft_window_code) != 1 or not np.isfinite(spec.dft_t_end):
-        return float(np.count_nonzero(selected))
-    span = max(float(spec.dft_t_end) - float(spec.dft_t_start), 1e-30)
-    tau = np.clip((times[selected] - float(spec.dft_t_start)) / span, 0.0, 1.0)
-    return float(np.sum(0.5 * (1.0 - np.cos(2.0 * np.pi * tau))))
-
-
-def _complete_converged_dft_weights(
-    monitors: dict[str, MonitorResults], simulation, program: CompiledProgram
-) -> dict[str, MonitorResults]:
-    """Complete raw DFT weights before the final source normalization."""
-    monitors = dict(monitors)
-    for spec in program.monitors:
-        if not spec.dft_enabled or spec.freq_count <= 0:
-            continue
-        monitor = simulation.monitors[int(spec.monitor_index)]
-        name = str(getattr(monitor, "name", None) or f"monitor_{spec.monitor_index}")
-        result = monitors[name]
-        total_weight = _configured_dft_weight_sum(simulation, spec)
-        weights = np.full(result.dft_weight_sum.shape, total_weight, dtype=np.float64)
-        monitors[name] = replace(result, dft_weight_sum=weights)
-    return monitors
 
 
 def compiled_source_batches(
@@ -565,6 +280,19 @@ def forward_step(
     cfg = ctx.config
     metallic = ctx.boundary.metallic
 
+    def constrain(current: Any = (), family: str = "") -> SimulationState:
+        names = tuple(f"{family}{axis}" for axis in "xyz")
+        values = update_runtime.apply_post_source_boundaries(
+            tuple(getattr(current, name) for name in names),
+            tuple(getattr(metallic, f"{name}_mask") for name in names),
+            components=tuple(name.capitalize() for name in names),
+            periodic_axes=ctx.boundary.periodic_axes,
+            periodic_phases=ctx.boundary.periodic_phases,
+            material_shape=ctx.boundary.material_shape,
+            logical_shapes=ctx.boundary.logical_component_shapes,
+        )
+        return current._replace(**dict(zip(names, values, strict=True)))
+
     # 1. Pre-E sources precede H because their waveform is normalized at this leapfrog
     # phase; the selected kernel then advances the canonical magnetic fields.
     state = apply_source_phase(
@@ -577,16 +305,7 @@ def forward_step(
         local_single_owner=cfg.backend == "cuda_streamed",
     )
     if ctx.boundary.periodic_axes:
-        ex, ey, ez = update_runtime.apply_post_source_boundaries(
-            (state.ex, state.ey, state.ez),
-            (metallic.ex_mask, metallic.ey_mask, metallic.ez_mask),
-            components=("Ex", "Ey", "Ez"),
-            periodic_axes=ctx.boundary.periodic_axes,
-            periodic_phases=ctx.boundary.periodic_phases,
-            material_shape=ctx.boundary.material_shape,
-            logical_shapes=ctx.boundary.logical_component_shapes,
-        )
-        state = state._replace(ex=ex, ey=ey, ez=ez)
+        state = constrain(state, "e")
     state = update_kernel.update_h(state, ctx, coeffs)
 
     # 2. H-phase sources may overwrite constrained cells, so reapply the compiled masks
@@ -618,16 +337,7 @@ def forward_step(
             state, ctx.source_batches, program.sharding
         )
     if not kernel_owns_pec:
-        hx, hy, hz = update_runtime.apply_post_source_boundaries(
-            (state.hx, state.hy, state.hz),
-            (metallic.hx_mask, metallic.hy_mask, metallic.hz_mask),
-            components=("Hx", "Hy", "Hz"),
-            periodic_axes=ctx.boundary.periodic_axes,
-            periodic_phases=ctx.boundary.periodic_phases,
-            material_shape=ctx.boundary.material_shape,
-            logical_shapes=ctx.boundary.logical_component_shapes,
-        )
-        state = state._replace(hx=hx, hy=hy, hz=hz)
+        state = constrain(state, "h")
     if known_fields is not None:
         state = state._replace(
             **{
@@ -653,16 +363,7 @@ def forward_step(
     if program.dispersion is not None:
         state = update_dispersion(old_e_state, state, program.dispersion)
     if not kernel_owns_pec:
-        ex, ey, ez = update_runtime.apply_post_source_boundaries(
-            (state.ex, state.ey, state.ez),
-            (metallic.ex_mask, metallic.ey_mask, metallic.ez_mask),
-            components=("Ex", "Ey", "Ez"),
-            periodic_axes=ctx.boundary.periodic_axes,
-            periodic_phases=ctx.boundary.periodic_phases,
-            material_shape=ctx.boundary.material_shape,
-            logical_shapes=ctx.boundary.logical_component_shapes,
-        )
-        state = state._replace(ex=ex, ey=ey, ez=ez)
+        state = constrain(state, "e")
     if known_fields is not None:
         state = state._replace(
             **{
@@ -1624,12 +1325,6 @@ def _performance_for(
     )
 
 
-def _print_performance(performance: SimulationPerformance) -> None:
-    """Print the two execution-only statistics reported for a finished run."""
-    print(f"Simulation runtime: {performance.runtime_s:.2f} s")
-    print(f"GCUPS: {performance.gcups:.3f}")
-
-
 def compiled_xla_memory_analysis(
     program: CompiledProgram,
     state: SimulationState,
@@ -1688,28 +1383,7 @@ def _run_results(
     )
 
 
-def _finish_run(simulation, program, state, store_full_materials, stats, report):
-    results = _run_results(
-        simulation,
-        program,
-        state,
-        store_full_materials,
-        completed_steps=int(state.current_step),
-        performance=stats,
-    )
-    if stats is not None and report:
-        _print_performance(stats)
-    return SimulationRun(results=results, state=state)
-
-
 _PROGRESS_CHUNK_COUNT = 20
-
-
-def _progress_chunk_lengths(total_steps: int) -> tuple[int, ...]:
-    """Split a run into a bounded number of visible progress updates."""
-    chunk_steps = max(1, int(np.ceil(total_steps / _PROGRESS_CHUNK_COUNT)))
-    full_chunks, remainder = divmod(total_steps, chunk_steps)
-    return (chunk_steps,) * full_chunks + ((remainder,) if remainder else ())
 
 
 def run_simulation_program(
@@ -1731,7 +1405,14 @@ def run_simulation_program(
     from beamz.simulation.cuda.schedule import normalize_expected_runs
 
     expected_runs = normalize_expected_runs(expected_runs)
-    chunk_lengths = _progress_chunk_lengths(num_steps) if progress else (num_steps,)
+    if progress:
+        chunk_steps = max(1, int(np.ceil(num_steps / _PROGRESS_CHUNK_COUNT)))
+        full_chunks, remainder = divmod(num_steps, chunk_steps)
+        chunk_lengths = (chunk_steps,) * full_chunks + (
+            (remainder,) if remainder else ()
+        )
+    else:
+        chunk_lengths = (num_steps,)
     # This API already knows how often each executable will run. Account for
     # that work even when visible progress divides a long run into short calls.
     chunk_reuse = Counter(chunk_lengths)
@@ -1792,9 +1473,19 @@ def run_simulation_program(
         if performance
         else None
     )
-    return _finish_run(
-        simulation, program, state, store_full_materials, stats, performance
+    state = cast(SimulationState, state)
+    results = _run_results(
+        simulation,
+        program,
+        state,
+        store_full_materials,
+        completed_steps=int(state.current_step),
+        performance=stats,
     )
+    if stats is not None and performance:
+        print(f"Simulation runtime: {stats.runtime_s:.2f} s")
+        print(f"GCUPS: {stats.gcups:.3f}")
+    return SimulationRun(results=results, state=state)
 
 
 def run_until_terminated(
@@ -1982,7 +1673,9 @@ def run_until_terminated(
         state,
         store_full_materials,
         monitor_results=monitor_results,
-        completed_steps=int(state.current_step) if reason == "wall_time_limit" else None,
+        completed_steps=int(state.current_step)
+        if reason == "wall_time_limit"
+        else None,
     )
     stats = (
         _performance_for(
@@ -1993,7 +1686,8 @@ def run_until_terminated(
     )
     results = replace(results, termination=report, performance=stats)
     if stats is not None:
-        _print_performance(stats)
+        print(f"Simulation runtime: {stats.runtime_s:.2f} s")
+        print(f"GCUPS: {stats.gcups:.3f}")
     return results
 
 
