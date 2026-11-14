@@ -8,21 +8,18 @@ from typing import Any, Callable, Literal, cast
 import numpy as np
 
 from beamz.design.grid import RectilinearGrid
-from beamz.devices._placement import (
+from beamz.devices.common._placement import (
     SnappedRegion,
     snap_centered_extent,
     snap_rectilinear_edge_interval,
 )
-from beamz.lattice import (
-    component_shape_3d,
-    sample_voxel_grid_at_component_3d,
-    sample_voxel_grid_at_e_component_3d_centered,
+from beamz.devices.modes.backend.solver import solve_grid
+from beamz.devices.modes.models import Materials
+from beamz.devices.modes.spatial._sampling import (
+    cell_material_samples,
+    collocate_result,
 )
-
-from ._sampling import cell_material_samples, collocate_result
-from ._symmetry import project_mode_symmetry
-from .constitutive import crop_tensor_support, has_cross_terms, require_diagonal_support
-from .discrete import (
+from beamz.devices.modes.spatial.discrete import (
     AxisName,
     DiscreteMode,
     ModePlaneSpec,
@@ -30,9 +27,18 @@ from .discrete import (
     solve_beamz_mode,
     solve_solver_mode,
 )
-from .models import Materials
-from .policy import solve_interval
-from .solver import solve_grid
+from beamz.devices.modes.support._symmetry import project_mode_symmetry
+from beamz.devices.modes.support.constitutive import (
+    crop_tensor_support,
+    has_cross_terms,
+    require_diagonal_support,
+)
+from beamz.devices.modes.support.policy import solve_interval
+from beamz.lattice import (
+    component_shape_3d,
+    sample_voxel_grid_at_component_3d,
+    sample_voxel_grid_at_e_component_3d_centered,
+)
 
 _AXIS_POS_3D = {"z": 0, "y": 1, "x": 2}
 _TRANSVERSE_AXES_3D: dict[str, tuple[AxisName, AxisName]] = {
@@ -648,7 +654,10 @@ class BoundModePlane:
     candidate_basis: dict = field(default_factory=dict, repr=False)
 
     def solve(self, mode_index=0):
-        from .discrete import _solve_beamz_mode, _solve_cached_beamz_mode
+        from beamz.devices.modes.spatial.discrete import (
+            _solve_beamz_mode,
+            _solve_cached_beamz_mode,
+        )
 
         spec = replace(
             self.spec,

@@ -18,18 +18,21 @@ import numpy as np
 
 from beamz._cache_tokens import cache_token
 from beamz.design.grid import RectilinearGrid
-from beamz.devices._immutable import immutable_snapshot, readonly_array
-
-from ._cache import _SolveCache
-from ._sampling import collocate_result, launch_samples, plane_material_samples
-from ._symmetry import material_symmetric, mirror_closed, project_mode_symmetry
-from ._yee import (
+from beamz.devices.common._immutable import immutable_snapshot, readonly_array
+from beamz.devices.modes.backend._yee import (
     refine_x_mode_at_fixed_beta,
     transverse_grid_metrics,
     validate_x_mode_refinement,
 )
-from .constitutive import require_uniform_normal_spacing
-from .fields import (
+from beamz.devices.modes.backend.solver import solve_grid
+from beamz.devices.modes.models import Materials
+from beamz.devices.modes.result import Result
+from beamz.devices.modes.spatial._sampling import (
+    collocate_result,
+    launch_samples,
+    plane_material_samples,
+)
+from beamz.devices.modes.spatial.fields import (
     _axis_coordinate,
     _axis_index,
     _modal_power,
@@ -37,10 +40,14 @@ from .fields import (
     _numeric_wave_number,
     _phase_delay,
 )
-from .models import Materials
-from .policy import candidate_rank
-from .result import Result
-from .solver import solve_grid
+from beamz.devices.modes.support._cache import _SolveCache
+from beamz.devices.modes.support._symmetry import (
+    material_symmetric,
+    mirror_closed,
+    project_mode_symmetry,
+)
+from beamz.devices.modes.support.constitutive import require_uniform_normal_spacing
+from beamz.devices.modes.support.policy import candidate_rank
 
 AxisName = Literal["x", "y", "z"]
 DirectionName = Literal["+x", "-x", "+y", "-y", "+z", "-z"]
@@ -742,7 +749,7 @@ def _prepare_discrete_mode(
             raise ValueError(
                 "Full-tensor ports currently require a confined guided mode; homogeneous/radiation ports are unsupported"
             )
-        from ._tensor_yee import refine_tensor_mode
+        from beamz.devices.modes.backend._tensor_yee import refine_tensor_mode
 
         profiles, k_num, tensor_diagnostics = refine_tensor_mode(
             profiles,

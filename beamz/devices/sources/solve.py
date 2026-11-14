@@ -5,8 +5,8 @@ from typing import Literal, cast
 
 import numpy as np
 
-from beamz.devices.modes.line import prepare_mode_line, solve_mode_line
-from beamz.devices.modes.plane import SignedAxis, solve_modes
+from beamz.devices.modes.spatial.line import prepare_mode_line, solve_mode_line
+from beamz.devices.modes.spatial.plane import SignedAxis, solve_modes
 from beamz.devices.modes.specs import ModeData, ModeSpec
 
 from .specs import plane_axis_and_spans
@@ -147,7 +147,7 @@ def solve_mode_plane(
         raise ValueError("Prepared launch previews require a 3D simulation")
     materials = simulation._material_grid()
     if len(materials.shape) == 3:
-        from .tensor_preview import solve_tensor_mode_plane
+        from beamz.devices.sources.launch.tensor_preview import solve_tensor_mode_plane
 
         return solve_tensor_mode_plane(
             simulation=simulation,

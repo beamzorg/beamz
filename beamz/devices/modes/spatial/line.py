@@ -7,9 +7,8 @@ from typing import Any
 
 import numpy as np
 
-from beamz.devices._placement import SnappedRegion, mode_source_region
-
-from .policy import candidate_rank, solve_interval
+from beamz.devices.common._placement import SnappedRegion, mode_source_region
+from beamz.devices.modes.support.policy import candidate_rank, solve_interval
 
 
 @dataclass(frozen=True)

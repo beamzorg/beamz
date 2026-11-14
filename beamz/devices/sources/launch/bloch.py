@@ -8,12 +8,12 @@ from beamz.lattice import component_axis_offsets_3d, component_material_at
 
 def lower_bloch_plane_wave(source, ctx):
     # Import plan records lazily to keep the singledispatch compiler acyclic.
-    from .compiler import (
+    from beamz.devices.sources.compiler import (
         InjectionPlanEntry,
         TemporalWaveform,
         _validate_plane_wave_background,
     )
-    from .time import sample_source_waveforms
+    from beamz.devices.sources.time import sample_source_waveforms
 
     if np.asarray(ctx.fields.permittivity).ndim != 3:
         raise ValueError("Oblique PlaneWaveSource currently requires a 3D grid.")

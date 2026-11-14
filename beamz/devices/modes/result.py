@@ -9,7 +9,8 @@ from typing import Any
 import numpy as np
 import xarray as xr
 
-from ._sampling import native_coordinates
+from beamz.devices.modes.spatial._sampling import native_coordinates
+
 from .models import Grid
 
 

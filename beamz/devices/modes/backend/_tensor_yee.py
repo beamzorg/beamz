@@ -16,9 +16,10 @@ from scipy.sparse import linalg as spla
 
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.constitutive import electric_tensor_coefficients
-
-from ._yee import _yee_curl_operators
-from ._yee import transverse_grid_metrics as transverse_metrics
+from beamz.devices.modes.backend._yee import _yee_curl_operators
+from beamz.devices.modes.backend._yee import (
+    transverse_grid_metrics as transverse_metrics,
+)
 
 
 def _average(count):

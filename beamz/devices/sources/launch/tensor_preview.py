@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from beamz.devices._placement import mode_source_region
-from beamz.devices.modes.discrete import (
+from beamz.devices.common._placement import mode_source_region
+from beamz.devices.modes.spatial.discrete import (
     _SolverMode,
     solve_beamz_mode,
     solve_solver_mode,
 )
-from beamz.devices.modes.plane import bind_material_mode_plane
+from beamz.devices.modes.spatial.plane import bind_material_mode_plane
 from beamz.devices.modes.specs import ModeData
 from beamz.lattice import component_axis_offsets_3d
 
@@ -25,8 +25,8 @@ def solve_tensor_mode_plane(
     direction,
     field_representation="solver",
 ):
-    from .solve import _resolve_solver_direction
-    from .specs import plane_axis_and_spans
+    from beamz.devices.sources.solve import _resolve_solver_direction
+    from beamz.devices.sources.specs import plane_axis_and_spans
 
     if np.any(np.asarray(materials.conductivity) != 0):
         raise ValueError("3D mode previews require lossless materials")

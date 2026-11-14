@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from beamz.devices._immutable import immutable_snapshot, readonly_array
+from beamz.devices.common._immutable import immutable_snapshot, readonly_array
 
 
 @dataclass(frozen=True)

@@ -11,7 +11,7 @@ import numpy as np
 from numpy import typing as npt
 
 from beamz.const import LIGHT_SPEED
-from beamz.devices._immutable import readonly_array
+from beamz.devices.common._immutable import readonly_array
 
 
 def _discrete_spectrum(values, times, freqs):

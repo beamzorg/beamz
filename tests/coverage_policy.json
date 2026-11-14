@@ -23,7 +23,7 @@
       "minimum": 90.5,
       "files": [
         "beamz/lattice.py",
-        "beamz/devices/_boundary_compile.py",
+        "beamz/devices/common/_boundary_compile.py",
         "beamz/devices/monitors/compiler.py",
         "beamz/devices/sources/compiler.py",
         "beamz/simulation/compile/__init__.py",
@@ -44,9 +44,9 @@
         "beamz/analysis/sparameters.py",
         "beamz/devices/monitors/monitors.py",
         "beamz/devices/ports.py",
-        "beamz/devices/modes/fields.py",
-        "beamz/devices/modes/plane.py",
-        "beamz/devices/sources/mode_launch.py",
+        "beamz/devices/modes/spatial/fields.py",
+        "beamz/devices/modes/spatial/plane.py",
+        "beamz/devices/sources/launch/mode_launch.py",
         "beamz/devices/sources/solve.py"
       ]
     },
@@ -54,8 +54,8 @@
       "minimum": 93.5,
       "files": [
         "beamz/lattice.py",
-        "beamz/devices/_boundary_compile.py",
-        "beamz/devices/sources/planar_tfsf.py",
+        "beamz/devices/common/_boundary_compile.py",
+        "beamz/devices/sources/launch/planar_tfsf.py",
         "beamz/optimization/topology/filtering.py",
         "beamz/optimization/topology/morphology.py",
         "beamz/optimization/topology/transforms/conic.py",
@@ -67,12 +67,12 @@
     "mode_solver": {
       "minimum": 80.0,
       "files": [
-        "beamz/devices/modes/_scipy.py",
-        "beamz/devices/modes/_yee.py",
-        "beamz/devices/modes/discrete.py",
+        "beamz/devices/modes/backend/_scipy.py",
+        "beamz/devices/modes/backend/_yee.py",
+        "beamz/devices/modes/spatial/discrete.py",
         "beamz/devices/modes/models.py",
         "beamz/devices/modes/result.py",
-        "beamz/devices/modes/solver.py",
+        "beamz/devices/modes/backend/solver.py",
         "beamz/devices/modes/specs.py"
       ]
     }

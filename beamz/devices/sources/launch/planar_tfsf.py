@@ -11,9 +11,14 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from beamz.devices._immutable import readonly_array
-from beamz.devices.modes.discrete import ComponentIndex
-from beamz.devices.modes.fields import _axis_coordinate, _axis_index, _phase_delay
+from beamz.devices.common._immutable import readonly_array
+from beamz.devices.modes.spatial.discrete import ComponentIndex
+from beamz.devices.modes.spatial.fields import (
+    _axis_coordinate,
+    _axis_index,
+    _phase_delay,
+)
+from beamz.devices.sources.specs import FieldProfile3D
 from beamz.lattice import (
     advance_e_field,
     advance_h_field,
@@ -24,8 +29,6 @@ from beamz.lattice import (
     curl_h_to_e_3d,
     curl_h_to_e_3d_metric,
 )
-
-from .specs import FieldProfile3D
 
 _FIELD_COMPONENTS_3D = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
 _E_COMPONENTS_3D = ("Ex", "Ey", "Ez")
@@ -656,8 +659,8 @@ def advance_incident_e_3d(
     fields, state, h_next, dt, *, resolution: float
 ) -> dict[str, np.ndarray]:
     """Advance a static incident state with one compiled E half-step."""
-    from beamz.devices._boundary_compile import resolve_metallic_edges
-    from beamz.devices.modes.constitutive import has_cross_terms
+    from beamz.devices.common._boundary_compile import resolve_metallic_edges
+    from beamz.devices.modes.support.constitutive import has_cross_terms
 
     tensors = getattr(fields, "yee_tensors", None)
     if tensors is None:

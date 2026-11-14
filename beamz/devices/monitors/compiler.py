@@ -9,7 +9,7 @@ from typing import Any
 import jax.numpy as jnp
 import numpy as np
 
-from beamz.devices._placement import (
+from beamz.devices.common._placement import (
     SnappedRegion,
     line_region_coordinates,
     line_region_points,

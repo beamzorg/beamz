@@ -9,7 +9,7 @@ from typing import Literal, SupportsIndex, cast
 
 import numpy as np
 
-from beamz.devices._immutable import readonly_array
+from beamz.devices.common._immutable import readonly_array
 
 BoundaryCondition = Literal["pec", "pmc"]
 

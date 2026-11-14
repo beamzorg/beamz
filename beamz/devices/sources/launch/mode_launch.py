@@ -9,28 +9,27 @@ from typing import Any, Literal, cast
 import numpy as np
 
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
-from beamz.devices._immutable import readonly_array
-from beamz.devices._placement import (
+from beamz.devices.common._immutable import readonly_array
+from beamz.devices.common._placement import (
     mode_source_region,
     snap_plane_region,
     snap_plane_region_grid,
 )
-from beamz.devices.modes.discrete import solve_beamz_mode
-from beamz.devices.modes.fields import _modal_power, _numeric_wave_number
-from beamz.devices.modes.line import prepare_mode_line, solve_mode_line
-from beamz.devices.modes.plane import (
+from beamz.devices.modes.spatial.discrete import solve_beamz_mode
+from beamz.devices.modes.spatial.fields import _modal_power, _numeric_wave_number
+from beamz.devices.modes.spatial.line import prepare_mode_line, solve_mode_line
+from beamz.devices.modes.spatial.plane import (
     bind_material_mode_plane,
     solve_modes,
 )
+from beamz.devices.sources.launch import planar_tfsf
+from beamz.devices.sources.solve import _require_cell_mode_materials
+from beamz.devices.sources.specs import FieldProfile3D, ModeSource
 from beamz.lattice import (
     common_grid_shape_3d,
     compile_yee_plane_quadrature_3d,
     yee_flux,
 )
-
-from . import planar_tfsf
-from .solve import _require_cell_mode_materials
-from .specs import FieldProfile3D, ModeSource
 
 logger = logging.getLogger(__name__)
 

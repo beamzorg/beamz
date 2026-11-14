@@ -10,7 +10,7 @@ import numpy as np
 from beamz.const import LIGHT_SPEED
 
 if TYPE_CHECKING:
-    from .discrete import ComponentIndex
+    from beamz.devices.modes.spatial.discrete import ComponentIndex
 
 _TANGENTIAL_COMPONENTS = {
     "x": ("Ey", "Ez", "Hz", "Hy"),

@@ -11,6 +11,15 @@ import jax.numpy as jnp
 import numpy as np
 
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
+from beamz.devices.sources.launch.mode_launch import (
+    Mode2DLaunchPlan,
+    Mode3DLaunchPlan,
+    ModeLaunchPlan,
+    plan_mode_source_launch,
+)
+from beamz.devices.sources.launch.planar_tfsf import (
+    compute_discrete_3d_phasor_residuals,
+)
 from beamz.lattice import (
     canonical_component_2d,
     component_axis_offsets_3d,
@@ -19,15 +28,6 @@ from beamz.lattice import (
     public_component_2d,
 )
 
-from .mode_launch import (
-    Mode2DLaunchPlan,
-    Mode3DLaunchPlan,
-    ModeLaunchPlan,
-    plan_mode_source_launch,
-)
-from .planar_tfsf import (
-    compute_discrete_3d_phasor_residuals,
-)
 from .specs import (
     CustomSource,
     FieldAxis3D,
@@ -446,7 +446,7 @@ def _lower_plane_wave_source(source: PlaneWaveSource, ctx: SourceLoweringContext
     times; no single-frequency phase approximation is used.
     """
     if any(source.transverse_wavevector):
-        from .bloch import lower_bloch_plane_wave
+        from beamz.devices.sources.launch.bloch import lower_bloch_plane_wave
 
         return lower_bloch_plane_wave(source, ctx)
     if not _source_requires_rectilinear_operator(ctx):

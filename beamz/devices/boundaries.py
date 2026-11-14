@@ -8,7 +8,7 @@ from typing import ClassVar
 import numpy as np
 
 from beamz.const import µm
-from beamz.devices._immutable import Replaceable
+from beamz.devices.common._immutable import Replaceable
 
 BoundaryEdges = tuple[str, ...] | str
 BoundaryAxes = tuple[str, ...] | str

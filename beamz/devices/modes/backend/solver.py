@@ -7,11 +7,19 @@ from typing import Literal, cast
 
 import numpy as np
 
-from ._bend import bend_materials
-from ._scipy import solve_diagonal_scipy_reference, solve_tensorial_scipy_reference
-from .constants import C_0
-from .models import BoundaryCondition, BoundarySpec, Materials, PmlSpec
-from .result import Result
+from beamz.devices.modes.backend._scipy import (
+    solve_diagonal_scipy_reference,
+    solve_tensorial_scipy_reference,
+)
+from beamz.devices.modes.backend.constants import C_0
+from beamz.devices.modes.models import (
+    BoundaryCondition,
+    BoundarySpec,
+    Materials,
+    PmlSpec,
+)
+from beamz.devices.modes.result import Result
+from beamz.devices.modes.support._bend import bend_materials
 
 _COMPONENTS = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
 

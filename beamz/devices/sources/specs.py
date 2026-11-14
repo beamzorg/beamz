@@ -8,7 +8,7 @@ from typing import Any, Literal, cast
 
 import numpy as np
 
-from beamz.devices._immutable import (
+from beamz.devices.common._immutable import (
     Replaceable,
     canonical_tuple,
     finite_tuple,

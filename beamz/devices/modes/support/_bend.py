@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .models import Materials
+from beamz.devices.modes.models import Materials
 
 
 def bend_materials(

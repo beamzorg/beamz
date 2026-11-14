@@ -11,8 +11,8 @@ BeamZ can own and validate the complete mode-source pipeline.
 
 The source-file mapping is:
 
-- `micromode/beamz.py` → `beamz/devices/modes/discrete.py`
-- `micromode/raster.py` → `beamz/devices/modes/solver.py`
+- `micromode/beamz.py` → `beamz/devices/modes/spatial/discrete.py`
+- `micromode/raster.py` → `beamz/devices/modes/backend/solver.py`
 - `micromode/scipy_reference.py` → `beamz/devices/modes/_scipy.py`
 - `micromode/yee.py` → `beamz/devices/modes/_yee.py`
 - result and option models were reduced to the fields used by BeamZ

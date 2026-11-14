@@ -7,7 +7,7 @@ from types import MappingProxyType
 import numpy as np
 
 from beamz.design.grid import GridAxis, RectilinearGrid
-from beamz.devices._immutable import readonly_array
+from beamz.devices.common._immutable import readonly_array
 
 _AXES = ("x", "y", "z")
 

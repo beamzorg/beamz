@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence
 
 import numpy as np
 
-from beamz.devices._immutable import (
+from beamz.devices.common._immutable import (
     Replaceable,
     finite_tuple,
     immutable_snapshot,

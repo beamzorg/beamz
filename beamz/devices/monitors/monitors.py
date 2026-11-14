@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from beamz._helpers import positive_integer
-from beamz.devices._immutable import (
+from beamz.devices.common._immutable import (
     Replaceable,
     finite_tuple,
     immutable_snapshot,
@@ -11,7 +11,7 @@ from beamz.devices._immutable import (
     readonly_1d_array,
     shifted_coordinates,
 )
-from beamz.devices._placement import (
+from beamz.devices.common._placement import (
     line_region_coordinates,
     plane_region_slices,
     snap_axis_aligned_line_region,
