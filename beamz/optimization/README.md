@@ -78,7 +78,7 @@ include radiation. Freeze a projector from an ordinary unnormalized run with a
 3D `ModeMonitor`; it uses the same mode basis as detached result analysis:
 
 ```python
-from beamz.optimization.modes import build_mode_projector
+from beamz.optimization.objectives.projection import build_mode_projector
 
 initial_result = simulation.run(backend="cuda")  # normalize_source=None
 project = build_mode_projector(initial_result, "output")
@@ -266,9 +266,10 @@ learning rate, objective/closures, penalties, schedules, and physical design.
 The former `TopologyProblem.run` and `TopologySpec`/`TopologyState` update workflow
 has been removed. Configure spatial transforms on the region, continuation on
 `OptimizationSchedule`, and Adam/SGD on `Optimizer`. Evolving parameters and
-optimizer state live only in `InverseDesignResult`. `autodiff.py`,
-`projections.py`, `topology.py`, and `polygonize.py` retain mathematical helpers for
-custom loops, including external optimizers that consume `value_and_grad`.
+optimizer state live only in `InverseDesignResult`. Mathematical helpers for
+custom loops live under `topology/` and `design/geometry/`, including transforms
+for external optimizers that consume `value_and_grad`. Legacy module imports
+remain available for existing integrations and saved optimization objects.
 
 ## Export topology to GDS
 

@@ -54,7 +54,11 @@
         "beamz/lattice.py",
         "beamz/devices/_boundary_compile.py",
         "beamz/devices/sources/planar_tfsf.py",
-        "beamz/optimization/autodiff.py",
+        "beamz/optimization/topology/filtering.py",
+        "beamz/optimization/topology/morphology.py",
+        "beamz/optimization/topology/transforms/conic.py",
+        "beamz/optimization/topology/transforms/density.py",
+        "beamz/optimization/topology/transforms/differentiation.py",
         "beamz/simulation/compile/physics.py"
       ]
     },

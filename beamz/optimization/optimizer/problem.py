@@ -1,4 +1,4 @@
-"""A complete fixed-grid topology optimization workflow."""
+"""Compiled fixed-grid topology optimization problem."""
 
 from __future__ import annotations
 
@@ -14,6 +14,12 @@ from beamz.const import LIGHT_SPEED
 from beamz.design.materials import Material
 from beamz.devices.monitors import FieldMonitor, ModeMonitor
 from beamz.devices.sources import GaussianBeamSource, ModeSource
+from beamz.optimization.design.region import DensityParameterization
+from beamz.optimization.design.validation import check_density
+from beamz.optimization.objectives.base import ModalObjective
+from beamz.optimization.objectives.composite import WeightedObjective
+from beamz.optimization.objectives.mode import ModePower
+from beamz.optimization.optimizer.runtime.identity import _legacy_checkpoint_token
 from beamz.simulation.api.differentiable import (
     TOPOLOGY_NUMERICS_VERSION,
     topology_coefficients,
@@ -26,10 +32,6 @@ from beamz.simulation.execute import (
     initial_program_state,
 )
 from beamz.simulation.results import SimulationResults
-
-from ._validation import check_density
-from .objectives import ModalObjective, ModePower, WeightedObjective
-from .region import DensityParameterization
 
 
 class CompiledDesignProblem:
@@ -125,7 +127,7 @@ class CompiledDesignProblem:
                 self.program, len(simulation.sources)
             ),
         )
-        cache = {}
+        cache: dict = {}
         reduce_objective = (
             objective.bind(empty_results, self.program, cache)
             if objective is not None
@@ -153,7 +155,7 @@ class CompiledDesignProblem:
         self._value_and_grad = jax.jit(jax.value_and_grad(evaluate))
         self._spectra = jax.jit(evaluate_spectra)
         self._simulate = jax.jit(simulate)
-        self._modal_data_bindings = {}
+        self._modal_data_bindings: dict = {}
         self._binding_results = empty_results
         self._projection_cache = cache
         self._spectral_adjoint = None
@@ -175,7 +177,9 @@ class CompiledDesignProblem:
                 adjoint_source_grouping,
             )
         )
-        self.fingerprint = hashlib.sha256(repr(token).encode()).hexdigest()
+        self.fingerprint = hashlib.sha256(
+            repr(_legacy_checkpoint_token(token)).encode()
+        ).hexdigest()
 
     def simulation_data(self, density, *, beta: float | None = 1.0, monitor_names=None):
         """Run and return differentiable ``data[name].amps.sel(...).values``.
@@ -185,7 +189,7 @@ class CompiledDesignProblem:
         the selected simulation derivative. This modal subset is not xarray and
         does not support arbitrary field-monitor or interpolation operations.
         """
-        from .data import bind_modal_data
+        from beamz.optimization.objectives.projection import bind_modal_data
 
         names = (
             tuple(monitor_names)

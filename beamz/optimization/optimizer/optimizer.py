@@ -1,137 +1,29 @@
-"""Density optimization and inspectable, non-pickle histories."""
+"""Optimizer configuration and resumable execution."""
 
 import hashlib
-import inspect
-import time
 import types
 from dataclasses import dataclass
 from typing import cast
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 
 from beamz._cache_tokens import cache_token
 from beamz.devices._immutable import readonly_array
+from beamz.optimization.design.initialization import FilterProject, Specification
+from beamz.optimization.design.masked import MaskedDesignRegion
+from beamz.optimization.design.spec import InverseDesign
+from beamz.optimization.design.validation import step_count
+from beamz.optimization.objectives.base import ModalObjective
+from beamz.optimization.optimizer.result import InverseDesignResult
+from beamz.optimization.optimizer.runtime.identity import (
+    _function_token,
+    _legacy_checkpoint_token,
+)
+from beamz.optimization.optimizer.runtime.load import load_result
+from beamz.optimization.optimizer.runtime.loop import _optimize
+from beamz.optimization.optimizer.schedules import OptimizationSchedule
 from beamz.simulation.api.differentiable import TOPOLOGY_NUMERICS_VERSION
-
-from ._validation import step_count
-from .design import InverseDesign
-from .objectives import ModalObjective
-from .region import FilterProject, MaskedDesignRegion, Specification
-from .result import InverseDesignResult, OptimizationStep, load_result
-from .schedules import OptimizationSchedule
-
-
-def _optimize(
-    result,
-    stop,
-    *,
-    evaluate,
-    optimizer,
-    settings,
-    parameter_mask=None,
-    evaluate_after=None,
-    snapshots=False,
-    score_sign=1,
-    checkpoint=None,
-    checkpoint_every=1,
-    callback=None,
-):
-    """Shared gradient/update/history loop for rectangular and arbitrary-mask designs."""
-    step_count(checkpoint_every, "checkpoint_every", minimum=1)
-    if stop < result.completed_steps:
-        raise ValueError("steps must be at least the number of completed steps.")
-    initial_steps = result.completed_steps
-    params = jnp.asarray(result.final_params)
-    # Checkpoints decode NumPy leaves; keep resumed arithmetic identical to live JAX state.
-    state = jax.tree.map(jnp.asarray, result.optimizer_state)
-    for index in range(result.completed_steps, stop):
-        start = time.perf_counter()
-        current = settings(index)
-        (score, (post, penalty)), gradient = evaluate(params, current)
-        if (
-            not np.isfinite([float(score), float(post), float(penalty)]).all()
-            or not np.isfinite(gradient).all()
-        ):
-            raise FloatingPointError("Nonfinite objective, penalty, or gradient.")
-        if parameter_mask is not None:
-            gradient = jnp.where(parameter_mask, gradient, 0)
-        updates, state = optimizer.update(-gradient, state, params)
-        updated = jnp.clip(params + cast(jax.Array, updates), 0, 1)
-        if parameter_mask is not None:
-            updated = jnp.where(parameter_mask, updated, params)
-        max_update = float(jnp.max(jnp.abs(updated - params)))
-        after = None if evaluate_after is None else evaluate_after(updated, current)
-        record = OptimizationStep(
-            index + 1,
-            cast(float | None, current.get("beta")),
-            float(score) * score_sign,
-            after,
-            float(np.linalg.norm(gradient)),
-            max_update,
-            time.perf_counter() - start,
-            float(post),
-            float(penalty),
-        )
-        params = updated
-        result = result._append(
-            params,
-            state,
-            record,
-            snapshots=snapshots,
-            gradient=gradient,
-        )
-        if checkpoint is not None and (
-            result.completed_steps % checkpoint_every == 0
-            or result.completed_steps == stop
-        ):
-            result.save(checkpoint)
-        if callback is not None:
-            callback(result)
-    if checkpoint is not None and result.completed_steps == initial_steps:
-        result.save(checkpoint)
-    return result
-
-
-def _function_token(function, seen=None):
-    """Include closure/configuration values, not merely a callable's name."""
-    seen = set() if seen is None else seen
-    if id(function) in seen:
-        return (function.__module__, function.__qualname__)
-    if not isinstance(function, types.FunctionType):
-        raise TypeError("For callable objects, supply objective_id.")
-    seen.add(id(function))
-
-    def token(value):
-        if isinstance(value, types.ModuleType):
-            return ("module", value.__name__)
-        if isinstance(value, types.FunctionType):
-            return (
-                _function_token(value, seen)
-                if value.__module__ == function.__module__
-                else cache_token(value)
-            )
-        if isinstance(value, types.CodeType):
-            return (
-                value.co_code.hex(),
-                tuple(token(v) for v in value.co_consts),
-                value.co_names,
-            )
-        return cache_token(value)
-
-    closure = inspect.getclosurevars(function)
-    return (
-        token(function.__code__),
-        token(function.__defaults__),
-        token(function.__kwdefaults__),
-        tuple(
-            sorted(
-                (name, token(value))
-                for name, value in {**closure.globals, **closure.nonlocals}.items()
-            )
-        ),
-    )
 
 
 @dataclass(frozen=True)
@@ -207,7 +99,9 @@ class Optimizer(Specification):
                 self.design.adjoint_source_grouping,
             )
         )
-        return hashlib.sha256(repr(token).encode()).hexdigest()
+        return hashlib.sha256(
+            repr(_legacy_checkpoint_token(token)).encode()
+        ).hexdigest()
 
     def run(
         self,

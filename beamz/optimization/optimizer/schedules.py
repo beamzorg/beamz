@@ -1,4 +1,4 @@
-"""Deterministic continuation schedules indexed by the absolute Adam step."""
+"""Deterministic continuation schedules."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -6,12 +6,14 @@ from types import MappingProxyType
 
 import numpy as np
 
-from ._validation import step_count as _step
-from .region import Specification
+from beamz.optimization.design.initialization import Specification
+from beamz.optimization.design.validation import step_count as _step
 
 
 @dataclass(frozen=True)
 class LinearSchedule(Specification):
+    """Interpolate between two values across a fixed number of steps."""
+
     start: float
     stop: float
     num_steps: int
@@ -29,6 +31,8 @@ class LinearSchedule(Specification):
 
 @dataclass(frozen=True)
 class StepSchedule(Specification):
+    """Switch between two values at an absolute optimization step."""
+
     before: float
     after: float
     switch_step: int

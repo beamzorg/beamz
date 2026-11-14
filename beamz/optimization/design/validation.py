@@ -1,4 +1,4 @@
-"""Validation shared by density APIs and optimizer continuation."""
+"""Validation of optimization inputs and density masks."""
 
 from numbers import Integral
 

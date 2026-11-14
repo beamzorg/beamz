@@ -1,4 +1,4 @@
-"""Shared atomic storage for numerical optimization checkpoints."""
+"""Non-pickle optimization checkpoint storage."""
 
 import json
 import os

@@ -169,7 +169,7 @@ def test_checkpoint_rejects_pre_merge_solver_numerics(
     design, tmp_path, monkeypatch, interface, previous_version
 ):
     if interface == "optimizer":
-        import beamz.optimization.optimizer as module
+        import beamz.optimization.optimizer.optimizer as module
 
         optimizer = bi.Optimizer(design, learning_rate=0.02)
         current = optimizer._fingerprint(transmission)
@@ -180,7 +180,7 @@ def test_checkpoint_rejects_pre_merge_solver_numerics(
         def load(path):
             return optimizer.load_result(path, transmission)
     else:
-        import beamz.optimization.optimizer as module
+        import beamz.optimization.optimizer.optimizer as module
 
         optimizer = make_optimizer(make_problem(), 3)
         current = optimizer._fingerprint(optimizer.design.objective)

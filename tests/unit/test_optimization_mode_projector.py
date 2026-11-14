@@ -10,7 +10,7 @@ import pytest
 
 import beamz as bz
 from beamz.analysis.mode_projection import _project_modal_coefficients_3d_group
-from beamz.optimization import modes
+from beamz.optimization.objectives import projection as modes
 
 
 @pytest.mark.parametrize("axis", ("x", "y", "z"))

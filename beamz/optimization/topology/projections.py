@@ -1,4 +1,4 @@
-"""Projection methods for topology optimization densities."""
+"""Density projection methods."""
 
 from functools import partial
 from typing import cast

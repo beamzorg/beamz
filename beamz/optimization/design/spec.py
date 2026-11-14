@@ -1,4 +1,4 @@
-"""User-defined objectives over differentiable simulation data."""
+"""Immutable inverse-design specification and evaluation."""
 
 from dataclasses import dataclass, field
 
@@ -8,11 +8,12 @@ import numpy as np
 from jax.core import Tracer
 
 from beamz.devices.monitors import ModeMonitor
+from beamz.optimization.design.initialization import Specification
+from beamz.optimization.design.masked import MaskedDesignRegion
+from beamz.optimization.design.region import TopologyDesignRegion
+from beamz.optimization.objectives.base import ModalObjective
+from beamz.optimization.optimizer.problem import CompiledDesignProblem
 from beamz.simulation.api import Simulation
-
-from .objectives import ModalObjective
-from .problem import CompiledDesignProblem
-from .region import MaskedDesignRegion, Specification, TopologyDesignRegion
 
 
 @dataclass(frozen=True)

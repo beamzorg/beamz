@@ -1,4 +1,4 @@
-"""Differentiable objectives sharing BeamZ's ordinary modal-analysis conventions."""
+"""Modal power and transmission objectives."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from numbers import Real
 
 import jax.numpy as jnp
 import numpy as np
-from jax.scipy.special import logsumexp
 
 from beamz.analysis.data import analysis_data
 from beamz.analysis.modal_projection.geometry import (
@@ -21,60 +20,8 @@ from beamz.analysis.mode_projection import (
 )
 from beamz.analysis.sparameters import _wave_selectors
 from beamz.devices.monitors import ModeMonitor
+from beamz.optimization.objectives.base import ModalObjective
 from beamz.simulation.results.observe import normalization_from_result
-
-
-class ModalObjective:
-    """Composable scalar modal objective; all optimization objectives are maximized.
-
-    Combine objectives with ``+``, ``-``, and multiplication by finite real weights.
-    For example, ``transmission - 0.2 * reflection`` rewards transmission while
-    penalizing reflection. A weighted combination uses one forward simulation.
-    Its derivative uses one autodiff reverse pass or frequency-grouped adjoint
-    simulations, according to the selected gradient backend.
-    """
-
-    def __add__(self, other):
-        if not isinstance(other, ModalObjective):
-            return NotImplemented
-        return WeightedObjective(
-            (*self.terms, *other.terms), (*self.weights, *other.weights)
-        )
-
-    def __radd__(self, other):
-        if isinstance(other, Real) and other == 0:
-            return self
-        return NotImplemented
-
-    def __mul__(self, weight):
-        if not isinstance(weight, Real):
-            return NotImplemented
-        if not np.isfinite(float(weight)):
-            raise ValueError("Objective weights must be finite.")
-        return WeightedObjective(
-            self.terms, tuple(float(weight) * w for w in self.weights)
-        )
-
-    __rmul__ = __mul__
-
-    def __neg__(self):
-        return self * -1.0
-
-    def __sub__(self, other):
-        if not isinstance(other, ModalObjective):
-            return NotImplemented
-        return self + (-other)
-
-    @property
-    def terms(self) -> tuple[ModePower, ...]:
-        raise NotImplementedError
-
-    @property
-    def weights(self) -> tuple[float, ...]:
-        raise NotImplementedError
-
-    def bind(self, results, program, cache=None):
-        raise NotImplementedError
 
 
 @dataclass(frozen=True)
@@ -313,78 +260,3 @@ class ModePower(ModalObjective):
 
         cache[key] = amplitude_spectrum
         return amplitude_spectrum
-
-
-@dataclass(frozen=True)
-class SoftMinModePower(ModePower):
-    """Smooth lower bound on the weakest selected modal transmission.
-
-    Reduce the normalized spectrum ``p`` as
-    ``-temperature * logsumexp(-p / temperature)``. For N frequencies this
-    lies between ``min(p) - temperature * log(N)`` and ``min(p)``. There is
-    no division by N inside the logarithm. A smaller temperature focuses the
-    derivative more strongly on the weakest frequencies. ``spectra`` still
-    returns the unreduced physical powers.
-    """
-
-    temperature: float = 0.03
-
-    def __post_init__(self):
-        super().__post_init__()
-        if (
-            isinstance(self.temperature, bool)
-            or not isinstance(self.temperature, Real)
-            or not np.isfinite(self.temperature)
-            or self.temperature <= 0
-        ):
-            raise ValueError("temperature must be a finite positive scalar.")
-        object.__setattr__(self, "temperature", float(self.temperature))
-
-    def _reduce(self, values):
-        return -self.temperature * logsumexp(-values / self.temperature)
-
-
-@dataclass(frozen=True, init=False)
-class WeightedObjective(ModalObjective):
-    """A weighted sum of reduced modal powers, evaluated in one FDTD solve.
-
-    Negative weights penalize unwanted powers. Weights are not automatically
-    normalized, and no power values are clipped. Usually construct this through
-    objective arithmetic, e.g. ``0.5 * (short_to_top + long_to_bottom) - leakage``.
-    """
-
-    _terms: tuple[ModePower, ...]
-    _weights: tuple[float, ...]
-
-    def __init__(self, terms, weights):
-        terms, weights = tuple(terms), tuple(float(w) for w in weights)
-        if not terms or not all(isinstance(t, ModePower) for t in terms):
-            raise ValueError("WeightedObjective requires nonempty ModePower terms.")
-        if len(terms) != len(weights) or not np.isfinite(weights).all():
-            raise ValueError("Objective weights must be finite and match the terms.")
-        object.__setattr__(self, "_terms", terms)
-        object.__setattr__(self, "_weights", weights)
-
-    @property
-    def terms(self):
-        return self._terms
-
-    @property
-    def weights(self):
-        return self._weights
-
-    def __call__(self, data):
-        return jnp.sum(
-            jnp.asarray(self.weights) * jnp.stack([term(data) for term in self.terms])
-        )
-
-    def canonical_spec(self):
-        return self.terms, self.weights
-
-    def bind(self, results, program, cache=None):
-        cache = {} if cache is None else cache
-        objectives = [term.bind(results, program, cache) for term in self.terms]
-        weights = jnp.asarray(self.weights)
-        return lambda state: jnp.sum(
-            weights * jnp.stack([objective(state) for objective in objectives])
-        )

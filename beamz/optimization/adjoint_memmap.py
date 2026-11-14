@@ -35,7 +35,7 @@ class ForwardFieldChunkWriter:
         self.path = Path(config.directory)
         self.path.mkdir(parents=True, exist_ok=True)
 
-        self._buffers = {name: [] for name in field_names}
+        self._buffers: dict[str, list[np.ndarray]] = {name: [] for name in field_names}
         self._chunk_lengths: list[int] = []
 
     def append(self, fields: dict[str, np.ndarray]):
