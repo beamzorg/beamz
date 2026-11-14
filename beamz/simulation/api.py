@@ -2,36 +2,40 @@
 
 from __future__ import annotations
 
-import os
-from collections import Counter, OrderedDict
+# Retain the names available from this module before its implementation was split.
+import os as os
+from collections import Counter as Counter
+from collections import OrderedDict
 from collections.abc import Sequence
-from dataclasses import dataclass, field, fields, replace
-from importlib import import_module
+from dataclasses import dataclass, field, fields
+from dataclasses import replace as replace
+from importlib import import_module as import_module
 from typing import Any, Literal
 
 import numpy as np
 
 from beamz._cache_tokens import cache_token
-from beamz._helpers import env_bool, positive_float
+from beamz._helpers import env_bool as env_bool
+from beamz._helpers import positive_float
 
 # ``Simulation`` is an immutable specification; explicit ``SimulationState`` values
 # carry all mutable runtime data.
 from beamz.const import µm
 from beamz.design.core import Design
-from beamz.design.discretization import MaterialGrid, build_material_grid
+from beamz.design.discretization import MaterialGrid
+from beamz.design.discretization import build_material_grid as build_material_grid
 from beamz.design.grid import RectilinearGrid
 from beamz.design.grid_spec import (
     GridSpec,
-    _realize_uniform_grid,
-    _validate_grid_budget,
 )
-from beamz.design.materials import Material, MaterialProtocol
-from beamz.design.structures import Box
+from beamz.design.materials import Material as Material
+from beamz.design.materials import MaterialProtocol as MaterialProtocol
+from beamz.design.structures import Box as Box
 from beamz.devices.boundaries import (
     normalize_boundaries,
-    periodic_storage_axes,
     validate_boundary_compatibility,
 )
+from beamz.devices.boundaries import periodic_storage_axes as periodic_storage_axes
 from beamz.devices.monitors.monitors import (
     FieldMonitor,
     FieldRecorder,
@@ -39,536 +43,78 @@ from beamz.devices.monitors.monitors import (
     ModeMonitor,
     _Monitor,
 )
-from beamz.devices.sources import (
-    CANONICAL_SOURCE_TYPES,
-    GaussianBeamSource,
-    PlaneWaveSource,
-)
+from beamz.devices.sources import CANONICAL_SOURCE_TYPES as CANONICAL_SOURCE_TYPES
+from beamz.devices.sources import GaussianBeamSource as GaussianBeamSource
+from beamz.devices.sources import PlaneWaveSource as PlaneWaveSource
+from beamz.lattice import grid_vector_to_physical_2d as grid_vector_to_physical_2d
+from beamz.lattice import in_plane_vector_2d as in_plane_vector_2d
 from beamz.lattice import (
-    grid_vector_to_physical_2d,
-    in_plane_vector_2d,
     normalize_polarization_2d,
-    physical_vector_to_grid_2d,
 )
+from beamz.lattice import physical_vector_to_grid_2d as physical_vector_to_grid_2d
 from beamz.simulation.compile import CompiledProgramKey as CompiledProgramKey
 from beamz.simulation.compile import (
     _resolved_setup_device_context as _resolved_setup_device_context,
 )
-from beamz.simulation.compile import clear_program_cache, compile_program
+from beamz.simulation.compile import clear_program_cache as clear_program_cache
+from beamz.simulation.compile import compile_program as compile_program
 from beamz.simulation.compile import compile_simulation as compile_simulation
-from beamz.simulation.compile import simulation_memory_estimate as memory_estimate
+from beamz.simulation.compile import (
+    simulation_memory_estimate as memory_estimate,  # noqa: F401, F811
+)
+from beamz.simulation.execute import clear_execution_cache as clear_execution_cache
 from beamz.simulation.execute import (
-    clear_execution_cache,
-    execute_step,
-    run_simulation_program,
-    run_until_terminated,
+    compiled_xla_memory_analysis as analyze_compiled_xla_memory,  # noqa: F401
 )
-from beamz.simulation.execute import (
-    compiled_xla_memory_analysis as analyze_compiled_xla_memory,
-)
-from beamz.simulation.model import (
-    AutoTermination,
-    CompiledProgram,
-    DomainSpec,
-    RunConfig,
-    SimulationRequest,
-    SimulationState,
-)
-from beamz.simulation.preparation_trace import trace_preparation
+from beamz.simulation.execute import execute_step as execute_step
+from beamz.simulation.execute import run_simulation_program as run_simulation_program
+from beamz.simulation.execute import run_until_terminated as run_until_terminated
+from beamz.simulation.model import AutoTermination as AutoTermination
+from beamz.simulation.model import CompiledProgram as CompiledProgram
+from beamz.simulation.model import DomainSpec as DomainSpec
+from beamz.simulation.model import RunConfig as RunConfig
+from beamz.simulation.model import SimulationRequest as SimulationRequest
+from beamz.simulation.model import SimulationState as SimulationState
+from beamz.simulation.preparation_trace import trace_preparation as trace_preparation
 from beamz.simulation.results import MonitorResults as MonitorResults
 from beamz.simulation.results import SimulationResults as SimulationResults
 from beamz.simulation.results import SimulationRun as SimulationRun
-from beamz.simulation.sharding import normalize_sharding_config
+from beamz.simulation.sharding import (
+    normalize_sharding_config as normalize_sharding_config,
+)
+
+from .api_parts.configuration import _SimulationConfiguration
+from .api_parts.execution import _SimulationExecution
+from .api_parts.preparation import (  # noqa: F401
+    _analysis_function,
+    _design_depth,
+    _design_domain,
+    _design_is_3d,
+    _devices_require_uniform_grid,
+    _material_index,
+    _max_index_for_specs,
+    _normalize_devices,
+    _normalize_domain,
+    _normalize_plane_2d,
+    _normalize_time,
+    _prepare_design,
+    _prepare_material_grid,
+    _rasterize_scene_for_simulation,
+    _resolve_design_time_and_grid,
+    _resolve_grid_resolution,
+    _resolve_setup_device,
+    _resolved_raster_options,
+    _setup_device_policy_label,
+    _shift_device_to_domain,
+    _shift_grid_spec_to_domain,
+    _structure_to_domain,
+    _time_from_run_time,
+)
+from .api_parts.presentation import _SimulationPresentation
 
 _MONITOR_TYPES = (FieldMonitor, FieldRecorder, FluxMonitor, ModeMonitor)
 _MAX_MATERIAL_GRIDS = 4
-_MATERIAL_GRID_CACHE = OrderedDict()
-
-
-def _analysis_function(module: str, name: str):
-    """Resolve analysis lazily so solver imports remain dependency-safe."""
-    return getattr(import_module(f"beamz.analysis.{module}"), name)
-
-
-def _design_depth(design) -> float:
-    return float(design.depth)
-
-
-def _design_domain(design):
-    # Assemble extents in public x/y/z order rather than the z/y/x array-storage order.
-    return (float(design.width), float(design.height), _design_depth(design))
-
-
-def _design_is_3d(design) -> bool:
-    return bool(design.is_3d)
-
-
-def _normalize_domain(domain, size):
-    # Collapse flexible public inputs here so internal code handles one validated representation.
-    if domain is not None and size is not None and tuple(domain) != tuple(size):
-        raise ValueError("Pass only one of domain=... or size=....")
-    sim_size = size if domain is None else domain
-    if sim_size is None:
-        return None
-    sim_size = tuple(float(v) for v in sim_size)
-    if len(sim_size) == 2:
-        sim_size = (sim_size[0], sim_size[1], 0.0)
-    if len(sim_size) != 3:
-        raise ValueError("Simulation size must be a 2D or 3D tuple.")
-    return sim_size
-
-
-def _structure_to_domain(structure, offset, domain_size):
-    # Clip infinite boxes to the finite simulation domain before shifting centered geometry.
-    if structure.shape_kind == "box":
-        if any(not np.isfinite(v) for v in structure.size):
-            structure = Box(
-                center=structure.center,
-                size=tuple(
-                    float(d) if not np.isfinite(s) else min(float(s), float(d))
-                    for s, d in zip(structure.size, domain_size, strict=True)
-                ),
-                material=structure.material,
-            )
-        return structure.to_rectangle(offset=offset, material=structure.material)
-    return structure.shift(*offset)
-
-
-def _shift_device_to_domain(device, offset, *, plane_2d):
-    # Simulation domains always use public xyz offsets. A 2D Gaussian source
-    # intentionally stores only its in-plane position, so lower the offset at
-    # this domain-normalization boundary rather than widening its standalone API.
-    position = getattr(device, "position", None)
-    if position is not None and len(position) == 2 and len(offset) == 3:
-        offset = in_plane_vector_2d(offset, plane_2d)
-    return device.shifted(offset)
-
-
-def _material_index(material) -> float:
-    # Use the largest real permittivity to obtain a conservative index for grid resolution.
-    if not isinstance(material, MaterialProtocol):
-        raise TypeError("Simulation materials must satisfy MaterialProtocol.")
-    eps = material.max_permittivity
-    if eps is None:
-        raise ValueError(
-            "GridSpec.auto requires materials with finite max_permittivity."
-        )
-    return float(np.sqrt(max(float(np.max(np.real(np.asarray(eps)))), 1.0)))
-
-
-def _max_index_for_specs(background, structures) -> float:
-    # Include background and every structure so automatic meshing resolves the worst case.
-    materials = [s.material for s in structures or ()]
-    return max(_material_index(m) for m in (background, *materials) if m is not None)
-
-
-def _resolve_grid_resolution(grid_spec, background, structures) -> float:
-    if grid_spec.resolution is not None:
-        resolution = grid_spec._target_spacing()
-    else:
-        resolution = grid_spec._target_spacing(
-            max_index=_max_index_for_specs(background, structures)
-        )
-    return positive_float(resolution, name="Simulation resolution")
-
-
-def _devices_require_uniform_grid(sources, monitors) -> bool:
-    """Return whether current device operators require isotropic spacing."""
-    del monitors
-    return any(
-        isinstance(source, GaussianBeamSource)
-        and not isinstance(source, PlaneWaveSource)
-        for source in sources or ()
-    )
-
-
-def _normalize_plane_2d(plane) -> str:
-    if not isinstance(plane, str):
-        raise TypeError("plane_2d must be 'xy', 'yz', or 'xz'.")
-    plane = plane.lower()
-    if plane not in {"xy", "yz", "xz"}:
-        raise ValueError("plane_2d must be 'xy', 'yz', or 'xz'.")
-    return plane
-
-
-def _time_from_run_time(time, run_time, grid_spec, resolution, dims):
-    # Preserve an explicit time grid; otherwise derive a stable step and include the endpoint.
-    if time is not None or run_time is None:
-        return time
-    spec = grid_spec
-    if spec is None:
-        representative = (
-            resolution.minimum_spacing
-            if hasattr(resolution, "minimum_spacing")
-            else resolution
-        )
-        spec = GridSpec.uniform(representative)
-    dt = spec.resolve_time_step(resolution, dims=dims)
-    return np.arange(0.0, float(run_time) + 0.5 * dt, dt)
-
-
-def _resolve_design_time_and_grid(
-    design,
-    *,
-    grid_spec,
-    resolution,
-    time,
-    run_time,
-    require_uniform_grid=False,
-):
-    # Compute and cache the authoritative setup value so later stages do not repeat expensive work.
-    use_realized_grid = bool(
-        grid_spec is not None and grid_spec.is_automatic and not require_uniform_grid
-    )
-    if use_realized_grid:
-        assert grid_spec is not None
-        grid = grid_spec.realize(design)
-        resolution = grid.minimum_spacing
-    else:
-        if grid_spec is not None:
-            resolution = _resolve_grid_resolution(
-                grid_spec, design.background, list(design.structures)
-            )
-        grid = (
-            grid_spec.realize(design)
-            if grid_spec is not None and not grid_spec.is_automatic
-            else _realize_uniform_grid(design, resolution, spec=grid_spec)
-        )
-    dims = 3 if _design_is_3d(design) else 2
-    if grid_spec is not None:
-        grid = _validate_grid_budget(grid, grid_spec, dimensions=dims)
-    time = _time_from_run_time(time, run_time, grid_spec, grid, dims)
-    return resolution, grid, time, use_realized_grid
-
-
-def _shift_grid_spec_to_domain(grid_spec, offset):
-    """Translate public mesh constraints with their geometry and devices."""
-    return replace(
-        grid_spec,
-        overrides=tuple(
-            replace(
-                item,
-                center=tuple(
-                    value + delta
-                    for value, delta in zip(item.center, offset, strict=True)
-                ),
-            )
-            for item in grid_spec.overrides
-        ),
-        snapping_points=tuple(
-            tuple(
-                None if value is None else value + delta
-                for value, delta in zip(point, offset, strict=True)
-            )
-            for point in grid_spec.snapping_points
-        ),
-    )
-
-
-def _prepare_design(
-    design,
-    *,
-    domain,
-    size,
-    background,
-    grid_spec,
-    resolution,
-    time,
-    run_time,
-    require_uniform_grid,
-    plane_2d,
-):
-    # 1. Resolve the optional domain/size alias. An already domain-based design can keep its coordinates and only needs grid/time normalization.
-    sim_size = _normalize_domain(domain, size)
-    if design is not None and not isinstance(design, Design):
-        raise TypeError("Simulation design must be a canonical Design.")
-    offset = (0.0, 0.0, 0.0)
-    if design is None or (sim_size is not None and design._centered_coordinates):
-        # 2. A centered-coordinate design or explicit size must be converted into Beamz's
-        # positive-domain coordinate system; reject the request when neither form is present.
-        if sim_size is None:
-            raise ValueError("Simulation requires either design=... or domain=....")
-        design_structures = list(design.structures) if design is not None else []
-        source_structures = design_structures
-        background = background or (
-            design.background if design is not None else Material(1.0)
-        )
-        offset = (0.5 * sim_size[0], 0.5 * sim_size[1], 0.5 * sim_size[2])
-        # 3. Rebuild the design at the requested domain size and translate every structure by the half-domain offset so its physical placement is preserved.
-        new_design = Design(
-            width=sim_size[0],
-            height=sim_size[1],
-            depth=sim_size[2],
-            background=background,
-        )
-        for structure in source_structures:
-            new_design += _structure_to_domain(structure, offset, sim_size)
-        if grid_spec is not None:
-            # Mesh requests use the same public coordinates as geometry and devices.
-            grid_spec = replace(
-                grid_spec,
-                overrides=tuple(
-                    replace(
-                        item,
-                        center=tuple(
-                            value + delta
-                            for value, delta in zip(item.center, offset, strict=True)
-                        ),
-                    )
-                    for item in grid_spec.overrides
-                ),
-                snapping_points=tuple(
-                    tuple(
-                        None if value is None else value + delta
-                        for value, delta in zip(point, offset, strict=True)
-                    )
-                    for point in grid_spec.snapping_points
-                ),
-            )
-        design = new_design
-    # Resolve grid/time once after any centered-domain translation.
-    resolution, grid, time, use_realized_grid = _resolve_design_time_and_grid(
-        design,
-        grid_spec=grid_spec,
-        resolution=resolution,
-        time=time,
-        run_time=run_time,
-        require_uniform_grid=require_uniform_grid,
-    )
-    public_offset = (
-        offset if design.is_3d else grid_vector_to_physical_2d(offset, plane_2d)
-    )
-    return design, resolution, grid, time, public_offset, use_realized_grid
-
-
-def _prepare_material_grid(
-    material_grid,
-    *,
-    design,
-    domain,
-    size,
-    background,
-    grid_spec,
-    raster_options,
-    time,
-    run_time,
-    plane_2d,
-):
-    """Create domain metadata for an already rasterized solver grid."""
-
-    if not isinstance(material_grid, MaterialGrid):
-        raise TypeError("Simulation material_grid must be a MaterialGrid.")
-    if design is not None:
-        raise ValueError("Pass either design=... or material_grid=..., not both.")
-    if background is not None:
-        raise ValueError("background cannot be combined with material_grid.")
-    if grid_spec is not None:
-        raise ValueError(
-            "grid_spec cannot be combined with material_grid; the grid has "
-            "already been rasterized."
-        )
-    if raster_options is not None:
-        raise ValueError(
-            "raster_options cannot be combined with material_grid; smoothing has "
-            "already been applied."
-        )
-
-    assert material_grid.grid is not None
-    inferred_size = (
-        material_grid.grid.extent
-        if len(material_grid.shape) == 3
-        else (*material_grid.grid.extent[:2], 0.0)
-    )
-    requested_size = _normalize_domain(domain, size)
-    if requested_size is not None and not np.allclose(
-        requested_size,
-        inferred_size,
-        rtol=32.0 * np.finfo(float).eps,
-        atol=0.0,
-    ):
-        raise ValueError(
-            "Simulation domain/size must match the material_grid grid extents."
-        )
-
-    metadata_design = Design(
-        width=inferred_size[0],
-        height=inferred_size[1],
-        depth=inferred_size[2],
-        background=Material(1.0),
-    )
-    dimensions = 3 if len(material_grid.shape) == 3 else 2
-    resolved_time = _time_from_run_time(
-        time,
-        run_time,
-        None,
-        material_grid.grid,
-        dimensions,
-    )
-    origin = material_grid.grid.origin
-    grid_offset = (-float(origin[0]), -float(origin[1]), -float(origin[2]))
-    offset = (
-        grid_offset
-        if dimensions == 3
-        else grid_vector_to_physical_2d(grid_offset, plane_2d)
-    )
-    return (
-        metadata_design,
-        material_grid.resolution,
-        material_grid.grid,
-        resolved_time,
-        offset,
-        False,
-    )
-
-
-def _resolved_raster_options(
-    options, sources, *, boundaries=(), is_3d=True, plane_2d="xy"
-):
-    """Resolve source frequency and periodic raster topology from the simulation."""
-    from beamz.design.raster import RasterOptions
-
-    if options is None:
-        options = RasterOptions()
-    if not isinstance(options, RasterOptions):
-        raise TypeError("raster_options must be RasterOptions or None.")
-    if options.reference_frequency is None:
-        frequencies = [
-            getattr(getattr(s, "source_time", None), "freq0", None)
-            for s in (() if sources is None else sources)
-        ]
-        positive = [
-            float(f) for f in frequencies if f is not None and np.isfinite(f) and f > 0
-        ]
-        if positive:
-            options = replace(options, reference_frequency=float(np.mean(positive)))
-    storage_axes = periodic_storage_axes(boundaries, is_3d=is_3d, plane_2d=plane_2d)
-    axes = "zyx" if is_3d else "yx"
-    return replace(options, periodic_axes=tuple(axes[i] for i in sorted(storage_axes)))
-
-
-def _rasterize_scene_for_simulation(
-    scene,
-    raster_grid,
-    raster_options,
-    polarization: Literal["tm", "te"],
-    *,
-    sources=None,
-    boundaries=(),
-    plane_2d="xy",
-):
-    """Convert an imported scene into the same solver grid used by Design."""
-
-    from beamz.design.raster import Grid, Scene
-
-    if not isinstance(scene, Scene):
-        raise TypeError("Simulation scene must be a raster Scene.")
-    if not isinstance(raster_grid, Grid):
-        raise TypeError("Simulation raster_grid must be a raster Grid.")
-    dimensions = 2 if raster_grid.shape[2] == 1 else 3
-    options = _resolved_raster_options(
-        raster_options,
-        sources,
-        boundaries=boundaries,
-        is_3d=dimensions == 3,
-        plane_2d=plane_2d,
-    )
-    if dimensions == 3 and polarization != "tm":
-        raise ValueError("polarization applies only to 2D simulations.")
-    from beamz.design.dispersion import PoleResidue
-
-    has_dispersion = any(isinstance(m, PoleResidue) for m in scene.materials)
-    options = replace(
-        options,
-        components=(f"two_dimensional_{polarization}" if dimensions == 2 else "all"),
-    )
-    material_grid = MaterialGrid.from_raster_result(
-        scene.rasterize(raster_grid, options=options),
-        dimensions=dimensions,
-        polarization=polarization,
-    )
-    if has_dispersion:
-        from beamz.design.raster.dispersion import rasterize_dispersion
-
-        regions, interfaces = rasterize_dispersion(
-            scene,
-            raster_grid,
-            kind="3d" if dimensions == 3 else "2d",
-            polarization=polarization,
-            quality=options.quality,
-            resolution=material_grid.resolution,
-            cache_directory=None,
-            smoothing=options.smoothing,
-            metal_smoothing=options.metal_smoothing,
-            reference_frequency=options.reference_frequency,
-            periodic_axes=options.periodic_axes,
-        )
-        material_grid = replace(
-            material_grid, dispersion=regions, dispersion_interfaces=interfaces
-        )
-    return material_grid
-
-
-def _setup_device_policy_label(policy) -> str:
-    # An explicit argument overrides the environment; both become one normalized label later.
-    return os.getenv("BEAMZ_SETUP_DEVICE", "auto") if policy is None else str(policy)
-
-
-def _resolve_setup_device(policy):
-    # Resolve policy once; allocation failures must surface in the setup context.
-    normalized = policy.strip().lower()
-    if normalized not in {"auto", "cpu", "default"}:
-        raise ValueError(f"setup_device must be auto, cpu, or default, got {policy!r}.")
-    return (
-        "cpu"
-        if normalized == "cpu"
-        or (normalized == "auto" and env_bool("BEAMZ_SETUP_CPU", False))
-        else "default"
-    )
-
-
-def _normalize_devices(*, sources, monitors):
-    def dedupe(devices, *, expected_types, kind):
-        # Deduplicate by identity, not equality, because equal devices may be intentional repeats.
-        seen, out = set(), []
-        for device in devices:
-            if type(device) not in expected_types:
-                expected = ", ".join(cls.__name__ for cls in expected_types)
-                raise TypeError(
-                    f"Simulation {kind} must use canonical immutable device types "
-                    f"({expected}); got {type(device).__name__}."
-                )
-            if id(device) not in seen:
-                seen.add(id(device))
-                out.append(device)
-        return out
-
-    # Normalize both collections through the same identity/type policy before name checks.
-    sources = dedupe(sources, expected_types=CANONICAL_SOURCE_TYPES, kind="sources")
-    monitors = dedupe(monitors, expected_types=_MONITOR_TYPES, kind="monitors")
-    duplicates = sorted(
-        name for name, count in Counter(m.name for m in monitors).items() if count > 1
-    )
-    if duplicates:
-        raise ValueError(f"Duplicate monitor names: {', '.join(duplicates)}.")
-    return tuple(sources), tuple(monitors)
-
-
-def _normalize_time(time):
-    # Collapse flexible public inputs here so internal code handles one validated representation.
-    if time is None:
-        raise ValueError("Simulation requires time=... or run_time=....")
-    values = np.array(time, dtype=float, copy=True)
-    if values.ndim != 1 or values.size < 2:
-        raise ValueError("FDTD requires a 1D time array with at least two entries")
-    steps = np.diff(values)
-    if not np.all(np.isfinite(values)) or np.any(steps <= 0.0):
-        raise ValueError(
-            "Simulation time values must be finite and strictly increasing"
-        )
-    if not np.allclose(steps, steps[0], rtol=1e-7, atol=0.0):
-        raise ValueError("Simulation time values must be uniformly spaced")
-    values.setflags(write=False)
-    return values
+_MATERIAL_GRID_CACHE: OrderedDict[Any, Any] = OrderedDict()
 
 
 @dataclass(frozen=True, init=False, eq=False)
@@ -920,913 +466,40 @@ class Simulation:
         # Hash the same canonical specification used by equality to preserve the hash contract.
         return hash(cache_token(self.canonical_spec()))
 
-    def updated_copy(self, **changes):
-        """Return a validated simulation with selected fields replaced.
+    updated_copy = _SimulationConfiguration.updated_copy
 
-        Parameters
-        ----------
-        **changes : object
-            Any supported constructor field, including ``design``, ``sources``,
-            ``monitors``, ``boundaries``, ``resolution``, ``time``, ``plane_2d``,
-            ``grid_spec``, ``run_time``, ``setup_device``, and
-            ``normalize_source``, ``material_grid``, and ``raster_options``.
+    _material_grid = _SimulationConfiguration._material_grid
 
-        Returns
-        -------
-        Simulation
-            A new immutable specification. The original simulation is unchanged.
+    _material_grid_token = _SimulationConfiguration._material_grid_token
 
-        Raises
-        ------
-        TypeError
-            If a replacement key is not a supported simulation field.
-        ValueError
-            If the reconstructed configuration violates a simulation invariant.
+    pml_data = _SimulationConfiguration.pml_data
 
-        Examples
-        --------
-        >>> longer = sim.updated_copy(time=np.arange(200) * sim.dt)
-        >>> raw = sim.updated_copy(normalize_source=None)
+    initial_state = _SimulationExecution.initial_state
 
-        Notes
-        -----
-        Replacement goes through the normal constructor validation and therefore
-        produces independent compilation-cache identity when numerical inputs change.
-        """
-        values = {
-            item.name: getattr(self, item.name)
-            for item in fields(self)
-            if item.init and item.compare
-        }
-        values["setup_device"] = self.setup_device_policy
-        del values["setup_device_policy"]
-        values["design"] = None if self.material_grid is not None else self.design
-        allowed = values.keys()
-        unknown = set(changes) - allowed
-        if unknown:
-            raise TypeError(
-                f"Unknown Simulation field(s): {', '.join(sorted(unknown))}."
-            )
-        # 2. Preserve the existing coordinate translation unless the design itself changes; replacement devices must be shifted into that normalized domain.
-        material_source_changed = "design" in changes or "material_grid" in changes
-        offset = (0.0, 0.0, 0.0) if material_source_changed else self.coordinate_offset
-        if offset != (0.0, 0.0, 0.0):
-            for name in ("sources", "monitors"):
-                if name in changes:
-                    changes[name] = tuple(
-                        _shift_device_to_domain(value, offset, plane_2d=self.plane_2d)
-                        for value in changes[name] or ()
-                    )
-        values.update(changes)
-        if "design" in changes and "material_grid" not in changes:
-            values["material_grid"] = None
-        if "material_grid" in changes and "design" not in changes:
-            values["design"] = None
-            if changes["material_grid"] is not None and "raster_options" not in changes:
-                values["raster_options"] = None
-        if self.material_grid is not None:
-            inverse_offset = tuple(-value for value in self.coordinate_offset)
-            for name in ("sources", "monitors"):
-                if material_source_changed and name in changes:
-                    continue
-                values[name] = tuple(
-                    _shift_device_to_domain(
-                        value, inverse_offset, plane_2d=self.plane_2d
-                    )
-                    for value in values[name] or ()
-                )
-        # 4. Keep the two mutually exclusive time specifications mutually
-        # exclusive during reconstruction. A simulation originally created from
-        # run_time must regenerate its time grid when other fields change (for
-        # example, resolution can change dt). An explicit replacement time grid
-        # takes precedence over the stored run_time convenience specification.
-        if "time" in changes and "run_time" not in changes:
-            values["run_time"] = None
-        elif "time" not in changes and (
-            "run_time" in changes or self.run_time is not None
-        ):
-            values["time"] = None
-        public_grid_spec = values["grid_spec"]
-        if (
-            self.material_grid is None
-            and not material_source_changed
-            and public_grid_spec is not None
-            and offset != (0.0, 0.0, 0.0)
-        ):
-            # The retained design is already in domain coordinates, while mesh
-            # requests remain in public coordinates, just like replacement devices.
-            grid_offset = (
-                offset
-                if self.is_3d
-                else physical_vector_to_grid_2d(offset, self.plane_2d)
-            )
-            values["grid_spec"] = _shift_grid_spec_to_domain(
-                public_grid_spec, grid_offset
-            )
-        result = type(self)(**values)
-        # Keep constraints public so subsequent copies translate them exactly once.
-        object.__setattr__(result, "grid_spec", public_grid_spec)
-        if self.material_grid is None and not material_source_changed:
-            preserved_offset = offset
-            target_plane = str(values["plane_2d"])
-            if not self.is_3d and target_plane != self.plane_2d:
-                preserved_offset = grid_vector_to_physical_2d(
-                    physical_vector_to_grid_2d(offset, self.plane_2d), target_plane
-                )
-            object.__setattr__(result, "coordinate_offset", preserved_offset)
-        return result
+    step = _SimulationExecution.step
 
-    @trace_preparation("material_grid")
-    def _material_grid(self, *, progress: bool = False):
-        """Return Design's immutable cell-centered material raster."""
-        if self.material_grid is not None:
-            return self.material_grid
-        token = self._material_grid_token()
-        cached = _MATERIAL_GRID_CACHE.get(token)
-        if cached is None:
-            options = _resolved_raster_options(
-                self.raster_options,
-                self.sources,
-                boundaries=self.boundaries,
-                is_3d=self.is_3d,
-                plane_2d=self.plane_2d,
-            )
-            raster_kwargs = {
-                "quality": options.quality,
-                "smoothing": options.smoothing,
-                "metal_smoothing": options.metal_smoothing,
-                "reference_frequency": options.reference_frequency,
-                "periodic_axes": options.periodic_axes,
-            }
-            with _resolved_setup_device_context(self.setup_device_resolved):
-                cached = build_material_grid(
-                    self.design,
-                    self.grid if self._uses_realized_grid else self.resolution,
-                    progress=progress,
-                    polarization=self.polarization,
-                    **raster_kwargs,
-                )
-            _MATERIAL_GRID_CACHE[token] = cached
-            if len(_MATERIAL_GRID_CACHE) > _MAX_MATERIAL_GRIDS:
-                _MATERIAL_GRID_CACHE.popitem(last=False)
-        else:
-            _MATERIAL_GRID_CACHE.move_to_end(token)
-        return cached
+    to_request = _SimulationExecution.to_request
 
-    def _material_grid_token(self):
-        """Hash only values that change Design's cell-centered raster."""
-        if self.material_grid is not None:
-            return cache_token(self.material_grid)
-        design = self.design
-        return cache_token(
-            (
-                self.resolution,
-                self.grid,
-                design.width,
-                design.height,
-                design.depth,
-                design.background,
-                design.structures,
-                _resolved_raster_options(
-                    self.raster_options,
-                    self.sources,
-                    boundaries=self.boundaries,
-                    is_3d=self.is_3d,
-                    plane_2d=self.plane_2d,
-                ),
-                self.polarization,
-            )
-        )
+    compile = _SimulationExecution.compile
 
-    @property
-    def pml_data(self):
-        """Return compiled absorber profiles for the current lattice.
+    differentiable = _SimulationExecution.differentiable
 
-        Returns
-        -------
-        mapping or None
-            Grid-aligned PML/absorber coefficient arrays, or ``None`` when no
-            absorber profile is present.
+    clear_compiled_cache = _SimulationExecution.clear_compiled_cache
 
-        Notes
-        -----
-        Accessing this property may rasterize and compile the simulation. It is
-        intended for diagnostics; normal execution does not require it.
-        """
-        return self.compile().grid.pml_data
+    memory_estimate = _SimulationExecution.memory_estimate  # noqa: F811
 
-    def initial_state(self) -> SimulationState:
-        """Create a fresh runtime state at the beginning of the time grid.
+    compiled_xla_memory_analysis = _SimulationExecution.compiled_xla_memory_analysis
 
-        Returns
-        -------
-        SimulationState
-            Zero-initialized fields, boundary memory, monitor accumulators, time,
-            and timestep index compatible with this simulation.
+    advance = _SimulationPresentation.advance
 
-        Examples
-        --------
-        >>> state = sim.initial_state()
-        >>> int(state.current_step)
-        0
+    run = _SimulationPresentation.run
 
-        Notes
-        -----
-        Normal applications should call :meth:`run`. Create state explicitly only
-        for :meth:`step`, branching, debugging, or custom continuation workflows.
-        """
-        # Allocate disabled features as empty fixed-rank arrays to keep runtime state structurally stable.
-        from beamz.simulation.dispersion import initial_polarization
+    plot = _SimulationPresentation.plot
 
-        program = self.compile()
-        state = SimulationState.initial(program.grid, t=float(self.time[0]))
-        return state._replace(polarization=initial_polarization(program.dispersion))
+    plot_eps = _SimulationPresentation.plot_eps
 
-    def step(
-        self,
-        state=None,
-        *,
-        donate_state=False,
-        backend="auto",
-        schedule=None,
-        expected_runs=1,
-    ) -> SimulationState:
-        """Advance runtime state by exactly one timestep.
+    show = _SimulationPresentation.show
 
-        Parameters
-        ----------
-        state : SimulationState, optional
-            State to advance. A fresh state is created when omitted.
-        donate_state : bool, default=False
-            Allow JAX to recycle buffers owned by ``state``. After a donating call,
-            the input state must not be read or reused.
-            CUDA selects its execution schedule separately from buffer ownership.
-        backend : {"auto", "jax", "cuda", "cuda_streamed", "cuda_mstep"}, default="auto"
-            Execution policy. ``auto`` uses the optional CUDA extension when it is
-            compatible and otherwise retains the JAX implementation. ``cuda_mstep``
-            explicitly selects the experimental two-step CUDA scheduler.
-        schedule : {"auto", "streamed", "mstep"}, optional
-            CUDA execution schedule. Omitting it preserves established streamed
-            selection. ``schedule="auto"`` opts into selection by time to result;
-            unmeasured cases retain streamed. CUDA backend names remain explicit
-            schedule overrides.
-        expected_runs : int, default=1
-            Expected executions reusing this program. Automatic CUDA selection
-            uses this hint to amortize compilation; it does not execute extra runs.
+    view3d = _SimulationPresentation.view3d
 
-        Returns
-        -------
-        SimulationState
-            State after one timestep, or the unchanged input when it is already at
-            the end of the time grid.
-
-        Examples
-        --------
-        >>> state = sim.initial_state()
-        >>> state = sim.step(state)
-        >>> int(state.current_step)
-        1
-
-        Notes
-        -----
-        ``step`` returns state only and does not detach :class:`SimulationResults`.
-        Use :meth:`run` for normal simulations and :meth:`advance` for multi-step
-        continuation with monitor results.
-        """
-        # Advance explicit state without mutating the immutable Simulation specification.
-        current_step = 0 if state is None else int(state.current_step)
-        if current_step >= self.num_steps:
-            assert state is not None
-            return state
-        program = self.compile(
-            num_steps=1, backend=backend, schedule=schedule, expected_runs=expected_runs
-        )
-        if state is None:
-            state = SimulationState.initial(program.grid, t=float(self.time[0]))
-        return execute_step(
-            program,
-            state,
-            monitor_steps=max(1, self.num_steps - current_step),
-            donate_state=bool(donate_state),
-        )
-
-    def to_request(
-        self,
-        *,
-        num_steps: int | None = None,
-        loop_kind: str = "scan",
-        source_single_slab_dense: bool = False,
-        backend: str = "jax",
-        sharding=None,
-        progress: bool = False,
-        schedule: str | None = None,
-        expected_runs: int = 1,
-    ) -> SimulationRequest:
-        """Build the immutable compiler request for this simulation.
-
-        Parameters
-        ----------
-        num_steps : int, optional
-            Number of timesteps represented by the request. The full time grid is
-            used when omitted.
-        loop_kind : {"scan", "fori_loop"}, default="scan"
-            JAX control-flow lowering selected for the timestep loop.
-        source_single_slab_dense : bool, default=False
-            Use dense lowering for a single slab source. This is an advanced
-            compilation experiment and does not change source semantics.
-        backend : str, default="jax"
-            Resolved execution backend embedded in the compiler request.
-        sharding : ShardingConfig or compatible value, optional
-            Device-sharding policy, normalized once into the request.
-        progress : bool, default=False
-            Display setup progress while rasterizing the material grid.
-        schedule : {"auto", "streamed", "mstep"}, optional
-            CUDA execution schedule. Omitting it preserves established streamed
-            selection. ``schedule="auto"`` opts into selection by time to result;
-            unmeasured cases retain streamed. CUDA backend names remain explicit
-            schedule overrides.
-        expected_runs : int, default=1
-            Expected executions reusing this program. Automatic CUDA selection
-            uses this hint to amortize compilation; it does not execute extra runs.
-
-        Returns
-        -------
-        SimulationRequest
-            Immutable, data-only input to the BeamZ compiler.
-
-        Notes
-        -----
-        Most users should call :meth:`run` or :meth:`advance`; both construct and
-        cache requests automatically. This method is exposed for diagnostics,
-        compiler development, and reproducibility tooling.
-        """
-        # 1. Resolve Design's material raster; numerical boundary lowering belongs to compile.py.
-        from beamz.simulation.cuda.schedule import normalize_schedule_request
-
-        cuda_schedule, expected_runs = normalize_schedule_request(
-            backend, schedule, expected_runs
-        )
-        sharding = normalize_sharding_config(sharding)
-        material_grid = self._material_grid(progress=progress)
-        requested_steps = int(self.num_steps if num_steps is None else num_steps)
-        # 2. Snapshot grid, run, and domain controls into immutable value objects, then
-        # attach normalized sources, monitors, boundaries, and sharding configuration.
-        return SimulationRequest(
-            RunConfig(
-                dt=float(self.dt),
-                num_steps=requested_steps,
-                total_steps=int(self.num_steps),
-                t0=float(np.ravel(np.asarray(self.time, dtype=float))[0]),
-                loop_kind=str(loop_kind),
-                source_single_slab_dense=bool(source_single_slab_dense),
-                backend=str(backend),
-                cuda_schedule=cuda_schedule,
-                cuda_expected_runs=expected_runs,
-                sharding=sharding,
-                resolution=self.resolution,
-                plane_2d=self.plane_2d,
-                is_3d=self.is_3d,
-                polarization_2d=self.polarization,
-                metric_kind=self.grid.metric_kind_for(
-                    ("x", "y", "z") if self.is_3d else ("x", "y")
-                ),
-            ),
-            DomainSpec(
-                tuple(float(v) for v in self.size),  # type: ignore[arg-type]
-                bool(self.is_3d),
-                str(self.plane_2d),
-                self.coordinate_offset,
-                self.polarization,
-            ),
-            material_grid,
-            tuple(self.sources),
-            tuple(self.monitors),
-            tuple(self.boundaries),
-        )
-
-    def compile(
-        self,
-        num_steps=None,
-        sharding=None,
-        backend="auto",
-        progress: bool = False,
-        schedule: str | None = None,
-        expected_runs: int = 1,
-    ) -> CompiledProgram:
-        """Prepare or retrieve a reusable compiled execution plan.
-
-        Parameters
-        ----------
-        num_steps : int, optional
-            Static segment length compiled into the JAX loop. The complete time-grid
-            length is used when omitted.
-        sharding : ShardingConfig or compatible value, optional
-            Runtime device-sharding policy. ``None`` selects the default placement.
-        backend : {"auto", "jax", "cuda", "cuda_streamed", "cuda_mstep"}, default="auto"
-            Execution policy. Explicit CUDA variants fail if their required typed
-            FFI target or GPU architecture is unavailable.
-        progress : bool, default=False
-            Display setup progress while rasterizing and lowering the simulation.
-        schedule : {"auto", "streamed", "mstep"}, optional
-            CUDA execution schedule. Omitting it preserves established streamed
-            selection. ``schedule="auto"`` opts into selection by time to result;
-            unmeasured cases retain streamed. CUDA backend names remain explicit
-            schedule overrides.
-        expected_runs : int, default=1
-            Expected executions reusing this program. Automatic CUDA selection
-            uses this hint to amortize compilation; it does not execute extra runs.
-
-        Returns
-        -------
-        CompiledProgram
-            Immutable numerical plan. Executables are normally JIT-compiled lazily.
-            Eligible CUDA workloads select storage from domain geometry during
-            this call, without calibration runs.
-
-        Examples
-        --------
-        >>> program = sim.compile(num_steps=50)
-        >>> program.config.num_steps
-        50
-
-        Notes
-        -----
-        Calling :meth:`compile` is optional. :meth:`run`, :meth:`advance`, and
-        :meth:`step` compile and reuse the appropriate plan automatically.
-        On RTX3090, large lossless CPML12 programs of at least 32 steps estimate
-        a storage layout from domain geometry, without executing timing trials.
-        Set ``BEAMZ_CUDA_AUTOTUNE=off`` to retain canonical storage, or
-        ``BEAMZ_CUDA_AUTOTUNE=calibrate`` to explicitly measure candidates and
-        cache the result. Explicit CUDA layout or kernel overrides take
-        precedence. Opt-in calibration probes at most 256 steps for long runs.
-        """
-        # Lower an immutable request and cache by every value that changes generated code or storage.
-        return compile_program(
-            self,
-            num_steps=num_steps,
-            sharding=sharding,
-            backend=backend,
-            progress=progress,
-            schedule=schedule,
-            expected_runs=expected_runs,
-            setup_context_factory=_resolved_setup_device_context,
-            compile_factory=compile_simulation,
-        )
-
-    def differentiable(
-        self, *, num_steps=None, backend="jax", checkpoint_interval=None
-    ):
-        """Build a reusable solver for ``jax.grad`` and inverse design.
-
-        Construct once outside JAX transformations, then call with dynamic cell
-        permittivity or Ex/Ey/Ez arrays. The result is a ``SimulationState`` with
-        differentiable fields and raw monitor accumulators. ``backend='cuda'``
-        uses native float32 forward and reverse-mode Yee/CPML kernels on one GPU.
-        ``checkpoint_interval=None`` selects sqrt(T) chunking; zero disables it.
-        Geometry, source profiles, boundaries, and monitor definitions stay fixed.
-
-        Parameters
-        ----------
-        num_steps : int, optional
-            Number of fixed timesteps to execute; defaults to this time grid.
-        backend : str, default "jax"
-            Execution backend. "cuda" selects first-order FP32 native autodiff.
-        checkpoint_interval : int or None, optional
-            Steps per retained checkpoint. None selects sqrt(T); zero stores
-            the complete trajectory instead of rematerializing chunks.
-
-        Returns
-        -------
-        DifferentiableSimulation
-            Callable solver with dynamic material/source parameters and raw,
-            differentiable field and monitor state.
-        """
-        from beamz.simulation.differentiation import DifferentiableSimulation
-
-        program = self.compile(num_steps=num_steps, backend=backend)
-        return DifferentiableSimulation(
-            program, t0=float(self.time[0]), checkpoint_interval=checkpoint_interval
-        )
-
-    def clear_compiled_cache(self) -> None:
-        """Clear BeamZ's in-process simulation compilation caches.
-
-        Returns
-        -------
-        None
-
-        Notes
-        -----
-        This clears cached material grids, immutable compiled plans, and JIT function
-        references for all simulations in the current process, not only this object.
-        It does not modify the simulation or any existing results and does not remove
-        JAX's optional persistent on-disk compilation cache.
-        """
-        _MATERIAL_GRID_CACHE.clear()
-        clear_program_cache()
-        clear_execution_cache()
-
-    def memory_estimate(
-        self,
-        *,
-        include_compiled: bool = True,
-        num_steps: int | None = None,
-        sharding=None,
-    ) -> dict:
-        """Estimate deterministic array storage for a simulation plan.
-
-        Parameters
-        ----------
-        include_compiled : bool, default=True
-            Include update coefficients, boundary terms, sources, monitors, and
-            initialized monitor-state buffers in addition to the discretized grid.
-        num_steps : int, optional
-            Segment length used when sizing step-dependent monitor buffers.
-        sharding : ShardingConfig or compatible value, optional
-            Device-sharding policy used to report padded and per-device storage.
-
-        Returns
-        -------
-        dict
-            Allocation report containing total bytes, GiB totals, category and
-            residency summaries, individual entries, grid shape, and—when requested—
-            a nested ``compiled`` report.
-
-        Examples
-        --------
-        >>> report = sim.memory_estimate(num_steps=100)
-        >>> report["total_bytes"] > 0
-        True
-
-        Notes
-        -----
-        The report counts known array payloads. Backend temporary allocations and
-        compiler-dependent workspace are available, when supported, through
-        :meth:`compiled_xla_memory_analysis`.
-        """
-        return memory_estimate(
-            self,
-            include_compiled=include_compiled,
-            num_steps=num_steps,
-            sharding=sharding,
-        )
-
-    def compiled_xla_memory_analysis(
-        self, *, num_steps: int | None = None, sharding=None
-    ) -> dict:
-        """Return backend memory analysis for the lowered JAX executable.
-
-        Parameters
-        ----------
-        num_steps : int, optional
-            Static segment length to lower. The full time grid is used when omitted.
-        sharding : ShardingConfig or compatible value, optional
-            Runtime placement used during lowering.
-
-        Returns
-        -------
-        dict
-            Scalar fields reported by the backend's compiled memory analysis. The
-            mapping contains ``available=False`` when the backend provides no report.
-
-        Notes
-        -----
-        Unlike :meth:`memory_estimate`, this method lowers and compiles an executable
-        and may therefore be expensive. It does not advance simulation state.
-        """
-        # Lower an immutable request and cache by every value that changes generated code or storage.
-        program = self.compile(num_steps=num_steps, sharding=sharding, backend="jax")
-        state = SimulationState.initial(program.grid, t=float(self.time[0]))
-        return analyze_compiled_xla_memory(
-            program,
-            state,
-            monitor_steps=max(1, int(program.config.num_steps)),
-        )
-
-    def advance(
-        self,
-        *,
-        state=None,
-        num_steps=None,
-        progress=False,
-        store_full_materials=False,
-        sharding=None,
-        donate_state=False,
-        backend="auto",
-        schedule=None,
-        expected_runs=1,
-        performance=True,
-    ) -> SimulationRun:
-        """Execute a fresh or continued segment and return results plus next state.
-
-        Parameters
-        ----------
-        state : SimulationState, optional
-            Continuation state. Omitting it starts from zero fields at the beginning
-            of the simulation time grid.
-        num_steps : int, optional
-            Number of timesteps to execute. The remaining time grid is used when
-            omitted.
-        progress : bool, default=False
-            Display JIT and execution progress in an interactive terminal.
-        store_full_materials : bool, default=False
-            Retain the full material grid in result metadata. By default BeamZ stores
-            only material regions required by configured analysis monitors.
-        sharding : ShardingConfig or compatible value, optional
-            Runtime device-sharding policy.
-        donate_state : bool, default=False
-            Transfer ownership of the input state's device buffers to JAX. This can
-            reduce peak memory, but the input state must never be used afterward.
-            CUDA keeps its fast schedule when estimated workspace fits; otherwise
-            it selects in-place execution. Set BEAMZ_CUDA_MEMORY_POLICY to
-            ``speed`` or ``capacity`` to override the default ``auto`` policy.
-        backend : {"auto", "jax", "cuda", "cuda_streamed", "cuda_mstep"}, default="auto"
-            Execution policy. ``auto`` preserves JAX as the fallback when the
-            optional CUDA runtime is not installed.
-        performance : bool, default=True
-            Print JIT- and setup-free runtime and GCUPS after this segment finishes.
-        schedule : {"auto", "streamed", "mstep"}, optional
-            CUDA execution schedule. Omitting it preserves established streamed
-            selection. ``schedule="auto"`` opts into selection by time to result;
-            unmeasured cases retain streamed. CUDA backend names remain explicit
-            schedule overrides.
-        expected_runs : int, default=1
-            Expected executions reusing this program. Automatic CUDA selection
-            uses this hint to amortize compilation; it does not execute extra runs.
-
-        Returns
-        -------
-        SimulationRun
-            A small owner containing durable ``results`` and the separate
-            continuation ``state`` produced at the end of the segment.
-
-        Raises
-        ------
-        ValueError
-            If ``state.current_step`` is outside the time grid or ``num_steps`` is
-            not positive and within the remaining number of timesteps.
-
-        Examples
-        --------
-        Start a segmented run, then continue it:
-
-        >>> first = sim.advance(num_steps=40)
-        >>> second = sim.advance(state=first.state, num_steps=20)
-        >>> int(second.state.current_step)
-        60
-
-        Branch safely from the same state; preservation is the default:
-
-        >>> branch_a = sim.advance(state=first.state, num_steps=10)
-        >>> branch_b = sim.advance(state=first.state, num_steps=10)
-
-        Opt into buffer donation only for a state that will not be reused:
-
-        >>> last = sim.advance(
-        ...     state=second.state,
-        ...     num_steps=10,
-        ...     donate_state=True,
-        ... )
-
-        Notes
-        -----
-        Use :meth:`run` when final analysis data is all that is needed. ``run``
-        executes the complete grid, returns :class:`SimulationResults` directly,
-        and safely donates its private initial state. ``advance`` exists specifically
-        for checkpointing, branching, streaming, and other continuation workflows.
-        ``SimulationResults`` never contains continuation state.
-        """
-        current_step = 0 if state is None else int(state.current_step)
-        if not 0 <= current_step <= self.num_steps:
-            raise ValueError("state.current_step is outside the simulation time grid.")
-        remaining = self.num_steps - current_step
-        steps = remaining if num_steps is None else int(num_steps)
-        if not 0 < steps <= remaining:
-            raise ValueError(f"num_steps must be in [1, {remaining}], got {steps}.")
-        return run_simulation_program(
-            self,
-            state,
-            num_steps=steps,
-            sharding=sharding,
-            backend=backend,
-            schedule=schedule,
-            expected_runs=expected_runs,
-            store_full_materials=bool(store_full_materials),
-            monitor_steps=remaining,
-            donate_state=bool(donate_state),
-            performance=bool(performance),
-            progress=bool(progress),
-        )
-
-    def run(
-        self,
-        *,
-        progress=False,
-        store_full_materials=False,
-        sharding=None,
-        backend="auto",
-        schedule=None,
-        expected_runs=1,
-        termination: AutoTermination | None = None,
-        performance: bool = True,
-    ) -> SimulationResults:
-        """Execute the complete simulation and return immutable analysis results.
-
-        Parameters
-        ----------
-        progress : bool, default=False
-            Display JIT and execution progress in an interactive terminal.
-        store_full_materials : bool, default=False
-            Retain the full material grid in result metadata. The default stores only
-            material regions needed by configured analysis monitors.
-        sharding : ShardingConfig or compatible value, optional
-            Runtime device-sharding policy.
-        backend : {"auto", "jax", "cuda", "cuda_streamed", "cuda_mstep"}, default="auto"
-            Execution policy. ``cuda`` chooses the best compatible CUDA target.
-        termination : AutoTermination, optional
-            Bounded convergence policy. When supplied, BeamZ executes reusable
-            chunks and may stop before the end of the time grid after sources are
-            inactive and the requested field and monitor residuals stabilize.
-        performance : bool, default=True
-            Print JIT- and setup-free runtime and GCUPS after completion. Set to
-            ``False`` to suppress reporting and timing instrumentation.
-        schedule : {"auto", "streamed", "mstep"}, optional
-            CUDA execution schedule. Omitting it preserves established streamed
-            selection. ``schedule="auto"`` opts into selection by time to result;
-            unmeasured cases retain streamed. CUDA backend names remain explicit
-            schedule overrides.
-        expected_runs : int, default=1
-            Expected executions reusing this program. Automatic CUDA selection
-            uses this hint to amortize compilation; it does not execute extra runs.
-
-        Returns
-        -------
-        SimulationResults
-            Detached monitor acquisitions, immutable simulation metadata, and source
-            normalization information. No continuation state is attached.
-
-        Examples
-        --------
-        >>> results = sim.run(progress=True)
-        >>> field_data = results["fields"]
-
-        Enable bounded automatic termination:
-
-        >>> results = sim.run(termination=AutoTermination(chunk_steps=200))
-        >>> results.termination.reason in {"converged", "time_limit"}
-        True
-
-        Limit elapsed execution time while retaining partial measurements:
-
-        >>> results = sim.run(termination=AutoTermination(max_wall_time=600.0))
-
-        The elapsed-time budget includes compilation and is checked between
-        chunks. A time-limited run returns its acquired results with termination
-        reason ``"wall_time_limit"``; finishing a chunk and constructing the result
-        may take execution beyond the budget.
-
-        Notes
-        -----
-        This is the normal user-facing execution method. Compilation is automatic.
-        Since the initial runtime state belongs only to this call and is not returned,
-        BeamZ donates its buffers internally to reduce peak device memory.
-
-        Use :meth:`advance` instead when execution must be split into segments or the
-        final :class:`SimulationState` is required. Use :meth:`step` only for
-        state-only single-timestep debugging.
-        """
-        if termination is not None:
-            return run_until_terminated(
-                self,
-                termination,
-                progress=bool(progress),
-                store_full_materials=bool(store_full_materials),
-                sharding=sharding,
-                backend=backend,
-                schedule=schedule,
-                expected_runs=expected_runs,
-                performance=bool(performance),
-            )
-        # The initial state is private to this call, so donating it is always safe and
-        # avoids retaining a second full set of device buffers during execution.
-        return self.advance(
-            progress=bool(progress),
-            store_full_materials=bool(store_full_materials),
-            sharding=sharding,
-            backend=backend,
-            schedule=schedule,
-            expected_runs=expected_runs,
-            donate_state=True,
-            performance=bool(performance),
-        ).results
-
-    def plot(self, **kwargs):
-        """Create a Matplotlib view of the simulation layout.
-
-        Parameters
-        ----------
-        **kwargs : object
-            Plot options forwarded to the analysis plotting backend, including
-            ``ax``, ``figsize``, ``z``, ``y``, axis limits, and marker controls.
-            ``show`` defaults to ``False`` for this method.
-
-            Two-dimensional layouts share the 3D material palette, shaded PML
-            bands, and source/monitor glyphs. Display coordinates and axis limits
-            are in micrometres; slice positions and simulation inputs use metres.
-
-            For a native three-dimensional :class:`~beamz.Design`, passing ``z``
-            or ``y`` creates antialiased geometry cross sections. These setup
-            plots preserve polygon boundaries and do not compile or show the FDTD
-            grid. Pass ``categorical_cross_sections=False`` to inspect the
-            rasterized material field instead.
-
-        Returns
-        -------
-        tuple
-            Matplotlib ``(figure, axes)`` objects. A 3D cross-section layout may
-            return an array of axes.
-
-        Examples
-        --------
-        >>> fig, ax = sim.plot()
-        """
-        kwargs.setdefault("show", False)
-        return _analysis_function("plotting", "plot_simulation")(self, **kwargs)
-
-    def plot_eps(self, **kwargs):
-        """Plot the simulation's actual relative-permittivity raster.
-
-        Uses the supplied MaterialGrid when present, including optimized density
-        designs. Accepts one ``x``, ``y``, or ``z`` slice for 3D, source/monitor marker
-        controls, and Matplotlib axes/color limits.
-        Slice positions are metres; display axes are micrometres.
-
-        Returns
-        -------
-        tuple
-            Matplotlib ``(figure, axes)`` containing the permittivity plot.
-        """
-        kwargs.setdefault("show", False)
-        return _analysis_function("plotting", "plot_simulation_permittivity")(
-            self, **kwargs
-        )
-
-    def show(self, **kwargs):
-        """Display the simulation layout using Matplotlib.
-
-        Parameters
-        ----------
-        **kwargs : object
-            Plot options accepted by :meth:`plot`. ``show`` defaults to ``True``.
-
-        Returns
-        -------
-        tuple
-            Matplotlib ``(figure, axes)`` objects.
-        """
-        # Route display through the plotting API while changing only the presentation flag.
-        kwargs.setdefault("show", True)
-        return self.plot(**kwargs)
-
-    def view3d(self, **kwargs):
-        """Create a static, 3D-oriented cross-section view.
-
-        Parameters
-        ----------
-        **kwargs : object
-            Cross-section and Matplotlib options forwarded to the plotting backend.
-            ``show`` defaults to ``False``.
-
-        Returns
-        -------
-        tuple
-            Matplotlib figure and axes for the selected cross sections.
-
-        Notes
-        -----
-        This method creates static notebook-friendly, antialiased geometry cross
-        sections; it does not launch an interactive browser viewer. Pass
-        ``categorical_cross_sections=False`` to inspect the rasterized material
-        field instead of the design layout.
-        """
-        return _analysis_function("plotting", "view_simulation_3d")(self, **kwargs)
-
-    def show3d(self, **kwargs):
-        """Return the same static 3D-oriented view as :meth:`view3d`.
-
-        Parameters
-        ----------
-        **kwargs : object
-            Cross-section and Matplotlib options forwarded to :meth:`view3d`.
-
-        Returns
-        -------
-        tuple
-            Matplotlib figure and axes for the selected cross sections.
-
-        Notes
-        -----
-        ``show3d`` is currently an alias and does not force interactive display.
-        """
-        # Route display through the plotting API while changing only the presentation flag.
-        return self.view3d(**kwargs)
+    show3d = _SimulationPresentation.show3d
