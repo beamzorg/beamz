@@ -34,7 +34,6 @@ def extrusion_bounds(structure, depth):
 
 
 def structure_bounds(structure, *, two_dimensional=False):
-
     if structure.shape_kind == "box":
         return structure.lower, structure.upper
     if structure.shape_kind == "sphere":

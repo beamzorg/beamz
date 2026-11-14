@@ -14,11 +14,10 @@ import numpy as np
 
 from beamz.design.dispersion import PoleResidue
 from beamz.design.materials import Material
+from beamz.design.raster.engine import RasterOptions, compile_scene
+from beamz.design.raster.result import RasterResult
+from beamz.design.raster.schema import Grid, Mesh, Object, Scene, _integer
 from beamz.design.structures import Shape
-
-from .engine import RasterOptions, compile_scene
-from .result import RasterResult
-from .schema import Grid, Mesh, Object, Scene, _integer
 
 
 def _validate_region_inputs(scene: Scene, grid: Grid, options: RasterOptions) -> None:

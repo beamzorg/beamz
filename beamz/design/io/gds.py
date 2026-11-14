@@ -1,14 +1,10 @@
-"""Import and export GDS layouts as BeamZ designs.
-
-The module has no import-time dependency on gdsfactory. Install ``beamz[gds]``
-before calling its public functions.
-"""
+"""Design implementation."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Mapping
+from typing import Any, Mapping
 
 import numpy as np
 
@@ -22,8 +18,14 @@ from beamz.design._gds_decode import (
 from beamz.design._gds_decode import (
     polygons_by_layer as _polygons_by_layer,
 )
-from beamz.design._geometry import polygon_rings
 from beamz.design.core import Design
+from beamz.design.io.ports import (
+    _beamz_ports,
+    _component_ports,
+    _extend_ports,
+    _StackLayer,
+    _VerticalProfile,
+)
 from beamz.design.materials import Material
 from beamz.design.structures import Polygon, Rectangle
 from beamz.devices.ports import Port
@@ -59,30 +61,6 @@ class ImportedComponent:
                 return port
         available = ", ".join(port.name for port in self.ports) or "none"
         raise KeyError(f"Unknown port {name!r}; available ports: {available}.")
-
-
-@dataclass(frozen=True, slots=True)
-class _StackLayer:
-    name: str
-    zmin: float
-    zmax: float
-    material: Material
-    sidewall_angle: float = 0.0
-    width_to_z: float = 0.0
-
-
-@dataclass(frozen=True, slots=True)
-class _VerticalProfile:
-    depth: float
-    core_zmin: float
-    core_zmax: float
-    active_zmin: float
-    active_zmax: float
-    world_z_origin: float
-    background: Material
-    layers: tuple[_StackLayer, ...] = ()
-    sidewall_angle: float = 0.0
-    width_to_z: float = 0.0
 
 
 def _gdsfactory(*, activate_pdk=True):
@@ -249,107 +227,6 @@ def _vertical_profile(
     )
 
 
-def _component_ports(
-    component: Any,
-    *,
-    xmin_um: float,
-    ymin_um: float,
-    xy_padding: float,
-) -> tuple[dict[str, Any], ...]:
-    ports = []
-    for port in component.ports:
-        orientation = float(port.orientation) % 360.0
-        rounded = int(round(orientation / 90.0) * 90) % 360
-        try:
-            direction = {180: "+x", 0: "-x", 90: "-y", 270: "+y"}[rounded]
-        except KeyError as exc:
-            raise ValueError(
-                f"Port {port.name!r} has unsupported orientation {orientation}; "
-                "BeamZ requires axis-aligned ports."
-            ) from exc
-        center_um = getattr(port, "dcenter", port.center)
-        width_um = getattr(port, "dwidth", port.width)
-        ports.append(
-            {
-                "name": str(port.name),
-                "center": (
-                    (float(center_um[0]) - xmin_um) * µm + float(xy_padding),
-                    (float(center_um[1]) - ymin_um) * µm + float(xy_padding),
-                ),
-                "width": float(width_um) * µm,
-                "direction": direction,
-            }
-        )
-    return tuple(ports)
-
-
-def _extend_ports(
-    design: Design,
-    ports: tuple[dict[str, Any], ...],
-    *,
-    profile: _VerticalProfile,
-    material: Material,
-    enabled: bool,
-    overlap: float,
-) -> Design:
-    if not enabled:
-        return design
-    edges = {"+x": design.width, "-x": 0.0, "+y": design.height, "-y": 0.0}
-    for port in ports:
-        direction = str(port["direction"])
-        outward = ("-" if direction.startswith("+") else "+") + direction[1]
-        cx, cy = port["center"]
-        shift = -float(overlap)
-        sx = cx + shift * ({"+x": 1, "-x": -1}.get(outward, 0))
-        sy = cy + shift * ({"+y": 1, "-y": -1}.get(outward, 0))
-        width = float(port["width"])
-        if outward.endswith("x"):
-            edge = edges[outward]
-            position = (min(sx, edge), cy - 0.5 * width, profile.core_zmin)
-            size = (abs(edge - sx), width)
-        else:
-            edge = edges[outward]
-            position = (cx - 0.5 * width, min(sy, edge), profile.core_zmin)
-            size = (width, abs(edge - sy))
-        design += Rectangle(
-            position=position,
-            width=size[0],
-            height=size[1],
-            depth=profile.core_zmax - profile.core_zmin,
-            material=material,
-            sidewall_angle=profile.sidewall_angle,
-            width_to_z=profile.width_to_z,
-        )
-    return design
-
-
-def _beamz_ports(
-    ports: tuple[dict[str, Any], ...], profile: _VerticalProfile
-) -> tuple[Port, ...]:
-    core_center = 0.5 * (profile.core_zmin + profile.core_zmax)
-    z_span = 2.0 * max(
-        core_center - profile.active_zmin,
-        profile.active_zmax - core_center,
-    )
-    result = []
-    for item in ports:
-        axis = str(item["direction"])[1]
-        direction: Literal["+", "-"] = (
-            "+" if str(item["direction"]).startswith("+") else "-"
-        )
-        width = float(item["width"])
-        size = (0.0, width, z_span) if axis == "x" else (width, 0.0, z_span)
-        result.append(
-            Port(
-                center=(*item["center"], core_center),
-                size=size,
-                name=str(item["name"]),
-                direction=direction,
-            )
-        )
-    return tuple(result)
-
-
 def import_component(
     component: Any = "mmi1x2",
     *,
@@ -490,101 +367,3 @@ def import_gds(path: str | Path, **kwargs: Any) -> ImportedComponent:
     except Exception as exc:
         raise ValueError(f"Could not read GDS file {source}.") from exc
     return import_component(component, **kwargs)
-
-
-def _material_key(structure: Any) -> tuple[float, float, float] | None:
-    material = getattr(structure, "material", None)
-    if material is None:
-        return None
-    return (
-        float(getattr(material, "permittivity", 1.0)),
-        float(getattr(material, "permeability", 1.0)),
-        float(getattr(material, "conductivity", 0.0)),
-    )
-
-
-def _add_polygon(cell, structure, layer_index, *, kdb, precision):
-    rings = polygon_rings(structure)
-    if not rings[0]:
-        raise TypeError(f"GDS export does not support {type(structure).__name__}.")
-    points = []
-    for ring in rings:
-        xy = np.asarray(ring, dtype=float)[:, :2]
-        if not np.isfinite(xy).all():
-            raise ValueError("GDS coordinates must be finite.")
-        if np.any(np.abs(xy) > precision * (np.iinfo(np.int32).max - 1)):
-            raise ValueError("GDS precision is too fine for the exported coordinates.")
-        points.append([kdb.DPoint(float(x / µm), float(y / µm)) for x, y in xy])
-    polygon = kdb.DPolygon(points[0])
-    for hole in points[1:]:
-        polygon.insert_hole(hole)
-    cell.shapes(layer_index).insert(polygon)
-
-
-def export_gds(
-    design: Design,
-    path: str | Path,
-    *,
-    cell_name: str = "beamz_design",
-    precision: float = 1e-9,
-    layer_map: Mapping[Material, Layer] | None = None,
-) -> Path:
-    """Export planar structures to GDS with an explicit coordinate precision.
-
-    ``precision`` is the database grid in metres (default 1 nm). A private
-    KLayout database avoids quantization through gdsfactory's global grid.
-    Coordinates remain in GDS micrometres. Interior rings remain holes.
-
-    By default, equal materials share automatically assigned layers. An explicit
-    ``layer_map={material: (layer, datatype)}`` selects only those materials,
-    e.g. the core mask without low-index region-clearing polygons. Volumetric
-    structures without a planar projection are rejected explicitly.
-    """
-    if not np.isfinite(precision) or precision <= 0:
-        raise ValueError("precision must be finite and positive (metres).")
-    if layer_map is not None:
-        for layer in layer_map.values():
-            if len(layer) != 2 or any(
-                isinstance(v, bool)
-                or not isinstance(v, (int, np.integer))
-                or not 0 <= v <= 65535
-                for v in layer
-            ):
-                raise ValueError("GDS layer/datatype must be integers in [0, 65535].")
-    gf = _gdsfactory(activate_pdk=False)
-    layout = gf.kdb.Layout()
-    layout.dbu = precision / µm
-    cell = layout.create_cell(cell_name)
-    material_layers: dict[tuple[float, float, float], Layer] = {}
-    count = 0
-    for structure in design.unified_polygons().structures:
-        if getattr(structure, "is_pml", False):
-            continue
-        if (
-            layer_map is not None
-            and getattr(structure, "material", None) not in layer_map
-        ):
-            continue
-        if structure.shape_kind == "box":
-            structure = structure.to_rectangle()
-        material_key = _material_key(structure)
-        if material_key is None:
-            continue
-        layer = (
-            layer_map[structure.material]
-            if layer_map is not None
-            else material_layers.setdefault(material_key, (len(material_layers), 0))
-        )
-        _add_polygon(
-            cell, structure, layout.layer(*layer), kdb=gf.kdb, precision=precision
-        )
-        count += 1
-    if not count:
-        raise ValueError("The design has no planar material structures to export.")
-    destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    layout.write(str(destination))
-    return destination
-
-
-__all__ = ["ImportedComponent", "export_gds", "import_component", "import_gds"]

@@ -14,10 +14,9 @@ from beamz._helpers import env_bool
 from beamz.design.discretization import MaterialGrid
 from beamz.design.grid import RectilinearGrid
 from beamz.design.grid_spec import _realize_uniform_grid
+from beamz.design.raster.engine import RasterOptions, rasterize
+from beamz.design.raster.importers._beamz import from_beamz
 from beamz.lattice import normalize_polarization_2d
-
-from .engine import RasterOptions, rasterize
-from .importers._beamz import from_beamz
 
 
 def _grid_kind(design: Any, grid_type: str) -> str:
@@ -150,7 +149,7 @@ def _rasterize_design(
     )
 
     if has_dispersion:
-        from .dispersion import rasterize_dispersion
+        from beamz.design.raster.dispersion import rasterize_dispersion
 
         if material_grid.uses_full_permittivity:
             raise ValueError(
