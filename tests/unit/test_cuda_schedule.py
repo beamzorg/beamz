@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 
 from beamz.lattice import component_shapes
-from beamz.simulation.cuda.native import abi
-from beamz.simulation.compile.backend import CUDA_DEFAULT_FLAGS
 from beamz.simulation.compile import CompiledProgramKey, _preparation_key
+from beamz.simulation.compile.backend import CUDA_DEFAULT_FLAGS
 from beamz.simulation.cuda import schedule
+from beamz.simulation.cuda.native import abi
 
 
 @pytest.mark.parametrize(

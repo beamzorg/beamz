@@ -9,7 +9,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-import beamz.simulation.compile.kernels as ops
+import beamz.simulation.compile.physics as ops
 from beamz.const import EPS_0
 from beamz.constitutive import advance_e_tensor_dense, collocate_yee_component
 from beamz.devices._boundary_compile import (

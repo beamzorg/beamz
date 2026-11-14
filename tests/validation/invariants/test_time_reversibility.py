@@ -7,7 +7,7 @@ import numpy as np
 
 from beamz.const import LIGHT_SPEED
 from beamz.lattice import advance_e_field, advance_h_field
-from beamz.simulation.compile.kernels import tm_xy_curl_e_to_h_2d, tm_xy_curl_h_to_e_2d
+from beamz.simulation.compile.physics import tm_xy_curl_e_to_h_2d, tm_xy_curl_h_to_e_2d
 
 
 def _forward_lossless_step(ez, hx, hy, *, resolution, dt):

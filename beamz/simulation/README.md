@@ -81,7 +81,7 @@ and final diagnostics. It remains `None` for an ordinary full-grid run.
   compiled coefficients, sources, and monitors are stored directly without wrapper plans.
 - `compile/`: lowers a resolved request into an executable plan.
   Deterministic memory reporting lives here because it inspects that plan.
-- `compile/kernels.py`: canonical 2D/3D Yee, material-loss, periodic, PEC, and packed CPML
+- `compile/physics.py`: canonical 2D/3D Yee, material-loss, periodic, PEC, and packed CPML
   mathematics. Periodic, PML, sponge, and PEC profile lowering lives with the boundary
   specifications in `beamz.devices._boundary_compile`.
 - `execute/sharding.py`: optional multi-device lowering, padding, placement, and cropping.

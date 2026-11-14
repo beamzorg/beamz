@@ -13,7 +13,7 @@ import beamz as bz
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.design import raster
 from beamz.lattice import advance_h_field
-from beamz.simulation.compile.kernels import (
+from beamz.simulation.compile.physics import (
     advance_e_centered_tensor,
     te_xy_curl_e_to_h_2d,
     te_xy_curl_h_to_e_2d,

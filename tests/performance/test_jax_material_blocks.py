@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 
 from beamz.simulation.api.differentiation import build_differentiable_scan
-from beamz.simulation.execute import build_program_scan
 from beamz.simulation.compile.material_blocks import MaterialBlocks, material_values
+from beamz.simulation.execute import build_program_scan
 from beamz.simulation.execute.sharding import place_tree
 from tests.jax_compat import enable_x64
 from tests.performance.test_cuda_material_blocks import simulation

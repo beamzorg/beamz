@@ -15,7 +15,7 @@ from beamz._helpers import (
     _print_inline_status,
 )
 from beamz.const import EPS_0, MU_0
-from beamz.simulation.compile import kernels as update_runtime
+from beamz.simulation.compile import physics as update_runtime
 from beamz.simulation.model import AutoTermination, CompiledProgram, SimulationState
 from beamz.simulation.results import MonitorResults, RunTermination, SimulationResults
 

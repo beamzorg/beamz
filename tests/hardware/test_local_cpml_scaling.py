@@ -77,8 +77,7 @@ def test_distributed_bulk_and_cpml_continuation(backend, axis):
     first = sim.advance(
         state=state, num_steps=16, backend=backend, sharding=cfg, progress=False
     ).state
-    from beamz.simulation.execute import sharding
-    from beamz.simulation.execute import runtime_inputs
+    from beamz.simulation.execute import runtime_inputs, sharding
     from beamz.simulation.results.observe import MONITOR_FIELDS
 
     program = sim.compile(num_steps=16, backend=backend, sharding=cfg)

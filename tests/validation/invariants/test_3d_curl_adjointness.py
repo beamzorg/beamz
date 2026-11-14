@@ -9,7 +9,7 @@ import beamz.lattice as lattice
 from beamz.devices._boundary_compile import compile_metallic_masks
 from beamz.devices.boundaries import PEC
 from beamz.lattice import build_h_boundary_views_for_e_3d
-from beamz.simulation.compile.kernels import apply_zero_mask
+from beamz.simulation.compile.physics import apply_zero_mask
 from tests.utils import compiled_grid
 
 

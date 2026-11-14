@@ -21,7 +21,7 @@ from beamz.devices.boundaries import (
 )
 from beamz.lattice import build_h_boundary_views_for_e_3d, component_shape_3d
 from beamz.simulation.compile import _compile_derivative_metrics
-from beamz.simulation.compile.kernels import apply_post_source_boundaries
+from beamz.simulation.compile.physics import apply_post_source_boundaries
 from tests.utils import compiled_grid
 
 

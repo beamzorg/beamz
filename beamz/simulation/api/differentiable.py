@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from beamz.lattice import canonical_component_2d, component_axis_offsets_3d
-from beamz.simulation.compile.kernels import precompute_e_update_coefficients
+from beamz.simulation.compile.physics import precompute_e_update_coefficients
 
 # Histories created before the material/source/projection and observation-clock
 # corrections, physical-thickness CPML default, or frequency-aligned reference

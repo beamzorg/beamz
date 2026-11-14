@@ -7,8 +7,8 @@ import pytest
 from beamz import LIGHT_SPEED, Grid, GridSpec, RectilinearGrid
 from beamz.design import MaterialGrid
 from beamz.lattice import component_shapes
-from beamz.simulation.model import DerivativeMetricPlan, ShardingLayout
 from beamz.simulation.execute.sharding import lower_derivative_metrics
+from beamz.simulation.model import DerivativeMetricPlan, ShardingLayout
 
 
 def test_grid_alias_and_edge_arrays_are_immutable():

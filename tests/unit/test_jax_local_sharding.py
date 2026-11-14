@@ -12,8 +12,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from beamz.simulation.execute import sharding
-from beamz.simulation.execute import build_scan, runtime_inputs
+from beamz.simulation.execute import build_scan, runtime_inputs, sharding
 from tests.unit.test_cuda_sharded_features import assert_state_close, mode_simulation
 from tests.unit.test_cuda_sharding import seed_state
 

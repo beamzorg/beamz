@@ -9,7 +9,7 @@ from typing import Any, Literal, cast
 import jax.numpy as jnp
 import numpy as np
 
-import beamz.simulation.compile.kernels as ops
+import beamz.simulation.compile.physics as ops
 from beamz._region_array import RegionArray, constant_array, tiles, uniform_value
 from beamz.devices._boundary_compile import (
     CPML_3D_E_DERIVATIVES,

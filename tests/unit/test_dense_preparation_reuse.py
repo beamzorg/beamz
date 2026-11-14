@@ -4,7 +4,7 @@ import jax
 import numpy as np
 import pytest
 
-from beamz import PEC
+from beamz import PEC, Simulation, _cache_tokens
 from beamz._region_array import RegionArray
 from beamz.design import MaterialGrid
 from tests.performance.h100_workloads import H100Workload
@@ -57,6 +57,25 @@ def test_reuse_rebuilds_source_and_monitor_plans():
     assert empty.sources == ()
     assert empty.monitors == ()
     assert original.sources and original.monitors
+
+
+def test_unrelated_cached_grid_is_not_fingerprinted_during_preparation(monkeypatch):
+    shape = (8, 9)
+    grid_a = MaterialGrid(np.ones(shape), 0.0, 1.0, 1e-7, shape)
+    grid_b = MaterialGrid(np.full(shape, 2.0), 0.0, 1.0, 1e-7, shape)
+    first = Simulation(material_grid=grid_a, time=np.arange(4) * 1e-17)
+    second = Simulation(material_grid=grid_b, time=np.arange(4) * 1e-17)
+    first.clear_compiled_cache()
+    original = first.compile(num_steps=3, backend="jax")
+    fingerprint = _cache_tokens.array_cache_token
+
+    def reject_material_scan(value):
+        assert np.shape(value) != shape
+        return fingerprint(value)
+
+    monkeypatch.setattr(_cache_tokens, "array_cache_token", reject_material_scan)
+    other = second.compile(num_steps=2, backend="jax")
+    assert other.grid is not original.grid
 
 
 @pytest.mark.parametrize("changed", ["dt", "material", "boundary"])

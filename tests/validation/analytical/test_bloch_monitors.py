@@ -8,8 +8,8 @@ import pytest
 
 import beamz as bz
 from beamz.simulation.execute import initial_program_state
-from beamz.simulation.results.observe import update_monitors
 from beamz.simulation.results import MonitorResults
+from beamz.simulation.results.observe import update_monitors
 from examples.meta_atom_bloch import diffraction_powers
 
 

@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from beamz.simulation.compile import storage as memory
 from beamz.simulation.compile import CompiledProgramKey
+from beamz.simulation.compile import storage as memory
 from tests.unit.test_cuda_runtime_contract import _program_and_state
 
 

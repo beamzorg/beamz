@@ -9,7 +9,7 @@ from beamz.lattice import (
     advance_h_field,
     curl_e_to_h_3d,
 )
-from beamz.simulation.compile.kernels import (
+from beamz.simulation.compile.physics import (
     compile_cpml_term,
     correct_cpml_term,
     cpml_coefficients,

@@ -13,7 +13,7 @@ from beamz.devices.sources.compiler import (
     CompiledSourceSpec,
     batch_slab_specs,
 )
-from beamz.simulation.compile import kernels as update_runtime
+from beamz.simulation.compile import physics as update_runtime
 from beamz.simulation.compile.backend import CUDA_BF16_PSI, trace_preparation
 from beamz.simulation.execute import sharding as sharding_runtime
 from beamz.simulation.model import CompiledProgram, SimulationState, UpdateCoefficients

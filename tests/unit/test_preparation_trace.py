@@ -33,7 +33,7 @@ def test_nested_preparation_trace_records_failure(tmp_path, monkeypatch):
 def test_trace_import_and_timings_without_resource(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "resource", None)
     module = runpy.run_path(
-        str(Path(__file__).parents[2] / "beamz/simulation/preparation_trace.py")
+        str(Path(__file__).parents[2] / "beamz/simulation/compile/backend.py")
     )
     monkeypatch.delenv("BEAMZ_TRACE_PREPARATION", raising=False)
     with module["preparation_phase"]("disabled"):

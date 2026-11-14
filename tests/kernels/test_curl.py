@@ -12,7 +12,7 @@ from beamz.lattice import (
     curl_h_to_e_3d_metric,
     yee_flux,
 )
-from beamz.simulation.compile.kernels import (
+from beamz.simulation.compile.physics import (
     compile_cpml_term,
     cpml_coefficients,
     fused_update_h_lossy_3d_material_metric,

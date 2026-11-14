@@ -17,8 +17,8 @@ import beamz as bz
 from beamz.simulation.cuda import runtime
 from beamz.simulation.cuda.native import sharding as cuda_sharding
 from beamz.simulation.execute.distributed import _shard_map
-from beamz.simulation.model import ShardingConfig
 from beamz.simulation.execute.sharding import build_sharding_plan
+from beamz.simulation.model import ShardingConfig
 
 
 def test_legacy_shard_map_lookup(monkeypatch):

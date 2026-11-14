@@ -20,7 +20,7 @@ import jax
 import jax.numpy as jnp  # noqa: F401
 import numpy as np  # noqa: F401
 
-import beamz.simulation.compile.kernels as ops  # noqa: F401
+import beamz.simulation.compile.physics as ops  # noqa: F401
 from beamz._cache_tokens import HashToken, cache_token
 from beamz._region_array import RegionArray as RegionArray
 from beamz._region_array import constant_array as constant_array
@@ -393,11 +393,20 @@ def compile_program(
         reusable = None
         if compile_factory is compile_simulation:
             preparation_key = _preparation_key(signature)
+            # Reuse identical snapshots without fingerprinting unrelated grids
+            # solely to probe the preparation cache.
             reusable = next(
                 (
                     old_program
                     for old_key, old_program in reversed(_PROGRAM_CACHE.items())
-                    if _preparation_key(old_key) == preparation_key
+                    if (
+                        old_key.materials is preparation_key.materials
+                        or (
+                            old_key.materials._cache_spec is not None
+                            and preparation_key.materials._cache_spec is not None
+                        )
+                    )
+                    and _preparation_key(old_key) == preparation_key
                 ),
                 None,
             )

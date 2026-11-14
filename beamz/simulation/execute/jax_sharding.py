@@ -187,7 +187,7 @@ def _phase(state, ctx, coeffs, *, phase):
 
 
 def select_kernel():
-    from beamz.simulation.compile.kernels import StepUpdateKernel
+    from beamz.simulation.compile.physics import StepUpdateKernel
 
     return StepUpdateKernel(
         "jax_local_cpml", partial(_phase, phase=0), partial(_phase, phase=1)

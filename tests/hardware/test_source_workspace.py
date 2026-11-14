@@ -6,10 +6,9 @@ from dataclasses import replace
 import jax
 import pytest
 
-from beamz.simulation.results import observe
-from beamz.simulation.execute import sharding
 from beamz.simulation.compile.backend import cuda_backend_status
-from beamz.simulation.execute import build_scan, initial_program_state
+from beamz.simulation.execute import build_scan, initial_program_state, sharding
+from beamz.simulation.results import observe
 from scripts.benchmark_cuda_realistic import build_simulation
 
 

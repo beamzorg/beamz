@@ -4,8 +4,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from beamz.simulation.cuda.native import abi
 from beamz.simulation.cuda import tuning
+from beamz.simulation.cuda.native import abi
 from beamz.simulation.model import RunConfig
 
 

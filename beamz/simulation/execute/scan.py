@@ -12,7 +12,7 @@ import jax.numpy as jnp
 from jax.core import Tracer
 
 from beamz.const import EPS_0, MU_0
-from beamz.simulation.compile import kernels as update_runtime
+from beamz.simulation.compile import physics as update_runtime
 from beamz.simulation.compile.storage import cuda_capacity_schedule
 from beamz.simulation.execute.step import (
     SOURCE_PHASE_COMPONENTS,

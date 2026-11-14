@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from beamz.simulation.compile import kernels
+from beamz.simulation.compile import physics as kernels
 from beamz.simulation.compile.backend import cuda_backend_status
 from tests.integration.test_differentiable_simulation import (
     field_loss,

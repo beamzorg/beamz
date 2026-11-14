@@ -7,11 +7,11 @@ import pytest
 
 import beamz as bz
 from beamz.devices.sources.time import sample_source_waveforms
+from beamz.simulation.results import FieldMetadata, SimulationMetadata
 from beamz.simulation.results.observe import SourceNormalization
 from beamz.simulation.results.observe import (
     source_normalization as _source_normalization,
 )
-from beamz.simulation.results import FieldMetadata, SimulationMetadata
 
 
 def test_gaussian_pulse_spectrum_uses_fwidth_standard_deviation():

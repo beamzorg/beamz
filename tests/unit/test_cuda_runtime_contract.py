@@ -8,11 +8,11 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from beamz.simulation.cuda.native import abi
-from beamz.simulation.compile import backend as backend_runtime
-from beamz.simulation.compile import kernels
 from beamz.simulation.compile import _elide_uniform_grid
+from beamz.simulation.compile import backend as backend_runtime
+from beamz.simulation.compile import physics as kernels
 from beamz.simulation.cuda import runtime as cuda_runtime
+from beamz.simulation.cuda.native import abi
 from beamz.simulation.execute import (
     CUDA_GRAPH_MAX_STEPS,
     build_scan,

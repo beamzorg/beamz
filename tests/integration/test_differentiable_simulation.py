@@ -343,8 +343,8 @@ def test_monitor_flux_matches_analysis_result():
     solver = sim.differentiable()
     state = seeded_state(solver)
     out = solver(epsilon, state=state)
-    from beamz.simulation.results.observe import monitor_dft_flux
     from beamz.simulation.results import MonitorResults
+    from beamz.simulation.results.observe import monitor_dft_flux
 
     result = MonitorResults.from_compiled_state(
         sim.monitors[0], solver.program.monitors[0], out, solver.program.config

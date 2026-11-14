@@ -23,7 +23,7 @@ from beamz.simulation.api.differentiable import (
     topology_coefficients,
     topology_yee_permittivity,
 )
-from beamz.simulation.compile import kernels
+from beamz.simulation.compile import physics as kernels
 from beamz.simulation.execute import build_step_context, forward_step
 from beamz.simulation.results.observe import monitor_dft_sample_scale
 

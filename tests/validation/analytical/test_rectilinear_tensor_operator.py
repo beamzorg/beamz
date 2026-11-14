@@ -9,7 +9,7 @@ from beamz.constitutive import electric_tensor_coefficients
 from beamz.design.grid import RectilinearGrid
 from beamz.devices.modes._tensor_yee import inverse_operator
 from beamz.lattice import component_axis_offsets_3d, component_shape_3d
-from beamz.simulation.compile.kernels import (
+from beamz.simulation.compile.physics import (
     advance_e_centered_tensor,
     collocate_yee_component,
 )

@@ -186,7 +186,7 @@ def _phase(state, ctx, coeffs, *, phase):
     )
     fields = outputs[:3]
     if tensor_update:
-        from beamz.simulation.compile.kernels import (
+        from beamz.simulation.compile.physics import (
             advance_e_centered_tensor,
             fit_array_to_shape,
         )
@@ -223,7 +223,7 @@ def _phase(state, ctx, coeffs, *, phase):
 
 
 def select_sharded_kernel(ctx):
-    from beamz.simulation.compile.kernels import StepUpdateKernel
+    from beamz.simulation.compile.physics import StepUpdateKernel
 
     validate_sharded_config(ctx.config, ctx.boundary, ctx.sharding_plan)
     return StepUpdateKernel(

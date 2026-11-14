@@ -28,7 +28,7 @@ from beamz.devices.sources.compiler import (  # noqa: F401
     CompiledSourceSpec,
     batch_slab_specs,
 )
-from beamz.simulation.compile import kernels as update_runtime  # noqa: F401
+from beamz.simulation.compile import physics as update_runtime  # noqa: F401
 from beamz.simulation.compile.backend import CUDA_BF16_PSI, trace_preparation
 from beamz.simulation.compile.backend import (
     compact_boundary_masks as compact_boundary_masks,

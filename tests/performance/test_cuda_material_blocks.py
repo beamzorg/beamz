@@ -17,15 +17,15 @@ from beamz.design.raster import (
     Scene,
     rasterize,
 )
-from beamz.simulation.compile.backend import cuda_backend_status
 from beamz.simulation.compile import _pack_cuda_lossless_e_coefficients
+from beamz.simulation.compile.backend import cuda_backend_status
+from beamz.simulation.compile.physics import select_update_kernel
 from beamz.simulation.cuda.storage import pack_material_blocks
 from beamz.simulation.execute import (
     build_program_scan,
     build_step_context,
     forward_step,
 )
-from beamz.simulation.compile.kernels import select_update_kernel
 from beamz.simulation.execute.sharding import place_tree
 from tests.jax_compat import enable_x64
 from tests.performance.test_cuda_tensor import compare_states, seeded_state

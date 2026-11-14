@@ -36,15 +36,15 @@ from beamz.devices.sources.time import (
     analytic_signal_quadrature,
     partition_weights_by_frequency,
 )
-from beamz.simulation.results import observe as monitor_runtime
+from beamz.simulation.compile.material_blocks import material_values
 from beamz.simulation.execute import (
     build_program_scan,
     execution_cache,
     initial_program_state,
     run_program,
 )
-from beamz.simulation.compile.material_blocks import material_values
 from beamz.simulation.model import RunConfig, SimulationState
+from beamz.simulation.results import observe as monitor_runtime
 
 pytestmark = [pytest.mark.compiled, pytest.mark.component]
 

@@ -9,7 +9,7 @@ import pytest
 from beamz import PEC, PML, Design, Material, Simulation
 from beamz.simulation import execute
 from beamz.simulation.compile.backend import compact_mask
-from beamz.simulation.compile.kernels import apply_zero_mask
+from beamz.simulation.compile.physics import apply_zero_mask
 
 
 def _captured_boolean_bytes(closed_jaxpr):

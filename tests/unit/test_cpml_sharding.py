@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from beamz.simulation.model import CpmlPackedSlabSpec, CpmlTerm
 from beamz.simulation.execute.sharding import _lower_cpml_term
+from beamz.simulation.model import CpmlPackedSlabSpec, CpmlTerm
 
 
 @pytest.mark.parametrize("axis", range(3))

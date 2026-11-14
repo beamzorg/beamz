@@ -22,7 +22,7 @@ from beamz.lattice import (
     sample_voxel_grid_at_component_3d,
 )
 from beamz.simulation.api.differentiable import bind_electric_coefficients
-from beamz.simulation.compile import kernels
+from beamz.simulation.compile import physics as kernels
 from beamz.simulation.cuda.native.abi import (
     CUDA_BF16_PSI,
     CUDA_CPML_PAIR,

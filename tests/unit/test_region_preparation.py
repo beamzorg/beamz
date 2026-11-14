@@ -12,8 +12,8 @@ from beamz.lattice import (
     component_shapes,
     sample_voxel_grid_at_component_3d,
 )
-from beamz.simulation.compile.kernels import precompute_e_update_coefficients
 from beamz.simulation.compile.assembly import electric_coefficients
+from beamz.simulation.compile.physics import precompute_e_update_coefficients
 
 
 @pytest.mark.parametrize("component", ["Ex", "Ey", "Ez", "Hx", "Hy", "Hz"])
