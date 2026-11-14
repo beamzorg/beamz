@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from beamz.simulation import _cuda_abi as abi
+from beamz.simulation.cuda.native import abi
 
 ROOT = Path(__file__).resolve().parents[2]
 

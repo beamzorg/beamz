@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from beamz.simulation.observe import _dft_phase_angle
+from beamz.simulation.results.observe import _dft_phase_angle
 
 
 def test_dft_phase_rounds_frequency_and_clock_before_multiplication():

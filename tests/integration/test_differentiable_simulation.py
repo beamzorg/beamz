@@ -343,7 +343,7 @@ def test_monitor_flux_matches_analysis_result():
     solver = sim.differentiable()
     state = seeded_state(solver)
     out = solver(epsilon, state=state)
-    from beamz.simulation.observe import monitor_dft_flux
+    from beamz.simulation.results.observe import monitor_dft_flux
     from beamz.simulation.results import MonitorResults
 
     result = MonitorResults.from_compiled_state(
@@ -360,7 +360,7 @@ def test_monitor_flux_matches_analysis_result():
 def test_partitioned_monitor_scan_preserves_ragged_windows_and_gradients():
     from dataclasses import replace
 
-    from beamz.simulation.differentiation import DifferentiableSimulation
+    from beamz.simulation.api.differentiation import DifferentiableSimulation
     from beamz.simulation.execute import build_scan
 
     sim, epsilon = make_simulation(cpml=True, monitors=True, sources=True, timesteps=11)

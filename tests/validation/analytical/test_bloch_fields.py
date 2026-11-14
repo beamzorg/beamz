@@ -7,7 +7,7 @@ import pytest
 
 import beamz as bz
 from beamz.lattice import component_axis_offsets_3d
-from beamz.simulation.dispersion import update_dispersion
+from beamz.simulation.compile.material_blocks import update_dispersion
 
 
 def _seed(sim, vector):
@@ -34,7 +34,7 @@ def _seed(sim, vector):
         scale = (
             0.1 * (1 + "xyz".index(component[-1])) / (377 if component[0] == "H" else 1)
         )
-        from beamz.simulation.kernels import apply_zero_mask
+        from beamz.simulation.compile.kernels import apply_zero_mask
 
         updates[component.lower()] = apply_zero_mask(
             jnp.asarray(scale * np.exp(1j * phase), dtype=jnp.complex64),

@@ -7,8 +7,11 @@ import pytest
 
 from beamz.const import EPS_0
 from beamz.lattice import component_shape_3d
-from beamz.simulation.kernels import advance_e_centered_tensor, collocate_yee_component
-from beamz.simulation.tensor_regions import TensorRegion, compact_tensor_region
+from beamz.simulation.compile.kernels import (
+    advance_e_centered_tensor,
+    collocate_yee_component,
+)
+from beamz.simulation.compile.material_blocks import TensorRegion, compact_tensor_region
 from tests.jax_compat import enable_x64
 
 

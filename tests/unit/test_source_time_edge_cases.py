@@ -259,7 +259,7 @@ def test_discrete_spectrum_matches_direct_sum_without_a_frequency_matrix(
 
 def test_discrete_spectrum_trims_only_exact_zero_padding(monkeypatch):
     from beamz.devices.sources.time import _discrete_spectrum
-    from beamz.simulation.observe import _signal_dft_spectrum
+    from beamz.simulation.results.observe import _signal_dft_spectrum
 
     times = np.arange(10000) * 1e-16
     values = np.zeros(times.size)

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from beamz.simulation.cuda.mstep import build_mstep_plan
+from beamz.simulation.cuda.native.mstep import build_mstep_plan
 
 
 def _plan(shape=(37, 65, 97), groups=(None,) * 9, indices=None):

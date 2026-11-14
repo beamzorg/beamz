@@ -30,16 +30,16 @@ import jax
 import numpy as np
 
 from beamz._cache_tokens import cache_token
-from beamz.simulation import _cuda_abi as abi
-from beamz.simulation.cuda.tuning_parts.model import (
+from beamz.simulation.cuda.native import abi
+from beamz.simulation.cuda.native.mstep import (  # noqa: F401
     _AXES,
     predict_layout,
     predict_layout_time_to_result,
-)  # noqa: F401
+)
 
 _SCHEMA = 2
 _TILES = ("64x4", "32x8")
-_REPORTS = OrderedDict()
+_REPORTS: OrderedDict[Any, Any] = OrderedDict()
 _TUNING_LOCK = threading.RLock()
 
 
@@ -97,8 +97,7 @@ def _apply(program, choice):
         # rotated-layout fast path by restoring its byte-ID/dense encoding once,
         # at setup; no block expansion occurs inside a timed invocation.
         from beamz.simulation.compile import _pack_cuda_lossless_e_coefficients
-
-        from .material_blocks import unpack_material_blocks
+        from beamz.simulation.cuda.storage import unpack_material_blocks
 
         shapes = program.boundary.logical_component_shapes
         sources = tuple(
@@ -380,12 +379,13 @@ def _select_program(program, signature, policy):
         except (OSError, ValueError, KeyError, TypeError):
             pass
 
-    from beamz.simulation import observe, sharding
     from beamz.simulation.execute import (
         CUDA_GRAPH_MAX_STEPS,
         build_scan,
         initial_program_state,
+        sharding,
     )
+    from beamz.simulation.results import observe
 
     if not _safe_headroom():
         return _remember(

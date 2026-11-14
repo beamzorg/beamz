@@ -16,9 +16,9 @@ def provenance():
     paths = (
         "beamz/simulation/cuda/runtime.py",
         "beamz/simulation/cuda/differentiation.py",
-        "beamz/simulation/differentiation.py",
-        "beamz/simulation/execute.py",
-        "beamz/simulation/observe.py",
+        "beamz/simulation/api/differentiation.py",
+        "beamz/simulation/execute/__init__.py",
+        "beamz/simulation/results/observe.py",
         "cuda/src/adjoint.cu",
         "cuda/src/update.cu",
         "cuda/src/ffi_handler.cc",

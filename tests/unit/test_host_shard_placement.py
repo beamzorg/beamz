@@ -17,7 +17,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import jax
 import numpy as np
-from beamz.simulation import sharding
+from beamz.simulation.execute import sharding
 
 devices = np.array(jax.devices())
 mesh = jax.sharding.Mesh(devices, ('fdtd',))

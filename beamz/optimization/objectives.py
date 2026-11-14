@@ -21,7 +21,7 @@ from beamz.analysis.mode_projection import (
 )
 from beamz.analysis.sparameters import _wave_selectors
 from beamz.devices.monitors import ModeMonitor
-from beamz.simulation.observe import normalization_from_result
+from beamz.simulation.results.observe import normalization_from_result
 
 
 class ModalObjective:

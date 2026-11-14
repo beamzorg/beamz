@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 from beamz.lattice import component_shapes
-from beamz.simulation import _cuda_abi as abi
-from beamz.simulation.backend import CUDA_DEFAULT_FLAGS
+from beamz.simulation.cuda.native import abi
+from beamz.simulation.compile.backend import CUDA_DEFAULT_FLAGS
 from beamz.simulation.compile import CompiledProgramKey, _preparation_key
 from beamz.simulation.cuda import schedule
 
@@ -192,7 +192,7 @@ def test_measured_boundary_families_select_their_validated_variant(family):
 
 
 def test_short_single_call_does_not_query_gpu_or_build_dependency_plan(monkeypatch):
-    from beamz.simulation.cuda import mstep
+    from beamz.simulation.cuda.native import mstep
 
     def forbidden(*args, **kwargs):
         pytest.fail("Short single call queried hardware or built a plan")
@@ -209,8 +209,9 @@ def test_short_single_call_does_not_query_gpu_or_build_dependency_plan(monkeypat
     "available,chosen", [(1, "streamed"), (None, "streamed"), (20 << 30, "mstep")]
 )
 def test_auto_selection_checks_actual_workspace(monkeypatch, available, chosen):
-    from beamz.simulation import backend, memory
-    from beamz.simulation.cuda import mstep
+    from beamz.simulation.compile import backend
+    from beamz.simulation.compile import storage as memory
+    from beamz.simulation.cuda.native import mstep
 
     program = _program(runs=32)
     monkeypatch.setattr(schedule, "cuda_device_kind", lambda: "NVIDIA GeForce RTX 3090")
@@ -238,8 +239,9 @@ def test_auto_selection_checks_actual_workspace(monkeypatch, available, chosen):
 
 
 def test_auto_selection_still_checks_full_plan_and_refreshes_budget(monkeypatch):
-    from beamz.simulation import backend, memory
-    from beamz.simulation.cuda import mstep
+    from beamz.simulation.compile import backend
+    from beamz.simulation.compile import storage as memory
+    from beamz.simulation.cuda.native import mstep
 
     program = _program(runs=32)
     monkeypatch.setattr(schedule, "cuda_device_kind", lambda: "NVIDIA GeForce RTX 3090")
@@ -342,7 +344,7 @@ def test_schedule_and_reuse_are_execution_cache_inputs():
 
 def test_auto_backend_cannot_silently_accept_mstep_on_2d():
     import beamz as bz
-    from beamz.simulation.backend import CudaBackendUnavailable
+    from beamz.simulation.compile.backend import CudaBackendUnavailable
 
     sim = bz.Simulation(
         domain=(0.4 * bz.um, 0.3 * bz.um),
@@ -358,7 +360,7 @@ def test_auto_backend_cannot_silently_accept_mstep_on_2d():
     [("8x32", "32"), ("8x16", "128"), ("16x16", "256"), ("16x32", "whole")],
 )
 def test_mstep_variant_flags_are_validated_and_cacheable(monkeypatch, tile, segment):
-    from beamz.simulation.cuda.mstep_config import (
+    from beamz.simulation.cuda.native.mstep import (
         variant_flags_from_env,
         variant_summary,
     )

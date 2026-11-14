@@ -15,7 +15,7 @@ _LIBRARIES = []
 
 
 def register_host_sharded_ffi():
-    from beamz.simulation._cuda_abi import CUDA_SHARDED_TARGET
+    from beamz.simulation.cuda.native.abi import CUDA_SHARDED_TARGET
 
     if _LIBRARIES:
         return

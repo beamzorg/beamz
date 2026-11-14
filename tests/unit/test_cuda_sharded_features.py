@@ -14,8 +14,8 @@ import pytest
 
 import beamz as bz
 from beamz.design import MaterialGrid
-from beamz.simulation import backend
-from beamz.simulation.cuda import sharding
+from beamz.simulation.compile import backend
+from beamz.simulation.cuda.native import sharding
 from tests.unit.cuda_host_contract import register_host_sharded_ffi
 from tests.unit.test_cuda_sharding import seed_state
 
@@ -326,7 +326,7 @@ def test_native_sharded_feature_parity_on_cpu(case):
 
 def check_normal_cpml_placement():
     from beamz.simulation.execute import runtime_inputs
-    from beamz.simulation.sharding import prepare_state
+    from beamz.simulation.execute.sharding import prepare_state
     from tests.performance.h100_workloads import H100Workload
 
     with native_cpu_backend():

@@ -29,7 +29,9 @@ from beamz.devices.sources.time import (
     sample_source_waveforms,
 )
 from beamz.lattice import component_coordinates_rectilinear, component_shapes
-from beamz.simulation.observe import source_normalization as _source_normalization
+from beamz.simulation.results.observe import (
+    source_normalization as _source_normalization,
+)
 from tests.utils import compiled_grid
 
 ROOT = Path(__file__).resolve().parents[2]

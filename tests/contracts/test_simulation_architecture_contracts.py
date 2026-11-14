@@ -48,7 +48,7 @@ from beamz.devices.visualization import visual_spec_from_device
 from beamz.simulation.compile import CompiledProgramKey
 from beamz.simulation.execute import _apply_specs
 from beamz.simulation.model import ShardingConfig, SimulationRequest, SimulationState
-from beamz.simulation.sharding import sharding_cache_token
+from beamz.simulation.execute.sharding import sharding_cache_token
 from tests.validation.invariants.test_engine_equivalence import (
     TEST_WAVELENGTH,
     _center_index,
@@ -86,7 +86,7 @@ def _module_dependencies(module_name):
         ("beamz.simulation.api", "beamz.analysis"),
         ("beamz.simulation.compile", "beamz.analysis"),
         ("beamz.simulation.execute", "beamz.analysis"),
-        ("beamz.simulation.observe", "beamz.analysis"),
+        ("beamz.simulation.results.observe", "beamz.analysis"),
         ("beamz.simulation.results", "beamz.analysis"),
     ],
 )

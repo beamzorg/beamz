@@ -15,10 +15,10 @@ import pytest
 
 import beamz as bz
 from beamz.simulation.cuda import runtime
-from beamz.simulation.cuda import sharding as cuda_sharding
-from beamz.simulation.distributed import _shard_map
+from beamz.simulation.cuda.native import sharding as cuda_sharding
+from beamz.simulation.execute.distributed import _shard_map
 from beamz.simulation.model import ShardingConfig
-from beamz.simulation.sharding import build_sharding_plan
+from beamz.simulation.execute.sharding import build_sharding_plan
 
 
 def test_legacy_shard_map_lookup(monkeypatch):
@@ -77,9 +77,9 @@ def test_aligned_layout_preserves_component_supports():
 
 
 def run_cpu_contract():
-    from beamz.simulation import backend
+    from beamz.simulation.compile import backend
     from beamz.simulation.execute import build_scan, runtime_inputs
-    from beamz.simulation.sharding import place_tree, prepare_state
+    from beamz.simulation.execute.sharding import place_tree, prepare_state
     from tests.performance.h100_workloads import H100Workload
 
     sim = make_simulation()

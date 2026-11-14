@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from beamz.simulation.model import CpmlPackedSlabSpec, CpmlTerm
-from beamz.simulation.sharding import _lower_cpml_term
+from beamz.simulation.execute.sharding import _lower_cpml_term
 
 
 @pytest.mark.parametrize("axis", range(3))

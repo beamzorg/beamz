@@ -7,7 +7,7 @@ import pytest
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.devices._boundary_compile import compile_metallic_masks
 from beamz.lattice import advance_e_field, advance_h_field, component_shapes
-from beamz.simulation.kernels import (
+from beamz.simulation.compile.kernels import (
     advance_e_centered_tensor,
     te_xy_curl_e_to_h_2d,
     te_xy_curl_h_to_e_2d,

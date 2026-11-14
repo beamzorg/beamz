@@ -13,7 +13,7 @@ import numpy as np
 
 from beamz._cache_tokens import cache_token
 from beamz.devices._immutable import readonly_array
-from beamz.simulation.differentiable import TOPOLOGY_NUMERICS_VERSION
+from beamz.simulation.api.differentiable import TOPOLOGY_NUMERICS_VERSION
 
 from ._validation import step_count
 from .design import InverseDesign

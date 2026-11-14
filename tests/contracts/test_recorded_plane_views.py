@@ -13,7 +13,7 @@ import pytest
 from beamz.analysis import adapters
 from beamz.analysis._coordinates import recorded_plane
 from beamz.analysis.plotting import _normalize_dft_components
-from beamz.simulation.observe import SourceNormalization
+from beamz.simulation.results.observe import SourceNormalization
 from tests.integration.test_analysis_video import _results_3d
 
 

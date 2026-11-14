@@ -406,8 +406,8 @@ def _run_child_benchmark(args: argparse.Namespace) -> None:
     import jaxlib
 
     import beamz
-    from beamz.simulation import sharding as sharding_runtime
     from beamz.simulation.execute import build_scan, initial_program_state
+    from beamz.simulation.execute import sharding as sharding_runtime
 
     devices = tuple(jax.devices("gpu"))
     if len(devices) != 1:
@@ -470,7 +470,7 @@ def _run_child_benchmark(args: argparse.Namespace) -> None:
         gc.collect()
 
     stats = device.memory_stats() or {}
-    from beamz.simulation.backend import cuda_backend_status
+    from beamz.simulation.compile.backend import cuda_backend_status
 
     status = cuda_backend_status(register=False)
     if not status.available or status.extension_version is None:

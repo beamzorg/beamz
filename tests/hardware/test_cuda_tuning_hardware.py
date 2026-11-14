@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from beamz.simulation import execute
-from beamz.simulation.backend import cuda_backend_status
+from beamz.simulation.compile.backend import cuda_backend_status
 from beamz.simulation.cuda import tuning
 from scripts.benchmark_cuda_realistic import build_simulation
 

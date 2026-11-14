@@ -15,7 +15,7 @@ import beamz._cuda as extension
 import jax
 import numpy as np
 
-from beamz.simulation import _cuda_abi as abi
+from beamz.simulation.cuda.native import abi
 from beamz.simulation.execute import build_scan, initial_program_state
 from scripts.benchmark_cuda_realistic import build_simulation
 

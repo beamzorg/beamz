@@ -18,8 +18,7 @@ from beamz.design.grid import RectilinearGrid
 from beamz.devices.monitors.compiler import CompiledMonitorSpec
 from beamz.devices.monitors.monitors import _Monitor
 from beamz.devices.sources.compiler import CompiledSourceSpec
-from beamz.simulation.material_blocks import MaterialBlocks
-from beamz.simulation.tensor_regions import TensorRegion
+from beamz.simulation.compile.material_blocks import MaterialBlocks, TensorRegion
 
 # Requests are detached, hashable compiler inputs. They prevent later mutation of a
 # public Simulation or device object from changing a cached program's meaning.

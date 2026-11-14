@@ -50,7 +50,7 @@ def cases():
 
 
 def variant_flags(study):
-    from beamz.simulation import _cuda_abi as abi
+    from beamz.simulation.cuda.native import abi
 
     tile_flags = {"64x4": 0, "32x8": abi.CUDA_SHELL32X8, "32x4": abi.CUDA_SHELL32X4}
     mask = abi.CUDA_SHELL32X8 | abi.CUDA_SHELL32X4
@@ -118,8 +118,8 @@ def worker(args, case):
     import numpy as np
 
     import beamz as bz
-    from beamz.simulation import _cuda_abi as abi
     from beamz.simulation.cuda import runtime
+    from beamz.simulation.cuda.native import abi
     from beamz.simulation.execute import build_scan, initial_program_state
     from scripts.benchmark_cuda_realistic import build_simulation
 

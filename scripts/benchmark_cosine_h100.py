@@ -146,10 +146,10 @@ def child(args):
     import numpy as np
 
     import beamz
-    from beamz.simulation import observe
-    from beamz.simulation import sharding as placement
-    from beamz.simulation.backend import cuda_backend_status
+    from beamz.simulation.compile.backend import cuda_backend_status
     from beamz.simulation.execute import build_scan, initial_program_state
+    from beamz.simulation.execute import sharding as placement
+    from beamz.simulation.results import observe
 
     devices = jax.devices("gpu")
     assert len(devices) == args.devices and all(

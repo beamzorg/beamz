@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from beamz.simulation.preparation_trace import preparation_phase
+from beamz.simulation.compile.backend import preparation_phase
 
 
 def test_nested_preparation_trace_records_failure(tmp_path, monkeypatch):

@@ -1,1 +1,0 @@
-"""Detached simulation result components."""

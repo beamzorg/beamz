@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 
 import beamz as bz
-from beamz.simulation import _cuda_abi as abi
-from beamz.simulation.backend import cuda_backend_status
-from beamz.simulation.cuda.mstep import build_mstep_plan
+from beamz.simulation.cuda.native import abi
+from beamz.simulation.compile.backend import cuda_backend_status
+from beamz.simulation.cuda.native.mstep import build_mstep_plan
 from beamz.simulation.execute import build_scan, initial_program_state
 
 STATUS = cuda_backend_status()
@@ -240,7 +240,7 @@ def test_mstep_reports_a_real_core_and_rejects_recorders():
         boundaries=sim.boundaries,
         time=sim.time,
     )
-    from beamz.simulation.backend import CudaBackendUnavailable
+    from beamz.simulation.compile.backend import CudaBackendUnavailable
 
     with pytest.raises(CudaBackendUnavailable, match="recorders"):
         unsupported.advance(num_steps=2, backend="cuda_mstep")

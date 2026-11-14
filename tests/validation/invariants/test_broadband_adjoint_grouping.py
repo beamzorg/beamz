@@ -62,7 +62,7 @@ def test_broadband_basis_preserves_full_gradient(polarization):
 def test_wide_bands_keep_individually_centered_pulses(frequencies):
     from types import SimpleNamespace
 
-    from beamz.simulation.spectral_adjoint import SpectralAdjoint
+    from beamz.simulation.results.adjoint import SpectralAdjoint
 
     backend = object.__new__(SpectralAdjoint)
     backend.problem = SimpleNamespace(adjoint_source_grouping="auto")

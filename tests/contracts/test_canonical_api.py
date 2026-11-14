@@ -7,8 +7,10 @@ import pytest
 
 import beamz as bz
 from beamz.devices.sources.time import sample_source_waveforms
-from beamz.simulation.observe import SourceNormalization
-from beamz.simulation.observe import source_normalization as _source_normalization
+from beamz.simulation.results.observe import SourceNormalization
+from beamz.simulation.results.observe import (
+    source_normalization as _source_normalization,
+)
 from beamz.simulation.results import FieldMetadata, SimulationMetadata
 
 
@@ -157,7 +159,7 @@ def test_monitor_results_apply_distinct_flux_and_mode_normalization(monkeypatch)
         launch_power_ratio=np.array([9.0]),
     )
     monkeypatch.setattr(
-        "beamz.simulation.observe.normalization_from_result",
+        "beamz.simulation.results.observe.normalization_from_result",
         lambda results, monitor: normalization,
     )
     flux_monitor = bz.FluxMonitor(
@@ -852,7 +854,7 @@ def test_mode_data_dataframe_exposes_lightweight_inspection_columns():
 
 
 def test_result_normalization_reuses_waveforms_only_within_one_result(monkeypatch):
-    import beamz.simulation.observe as observe
+    import beamz.simulation.results.observe as observe
 
     freqs = np.array([1.9e14, 2.0e14])
     pulse = bz.GaussianPulse(freq0=2e14, fwidth=2e13)

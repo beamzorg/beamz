@@ -3,7 +3,7 @@
 import jax
 import pytest
 
-from beamz.simulation.backend import cuda_backend_status
+from beamz.simulation.compile.backend import cuda_backend_status
 from tests.performance.h100_workloads import H100Workload
 from tests.unit.test_cuda_sharded_features import assert_state_close
 from tests.unit.test_cuda_sharding import seed_state
@@ -77,9 +77,9 @@ def test_distributed_bulk_and_cpml_continuation(backend, axis):
     first = sim.advance(
         state=state, num_steps=16, backend=backend, sharding=cfg, progress=False
     ).state
-    from beamz.simulation import sharding
+    from beamz.simulation.execute import sharding
     from beamz.simulation.execute import runtime_inputs
-    from beamz.simulation.observe import MONITOR_FIELDS
+    from beamz.simulation.results.observe import MONITOR_FIELDS
 
     program = sim.compile(num_steps=16, backend=backend, sharding=cfg)
     with jax.transfer_guard_device_to_host("disallow"):

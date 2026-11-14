@@ -239,8 +239,8 @@ def _run_child_benchmark(args: argparse.Namespace) -> None:
 
     import beamz as bz
     from beamz.design import MaterialGrid, RectilinearGrid
-    from beamz.simulation import sharding as sharding_runtime
     from beamz.simulation.execute import build_scan, initial_program_state
+    from beamz.simulation.execute import sharding as sharding_runtime
 
     devices = tuple(jax.devices("gpu"))
     if len(devices) != 1:
@@ -482,7 +482,7 @@ def _run_child_benchmark(args: argparse.Namespace) -> None:
     cuda_component_version = None
     cuda_abi_version = None
     if str(resolved_backend).startswith("cuda"):
-        from beamz.simulation.backend import cuda_backend_status
+        from beamz.simulation.compile.backend import cuda_backend_status
 
         status = cuda_backend_status(register=False)
         if not status.available:

@@ -134,8 +134,8 @@ from dataclasses import replace
 from beamz import Design, FieldRecorder, Material, PML, Simulation
 from beamz.simulation.model import ShardingConfig
 from beamz.simulation.execute import runtime_inputs
-from beamz.simulation.observe import MONITOR_FIELDS
-from beamz.simulation.sharding import prepare_state
+from beamz.simulation.results.observe import MONITOR_FIELDS
+from beamz.simulation.execute.sharding import prepare_state
 
 
 def make_sim(component=None):
@@ -245,8 +245,8 @@ from dataclasses import replace
 from beamz import Design, Material, PEC, Simulation
 from beamz.simulation.model import ShardingConfig
 from beamz.simulation.execute import runtime_inputs
-from beamz.simulation.observe import MONITOR_FIELDS
-from beamz.simulation.sharding import crop_state, prepare_state
+from beamz.simulation.results.observe import MONITOR_FIELDS
+from beamz.simulation.execute.sharding import crop_state, prepare_state
 
 
 def make_sim():

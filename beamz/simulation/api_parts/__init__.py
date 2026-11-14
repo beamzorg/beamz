@@ -1,1 +1,0 @@
-"""Public simulation specification components."""

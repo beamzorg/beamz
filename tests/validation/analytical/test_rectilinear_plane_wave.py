@@ -115,7 +115,7 @@ def test_centered_mesh_override_tracks_structure_coordinates():
 
 
 def test_periodic_dispersive_seam_uses_physical_support_volumes():
-    from beamz.simulation.dispersion import periodic_support_average
+    from beamz.simulation.compile.material_blocks import periodic_support_average
 
     grid = bz.RectilinearGrid(
         np.array([0, 1, 3]) * 1e-9,

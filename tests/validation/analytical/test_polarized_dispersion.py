@@ -11,7 +11,7 @@ import beamz as bz
 from beamz.design.discretization import MaterialGrid
 from beamz.design.dispersive_interfaces import DispersiveInterface
 from beamz.lattice import component_shapes
-from beamz.simulation.dispersion import (
+from beamz.simulation.compile.material_blocks import (
     compile_dispersion,
     initial_polarization,
     update_dispersion,

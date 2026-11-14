@@ -17,16 +17,16 @@ from beamz.design.raster import (
     Scene,
     rasterize,
 )
-from beamz.simulation.backend import cuda_backend_status
+from beamz.simulation.compile.backend import cuda_backend_status
 from beamz.simulation.compile import _pack_cuda_lossless_e_coefficients
-from beamz.simulation.cuda.material_blocks import pack_material_blocks
+from beamz.simulation.cuda.storage import pack_material_blocks
 from beamz.simulation.execute import (
     build_program_scan,
     build_step_context,
     forward_step,
 )
-from beamz.simulation.kernels import select_update_kernel
-from beamz.simulation.sharding import place_tree
+from beamz.simulation.compile.kernels import select_update_kernel
+from beamz.simulation.execute.sharding import place_tree
 from tests.jax_compat import enable_x64
 from tests.performance.test_cuda_tensor import compare_states, seeded_state
 
@@ -255,7 +255,7 @@ def test_tuned_rotation_restores_supported_material_storage():
 
 
 def test_diagonal_block_pool_gradients_match_previous_encoding():
-    from beamz.simulation.differentiation import build_differentiable_scan
+    from beamz.simulation.api.differentiation import build_differentiable_scan
 
     p = simulation(128, 2).compile(num_steps=2, backend="cuda_streamed")
     state = seeded_state(p)

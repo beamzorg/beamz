@@ -6,7 +6,7 @@ import jax
 import numpy as np
 import pytest
 
-from beamz.simulation.backend import cuda_backend_status
+from beamz.simulation.compile.backend import cuda_backend_status
 from scripts.benchmark_cuda_realistic import build_simulation
 from tests.hardware.test_cuda_backends import _assert_state_close, _copy_state
 

@@ -28,9 +28,7 @@ from beamz import (
 )
 from beamz.devices._boundary_compile import _AbsorberCompiler
 from beamz.devices.sources.specs import CustomSource
-from beamz.simulation.kernels import (
-    tm_xy_curl_h_to_e_2d,
-)
+from beamz.simulation.compile.kernels import tm_xy_curl_h_to_e_2d
 from tests.utils import compute_field_energy
 
 

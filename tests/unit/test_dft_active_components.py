@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from beamz.devices.monitors.compiler import CompiledMonitorSpec, SamplingPlan
-from beamz.simulation.observe import _accumulate_dft
+from beamz.simulation.results.observe import _accumulate_dft
 
 
 @pytest.mark.parametrize("active", [(2,), (0, 1, 3, 4), tuple(range(6))])

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from beamz.simulation.execute import build_scan, compiled_source_batches, forward_step
-from beamz.simulation.kernels import select_update_kernel
+from beamz.simulation.compile.kernels import select_update_kernel
 from tests.unit.test_cuda_runtime_contract import _program_and_state
 
 

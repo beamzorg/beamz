@@ -36,18 +36,15 @@ from beamz.devices.sources.time import (
     analytic_signal_quadrature,
     partition_weights_by_frequency,
 )
-from beamz.simulation import observe as monitor_runtime
+from beamz.simulation.results import observe as monitor_runtime
 from beamz.simulation.execute import (
     build_program_scan,
     execution_cache,
     initial_program_state,
     run_program,
 )
-from beamz.simulation.material_blocks import material_values
-from beamz.simulation.model import (
-    RunConfig,
-    SimulationState,
-)
+from beamz.simulation.compile.material_blocks import material_values
+from beamz.simulation.model import RunConfig, SimulationState
 
 pytestmark = [pytest.mark.compiled, pytest.mark.component]
 
@@ -1156,7 +1153,7 @@ def test_waveform_absolute_indexing_correctness(small_sim_params):
 
 
 def test_compiled_dft_component_monitor_populated(small_sim_params):
-    from beamz.simulation.observe import monitor_dft_component, monitor_dft_flux
+    from beamz.simulation.results.observe import monitor_dft_component, monitor_dft_flux
 
     wl, dx, _dt, domain, _steps, t, signal = small_sim_params
     design = Design(width=domain, height=domain, material=Material(permittivity=1.0))

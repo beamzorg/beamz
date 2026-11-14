@@ -6,7 +6,7 @@ import numpy as np
 import beamz as bz
 from beamz.design import MaterialGrid
 from beamz.simulation.execute import compiled_source_batches
-from beamz.simulation.kernels import CompiledStepContext, select_update_kernel
+from beamz.simulation.compile.kernels import CompiledStepContext, select_update_kernel
 
 
 def _simulation(grid: bz.RectilinearGrid) -> bz.Simulation:

@@ -7,8 +7,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from beamz.simulation import kernels
-from beamz.simulation.backend import cuda_backend_status
+from beamz.simulation.compile import kernels
+from beamz.simulation.compile.backend import cuda_backend_status
 from tests.integration.test_differentiable_simulation import (
     field_loss,
     make_simulation,
@@ -160,7 +160,7 @@ def test_cuda_native_timestep_raw_coefficients_match_phase_vjps(monkeypatch):
 
 def test_cuda_native_timestep_ragged_windows_and_dft_state_vjps_match_jax():
     import beamz as bz
-    from beamz.simulation.differentiation import DifferentiableSimulation
+    from beamz.simulation.api.differentiation import DifferentiableSimulation
 
     sim, epsilon = make_simulation(cpml=True, sources=True, monitors=True, timesteps=11)
     sim = sim.updated_copy(

@@ -112,7 +112,7 @@ PY
 import jax
 import jax.numpy as jnp
 import beamz._cuda as extension
-from beamz.simulation.backend import cuda_backend_status
+from beamz.simulation.compile.backend import cuda_backend_status
 
 devices = jax.devices()
 assert len(devices) == 1 and 'H100' in devices[0].device_kind, devices

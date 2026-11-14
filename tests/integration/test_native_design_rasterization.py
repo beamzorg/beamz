@@ -16,7 +16,7 @@ from beamz.design.raster import (
     rasterize,
 )
 from beamz.simulation.model import ShardingLayout
-from beamz.simulation.sharding import _lower_coefficients
+from beamz.simulation.execute.sharding import _lower_coefficients
 
 
 def design_2d() -> bz.Design:

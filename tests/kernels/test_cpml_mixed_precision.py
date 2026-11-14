@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from beamz.simulation.kernels import correct_cpml_term
+from beamz.simulation.compile.kernels import correct_cpml_term
 from beamz.simulation.model import CpmlPackedSlabSpec, CpmlTerm
 
 

@@ -76,22 +76,22 @@ and final diagnostics. It remains `None` for an ordinary full-grid run.
 
 ## Ownership
 
-- `api.py`: immutable public `Simulation` specification and request creation.
+- `api/`: immutable public `Simulation` specification and request creation.
 - `model.py`: request, compiled-program, lattice, plan, and runtime-state values;
   compiled coefficients, sources, and monitors are stored directly without wrapper plans.
-- `compile.py`: lowers a resolved request into an executable plan.
+- `compile/`: lowers a resolved request into an executable plan.
   Deterministic memory reporting lives here because it inspects that plan.
-- `kernels.py`: all canonical 2D/3D Yee, material-loss, periodic, PEC, and packed CPML
+- `compile/kernels.py`: canonical 2D/3D Yee, material-loss, periodic, PEC, and packed CPML
   mathematics. Periodic, PML, sponge, and PEC profile lowering lives with the boundary
   specifications in `beamz.devices._boundary_compile`.
-- `sharding.py`: optional multi-device lowering, padding, placement, and cropping.
-- `cuda/sharding.py`: explicit neighbor exchange and packed CPML ownership for
+- `execute/sharding.py`: optional multi-device lowering, padding, placement, and cropping.
+- `cuda/native/sharding.py`: explicit neighbor exchange and packed CPML ownership for
   sharded streamed CUDA phases; sources and monitors share the JAX timestep.
-- `observe.py`: monitor accumulation plus the numerical interpretation and
+- `results/observe.py`: monitor accumulation plus the numerical interpretation and
   source normalization of those acquisitions.
-- `results.py`: immutable execution-owned run outputs, decoding, and retained
+- `results/`: immutable execution-owned run outputs, decoding, and retained
   material context.
-- `execute.py`: JAX execution, caching, continuation, and result assembly.
+- `execute/`: JAX execution, caching, continuation, and result assembly.
 
 Memory reporting and observation stay with the compiled plan and monitor lifecycle
 instead of adding one-function orchestration modules.

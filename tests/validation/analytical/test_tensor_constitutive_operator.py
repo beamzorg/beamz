@@ -11,7 +11,7 @@ from beamz.constitutive import (
 )
 from beamz.devices.modes._tensor_yee import inverse_operator
 from beamz.lattice import component_shape_3d
-from beamz.simulation.kernels import advance_e_centered_tensor
+from beamz.simulation.compile.kernels import advance_e_centered_tensor
 from tests.jax_compat import enable_x64
 
 

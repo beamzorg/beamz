@@ -71,7 +71,7 @@ def normalize_expected_runs(expected_runs):
 
 
 def cuda_device_kind():
-    from beamz.simulation.backend import _gpu_devices
+    from beamz.simulation.compile.backend import _gpu_devices
 
     devices = _gpu_devices()
     return str(devices[0].device_kind) if len(devices) == 1 else ""
@@ -117,8 +117,8 @@ def predict_cost(cells, family, steps, expected_runs):
 
 def automatic_candidate(program, geometry, *, device_kind):
     """Return a reason and cost report; unsupported/unmeasured cases stay streamed."""
-    from beamz.simulation import _cuda_abi as abi
-    from beamz.simulation.backend import CUDA_DEFAULT_FLAGS
+    from beamz.simulation.compile.backend import CUDA_DEFAULT_FLAGS
+    from beamz.simulation.cuda.native import abi
     from beamz.simulation.cuda.runtime import _packed_e_material
 
     cfg = program.config
@@ -177,13 +177,19 @@ def choose_execution_schedule(
     program, groups, packed_monitors, *, native_supported, donate_state
 ):
     """Freeze capability, cost and memory choices before allocating workspaces."""
-    from beamz.simulation import _cuda_abi as abi
-    from beamz.simulation.backend import CudaBackendUnavailable, cuda_backend_status
-    from beamz.simulation.cuda.mstep import build_mstep_geometry, build_mstep_plan
-    from beamz.simulation.memory import (
+    from beamz.simulation.compile.backend import (
+        CudaBackendUnavailable,
+        cuda_backend_status,
+    )
+    from beamz.simulation.compile.storage import (
         check_mstep_workspace,
         cuda_available_bytes,
         cuda_workspace_estimate,
+    )
+    from beamz.simulation.cuda.native import abi
+    from beamz.simulation.cuda.native.mstep import (
+        build_mstep_geometry,
+        build_mstep_plan,
     )
 
     cfg = program.config

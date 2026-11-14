@@ -252,7 +252,7 @@ def main():
     def record_mstep_plan(*positional, **keywords):
         plan_start = time.perf_counter()
         plan = choose_mstep_plan(*positional, **keywords)
-        from beamz.simulation.cuda.mstep_config import variant_summary
+        from beamz.simulation.cuda.native.mstep import variant_summary
 
         mstep_plans.append(
             {

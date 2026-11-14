@@ -13,7 +13,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from beamz.devices.sources.compiler import CompiledSourceSpec, batch_slab_specs
-from beamz.simulation.distributed_sources import apply_batched_slabs
+from beamz.simulation.execute.distributed import apply_batched_slabs
 
 shape = (8, 12, 16)
 mesh = jax.sharding.Mesh(np.asarray(jax.devices()), ('fdtd',))

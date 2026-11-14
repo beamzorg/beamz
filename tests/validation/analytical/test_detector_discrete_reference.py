@@ -85,7 +85,7 @@ def test_three_dimensional_closed_box_accounts_for_lateral_power():
 def test_flux_phase_and_nonuniform_aperture_weights_match_phasor_power():
     from types import SimpleNamespace
 
-    from beamz.simulation.observe import monitor_dft_flux
+    from beamz.simulation.results.observe import monitor_dft_flux
 
     f, dt = 6e14, 1.5e-17
     electric = np.array([[1 + 2j, 3 - 1j]])

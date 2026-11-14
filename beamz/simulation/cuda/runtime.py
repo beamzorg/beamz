@@ -11,70 +11,69 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from beamz.simulation import _cuda_abi as abi
-from beamz.simulation.model import SimulationState
-
-from .runtime_parts.base import (  # noqa: F401
-    _COMPONENT_CODE,
-    _CPML_E_PSI_INPUT,
-    _CPML_H_PSI_INPUT,
-    _CPML_TERM_COUNT,
-    _EMPTY,
-    _EMPTY_SOURCE_GROUP,
+from beamz.simulation.cuda.native import abi
+from beamz.simulation.cuda.native.base import (
+    _COMPONENT_CODE,  # noqa: F401
+    _CPML_E_PSI_INPUT,  # noqa: F401
+    _CPML_H_PSI_INPUT,  # noqa: F401
+    _CPML_TERM_COUNT,  # noqa: F401
+    _EMPTY,  # noqa: F401
+    _EMPTY_SOURCE_GROUP,  # noqa: F401
     _FIELD_COUNT,
-    _METRIC_KIND_CODE,
-    _PHASE_E,
-    _PHASE_H,
+    _METRIC_KIND_CODE,  # noqa: F401
+    _PHASE_E,  # noqa: F401
+    _PHASE_H,  # noqa: F401
     _SOURCE_GROUP_COUNT,
-    _TEMPORAL_FIELD_WORKSPACE_INPUT,
-    _TEMPORAL_PSI_WORKSPACE_INPUT,
-    CUDA_ABI_VERSION,
-    NativeSchedulePlan,
-    _boundary_code,
-    _cpml_payload,
+    _TEMPORAL_FIELD_WORKSPACE_INPUT,  # noqa: F401
+    _TEMPORAL_PSI_WORKSPACE_INPUT,  # noqa: F401
+    CUDA_ABI_VERSION,  # noqa: F401
+    NativeSchedulePlan,  # noqa: F401
+    _boundary_code,  # noqa: F401
+    _cpml_payload,  # noqa: F401
     _ffi_call,
     _fields,
-    _metallic_edge_mask,
-    _metric_kind_code,
-    _phase_materials,
+    _metallic_edge_mask,  # noqa: F401
+    _metric_kind_code,  # noqa: F401
+    _phase_materials,  # noqa: F401
     _program_attributes,
-    _shape,
-    _term_metadata,
+    _shape,  # noqa: F401
+    _term_metadata,  # noqa: F401
 )
-from .runtime_parts.graph import (  # noqa: F401
-    _coincident_source_group_mask,
-    _combined_cpml_core_supported,
-    _cpml_graph_io,
-    _disjoint_source_group_mask,
-    _field_padding,
+from beamz.simulation.cuda.native.graph import (
+    _coincident_source_group_mask,  # noqa: F401
+    _combined_cpml_core_supported,  # noqa: F401
+    _cpml_graph_io,  # noqa: F401
+    _disjoint_source_group_mask,  # noqa: F401
+    _field_padding,  # noqa: F401
     _graph_io,
-    _native_schedule_flags,
+    _native_schedule_flags,  # noqa: F401
     _native_schedule_plan,
-    _packed_e_material,
-    _replace_fields,
-    _replace_graph_outputs,
+    _packed_e_material,  # noqa: F401
+    _replace_fields,  # noqa: F401
+    _replace_graph_outputs,  # noqa: F401
     _replace_native_outputs,
-    _replace_temporal_cpml_outputs,
+    _replace_temporal_cpml_outputs,  # noqa: F401
     _scheduled_graph_io,
     _source_group_arguments,
-    _temporal_cpml_fields_supported,
-    _temporal_cpml_graph_io,
-    _temporal_yee_supported,
-    _uniform_cpml_thickness,
-    _yee_graph_io,
+    _temporal_cpml_fields_supported,  # noqa: F401
+    _temporal_cpml_graph_io,  # noqa: F401
+    _temporal_yee_supported,  # noqa: F401
+    _uniform_cpml_thickness,  # noqa: F401
+    _yee_graph_io,  # noqa: F401
 )
-from .runtime_parts.phase import (  # noqa: F401
-    _discard,
-    _ffi_phase,
-    _GradientMask,
-    _phase_metrics,
-    _phase_with_vjp,
-    _target_cotangent,
-    _update_phase,
-    reverse_material_step,
-    update_e,
-    update_h,
+from beamz.simulation.cuda.native.phase import (
+    _discard,  # noqa: F401
+    _ffi_phase,  # noqa: F401
+    _GradientMask,  # noqa: F401
+    _phase_metrics,  # noqa: F401
+    _phase_with_vjp,  # noqa: F401
+    _target_cotangent,  # noqa: F401
+    _update_phase,  # noqa: F401
+    reverse_material_step,  # noqa: F401
+    update_e,  # noqa: F401
+    update_h,  # noqa: F401
 )
+from beamz.simulation.model import SimulationState
 
 
 def run_source_group_steps(state, ctx, coeffs, groups, nsteps: int) -> SimulationState:
@@ -282,7 +281,7 @@ def run_native_steps(
 ):
     """Dispatch shared CUDA execution, including wrapped storage layouts."""
     if coeffs.e_inverse_offdiagonal.size:
-        from .tensor import run_steps as run_tensor_steps
+        from beamz.simulation.cuda.native.phase import run_steps as run_tensor_steps
 
         return run_tensor_steps(
             state,

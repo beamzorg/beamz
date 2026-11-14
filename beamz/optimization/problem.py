@@ -14,7 +14,7 @@ from beamz.const import LIGHT_SPEED
 from beamz.design.materials import Material
 from beamz.devices.monitors import FieldMonitor, ModeMonitor
 from beamz.devices.sources import GaussianBeamSource, ModeSource
-from beamz.simulation.differentiable import (
+from beamz.simulation.api.differentiable import (
     TOPOLOGY_NUMERICS_VERSION,
     topology_coefficients,
     topology_material_grid,
@@ -158,7 +158,7 @@ class CompiledDesignProblem:
         self._projection_cache = cache
         self._spectral_adjoint = None
         if gradient_backend == "adjoint":
-            from beamz.simulation.spectral_adjoint import SpectralAdjoint
+            from beamz.simulation.results.adjoint import SpectralAdjoint
 
             self._spectral_adjoint = SpectralAdjoint(
                 self, reduce_objective, decay_tolerance=self.adjoint_decay_tolerance

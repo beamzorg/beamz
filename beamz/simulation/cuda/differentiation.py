@@ -22,7 +22,7 @@ from beamz.simulation.cuda.runtime import (
     run_source_group_steps,
 )
 from beamz.simulation.execute import compiled_source_batches, forward_step
-from beamz.simulation.observe import is_vector_dft_monitor, update_monitors
+from beamz.simulation.results.observe import is_vector_dft_monitor, update_monitors
 
 
 @jax.tree_util.register_static

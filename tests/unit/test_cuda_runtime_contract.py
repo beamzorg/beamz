@@ -8,9 +8,9 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from beamz.simulation import _cuda_abi as abi
-from beamz.simulation import backend as backend_runtime
-from beamz.simulation import kernels
+from beamz.simulation.cuda.native import abi
+from beamz.simulation.compile import backend as backend_runtime
+from beamz.simulation.compile import kernels
 from beamz.simulation.compile import _elide_uniform_grid
 from beamz.simulation.cuda import runtime as cuda_runtime
 from beamz.simulation.execute import (
@@ -38,7 +38,7 @@ def _program_and_state(
     simulation = workload.build()
     program = simulation.compile(backend="jax")
     # This CPU fixture emulates CUDA coefficients, which do not use JAX blocks.
-    from beamz.simulation.material_blocks import MaterialBlocks, material_values
+    from beamz.simulation.compile.material_blocks import MaterialBlocks, material_values
 
     program = replace(
         program,
@@ -206,7 +206,6 @@ def test_temporal_pair_returns_the_last_field_and_psi_banks(steps):
         np.all(np.asarray(a) == (4 if steps % 2 else 3))
         for a in (*result.cpml_psi_h_terms, *result.cpml_psi_e_terms)
     )
-
 
 
 def test_cuda_policy_rejects_unknown_psi_precision(monkeypatch):
@@ -973,7 +972,7 @@ def test_scan_compiler_policy_preserves_older_jax(monkeypatch):
 
 @pytest.mark.parametrize("steps", [1, 3])
 def test_mstep_degenerate_runs_never_allocate_pair_workspace(monkeypatch, steps):
-    from beamz.simulation.cuda import mstep
+    from beamz.simulation.cuda.native import mstep
 
     program, state, context = _program_and_state(cpml=True)
     program = replace(

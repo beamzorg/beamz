@@ -11,10 +11,7 @@ from beamz.analysis.data import AnalysisData
 from beamz.analysis.modal_projection.geometry import _mode_components_for_port
 from beamz.design.discretization import MaterialGrid
 from beamz.lattice import component_shape_3d
-from beamz.simulation.results import (
-    SimulationMetadata,
-    material_region_for_monitor,
-)
+from beamz.simulation.results import SimulationMetadata, material_region_for_monitor
 
 
 @pytest.mark.contract

@@ -7,10 +7,10 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from beamz.simulation.differentiation import build_differentiable_scan
+from beamz.simulation.api.differentiation import build_differentiable_scan
 from beamz.simulation.execute import build_program_scan
-from beamz.simulation.material_blocks import MaterialBlocks, material_values
-from beamz.simulation.sharding import place_tree
+from beamz.simulation.compile.material_blocks import MaterialBlocks, material_values
+from beamz.simulation.execute.sharding import place_tree
 from tests.jax_compat import enable_x64
 from tests.performance.test_cuda_material_blocks import simulation
 from tests.performance.test_cuda_tensor import compare_states, seeded_state
@@ -116,7 +116,7 @@ def test_compiled_memory_really_decreases(full):
 @pytest.mark.parametrize("graded", [False, True])
 @pytest.mark.parametrize("spatial_conductivity", [False, True])
 def test_literal_blocks_and_conductivity(graded, spatial_conductivity):
-    from beamz.simulation.material_blocks import compact_material
+    from beamz.simulation.compile.material_blocks import compact_material
 
     p = simulation(40, 5, graded=graded).compile(num_steps=5, backend="jax")
     state = seeded_state(p)

@@ -6,7 +6,7 @@ import pytest
 
 from beamz import FieldMonitor
 from beamz.optimization import InverseDesign
-from beamz.simulation.differentiable import topology_yee_permittivity
+from beamz.simulation.api.differentiable import topology_yee_permittivity
 from tests.topology_case import make_problem
 
 pytestmark = pytest.mark.optimization

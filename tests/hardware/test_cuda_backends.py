@@ -12,7 +12,7 @@ import beamz as bz
 import beamz.simulation.execute as execute_runtime
 from beamz.design import MaterialGrid
 from beamz.design.raster import Grid, Material, Scene, rasterize
-from beamz.simulation.backend import cuda_backend_status
+from beamz.simulation.compile.backend import cuda_backend_status
 from beamz.simulation.execute import build_scan, initial_program_state
 from tests.performance.h100_workloads import H100Workload
 
@@ -938,7 +938,7 @@ def test_temporal_pair_dft_windows_and_intervals(
     """Two observations, masked components, inactive windows and an odd tail."""
     from argparse import Namespace
 
-    from beamz.simulation import _cuda_abi as abi
+    from beamz.simulation.cuda.native import abi
     from scripts.benchmark_cuda_realistic import build_simulation
 
     monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "2")

@@ -9,7 +9,7 @@ from beamz.analysis.mode_projection import (
 )
 from beamz.devices.sources.planar_tfsf import component_slices_from_cell_bounds
 from beamz.lattice import component_shape_3d
-from beamz.simulation.differentiable import _cell_centers_to_yee
+from beamz.simulation.api.differentiable import _cell_centers_to_yee
 
 
 @pytest.mark.parametrize("component", ["Ex", "Ey", "Ez", "Hx", "Hy", "Hz"])

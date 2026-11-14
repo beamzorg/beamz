@@ -12,8 +12,8 @@ import pytest
 import beamz as bz
 from beamz.design import MaterialGrid, RectilinearGrid
 from beamz.design.raster import Grid, Material, RasterOptions, Scene, rasterize
-from beamz.simulation import backend as backend_runtime
-from beamz.simulation import sharding as sharding_runtime
+from beamz.simulation.compile import backend as backend_runtime
+from beamz.simulation.execute import sharding as sharding_runtime
 
 
 class _FakeDevice:
@@ -52,7 +52,7 @@ def test_portable_import_without_custom_call_target_traits():
             "import jaxlib.xla_client as xc; "
             "hasattr(xc, 'CustomCallTargetTraits') and delattr(xc, 'CustomCallTargetTraits'); "
             "import beamz; "
-            "from beamz.simulation.backend import resolve_backend; "
+            "from beamz.simulation.compile.backend import resolve_backend; "
             "assert resolve_backend('auto') == 'jax'",
         ],
         env={**os.environ, "JAX_PLATFORMS": "cpu"},
@@ -259,7 +259,7 @@ def test_cuda_defaults_to_validated_streamed_target_on_sm90(monkeypatch):
 
 @pytest.mark.parametrize("present", [False, True])
 def test_mstep_is_explicit_and_requires_its_optional_target(monkeypatch, present):
-    from beamz.simulation._cuda_abi import CUDA_MSTEP_TARGET
+    from beamz.simulation.cuda.native.abi import CUDA_MSTEP_TARGET
 
     extension = _extension(
         "beamz_cuda_streamed", *((CUDA_MSTEP_TARGET,) if present else ())

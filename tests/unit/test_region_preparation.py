@@ -12,8 +12,8 @@ from beamz.lattice import (
     component_shapes,
     sample_voxel_grid_at_component_3d,
 )
-from beamz.simulation.kernels import precompute_e_update_coefficients
-from beamz.simulation.region_materials import electric_coefficients
+from beamz.simulation.compile.kernels import precompute_e_update_coefficients
+from beamz.simulation.compile.assembly import electric_coefficients
 
 
 @pytest.mark.parametrize("component", ["Ex", "Ey", "Ez", "Hx", "Hy", "Hz"])
@@ -149,7 +149,6 @@ def test_region_basic_negative_and_strided_slices():
 
 @pytest.mark.parametrize("scalar", [False, True])
 def test_region_physical_conductivity_keeps_magnetic_update_lossless(scalar):
-
     from beamz.lattice import build_material_coefficients
 
     shape = (3, 4, 5)

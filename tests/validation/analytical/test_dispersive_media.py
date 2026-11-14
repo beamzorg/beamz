@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import beamz as bz
-from beamz.simulation.dispersion import update_dispersion
+from beamz.simulation.compile.material_blocks import update_dispersion
 
 BAND = (4e14, 8e14)
 

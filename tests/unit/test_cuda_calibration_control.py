@@ -7,8 +7,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from beamz.simulation import _cuda_abi as abi
-from beamz.simulation import execute, sharding
+from beamz.simulation.cuda.native import abi
+from beamz.simulation import execute
+from beamz.simulation.execute import sharding
 from beamz.simulation.cuda import tuning
 from beamz.simulation.model import RunConfig
 

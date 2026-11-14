@@ -7,9 +7,10 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from beamz.simulation import _cuda_abi as abi
-from beamz.simulation.backend import CudaBackendUnavailable
-from beamz.simulation.cuda import mstep, runtime
+from beamz.simulation.cuda.native import abi
+from beamz.simulation.compile.backend import CudaBackendUnavailable
+from beamz.simulation.cuda.native import mstep
+from beamz.simulation.cuda import runtime
 from beamz.simulation.cuda.storage import mstep_plan_inputs
 from tests.unit.test_cuda_runtime_contract import _program_and_state
 

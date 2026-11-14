@@ -38,8 +38,8 @@ import numpy as np
 
 from beamz.const import EPS_0
 from beamz.lattice import component_shapes
-from beamz.simulation import observe, sharding
-from beamz.simulation.execute import build_scan, initial_program_state
+from beamz.simulation.execute import build_scan, initial_program_state, sharding
+from beamz.simulation.results import observe
 
 
 def prepare(args, device):

@@ -12,7 +12,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from beamz.simulation import sharding
+from beamz.simulation.execute import sharding
 from beamz.simulation.execute import build_scan, runtime_inputs
 from tests.unit.test_cuda_sharded_features import assert_state_close, mode_simulation
 from tests.unit.test_cuda_sharding import seed_state
@@ -79,7 +79,7 @@ def check(case, conductivity=0.0):
     gradient = case in {"gradient", "dft_gradient"}
     steps = 4 if gradient else 12
     if case in {"local_dft", "dft_gradient"}:
-        from beamz.simulation.distributed_monitors import supported
+        from beamz.simulation.execute.distributed import supported
 
         assert supported(
             sim.compile(

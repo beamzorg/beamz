@@ -15,11 +15,11 @@ import jax
 import jaxlib
 
 import beamz
-from beamz.simulation import observe as monitor_runtime
-from beamz.simulation import sharding as sharding_runtime
-from beamz.simulation.backend import cuda_backend_status
+from beamz.simulation.compile.backend import cuda_backend_status
 from beamz.simulation.execute import build_scan, initial_program_state
+from beamz.simulation.execute import sharding as sharding_runtime
 from beamz.simulation.model import ShardingConfig
+from beamz.simulation.results import observe as monitor_runtime
 from tests.performance.benchmark_schema import BenchmarkRecord
 from tests.performance.h100_workloads import H100_WORKLOADS
 

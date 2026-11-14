@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from beamz.simulation.compile import _add_memory_arrays
-from beamz.simulation.material_blocks import (
+from beamz.simulation.compile.material_blocks import (
     MaterialBlocks,
     compact_material,
     material_values,

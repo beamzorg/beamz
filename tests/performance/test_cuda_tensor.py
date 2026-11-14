@@ -22,16 +22,16 @@ from beamz.design.raster import (
     Scene,
     rasterize,
 )
-from beamz.simulation.backend import cuda_backend_status
+from beamz.simulation.compile.backend import cuda_backend_status
 from beamz.simulation.execute import (
     build_program_scan,
     build_step_context,
     forward_step,
     initial_program_state,
 )
-from beamz.simulation.kernels import select_update_kernel
-from beamz.simulation.sharding import place_tree
-from beamz.simulation.tensor_regions import TensorRegion
+from beamz.simulation.compile.kernels import select_update_kernel
+from beamz.simulation.execute.sharding import place_tree
+from beamz.simulation.compile.material_blocks import TensorRegion
 from tests.jax_compat import enable_x64
 
 
@@ -202,8 +202,8 @@ def test_tensor_cuda_phase_matches_graph_without_monitors(boundary):
 
 
 def test_tensor_cuda_rejects_unimplemented_adjoint():
-    from beamz.simulation.cuda.tensor import payload
-    from beamz.simulation.differentiation import build_differentiable_scan
+    from beamz.simulation.cuda.native.phase import payload
+    from beamz.simulation.api.differentiation import build_differentiable_scan
 
     p = tensor_simulation().compile(num_steps=1, backend="cuda_streamed")
     with pytest.raises(ValueError, match="autodiff.*jax"):

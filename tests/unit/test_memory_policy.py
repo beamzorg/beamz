@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from beamz.simulation import memory
+from beamz.simulation.compile import storage as memory
 from beamz.simulation.compile import CompiledProgramKey
 from tests.unit.test_cuda_runtime_contract import _program_and_state
 
@@ -92,7 +92,7 @@ def test_monitor_continuation_does_not_allocate_discarded_history(monkeypatch):
     import numpy as np
 
     import beamz as bz
-    from beamz.simulation import observe
+    from beamz.simulation.results import observe
 
     sim = bz.Simulation(
         size=(0.8e-6, 0.6e-6, 0.4e-6),
@@ -192,7 +192,7 @@ def test_mstep_estimate_counts_compact_fields_and_plan():
 
 @pytest.mark.parametrize("policy,available", [("auto", 1), ("capacity", 1 << 30)])
 def test_forced_mstep_reports_memory_limits(monkeypatch, policy, available):
-    from beamz.simulation.backend import CudaBackendUnavailable
+    from beamz.simulation.compile.backend import CudaBackendUnavailable
 
     program, _, context = _program_and_state(cpml=True)
     program = replace(

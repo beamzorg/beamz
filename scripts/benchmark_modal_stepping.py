@@ -24,8 +24,8 @@ import jax.numpy as jnp
 import numpy as np
 from benchmark_h100_backends import ModalWorkload
 
-from beamz.simulation import observe, sharding
-from beamz.simulation.execute import build_scan, initial_program_state
+from beamz.simulation.execute import build_scan, initial_program_state, sharding
+from beamz.simulation.results import observe
 
 
 def main():

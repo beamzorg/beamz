@@ -14,7 +14,7 @@
         "beamz/devices/monitors/monitors.py",
         "beamz/devices/sources/specs.py",
         "beamz/devices/sources/time.py",
-        "beamz/simulation/api.py"
+        "beamz/simulation/api/__init__.py"
       ]
     },
     "solver_core": {
@@ -24,12 +24,12 @@
         "beamz/devices/_boundary_compile.py",
         "beamz/devices/monitors/compiler.py",
         "beamz/devices/sources/compiler.py",
-        "beamz/simulation/compile.py",
-        "beamz/simulation/execute.py",
-        "beamz/simulation/kernels.py",
+        "beamz/simulation/compile/__init__.py",
+        "beamz/simulation/execute/__init__.py",
+        "beamz/simulation/compile/kernels.py",
         "beamz/simulation/model.py",
-        "beamz/simulation/observe.py",
-        "beamz/simulation/results.py"
+        "beamz/simulation/results/observe.py",
+        "beamz/simulation/results/__init__.py"
       ]
     },
     "pic_analysis": {
@@ -55,7 +55,7 @@
         "beamz/devices/_boundary_compile.py",
         "beamz/devices/sources/planar_tfsf.py",
         "beamz/optimization/autodiff.py",
-        "beamz/simulation/kernels.py"
+        "beamz/simulation/compile/kernels.py"
       ]
     },
     "mode_solver": {

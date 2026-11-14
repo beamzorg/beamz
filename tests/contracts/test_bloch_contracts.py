@@ -135,7 +135,7 @@ def test_bloch_rejects_cuda_and_sharding_explicitly():
         run_time=1e-15,
         boundaries=[bz.Bloch(wavevector=(1e6, 0, 0))],
     )
-    from beamz.simulation.backend import CudaBackendUnavailable
+    from beamz.simulation.compile.backend import CudaBackendUnavailable
 
     with pytest.raises(CudaBackendUnavailable, match="periodic"):
         sim.compile(backend="cuda_streamed")

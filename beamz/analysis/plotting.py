@@ -16,7 +16,7 @@ from beamz.analysis.data import AnalysisData, analysis_inputs, static_fields
 from beamz.design._geometry import extrusion_bounds, planar_geometry
 from beamz.devices.visualization import visual_spec_from_device
 from beamz.lattice import plane_axes_3d
-from beamz.simulation.observe import source_field_amplitude_normalization
+from beamz.simulation.results.observe import source_field_amplitude_normalization
 
 _UM = 1e-6
 _AXIS_INDEX: dict[str, int] = {"z": 0, "y": 1, "x": 2}

@@ -82,7 +82,7 @@ def enable_parallel_host_placement(workers):
     import jax
 
     from beamz._region_array import RegionArray
-    from beamz.simulation import sharding as sharding_runtime
+    from beamz.simulation.execute import sharding as sharding_runtime
 
     original_place = sharding_runtime.place_region_array
 
@@ -173,9 +173,9 @@ def main():
     import numpy as np
 
     import beamz
-    from beamz.simulation import observe
-    from beamz.simulation import sharding as sharding_runtime
     from beamz.simulation.execute import build_scan, initial_program_state
+    from beamz.simulation.execute import sharding as sharding_runtime
+    from beamz.simulation.results import observe
 
     if args.host_placement_workers > 1:
         enable_parallel_host_placement(args.host_placement_workers)

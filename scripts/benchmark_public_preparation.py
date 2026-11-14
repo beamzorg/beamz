@@ -16,8 +16,8 @@ from pathlib import Path
 import jax
 
 from beamz.simulation.execute import initial_program_state
-from beamz.simulation.observe import MONITOR_FIELDS
-from beamz.simulation.sharding import place_tree, prepare_state
+from beamz.simulation.execute.sharding import place_tree, prepare_state
+from beamz.simulation.results.observe import MONITOR_FIELDS
 from scripts.benchmark_cuda_realistic import build_simulation
 
 

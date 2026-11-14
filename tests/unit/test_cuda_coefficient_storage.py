@@ -3,10 +3,7 @@
 import numpy as np
 import pytest
 
-from beamz.simulation.cuda.material_blocks import (
-    pack_material_blocks,
-    unpack_material_blocks,
-)
+from beamz.simulation.cuda.storage import pack_material_blocks, unpack_material_blocks
 
 
 def decode(pool, headers, shape):
