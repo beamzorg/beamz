@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from collections import OrderedDict
 from dataclasses import replace
 
 import numpy as np
@@ -207,6 +208,11 @@ def test_lowering_and_mutable_registry_internals_are_not_public():
 
 def test_reused_material_snapshot_does_not_need_content_fingerprints(monkeypatch):
     from beamz import _cache_tokens
+    from beamz.simulation import compile as compile_module
+
+    # Comparing distinct snapshots already in the cache may fingerprint content.
+    # Isolate this test of scan-free compilation and reuse of one owned snapshot.
+    monkeypatch.setattr(compile_module, "_PROGRAM_CACHE", OrderedDict())
 
     original = _cache_tokens.array_cache_token
 
