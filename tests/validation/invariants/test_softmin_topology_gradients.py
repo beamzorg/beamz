@@ -26,13 +26,20 @@ def test_softmin_full_solver_derivative_and_checkpoint(polarization, tmp_path):
     np.testing.assert_array_equal(gradient[~mask], 0)
     direction = np.random.default_rng(7).normal(size=mask.shape) * mask
     direction /= np.linalg.norm(direction)
+    # Avoid a nearly cancelling random projection: the objective is float32,
+    # so its small centered differences can otherwise be dominated by roundoff.
+    sign = 1.0 if np.sum(gradient * direction) >= 0 else -1.0
+    direction += sign * 0.1 * gradient / np.linalg.norm(gradient)
+    direction /= np.linalg.norm(direction)
+    adjoint = np.sum(gradient * direction)
+    assert abs(adjoint) > 1e-3
     for h in (0.03, 0.01):
         finite_difference = (
             problem.value(density + h * direction, beta=2)
             - problem.value(density - h * direction, beta=2)
         ) / (2 * h)
         np.testing.assert_allclose(
-            finite_difference, np.sum(gradient * direction), rtol=0.01, atol=3e-6
+            finite_difference, adjoint, rtol=0.01, atol=3e-6
         )
 
     path = tmp_path / "worst-frequency.npz"
