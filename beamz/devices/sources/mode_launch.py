@@ -675,14 +675,20 @@ def _launch_power_diagnostics_3d(
                     for residual in residuals
                 )
                 origin = tuple(int(s.start or 0) for s in slices["Ex"])
-                diagnostic_source = replace(
-                    source,
-                    center=tuple(
-                        float(coord) - offset * float(resolution)
-                        for coord, offset in zip(
-                            source.center, reversed(origin), strict=True
-                        )
-                    ),
+                # A rectilinear window keeps absolute coordinates; only the
+                # uniform window is re-origined and needs the source moved.
+                diagnostic_source = (
+                    source
+                    if getattr(diagnostic_fields, "geometry", None) is not None
+                    else replace(
+                        source,
+                        center=tuple(
+                            float(coord) - offset * float(resolution)
+                            for coord, offset in zip(
+                                source.center, reversed(origin), strict=True
+                            )
+                        ),
+                    )
                 )
             state = _reconstructed_3d_launch_phasor_state(
                 diagnostic_profile,
