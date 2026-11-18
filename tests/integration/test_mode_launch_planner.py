@@ -1085,3 +1085,22 @@ def test_rectilinear_launch_is_source_local_and_matches_dense_residuals(
         num_steps=1
     )
     assert sorted(compared) == ["e", "h"]
+
+
+def test_segment_recompile_reuses_mode_launch_plan(monkeypatch):
+    """A shorter continuation segment must not solve and plan the launch again."""
+    calls = []
+    plan = mode_launch_module._plan_3d_mode_source
+
+    def counted(*args, **kwargs):
+        calls.append(args[0])
+        return plan(*args, **kwargs)
+
+    monkeypatch.setattr(mode_launch_module, "_plan_3d_mode_source", counted)
+    # A core width used by no other test keeps the program cache cold.
+    simulation = _graded_waveguide_simulation("x", core=0.47e-6)
+    first = simulation.compile(num_steps=4)
+    second = simulation.compile(num_steps=3)
+    assert len(calls) == 1
+    assert second.grid is first.grid
+    assert second.config.num_steps == 3
