@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added `progress_callback` to `Simulation.run` and `Simulation.advance`. It
+  receives a `RunProgress` after each completed chunk with the completed and
+  maximum timesteps, physical and wall time, and, under `AutoTermination`, the
+  field-decay, monitor-change and source residuals of that check. The callback is
+  independent of `progress`, so runs can be logged without terminal output. See
+  `examples/2D_basics/progress_logging.py`.
+
 ## v0.6.2 - 2026-11-04
 
 - Corrected native Yee material and field sampling for 3D mode ports. Solver

@@ -46,6 +46,7 @@ from . import sharding as sharding_runtime
 from .memory import cuda_capacity_schedule
 from .results import (
     MonitorResults,
+    RunProgress,
     RunTermination,
     SimulationPerformance,
     SimulationResults,
@@ -1758,16 +1759,21 @@ def run_simulation_with_progress(
     report_performance: bool,
     schedule: str | None = None,
     expected_runs: int = 1,
+    show_progress: bool = True,
+    progress_callback: Callable[[RunProgress], None] | None = None,
 ) -> SimulationRun:
     """Run a segment in compiled chunks and report actual completed timesteps."""
     from beamz.simulation.cuda.schedule import normalize_expected_runs
+
+    wall_start = perf_counter()
 
     expected_runs = normalize_expected_runs(expected_runs)
     chunk_lengths = _progress_chunk_lengths(num_steps)
     # This API already knows how often each executable will run. Account for
     # that work even when visible progress divides a long run into short calls.
     chunk_reuse = Counter(chunk_lengths)
-    _print_inline_status("Compiling simulation...")
+    if show_progress:
+        _print_inline_status("Compiling simulation...")
     try:
         programs = {
             length: simulation.compile(
@@ -1791,12 +1797,15 @@ def run_simulation_with_progress(
                 donate_state=donate_state,
             )
     finally:
-        _finish_inline_progress()
+        if show_progress:
+            _finish_inline_progress()
 
     completed = 0
+    first_step = int(state.current_step)
     runtime_s = 0.0
     program = programs[chunk_lengths[-1]]
-    _print_inline_progress(0, num_steps, label="Running simulation")
+    if show_progress:
+        _print_inline_progress(0, num_steps, label="Running simulation")
     try:
         for length in chunk_lengths:
             program = programs[length]
@@ -1816,9 +1825,20 @@ def run_simulation_with_progress(
                     donate_state=donate_state,
                 )
             completed += length
-            _print_inline_progress(completed, num_steps, label="Running simulation")
+            if show_progress:
+                _print_inline_progress(completed, num_steps, label="Running simulation")
+            if progress_callback is not None:
+                progress_callback(
+                    RunProgress(
+                        step=int(state.current_step),
+                        total_steps=first_step + num_steps,
+                        time=float(state.t),
+                        elapsed=perf_counter() - wall_start,
+                    )
+                )
     finally:
-        _finish_inline_progress()
+        if show_progress:
+            _finish_inline_progress()
 
     stats = (
         _performance_for(program, runtime_s=runtime_s, steps=num_steps)
@@ -1852,6 +1872,7 @@ def run_until_terminated(
     performance: bool,
     schedule: str | None = None,
     expected_runs: int = 1,
+    progress_callback: Callable[[RunProgress], None] | None = None,
 ) -> SimulationResults:
     """Run reusable chunks until convergence, failure, or the configured time limit."""
     if not isinstance(policy, AutoTermination):
@@ -1965,6 +1986,34 @@ def run_until_terminated(
             source_decay = _source_residual(source_activity, current_step)
             source_off = source_decay <= policy.source_decay
             monitor_change = _relative_monitor_change(current_monitor, previous_monitor)
+            eligible = source_off and current_step >= policy.min_steps
+            energy_stable = (
+                policy.field_decay == 0.0 or field_decay <= policy.field_decay
+            )
+            monitor_stable = not use_monitor or (
+                monitor_change is not None
+                and monitor_tolerance is not None
+                and monitor_change <= monitor_tolerance
+            )
+            checks = (
+                successful_checks + 1
+                if eligible and energy_stable and monitor_stable
+                else 0
+            )
+            if progress_callback is not None:
+                progress_callback(
+                    RunProgress(
+                        step=current_step,
+                        total_steps=int(simulation.num_steps),
+                        time=float(state.t),
+                        elapsed=perf_counter() - wall_start,
+                        field_decay=field_decay,
+                        monitor_change=monitor_change if use_monitor else None,
+                        source_decay=source_decay,
+                        energy=energy,
+                        consecutive_checks=checks,
+                    )
+                )
 
             if (
                 source_off
@@ -1979,19 +2028,7 @@ def run_until_terminated(
                 reason = "diverged"
                 break
 
-            eligible = source_off and current_step >= policy.min_steps
-            energy_stable = (
-                policy.field_decay == 0.0 or field_decay <= policy.field_decay
-            )
-            monitor_stable = not use_monitor or (
-                monitor_change is not None
-                and monitor_tolerance is not None
-                and monitor_change <= monitor_tolerance
-            )
-            if eligible and energy_stable and monitor_stable:
-                successful_checks += 1
-            else:
-                successful_checks = 0
+            successful_checks = checks
             if successful_checks >= policy.consecutive_checks:
                 reason = "converged"
                 break
