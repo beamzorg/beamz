@@ -38,9 +38,7 @@ def test_softmin_full_solver_derivative_and_checkpoint(polarization, tmp_path):
             problem.value(density + h * direction, beta=2)
             - problem.value(density - h * direction, beta=2)
         ) / (2 * h)
-        np.testing.assert_allclose(
-            finite_difference, adjoint, rtol=0.01, atol=3e-6
-        )
+        np.testing.assert_allclose(finite_difference, adjoint, rtol=0.01, atol=3e-6)
 
     path = tmp_path / "worst-frequency.npz"
     problem.run(5, stop_after=0, checkpoint=path)
