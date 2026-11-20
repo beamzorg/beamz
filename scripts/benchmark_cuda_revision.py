@@ -29,19 +29,10 @@ class DeviceMemorySampler:
         self.error = None
         self.samples = 0
         self.peaks = []
-        self.nvml = None
-        self.backend = None
         try:
-            try:
-                import pynvml
-            except ImportError:
-                from scripts.cuda_nvml import NvmlMemory
-
-                pynvml = NvmlMemory()
+            import pynvml
 
             pynvml.nvmlInit()
-            self.nvml = pynvml
-            self.backend = getattr(pynvml, "backend", "pynvml")
             visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")
             indices = list(map(int, visible)) if visible != [""] else range(count)
             self.handles = [pynvml.nvmlDeviceGetHandleByIndex(i) for i in indices]
@@ -73,17 +64,12 @@ class DeviceMemorySampler:
         self.stop.set()
         if hasattr(self, "thread"):
             self.thread.join()
-        if self.nvml is not None:
-            self.nvml.nvmlShutdown()
-            self.nvml = None
         return dict(
             peak_used_bytes=self.peaks,
             total_bytes=getattr(self, "totals", []),
             samples=self.samples,
             error=self.error,
             interval_s=0.05,
-            backend=self.backend,
-            scope="Sampled device-global peak includes other GPU processes and driver reservations, and may miss spikes shorter than 50 ms",
         )
 
 
@@ -162,7 +148,6 @@ def main():
     parser.add_argument("--sample-points", type=int, default=2048)
     parser.add_argument("--mstep-tile", choices=("16x32", "8x32", "8x16", "16x16"))
     parser.add_argument("--mstep-segment", choices=("whole", "32", "64", "128", "256"))
-    parser.add_argument("--prepare-backend", choices=("cuda_streamed", "cuda_mstep"))
     args = parser.parse_args()
     if args.samples < 3 or args.devices < 1 or args.warmups < 1:
         parser.error("need >=3 samples, positive devices and warmups")
@@ -231,15 +216,6 @@ def main():
     )
     with placement:
         sim = workload.build_simulation(settings)
-        prepared = None
-        preparation_s = 0.0
-        if args.prepare_backend:
-            preparation_start = time.perf_counter()
-            prepared = sim.compile(
-                num_steps=args.steps, backend=args.prepare_backend, sharding=sharding
-            )
-            jax.block_until_ready(prepared.coefficients)
-            preparation_s = time.perf_counter() - preparation_start
         program = sim.compile(
             num_steps=args.steps, backend=args.backend, sharding=sharding, **options
         )
@@ -446,19 +422,6 @@ def main():
         shard_axis=program.sharding.layout.axis_name,
         host_setup=args.host_setup,
         host_placement_workers=args.host_placement_workers,
-        prepare_backend=args.prepare_backend,
-        preparation_s=preparation_s,
-        preparation_included_in_setup=True,
-        shared_prepared_coefficients=None
-        if prepared is None
-        else prepared.coefficients is program.coefficients,
-        coefficient_storage={
-            name: dict(
-                shape=list(getattr(program.coefficients, name).shape),
-                dtype=str(getattr(program.coefficients, name).dtype),
-            )
-            for name in (f"e_{kind}_{c}" for c in "xyz" for kind in ("decay", "source"))
-        },
         kernel_device_memory=kernel_memory,
         nvml_memory=memory_before_validation,
         public_nvml_memory=public_memory,

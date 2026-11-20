@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 import jax
 import numpy as np
+
+from beamz._cache_tokens import cache_token
+from beamz.devices.sources import ModeSource
 
 from ._checkpoint import load_optimizer_state, save_checkpoint
 from ._validation import check_density
@@ -163,7 +167,27 @@ class InverseDesignResult:
 TopologyResult = InverseDesignResult
 
 
-def load_result(path, *, design, fingerprint, optimizer, shape, schedule=None):
+def _checkpoint_fingerprint(spec, simulation, *, legacy_defaults=False):
+    if any(
+        isinstance(source, ModeSource) and source.band_taper is not None
+        for source in simulation.sources
+    ):
+        # Earlier tapered runs used a different excitation or objective scaling.
+        spec = (*spec, "tapered_mode_source_quadrature")
+    token = cache_token(spec, legacy_defaults=legacy_defaults)
+    return hashlib.sha256(repr(token).encode()).hexdigest()
+
+
+def load_result(
+    path,
+    *,
+    design,
+    fingerprint,
+    optimizer,
+    shape,
+    schedule=None,
+    legacy_fingerprint=None,
+):
     """Restore against a known design and optimizer; never deserialize code."""
     with np.load(path, allow_pickle=False) as saved:
         meta = json.loads(str(saved["metadata"]))
@@ -171,10 +195,13 @@ def load_result(path, *, design, fingerprint, optimizer, shape, schedule=None):
             raise ValueError(
                 "Unsupported optimization checkpoint schema; start a new run."
             )
-        if meta.get("fingerprint") != fingerprint:
-            raise ValueError(
-                "Checkpoint belongs to a different design or a different optimization problem."
-            )
+        stored_fingerprint = meta.get("fingerprint")
+        if stored_fingerprint != fingerprint:
+            previous = legacy_fingerprint() if legacy_fingerprint is not None else None
+            if previous is None or previous != stored_fingerprint:
+                raise ValueError(
+                    "Checkpoint belongs to a different design or a different optimization problem."
+                )
         params, grads = np.array(saved["params"]), np.array(saved["grad"])
         try:
             history = tuple(OptimizationStep(**h) for h in meta["history"])

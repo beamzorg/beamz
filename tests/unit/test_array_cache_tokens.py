@@ -16,6 +16,7 @@ from beamz import _cache_tokens
         np.arange(24).reshape(2, 3, 4),
         np.arange(24).reshape(4, 6).T,
         np.arange(24)[::-2],
+        np.broadcast_to(np.arange(5, dtype=">f4")[:, None], (5, 60001)),
         np.array([1 + 2j, 3 - 4j]),
         np.array([1, 2], dtype=">i4"),
     ],

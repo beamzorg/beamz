@@ -109,6 +109,9 @@ select = ["E4", "E7", "E9", "F", "I", "B", "C90", "SIM"]
 [tool.ruff.lint.per-file-ignores]
 "beamz/**/__init__.py" = ["F401"]
 "vulture_allowlist.py" = ["B018", "F821"]
+"beamz/simulation/cuda/engine/*.py" = ["E701", "E702"]
+"beamz/simulation/cuda/storage/material_blocks.py" = ["E701", "E702"]
+"cuda/compiler/physics.py" = ["E701", "E702"]
 
 [tool.pyright]
 include = ["beamz"]
@@ -131,9 +134,12 @@ include = [
     { path = "beamz/material_library/data/*", format = ["sdist", "wheel"] },
     { path = "cuda/CMakeLists.txt", format = "sdist" },
     { path = "cuda/README.md", format = "sdist" },
-    { path = "cuda/NATIVE_RUNTIME.md", format = "sdist" },
-    { path = "cuda/SYSTOLIC_SCHEDULE.md", format = "sdist" },
     { path = "cuda/abi_layout.json", format = "sdist" },
     { path = "cuda/pyproject.toml", format = "sdist" },
     { path = "cuda/src/**/*", format = "sdist" },
+    { path = "cuda/compiler/physics.py", format = "sdist" },
+    { path = "cuda/tests/native_standalone.cc", format = "sdist" },
 ]
+
+[tool.ruff.format]
+exclude = ["beamz/simulation/cuda/engine/*.py", "beamz/simulation/cuda/storage/material_blocks.py", "cuda/compiler/physics.py"]

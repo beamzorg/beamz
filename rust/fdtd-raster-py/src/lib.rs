@@ -1,3 +1,6 @@
+#[cfg(target_os = "linux")]
+mod planes;
+
 use fdtd_raster_core::{
     Grid, IntegrationOptions, OutputComponents, Quality, RasterResult, Scene, SmoothingMode,
     TensorArray, TriangleMesh, interface_samples, rasterize_prevalidated,
@@ -93,6 +96,9 @@ impl NativeCompiledScene {
         }
         options.staircase_materials = staircase_materials;
         options.periodic_axes = periodic_axes;
+        options.broadcast_uniform = true;
+        options.compact_planes = cfg!(target_os = "linux")
+            && grid.shape().into_iter().fold(1usize, usize::saturating_mul) >= 2 * 1024 * 1024;
         let result = py
             .detach(|| rasterize_prevalidated(&self.scene, &grid, &options))
             .map_err(value_error)?;
@@ -146,12 +152,24 @@ fn insert_tensor(
     name: &str,
     tensor: &mut TensorArray,
 ) -> PyResult<()> {
+    #[cfg(target_os = "linux")]
+    if !tensor.plane_ids.is_empty() {
+        return arrays.set_item(name, planes::from_tensor(py, tensor)?);
+    }
     if tensor.values.is_empty() {
         return Ok(());
     }
-    let values =
-        PyArray1::from_vec(py, std::mem::take(&mut tensor.values)).reshape(tensor.shape)?;
-    arrays.set_item(name, values)
+    let broadcast = tensor.values.len() == 1 && tensor.shape.iter().product::<usize>() > 1;
+    let values = PyArray1::from_vec(py, std::mem::take(&mut tensor.values));
+    if broadcast {
+        arrays.set_item(
+            name,
+            py.import("numpy")?
+                .call_method1("broadcast_to", (values, tensor.shape))?,
+        )
+    } else {
+        arrays.set_item(name, values.reshape(tensor.shape)?)
+    }
 }
 
 fn integration_options(
@@ -179,6 +197,17 @@ fn integration_options(
                 "smoothing must be 'volume', 'farjadpour_diagonal', or 'farjadpour_full'",
             ));
         }
+    };
+    let components = if let Some(name) = components.strip_prefix("solver_diagonal_") {
+        if options.smoothing != SmoothingMode::FarjadpourDiagonal {
+            return Err(PyValueError::new_err(
+                "solver diagonal projection requires diagonal smoothing",
+            ));
+        }
+        options.project_yee_diagonal = true;
+        name
+    } else {
+        components
     };
     options.output_components = match components {
         "all" => OutputComponents::All,
@@ -218,6 +247,11 @@ fn inspect_mesh(vertices: Vec<[f64; 3]>, triangles: Vec<[u32; 3]>) -> PyResult<S
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("ENGINE_VERSION", ENGINE_VERSION)?;
+    #[cfg(target_os = "linux")]
+    {
+        module.add_class::<planes::PlaneMapping>()?;
+        module.add_function(wrap_pyfunction!(planes::map_planes, module)?)?;
+    }
     module.add_class::<NativeCompiledScene>()?;
     module.add_class::<NativeRasterResult>()?;
     module.add_function(wrap_pyfunction!(compile_scene, module)?)?;

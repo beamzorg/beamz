@@ -130,14 +130,14 @@ def test_default_farjadpour_compilation_preserves_native_colocation(design):
     assert material_grid.uses_direct_yee_materials
 
 
-def test_simulation_conversion_rejects_nonunit_permeability():
+def test_simulation_conversion_preserves_nonunit_permeability():
     result = rasterize(
         Scene((Material(mu_r=2.0),)),
         Grid.uniform((0, 0, 0), (1, 1, 1), (2, 2, 2)),
     )
 
-    with pytest.raises(ValueError, match="unit permeability"):
-        MaterialGrid.from_raster_result(result)
+    material_grid = MaterialGrid.from_raster_result(result)
+    np.testing.assert_array_equal(material_grid.permeability, 2.0)
 
 
 @pytest.mark.parametrize(

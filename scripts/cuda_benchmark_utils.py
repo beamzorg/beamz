@@ -14,14 +14,14 @@ def provenance():
 
     root = Path(__file__).resolve().parents[1]
     paths = (
-        "beamz/simulation/cuda/runtime.py",
+        "beamz/simulation/cuda/runtime/__init__.py",
         "beamz/simulation/cuda/differentiation.py",
         "beamz/simulation/differentiation.py",
         "beamz/simulation/execute.py",
         "beamz/simulation/observe.py",
-        "cuda/src/adjoint.cu",
-        "cuda/src/update.cu",
-        "cuda/src/ffi_handler.cc",
+        "cuda/src/runtime/sharded/adjoint.cu",
+        "cuda/src/ordinary/update.cu",
+        "cuda/src/bindings/ffi_handler.cc",
     )
     return dict(
         python_version=platform.python_version(),

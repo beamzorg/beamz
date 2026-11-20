@@ -13,7 +13,7 @@ def test_native_epoch_exhaustion_is_sticky_across_cleared_run_diagnostics(tmp_pa
     compiler = shutil.which("g++")
     if compiler is None:
         pytest.skip("C++ compiler unavailable")
-    text = (ROOT / "scripts/cuda_asymmetric_native.cuh").read_text()
+    text = (ROOT / "cuda/src/temporal/kernel.cuh").read_text()
     start = text.index("__global__ void BeginEpoch(")
     body_start = text.index("{", start)
     depth, end = 1, body_start + 1

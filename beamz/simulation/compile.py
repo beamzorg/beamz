@@ -7,6 +7,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
+from dataclasses import field as dataclass_field
 from dataclasses import fields as dataclass_fields
 from types import MappingProxyType, SimpleNamespace
 from typing import Any, Literal, cast
@@ -17,13 +18,21 @@ import numpy as np
 
 import beamz.simulation.kernels as ops
 from beamz._cache_tokens import HashToken, cache_token
-from beamz._region_array import RegionArray, constant_array, tiles, uniform_value
+from beamz._region_array import (
+    RegionArray,
+    broadcast_base,
+    constant_array,
+    tiles,
+    uniform_value,
+)
+from beamz.design.discretization import MaterialGrid
 from beamz.devices._boundary_compile import (
     CPML_3D_E_DERIVATIVES,
     CPML_3D_H_DERIVATIVES,
     BoundaryData,
     lower_boundaries,
 )
+from beamz.devices._immutable import immutable_snapshot
 from beamz.devices.boundaries import Periodic, bloch_storage_phases, bloch_wavevector
 from beamz.devices.monitors.compiler import compile_monitor_specs
 from beamz.devices.sources.compiler import compile_source_specs
@@ -52,6 +61,7 @@ from beamz.simulation.region_materials import (
     build_region_materials,
     electric_coefficients,
     magnetic_coefficients,
+    mapped_material,
 )
 
 from .memory import cuda_memory_policy_from_env
@@ -86,7 +96,7 @@ class CompiledProgramKey:
     cuda_graph_cache_capacity: int
     cuda_storage_axes: tuple[int, int, int]
     sharding: ShardingToken
-    materials: HashToken
+    materials: MaterialGrid
     sources: tuple[HashToken, ...]
     monitors: tuple[HashToken, ...]
     boundaries: tuple[HashToken, ...]
@@ -94,10 +104,12 @@ class CompiledProgramKey:
     cuda_memory_policy: str = "auto"
     cuda_schedule: str = "streamed"
     cuda_expected_runs: int = 1
+    native_preparation: bool = False
+    _cuda_memory_budget_bytes: int = dataclass_field(default=0, kw_only=True)
 
     @classmethod
     def from_request(cls, request: SimulationRequest) -> CompiledProgramKey:
-        # Reduce rich objects to semantic tokens; large arrays must not become key members.
+        # MaterialGrid owns immutable arrays and compares content only on collisions.
         return cls(
             request.run.num_steps,
             request.run.total_steps,
@@ -113,13 +125,15 @@ class CompiledProgramKey:
             request.run.cuda_graph_cache_capacity,
             request.run.cuda_storage_axes,
             request.run.sharding,
-            cache_token(request.materials),
+            request.materials,
             tuple(cache_token(source) for source in request.sources),
             tuple(cache_token(monitor) for monitor in request.monitors),
             tuple(cache_token(boundary) for boundary in request.boundaries),
             cuda_memory_policy=request.run.cuda_memory_policy,
             cuda_schedule=request.run.cuda_schedule,
             cuda_expected_runs=request.run.cuda_expected_runs,
+            native_preparation=request._native_preparation,
+            _cuda_memory_budget_bytes=request.run._cuda_memory_budget_bytes,
         )
 
 
@@ -152,6 +166,7 @@ def _preparation_key(key: CompiledProgramKey):
         if cuda_backend
         else key.cuda_flags,
         cuda_memory_policy="auto",
+        _cuda_memory_budget_bytes=0,
         cuda_graph_cache_capacity=0,
         # Storage permutations are applied by the runtime to these canonical arrays.
         cuda_storage_axes=(0, 1, 2) if cuda_backend else key.cuda_storage_axes,
@@ -188,19 +203,53 @@ def _elide_zero_conductivity_grid(value):
             if np.any(value[tile] != 0):
                 return value
         return jnp.asarray(0, dtype=value.dtype)
-    arr_np = np.asarray(value)
-    if arr_np.size and not bool(np.any(arr_np != 0.0)):
+    arr_np = broadcast_base(np.asarray(value))
+    if arr_np.size and not np.any(arr_np):
         return jnp.asarray(0.0, dtype=getattr(value, "dtype", jnp.float32))
     return value
 
 
-def _elide_uniform_grid(value):
+def _elide_uniform_grid(value, *, compact=False):
     """Represent an exactly uniform CUDA coefficient with one scalar value."""
 
     first = uniform_value(value)
     if first is None:
-        return value
+        return broadcast_base(value) if compact and isinstance(value, np.ndarray) else value
     return jnp.asarray(first, dtype=value.dtype)
+
+
+def _permeable_h_coefficients(
+    sigma: Any = "",
+    mu: Any = "",
+    dt: float = 0.0,
+    precompute: Any = ops.precompute_h_update_coefficients,
+) -> tuple[Any, Any]:
+    mu = _elide_uniform_grid(mu)
+    if mu.ndim == 0 and float(np.asarray(mu)) == 1:
+        return precompute(sigma, dt)
+    if (
+        isinstance(mu, RegionArray)
+        or isinstance(sigma, RegionArray)
+        or isinstance(mu, np.ndarray) and 0 in mu.strides
+    ):
+        shape = mu.shape if mu.ndim else sigma.shape
+        base = np.asarray(ops.precompute_h_update_coefficients(np.float32(0), dt)[1])
+        alpha = mapped_material(
+            shape,
+            lambda a, b: (a / b) * np.float32(dt) / np.float32(2 * ops.MU_0),
+            sigma,
+            mu,
+        )
+        return (
+            mapped_material(
+                shape, lambda a: (np.float32(1) - a) / (np.float32(1) + a), alpha
+            ),
+            mapped_material(
+                shape, lambda a, b: (base / b) / (np.float32(1) + a), alpha, mu
+            ),
+        )
+    decay, source = precompute(sigma / mu, dt)
+    return decay, source / mu
 
 
 _CUDA_CODEBOOK_CHUNK_CELLS = 1 << 20
@@ -252,7 +301,7 @@ def _pack_cuda_lossless_e_coefficients(decays, sources, *, blocks=False):
     ):
         return None
     if blocks:
-        from .cuda.material_blocks import pack_material_blocks
+        from .cuda.storage.material_blocks import pack_material_blocks
 
         # A byte encoding needs at least one four-byte table entry plus one
         # byte per sample, rounded to int32 words. If blocks beat even this
@@ -265,7 +314,7 @@ def _pack_cuda_lossless_e_coefficients(decays, sources, *, blocks=False):
     packed = tuple(_pack_cuda_coefficient_ids(value) for value in sources)
     values = tuple(value for value in packed if value is not None)
     if blocks:
-        from .cuda.material_blocks import pack_material_blocks
+        from .cuda.storage.material_blocks import pack_material_blocks
 
         baseline_bytes = (
             sum(a.nbytes + b.nbytes for a, b in values)
@@ -480,6 +529,7 @@ def _prepare_compilation(
         request.domain.plane_2d,
         request.domain.polarization_2d,
         grid=logical_fields.geometry,
+        host=request._native_preparation,
     )
     loop_aliases = {
         "fori": "fori_loop",
@@ -510,6 +560,7 @@ def _prepare_compilation(
         cuda_graph_cache_capacity=int(request.run.cuda_graph_cache_capacity),
         cuda_storage_axes=request.run.cuda_storage_axes,
         cuda_memory_policy=request.run.cuda_memory_policy,
+        _cuda_memory_budget_bytes=request.run._cuda_memory_budget_bytes,
         cuda_schedule=request.run.cuda_schedule,
         cuda_expected_runs=request.run.cuda_expected_runs,
     )
@@ -547,23 +598,14 @@ def _compile_grid(
     field_dtype = jnp.complex64 if any(vector) else jnp.float32
     components = {
         component: (
-            constant_array(shape, 0)
-            if region_setup
+            constant_array(shape, 0, dtype=field_dtype)
+            if region_setup or request.run.backend in {"cuda_streamed", "cuda_mstep"}
             else jnp.zeros(shape, dtype=field_dtype)
         )
         for component, shape in shapes.items()
     }
-    pml_data = (
-        None
-        if profiles is None
-        else MappingProxyType(
-            {
-                key: jnp.asarray(value) if hasattr(value, "__array__") else value
-                for key, value in profiles.items()
-            }
-        )
-    )
     array = np.asarray if region_setup else jnp.asarray
+    pml_data = immutable_snapshot(profiles)
     values = {
         "material_grid": material_grid,
         "geometry": local_geometry,
@@ -585,55 +627,51 @@ def _compile_grid(
         **components,
     }
     assembly = SimpleNamespace(**values)
-    materials = (
-        build_region_materials(assembly)
-        if region_setup
-        else build_material_coefficients(assembly)
-    )
     direct = (
         dict(boundary_data.yee_materials)
         if material_grid.uses_direct_yee_materials
         else {}
     )
+    materials = (
+        build_region_materials(assembly)
+        if region_setup
+        else build_material_coefficients(assembly, yee_materials=direct)
+    )
     if direct:
+        from beamz._plane_array import plane_owner
+
         values_by_name = dict(materials.items())
-        for source, target in (
-            ("eps_x", "eps_x"),
-            ("eps_y", "eps_y"),
-            ("eps_z", "eps_z"),
-            ("sig_x", "sig_x"),
-            ("sig_y", "sig_y"),
-            ("sig_z", "sig_z"),
-            ("mu_hx", "mu_hx"),
-            ("mu_hy", "mu_hy"),
-            ("mu_hz", "mu_hz"),
-        ):
-            if source in direct:
-                value = array(direct[source])
-                if region_setup and value.ndim:
-                    value = RegionArray(value.shape, value.dtype, value.__getitem__)
-                if (
-                    source.startswith("sig_")
-                    and assembly.has_pml
-                    and not assembly.has_cpml
-                ):
-                    component = {"sig_x": "Ex", "sig_y": "Ey", "sig_z": "Ez"}[source]
-                    if assembly.conductivity.ndim == 0:
-                        centered = assembly.conductivity
-                    elif assembly.permittivity.ndim == 3:
-                        centered = sample_voxel_grid_at_e_component_3d_centered(
-                            assembly.conductivity,
-                            component,
-                        )
-                    else:
-                        centered = sample_voxel_grid_at_component_2d(
-                            assembly.conductivity,
-                            component,
-                            "xy",
-                            assembly.polarization_2d,
-                        )
-                    value = value + values_by_name[target] - centered
-                values_by_name[target] = value
+        for source, direct_value in direct.items():
+            value = (
+                direct_value
+                if isinstance(direct_value, RegionArray)
+                else array(direct_value)
+            )
+            if (
+                region_setup
+                and value.ndim
+                and not isinstance(value, RegionArray)
+                and plane_owner(value) is None
+            ):
+                value = RegionArray(value.shape, value.dtype, value.__getitem__)
+            if source.startswith("sig_") and assembly.has_pml and not assembly.has_cpml:
+                component = {"sig_x": "Ex", "sig_y": "Ey", "sig_z": "Ez"}[source]
+                if assembly.conductivity.ndim == 0:
+                    centered = assembly.conductivity
+                elif assembly.permittivity.ndim == 3:
+                    centered = sample_voxel_grid_at_e_component_3d_centered(
+                        assembly.conductivity,
+                        component,
+                    )
+                else:
+                    centered = sample_voxel_grid_at_component_2d(
+                        assembly.conductivity,
+                        component,
+                        "xy",
+                        assembly.polarization_2d,
+                    )
+                value = value + values_by_name[source] - centered
+            values_by_name[source] = value
         values_by_name.update(
             eps_ex=values_by_name["eps_x"],
             eps_ey=values_by_name["eps_y"],
@@ -691,9 +729,66 @@ def _compile_boundary(
     )
 
 
+def _minimum_material(values: Any = "") -> float:
+    from beamz._plane_array import material_planes
+
+    array = broadcast_base(np.asarray(values))
+    physical = material_planes(array, unique=True)
+    if physical is not None:
+        return min(float(np.min(plane)) for plane in physical)
+    return float(np.min(array))
+
+
+def _check_magnetic_cfl(request: Any = "") -> None:
+    """Bound the newly admitted fast magnetic media before allocating a grid."""
+    materials = request.materials
+    h_axes, e_axes = (
+        ("xyz", "xyz")
+        if request.domain.is_3d
+        else ("xy", "z")
+        if request.domain.polarization_2d == "tm"
+        else ("z", "xy")
+    )
+    mu = min(
+        _minimum_material(
+            materials.yee_materials.get("mu_h" + a, materials.permeability)
+        )
+        for a in h_axes
+    )
+    if mu >= 1:
+        return
+    epsilon = min(
+        _minimum_material(
+            materials.yee_materials.get("eps_" + a, materials.permittivity)
+        )
+        for a in e_axes
+    )
+    # Coupled electric supports need the smallest eigenvalue, not their diagonal
+    # mean. Only fast magnetic media pay this bounded, conservative preflight.
+    for tensor in materials.yee_tensors.values():
+        if tensor.shape[0] != 6:
+            continue
+        for part in tiles(tensor.shape[1:], tensor.dtype, budget=1 << 18):
+            block = tensor[(slice(None), *part)]
+            matrix = np.zeros((*block.shape[1:], 3, 3), dtype=np.float64)
+            for axis in range(3):
+                matrix[..., axis, axis] = block[axis]
+            for index, (a, b) in enumerate(((0, 1), (0, 2), (1, 2)), 3):
+                matrix[..., a, b] = matrix[..., b, a] = block[index]
+            epsilon = min(epsilon, float(np.min(np.linalg.eigvalsh(matrix))))
+    bound = materials.grid.cfl_time_step(
+        1.0, active_axes=("x", "y", "z") if request.domain.is_3d else ("x", "y")
+    ) * np.sqrt(max(0.0, epsilon * mu))
+    if request.run.dt > bound * (1 + 1e-6) or not np.isfinite(bound) or bound <= 0:
+        raise ValueError(
+            f"Magnetic material timestep exceeds the conservative material CFL bound {bound:.9g} s; reduce the time step."
+        )
+
+
 @trace_preparation("compile_plan")
 def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     """Build an immutable executable plan from a simulation request."""
+    _check_magnetic_cfl(request)
     vector = bloch_wavevector(
         request.boundaries, is_3d=request.domain.is_3d, plane_2d=request.domain.plane_2d
     )
@@ -764,7 +859,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         aligned_components=True,
     )
     region_setup = (
-        early_sharding.layout.enabled
+        (early_sharding.layout.enabled or request._native_preparation)
         and not jax.config.read("jax_enable_x64")
         and request.domain.is_3d
         and not request.materials.uses_full_permittivity
@@ -798,30 +893,74 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     use_3d_material_coefficients = bool(request.domain.is_3d)
 
     precompute_h = (
-        magnetic_coefficients if region_setup else ops.precompute_h_update_coefficients
+        magnetic_coefficients
+        if region_setup and not request._native_preparation
+        else ops.precompute_h_update_coefficients
     )
 
     def precompute_e(*, shape, conductivity, permittivity, dt, region):
-        if region_setup:
-            return electric_coefficients(shape, conductivity, permittivity, dt)
-        return ops.precompute_e_update_coefficients(
-            shape, conductivity, permittivity, dt, region
+        values = (
+            electric_coefficients(shape, conductivity, permittivity, dt)
+            if region_setup
+            else ops.precompute_e_update_coefficients(
+                shape, conductivity, permittivity, dt, region
+            )
         )
+        if request._native_preparation:
+            return values
+        # Retire uniform component arrays before constructing the next pair.
+        # This preserves exact compaction while avoiding three live decay grids.
+        if use_3d_material_coefficients and request.run.backend in {
+            "cuda_streamed",
+            "cuda_mstep",
+        }:
+            values = tuple(_elide_uniform_grid(value) for value in values)
+            if (
+                request.run.backend == "cuda_streamed"
+                and request.run.cuda_storage_axes == (0, 1, 2)
+                and not sharding_layout.enabled
+                and not request.materials.uses_full_permittivity
+                and values[0].ndim == 0
+                and float(np.asarray(values[0])) == 1
+                and values[1].ndim == 3
+            ):
+                from .cuda.storage.material_blocks import pack_material_blocks
+
+                # Pack one component before computing the next. The same
+                # profitability bound still leaves incompressible grids dense.
+                byte_bound = 4 + 4 * ((values[1].size + 3) // 4)
+                packed = pack_material_blocks((values[1],), max_bytes=0.75 * byte_bound)
+                if packed is not None:
+                    return packed[0][0], packed[1][0]
+        return values
 
     empty3 = jnp.zeros((0, 0, 0), dtype=jnp.float32)
     if use_3d_material_coefficients:
-        if request.run.backend in {"cuda_streamed", "cuda_mstep"}:
+        if request.run.backend in {"cuda_streamed", "cuda_mstep"} or (
+            uniform_value(request.materials.permeability) != 1
+            or any(
+                uniform_value(v) != 1
+                for k, v in request.materials.yee_materials.items()
+                if k.startswith("mu_h")
+            )
+        ):
             (
                 (h_decay_x, h_source_x),
                 (h_decay_y, h_source_y),
                 (h_decay_z, h_source_z),
             ) = (
-                precompute_h(fields.sigma_m_hx, dt),
-                precompute_h(fields.sigma_m_hy, dt),
-                precompute_h(fields.sigma_m_hz, dt),
+                _permeable_h_coefficients(
+                    fields.sigma_m_hx, fields.mu_hx, dt, precompute_h
+                ),
+                _permeable_h_coefficients(
+                    fields.sigma_m_hy, fields.mu_hy, dt, precompute_h
+                ),
+                _permeable_h_coefficients(
+                    fields.sigma_m_hz, fields.mu_hz, dt, precompute_h
+                ),
             )
             h_decay_x, h_source_x, h_decay_y, h_source_y, h_decay_z, h_source_z = (
-                _elide_uniform_grid(value)
+                _elide_uniform_grid(value, compact=request._native_preparation)
                 for value in (
                     h_decay_x,
                     h_source_x,
@@ -843,9 +982,15 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             (h_decay_y, h_source_y),
             (h_decay_z, h_source_z),
         ) = (
-            precompute_h(fields.sigma_m_hx, dt),
-            precompute_h(fields.sigma_m_hy, dt),
-            precompute_h(fields.sigma_m_hz, dt),
+            _permeable_h_coefficients(
+                fields.sigma_m_hx, fields.mu_hx, dt, precompute_h
+            ),
+            _permeable_h_coefficients(
+                fields.sigma_m_hy, fields.mu_hy, dt, precompute_h
+            ),
+            _permeable_h_coefficients(
+                fields.sigma_m_hz, fields.mu_hz, dt, precompute_h
+            ),
         )
         h_sigma_m_x = h_sigma_m_y = h_sigma_m_z = empty3
 
@@ -878,20 +1023,45 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
                     region=fields.region_z,
                 ),
             )
-            e_decay_x, e_source_x, e_decay_y, e_source_y, e_decay_z, e_source_z = (
-                _elide_uniform_grid(value)
-                for value in (
-                    e_decay_x,
-                    e_source_x,
-                    e_decay_y,
-                    e_source_y,
-                    e_decay_z,
-                    e_source_z,
-                )
-            )
+            component_pairs = [
+                (e_decay_x, e_source_x),
+                (e_decay_y, e_source_y),
+                (e_decay_z, e_source_z),
+            ]
+            already_packed = [
+                source.dtype == jnp.int32 and source.ndim == 2
+                for _, source in component_pairs
+            ]
+            if any(already_packed) and not all(already_packed):
+                from .cuda.storage.material_blocks import unpack_material_blocks
+
+                # Keep the established common encoding if just some of the
+                # independently prepared components meet the storage bound.
+                component_pairs = [
+                    (
+                        jnp.asarray(1, jnp.float32),
+                        jnp.asarray(unpack_material_blocks(decay, source, shape)),
+                    )
+                    if packed
+                    else (decay, source)
+                    for (decay, source), packed, shape in zip(
+                        component_pairs,
+                        already_packed,
+                        (fields.Ex.shape, fields.Ey.shape, fields.Ez.shape),
+                        strict=True,
+                    )
+                ]
+                (
+                    (e_decay_x, e_source_x),
+                    (e_decay_y, e_source_y),
+                    (e_decay_z, e_source_z),
+                ) = component_pairs
             packed_e = (
                 None
-                if sharding_layout.enabled or request.materials.uses_full_permittivity
+                if request._native_preparation
+                or all(already_packed)
+                or sharding_layout.enabled
+                or request.materials.uses_full_permittivity
                 else _pack_cuda_lossless_e_coefficients(
                     (e_decay_x, e_decay_y, e_decay_z),
                     (e_source_x, e_source_y, e_source_z),
@@ -1051,7 +1221,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             e_inverse_offdiagonal=compact_tensor_region(e_inverse_offdiagonal)
         )
         if config.backend == "cuda_streamed":
-            from .cuda.material_blocks import pack_material_blocks
+            from .cuda.storage.material_blocks import pack_material_blocks
 
             inverse = tuple(
                 _elide_uniform_grid(
@@ -1099,7 +1269,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         sharding_layout,
     )
     if config.backend != "jax" and sharding_layout.enabled:
-        from .cuda.sharding import validate_sharded_config
+        from .cuda.runtime.sharding import validate_sharded_config
 
         validate_sharded_config(config, boundary, sharding)
     from beamz.simulation.dispersion import compile_dispersion
@@ -1119,7 +1289,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         sharding=sharding,
     )
 
-    if region_setup:
+    if region_setup and not request._native_preparation:
         # Recipes retain only immutable inputs; the program owns one final runtime
         # representation. Continuation must never regenerate or transfer it.
         from .sharding import place_tree
@@ -1143,6 +1313,8 @@ def compile_program(
     expected_runs: int = 1,
     setup_context_factory=None,
     compile_factory=None,
+    backend_resolver=None,
+    native_preparation: bool = False,
 ) -> CompiledProgram:
     """Compile or reuse the immutable program for one execution horizon."""
     steps = int(simulation.num_steps if num_steps is None else num_steps)
@@ -1166,6 +1338,7 @@ def compile_program(
     }
     from .backend import (
         CudaBackendUnavailable,
+        _cuda_legacy_schedule_options,
         cuda_flags_from_env,
         cuda_graph_cache_capacity_from_env,
         cuda_storage_axes_from_env,
@@ -1175,7 +1348,7 @@ def compile_program(
     from .sharding import _jax_devices_for_config
 
     requested_backend = normalize_backend(backend)
-    from .cuda.schedule import normalize_schedule_request
+    from .cuda.mstep.schedule import normalize_schedule_request
 
     requested_schedule, expected_runs = normalize_schedule_request(
         requested_backend,
@@ -1255,7 +1428,7 @@ def compile_program(
     resolved_backend = (
         "jax"
         if requested_backend == "auto" and not cuda_problem_supported
-        else resolve_backend(
+        else (backend_resolver or resolve_backend)(
             "cuda_mstep" if requested_schedule == "mstep" else requested_backend
         )
     )
@@ -1267,7 +1440,7 @@ def compile_program(
         )
     cuda_flags = cuda_flags_from_env() if resolved_backend != "jax" else 0
     if requested_schedule == "mstep":
-        from .cuda.mstep_config import ALLOWED_FLAGS
+        from .cuda.mstep.mstep_config import ALLOWED_FLAGS
 
         cuda_flags &= ALLOWED_FLAGS
     cuda_storage_axes = (
@@ -1278,6 +1451,8 @@ def compile_program(
         if resolved_backend != "jax"
         else (0, 1, 2)
     )
+    if native_preparation:
+        cuda_storage_axes = (0, 1, 2)
     if cuda_storage_axes != (0, 1, 2) and resolved_backend not in {
         "cuda_streamed",
         "cuda_mstep",
@@ -1308,10 +1483,19 @@ def compile_program(
         compiler_sharding=sharding,
         progress=progress,
     )
+    cuda_budget = (
+        int(os.getenv("BEAMZ_CUDA_MEMORY_BUDGET_BYTES", "0"))
+        if resolved_backend != "jax"
+        else 0
+    )
+    if cuda_budget < 0:
+        raise ValueError("CUDA memory budget must be nonnegative")
     request = replace(
         request,
+        _native_preparation=native_preparation,
         run=replace(
             request.run,
+            _cuda_memory_budget_bytes=cuda_budget,
             cuda_schedule=requested_schedule,
             cuda_expected_runs=expected_runs,
             cuda_flags=cuda_flags,
@@ -1324,24 +1508,33 @@ def compile_program(
     )
     signature = CompiledProgramKey.from_request(request)
     tuning_policy = None
-    if resolved_backend == "cuda_streamed" and requested_schedule != "mstep":
-        from .cuda.tuning import tuning_policy_from_env
+    if resolved_backend != "jax" and not native_preparation:
+        from .cuda.mstep.tuning import tuning_policy_from_env
 
-        tuning_policy = tuning_policy_from_env()
+        policy = tuning_policy_from_env()
         if (
-            metric_kind == "isotropic_uniform"
-            and steps >= 16
-            and steps * expected_runs >= 32
-            and np.prod(material_grid.shape) >= 8 * 1024 * 1024
+            resolved_backend == "cuda_streamed"
+            and requested_schedule != "mstep"
+            and policy[0] == "calibrate"
         ):
-            signature = replace(signature, cuda_tuning_policy=tuning_policy)
+            tuning_policy = policy
+        signature = replace(
+            signature,
+            cuda_tuning_policy=(
+                tuning_policy
+                if tuning_policy is not None
+                else _cuda_legacy_schedule_options()
+            ),
+        )
     if cached := _PROGRAM_CACHE.get(signature):
         _PROGRAM_CACHE.move_to_end(signature)
         return cached
 
     setup_context_factory = setup_context_factory or _resolved_setup_device_context
     compile_factory = compile_factory or compile_simulation
-    with setup_context_factory(simulation.setup_device_resolved):
+    with setup_context_factory(
+        "cpu" if cuda_budget else simulation.setup_device_resolved
+    ):
         reusable = None
         if compile_factory is compile_simulation:
             preparation_key = _preparation_key(signature)
@@ -1368,9 +1561,13 @@ def compile_program(
                 )
 
     if tuning_policy is not None:
-        from .cuda.tuning import select_program
+        from .cuda.mstep.tuning import select_program
 
         program = select_program(program, signature, tuning_policy)
+    if cuda_budget and not native_preparation:
+        from .memory import _cuda_working_set
+
+        _cuda_working_set(program, donate_state=True, enforce=True)
     _PROGRAM_CACHE[signature] = program
     if len(_PROGRAM_CACHE) > _MAX_COMPILED_PROGRAMS:
         _PROGRAM_CACHE.popitem(last=False)

@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 
+from beamz._region_array import any_nonzero
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.devices._immutable import readonly_array
 from beamz.devices._placement import (
@@ -273,7 +274,7 @@ def _plan_2d_mode_source(
             f"ModeSource polarization {requested!r} does not match the "
             f"Simulation polarization {polarization!r}."
         )
-    if np.any(np.asarray(fields.conductivity) != 0.0):
+    if any_nonzero(fields.conductivity):
         raise ValueError(
             "ModeSource does not yet support conductive material profiles; the "
             "mode solve would not match lossy FDTD propagation."
@@ -397,7 +398,7 @@ def _plan_3d_mode_source(
     dt: float | None,
     grid=None,
 ) -> Mode3DLaunchPlan:
-    if np.any(np.asarray(fields.conductivity) != 0.0):
+    if any_nonzero(fields.conductivity):
         raise ValueError(
             "ModeSource does not yet support conductive material profiles; the "
             "mode solve would not match lossy FDTD propagation."
@@ -521,23 +522,15 @@ def _plan_3d_mode_source(
         grid=metric_grid,
         power_weights=discrete_mode.integration_weights,
     )
-    residuals = (
-        *planar_tfsf.compute_discrete_3d_h_phasor_residuals(
-            field_profile,
-            fields,
-            resolution=float(resolution),
-            max_shift=12,
-            dt=float(dt or 0.0),
-        ),
-        *planar_tfsf.compute_discrete_3d_e_phasor_residuals(
-            field_profile,
-            fields,
-            resolution=float(resolution),
-            max_shift=12,
-            dt=float(dt or 0.0),
-        ),
+    masked_state = {}
+    residuals = planar_tfsf.compute_discrete_3d_phasor_residuals(
+        field_profile,
+        fields,
+        resolution=float(resolution),
+        max_shift=12,
+        dt=float(dt or 0.0),
+        masked_state=masked_state,
     )
-    residuals = tuple(residuals)
     launch_power_ratio, unscaled_launched_power = _launch_power_diagnostics_3d(
         source,
         field_profile,
@@ -546,6 +539,7 @@ def _plan_3d_mode_source(
         resolution=float(resolution),
         dt=dt,
         requested_power=float(source.power),
+        masked_state=masked_state,
     )
     launch_amplitude_scale = _launch_amplitude_scale(launch_power_ratio)
     return Mode3DLaunchPlan(
@@ -575,65 +569,43 @@ def _reconstructed_3d_launch_phasor_state(
     dt: float,
 ) -> dict[str, np.ndarray]:
     """Reconstruct the first complete incident Yee state produced by a launch."""
-    full_prev = planar_tfsf.build_incident_3d_phasor_state(
-        field_profile,
-        fields,
-        resolution=resolution,
-        t_e=0.0,
-        t_h=-0.5 * dt,
-        masked=False,
-        max_shift=12,
-    )
-    masked_prev = planar_tfsf.build_incident_3d_phasor_state(
-        field_profile,
-        fields,
-        resolution=resolution,
-        t_e=0.0,
-        t_h=-0.5 * dt,
-        masked=True,
-        max_shift=12,
-    )
-    h_full_next = planar_tfsf.advance_incident_h_3d(
-        fields, full_prev, dt, resolution=resolution
-    )
-    h_target_next = planar_tfsf.mask_incident_3d_state_to_launched_side(
-        field_profile,
-        h_full_next,
-        resolution=resolution,
-    )
-    h_mask_next = planar_tfsf.advance_incident_h_3d(
-        fields, masked_prev, dt, resolution=resolution
-    )
-    h_delta = _expand_3d_residuals(residuals, fields, ("Hx", "Hy", "Hz"))
-    e_mask_next = planar_tfsf.advance_incident_e_3d(
-        fields,
-        masked_prev,
-        h_target_next,
-        dt,
-        resolution=resolution,
-    )
-    e_delta = _expand_3d_residuals(residuals, fields, ("Ex", "Ey", "Ez"))
-    return {
-        "Ex": e_mask_next["Ex"] + e_delta["Ex"],
-        "Ey": e_mask_next["Ey"] + e_delta["Ey"],
-        "Ez": e_mask_next["Ez"] + e_delta["Ez"],
-        "Hx": h_mask_next["Hx"] + h_delta["Hx"],
-        "Hy": h_mask_next["Hy"] + h_delta["Hy"],
-        "Hz": h_mask_next["Hz"] + h_delta["Hz"],
-    }
 
+    def incident(masked):
+        return planar_tfsf.build_incident_3d_phasor_state(
+            field_profile,
+            fields,
+            resolution=resolution,
+            t_e=0.0,
+            t_h=-0.5 * dt,
+            masked=masked,
+            max_shift=12,
+        )
 
-def _expand_3d_residuals(residuals, fields, components):
-    expanded = {
-        component: np.zeros(getattr(fields, component).shape, dtype=np.complex128)
-        for component in components
+    h_full = planar_tfsf.advance_incident_h_3d(
+        fields, incident(False), dt, resolution=resolution
+    )
+    h_target = planar_tfsf.mask_incident_3d_state_to_launched_side(
+        field_profile, h_full, resolution=resolution
+    )
+    del h_full
+    masked = incident(True)
+    state = planar_tfsf.advance_incident_h_3d(fields, masked, dt, resolution=resolution)
+    for component in state:
+        del masked[component]
+    state.update(
+        planar_tfsf.advance_incident_e_3d(
+            fields, masked, h_target, dt, resolution=resolution
+        )
+    )
+    # The launch correction lives on a few Yee planes. Add it directly to
+    # the reconstructed fields without materializing six zero-filled volumes.
+    state = {
+        component: np.array(values, dtype=np.complex128)
+        for component, values in state.items()
     }
     for residual in residuals:
-        if residual.component in expanded:
-            expanded[residual.component][residual.index] += np.asarray(
-                residual.residual, dtype=np.complex128
-            )
-    return expanded
+        state[residual.component][residual.index] += residual.residual
+    return state
 
 
 def _launch_power_diagnostics_3d(
@@ -645,6 +617,7 @@ def _launch_power_diagnostics_3d(
     resolution: float,
     dt: float | None,
     requested_power: float,
+    masked_state: dict[str, np.ndarray] | None = None,
 ) -> tuple[float | None, float | None]:
     if (not np.isfinite(requested_power)) or requested_power <= 1e-30:
         return None, None
@@ -687,12 +660,16 @@ def _launch_power_diagnostics_3d(
                             )
                         ),
                     )
-            state = _reconstructed_3d_launch_phasor_state(
-                diagnostic_profile,
-                diagnostic_residuals,
-                diagnostic_fields,
-                resolution=float(resolution),
-                dt=float(dt),
+            state = (
+                masked_state
+                if masked_state is not None
+                else _reconstructed_3d_launch_phasor_state(
+                    diagnostic_profile,
+                    diagnostic_residuals,
+                    diagnostic_fields,
+                    resolution=float(resolution),
+                    dt=float(dt),
+                )
             )
             profiles = planar_tfsf.deembed_3d_phasor_profiles(
                 diagnostic_profile,
@@ -701,6 +678,7 @@ def _launch_power_diagnostics_3d(
                 resolution=float(resolution),
                 t_e=float(dt),
                 t_h=0.5 * float(dt),
+                residuals=diagnostic_residuals if masked_state is not None else (),
             )
             launched_power = _yee_plane_power_3d(
                 diagnostic_source,

@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import pytest
+from beamz.simulation.cuda.capabilities import mstep_allocation_contract
 
 from beamz.simulation import backend
 from beamz.simulation._cuda_abi import (
@@ -11,7 +12,6 @@ from beamz.simulation._cuda_abi import (
     CUDA_MSTEP_TARGET,
     CUDA_STREAMED_TARGETS,
 )
-from beamz.simulation.cuda.capabilities import mstep_allocation_contract
 
 
 def extension(*optional):

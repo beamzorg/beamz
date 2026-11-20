@@ -43,6 +43,23 @@ def test_auto_preserves_jax_when_cuda_is_not_visible(monkeypatch):
         backend_runtime.resolve_backend("cuda")
 
 
+def test_coherent_cuda_status_honors_optional_ffi_registration(monkeypatch):
+    extension = _extension("beamz_cuda_streamed", "beamz_cuda_program")
+    extension.coherent_backend_version = 1
+    extension.device_info = lambda: {"name": "GPU", "major": 9, "minor": 0}
+    registered = []
+    monkeypatch.setattr(backend_runtime, "_load_extension", lambda: extension)
+    monkeypatch.setattr(backend_runtime, "_REGISTERED_MODULE", None)
+    monkeypatch.setattr(
+        backend_runtime.jax.ffi, "register_ffi_target",
+        lambda name, capsule, **kwargs: registered.append(name),
+    )
+    status = backend_runtime.cuda_backend_status(register=False)
+    assert status.available and not registered
+    assert backend_runtime.cuda_backend_status().targets == status.targets
+    assert sorted(registered) == list(status.targets)
+
+
 def test_portable_import_without_custom_call_target_traits():
     """A fresh CPU import must work when the optional JAXLIB enum is absent."""
     subprocess.run(
@@ -340,44 +357,13 @@ def test_typed_ffi_registrations_use_cuda_api_v1(monkeypatch, include_mstep):
         "beamz_cuda_streamed",
     )
     assert {name for name, _, _ in registrations} == set(targets)
-    for name, _, kwargs in registrations:
-        expected_traits = (
-            1
-            if name
-            in {
-                backend_runtime.CUDA_STREAMED_TARGET,
-                backend_runtime.CUDA_ADJOINT_TARGET,
-                backend_runtime.CUDA_MATERIAL_ADJOINT_TARGET,
-            }
-            else 0
-        )
-        assert kwargs == {
-            "platform": "CUDA",
-            "api_version": 1,
-            "traits": expected_traits,
-        }
-
-
-def test_cuda_registration_falls_back_for_plugins_without_registration_traits(
-    monkeypatch,
-):
-    extension = _extension("beamz_cuda_streamed", "beamz_cuda_program")
-    monkeypatch.setattr(backend_runtime, "_REGISTERED_MODULE", None)
-    successful, rejected = [], []
-
-    def register(name, capsule, **options):
-        if options.get("traits", 0):
-            rejected.append(name)
-            raise RuntimeError(
-                "UNIMPLEMENTED: The plugin does not support custom call traits."
-            )
-        successful.append(name)
-
-    monkeypatch.setattr(backend_runtime.jax.ffi, "register_ffi_target", register)
-    targets = backend_runtime.register_cuda_ffi_targets(extension)
-    assert len(rejected) == 1
-    assert sorted(successful) == list(targets)
-    assert backend_runtime._REGISTERED_MODULE is extension
+    # Plugins can replay this queue after registration returns. A nonzero
+    # Python-side trait aborts replay on CUDA plugins that only accept the
+    # capture metadata declared by the native handlers.
+    assert all(
+        options == {"platform": "CUDA", "api_version": 1}
+        for _, _, options in registrations
+    )
 
 
 def test_cuda_registration_does_not_hide_other_plugin_errors(monkeypatch):
@@ -547,6 +533,13 @@ def test_cuda_storage_axes_are_snapshotted_and_cache_separated(monkeypatch):
     assert permuted.config.cuda_storage_axes == (1, 2, 0)
     assert canonical is not permuted
     monkeypatch.setenv("BEAMZ_CUDA_STORAGE_AXES", "012")
+    # With automatic layout search removed, the same explicit/default axes
+    # describe the same immutable preparation and reuse one program.
+    explicit = simulation.compile(backend="cuda_streamed")
+    assert explicit.config.cuda_storage_axes == (0, 1, 2)
+    assert explicit is canonical
+    assert simulation.compile(backend="cuda_streamed") is explicit
+    monkeypatch.delenv("BEAMZ_CUDA_STORAGE_AXES")
     assert simulation.compile(backend="cuda_streamed") is canonical
 
 

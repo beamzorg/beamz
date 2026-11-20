@@ -7,11 +7,32 @@ from typing import Any, cast
 
 import numpy as np
 
+from beamz._plane_array import detached_planes, physical_crop
+from beamz._region_array import broadcast_base
+
 
 def readonly_array(value: Any, *, dtype: Any | None = None) -> np.ndarray:
-    arr = np.array(value, dtype=dtype, copy=True)
-    arr.setflags(write=False)
-    return arr
+    if isinstance(value, np.ndarray) and (
+        dtype is None or value.dtype == np.dtype(dtype)
+    ):
+        compact = detached_planes(value)
+        if compact is not None:
+            return compact
+    arr = np.asarray(physical_crop(value))
+    base = broadcast_base(arr)
+    if base.size < arr.size:
+        return np.broadcast_to(readonly_array(base, dtype=dtype), arr.shape)
+    arr = np.asarray(arr, dtype=dtype)
+    if arr.dtype.hasobject or not arr.dtype.itemsize:
+        owned = np.array(arr, copy=True)
+        owned.setflags(write=False)
+        return owned
+    # Back the detached snapshot with immutable bytes so a consumer of shared
+    # result metadata cannot restore NumPy's WRITEABLE flag.
+    order = "F" if arr.flags.f_contiguous and not arr.flags.c_contiguous else "C"
+    return np.frombuffer(arr.tobytes(order=order), dtype=arr.dtype).reshape(
+        arr.shape, order=order
+    )
 
 
 def readonly_1d_array(value: Any, *, dtype: Any | None = None) -> np.ndarray:

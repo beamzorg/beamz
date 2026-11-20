@@ -2,16 +2,16 @@
 
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
+
+from tests.cuda_source_layout import CUDA_INCLUDE_FLAGS
 
 
 def test_bounded_reciprocal_division_matches_native_integer_division(tmp_path):
     compiler = shutil.which("g++") or shutil.which("clang++")
     if compiler is None:
         pytest.skip("A C++17 compiler is required for the portable index helper")
-    root = Path(__file__).resolve().parents[2]
     source = tmp_path / "index_oracle.cc"
     source.write_text(
         r"""
@@ -66,8 +66,7 @@ int main() {
             compiler,
             "-std=c++17",
             "-O2",
-            "-I",
-            str(root / "cuda/src"),
+            *CUDA_INCLUDE_FLAGS,
             str(source),
             "-o",
             str(executable),

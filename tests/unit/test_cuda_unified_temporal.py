@@ -1,10 +1,13 @@
 """Architectural guard: benchmark values must not select temporal kernels."""
-from pathlib import Path
+
 import re
+from pathlib import Path
 
 
 def test_shared_kernel_has_no_benchmark_selectors() -> None:
-    source = (Path(__file__).resolve().parents[2] / "cuda/src/temporal/kernel.cuh").read_text()
+    source = (
+        Path(__file__).resolve().parents[2] / "cuda/src/temporal/kernel.cuh"
+    ).read_text()
     assert not re.search(r"physical_n\[[^\]]+\]\s*==\s*\d+", source)
     assert not re.search(r"(?:presence|SourceMask)\s*==\s*\d+", source)
     assert not re.search(r"s\.count\s*==\s*(?:2|6)\b", source)

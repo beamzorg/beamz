@@ -2,14 +2,11 @@
 
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
-from scripts.generate_cuda_yee_cell import DEFAULT_OUTPUT, ROOT, generate_header
-
-
-def test_generated_cuda_cell_header_matches_current_trace():
-    assert DEFAULT_OUTPUT.read_text() == generate_header()
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_generated_header_matches_independent_float32_fma_cells(tmp_path):
@@ -23,13 +20,14 @@ def test_generated_header_matches_independent_float32_fma_cells(tmp_path):
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#define __host__
 #define __device__
 #define __forceinline__ inline
 inline float __fmul_rn(float a,float b) {return a*b;}
 inline float __fsub_rn(float a,float b) {return a-b;}
 inline float __fadd_rn(float a,float b) {return a+b;}
 inline float __fmaf_rn(float a,float b,float c) {return std::fma(a,b,c);}
-#include "cuda/src/yee_cell_generated.cuh"
+#include "cuda/src/physics/yee_cell_generated.cuh"
 struct Values {
   float fields[6][2][3][3][3];
   float coefficients[2][3];
@@ -86,6 +84,8 @@ int main() {
             "-ffp-contract=off",
             "-I",
             str(ROOT),
+            "-I",
+            str(ROOT / "cuda/src/common"),
             str(source),
             "-o",
             str(binary),

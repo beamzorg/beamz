@@ -171,7 +171,7 @@ def main():
         },
     }
     source_hash = hashlib.sha256()
-    for path in sorted([*root.glob("beamz/**/*.py"), *root.glob("cuda/src/*")]):
+    for path in sorted([*root.glob("beamz/**/*.py"), *root.glob("cuda/src/**/*.*")]):
         if path.is_file():
             source_hash.update(str(path.relative_to(root)).encode())
             source_hash.update(path.read_bytes())

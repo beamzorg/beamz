@@ -165,12 +165,14 @@ def _rasterize_design(
             components="all" if kind == "3d" else f"two_dimensional_{polarization}",
         ),
         cache_directory=cache_directory,
+        _for_solver=True,
     )
     material_grid = MaterialGrid.from_raster_result(
         result,
         dimensions=3 if kind == "3d" else 2,
         polarization=polarization,
         resolution=representative_resolution,
+        _owned_raster_arrays=True,
     )
 
     if has_dispersion:

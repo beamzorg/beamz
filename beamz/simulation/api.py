@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from importlib import import_module
+from types import MappingProxyType
 from typing import Any, Literal
 
 import numpy as np
@@ -61,6 +62,7 @@ from beamz.simulation.compile import simulation_memory_estimate as memory_estima
 from beamz.simulation.execute import (
     clear_execution_cache,
     execute_step,
+    initial_program_state,
     run_simulation_program,
     run_simulation_with_progress,
     run_until_terminated,
@@ -443,7 +445,7 @@ def _rasterize_scene_for_simulation(
 ):
     """Convert an imported scene into the same solver grid used by Design."""
 
-    from beamz.design.raster import Grid, Scene
+    from beamz.design.raster import Grid, Scene, rasterize
 
     if not isinstance(scene, Scene):
         raise TypeError("Simulation scene must be a raster Scene.")
@@ -467,9 +469,10 @@ def _rasterize_scene_for_simulation(
         components=(f"two_dimensional_{polarization}" if dimensions == 2 else "all"),
     )
     material_grid = MaterialGrid.from_raster_result(
-        scene.rasterize(raster_grid, options=options),
+        rasterize(scene, raster_grid, options=options, _for_solver=True),
         dimensions=dimensions,
         polarization=polarization,
+        _owned_raster_arrays=True,
     )
     if has_dispersion:
         from beamz.design.raster.dispersion import rasterize_dispersion
@@ -1231,13 +1234,13 @@ class Simulation:
             compatible and otherwise retains the JAX implementation. ``cuda_mstep``
             explicitly selects the experimental two-step CUDA scheduler.
         schedule : {"auto", "streamed", "mstep"}, optional
-            CUDA execution schedule. Omitting it preserves established streamed
-            selection. ``schedule="auto"`` opts into selection by time to result;
-            unmeasured cases retain streamed. CUDA backend names remain explicit
-            schedule overrides.
+            CUDA execution schedule. The default freezes a deterministic plan
+            from workload, device and memory budget. ``streamed`` forces ordinary
+            execution; ``mstep`` requests temporal execution. Compatibility
+            backend names remain explicit schedule overrides.
         expected_runs : int, default=1
-            Expected executions reusing this program. Automatic CUDA selection
-            uses this hint to amortize compilation; it does not execute extra runs.
+            Expected executions reusing an interoperability program. Native CUDA
+            plans are independent of this hint and never execute timing trials.
 
         Returns
         -------
@@ -1257,12 +1260,37 @@ class Simulation:
         ``step`` returns state only and does not detach :class:`SimulationResults`.
         Use :meth:`run` for normal simulations and :meth:`advance` for multi-step
         continuation with monitor results.
+        Compatible native CUDA runs return detached CUDA field buffers when the
+        budget allows, and use CPU snapshots when CUDA checkpoint storage is unavailable.
         """
         # Advance explicit state without mutating the immutable Simulation specification.
         current_step = 0 if state is None else int(state.current_step)
         if current_step >= self.num_steps:
             assert state is not None
             return state
+        from beamz.simulation.cuda.engine._contracts import _StateContract
+        from beamz.simulation.cuda.engine._runtime import _clear, _dispatch
+        from beamz.simulation.cuda.mstep.schedule import normalize_expected_runs
+
+        expected_runs = normalize_expected_runs(expected_runs)
+        contract = _StateContract(
+            self.num_steps,
+            current_step,
+            1,
+            "private" if state is None else "donated" if donate_state else "preserved",
+        )
+        native_state, _ = _dispatch(
+            self,
+            backend=backend,
+            schedule=schedule,
+            performance=False,
+            segment=contract,
+            state=state,
+            state_only=True,
+        )
+        if native_state is not None:
+            return native_state
+        _clear(self)
         program = self.compile(
             num_steps=1, backend=backend, schedule=schedule, expected_runs=expected_runs
         )
@@ -1309,13 +1337,13 @@ class Simulation:
         progress : bool, default=False
             Display setup progress while rasterizing the material grid.
         schedule : {"auto", "streamed", "mstep"}, optional
-            CUDA execution schedule. Omitting it preserves established streamed
-            selection. ``schedule="auto"`` opts into selection by time to result;
-            unmeasured cases retain streamed. CUDA backend names remain explicit
-            schedule overrides.
+            CUDA execution schedule. The default freezes a deterministic plan
+            from workload, device and memory budget. ``streamed`` forces ordinary
+            execution; ``mstep`` requests temporal execution. Compatibility
+            backend names remain explicit schedule overrides.
         expected_runs : int, default=1
-            Expected executions reusing this program. Automatic CUDA selection
-            uses this hint to amortize compilation; it does not execute extra runs.
+            Expected executions reusing an interoperability program. Native CUDA
+            plans are independent of this hint and never execute timing trials.
 
         Returns
         -------
@@ -1329,7 +1357,7 @@ class Simulation:
         compiler development, and reproducibility tooling.
         """
         # 1. Resolve Design's material raster; numerical boundary lowering belongs to compile.py.
-        from beamz.simulation.cuda.schedule import normalize_schedule_request
+        from beamz.simulation.cuda.mstep.schedule import normalize_schedule_request
 
         cuda_schedule, expected_runs = normalize_schedule_request(
             backend, schedule, expected_runs
@@ -1389,13 +1417,13 @@ class Simulation:
         progress : bool, default=False
             Display setup progress while rasterizing and lowering the simulation.
         schedule : {"auto", "streamed", "mstep"}, optional
-            CUDA execution schedule. Omitting it preserves established streamed
-            selection. ``schedule="auto"`` opts into selection by time to result;
-            unmeasured cases retain streamed. CUDA backend names remain explicit
-            schedule overrides.
+            CUDA execution schedule. The default freezes a deterministic plan
+            from workload, device and memory budget. ``streamed`` forces ordinary
+            execution; ``mstep`` requests temporal execution. Compatibility
+            backend names remain explicit schedule overrides.
         expected_runs : int, default=1
-            Expected executions reusing this program. Automatic CUDA selection
-            uses this hint to amortize compilation; it does not execute extra runs.
+            Expected executions reusing an interoperability program. Native CUDA
+            plans are independent of this hint and never execute timing trials.
 
         Returns
         -------
@@ -1435,7 +1463,7 @@ class Simulation:
         )
 
     def differentiable(
-        self, *, num_steps=None, backend="jax", checkpoint_interval=None
+        self, *, num_steps=None, backend="auto", checkpoint_interval=None
     ):
         """Build a reusable solver for ``jax.grad`` and inverse design.
 
@@ -1443,18 +1471,19 @@ class Simulation:
         permittivity or Ex/Ey/Ez arrays. The result is a ``SimulationState`` with
         differentiable fields and raw monitor accumulators. ``backend='cuda'``
         uses native float32 forward and reverse-mode Yee/CPML kernels on one GPU.
-        ``checkpoint_interval=None`` selects sqrt(T) chunking; zero disables it.
+        ``checkpoint_interval=None`` selects automatic checkpoint spacing.
         Geometry, source profiles, boundaries, and monitor definitions stay fixed.
 
         Parameters
         ----------
         num_steps : int, optional
             Number of fixed timesteps to execute; defaults to this time grid.
-        backend : str, default "jax"
-            Execution backend. "cuda" selects first-order FP32 native autodiff.
+        backend : str, default "auto"
+            Select native CUDA autodiff when supported, or use JAX. Set
+            "jax" or "cuda" to select a backend explicitly.
         checkpoint_interval : int or None, optional
-            Steps per retained checkpoint. None selects sqrt(T); zero stores
-            the complete trajectory instead of rematerializing chunks.
+            Steps per retained checkpoint. None balances boundary and replay
+            storage for CUDA and selects sqrt(T) for JAX. Zero disables chunking.
 
         Returns
         -------
@@ -1462,9 +1491,19 @@ class Simulation:
             Callable solver with dynamic material/source parameters and raw,
             differentiable field and monitor state.
         """
-        from beamz.simulation.differentiation import DifferentiableSimulation
+        from beamz.simulation.differentiation import (
+            DifferentiableSimulation,
+            _resolve_differentiable_backend,
+        )
 
-        program = self.compile(num_steps=num_steps, backend=backend)
+        program = compile_program(
+            self,
+            num_steps=num_steps,
+            backend=backend,
+            backend_resolver=_resolve_differentiable_backend,
+            setup_context_factory=_resolved_setup_device_context,
+            compile_factory=compile_simulation,
+        )
         return DifferentiableSimulation(
             program, t0=float(self.time[0]), checkpoint_interval=checkpoint_interval
         )
@@ -1479,7 +1518,8 @@ class Simulation:
         Notes
         -----
         This clears cached material grids, immutable compiled plans, and JIT function
-        references for all simulations in the current process, not only this object.
+        references and resident native CUDA sessions for all simulations in the
+        current process, not only this object.
         It does not modify the simulation or any existing results and does not remove
         JAX's optional persistent on-disk compilation cache.
         """
@@ -1590,6 +1630,8 @@ class Simulation:
             omitted.
         progress : bool, default=False
             Display JIT and execution progress in an interactive terminal.
+            Leave disabled for complete native CUDA schedules without intermediate
+            progress boundaries.
         store_full_materials : bool, default=False
             Retain the full material grid in result metadata. By default BeamZ stores
             only material regions required by configured analysis monitors.
@@ -1607,13 +1649,13 @@ class Simulation:
         performance : bool, default=True
             Print JIT- and setup-free runtime and GCUPS after this segment finishes.
         schedule : {"auto", "streamed", "mstep"}, optional
-            CUDA execution schedule. Omitting it preserves established streamed
-            selection. ``schedule="auto"`` opts into selection by time to result;
-            unmeasured cases retain streamed. CUDA backend names remain explicit
-            schedule overrides.
+            CUDA execution schedule. The default freezes a deterministic plan
+            from workload, device and memory budget. ``streamed`` forces ordinary
+            execution; ``mstep`` requests temporal execution. Compatibility
+            backend names remain explicit schedule overrides.
         expected_runs : int, default=1
-            Expected executions reusing this program. Automatic CUDA selection
-            uses this hint to amortize compilation; it does not execute extra runs.
+            Expected executions reusing an interoperability program. Native CUDA
+            plans are independent of this hint and never execute timing trials.
 
         Returns
         -------
@@ -1656,16 +1698,94 @@ class Simulation:
         and safely donates its private initial state. ``advance`` exists specifically
         for checkpointing, branching, streaming, and other continuation workflows.
         ``SimulationResults`` never contains continuation state.
+        Native CUDA returns detached checkpoints and can reuse its resident buffers
+        when continuing immediately from the latest checkpoint.
         """
+        from beamz.simulation.cuda.engine._contracts import _StateContract
+
         current_step = 0 if state is None else int(state.current_step)
         if not 0 <= current_step <= self.num_steps:
             raise ValueError("state.current_step is outside the simulation time grid.")
         remaining = self.num_steps - current_step
         steps = remaining if num_steps is None else int(num_steps)
-        if not 0 < steps <= remaining:
-            raise ValueError(f"num_steps must be in [1, {remaining}], got {steps}.")
+        contract = _StateContract(
+            self.num_steps,
+            current_step,
+            steps,
+            "private" if state is None else "donated" if donate_state else "preserved",
+        )
+        from beamz.simulation.backend import normalize_backend
+        from beamz.simulation.cuda.engine._runtime import _dispatch
+        from beamz.simulation.cuda.mstep.schedule import normalize_schedule_request
+
+        _, expected_runs = normalize_schedule_request(
+            normalize_backend(backend), schedule, expected_runs
+        )
+        if sharding is not None:
+            from beamz.simulation.cuda.runtime.native_sharding import _try_sharded_run
+
+            native_run, _ = _try_sharded_run(
+                self, sharding, backend=backend, schedule=schedule, termination=None,
+                wall_start=None, progress=bool(progress),
+                store_full_materials=bool(store_full_materials), performance=bool(performance),
+                segment=contract, state=state,
+            )
+            if native_run is not None:
+                return native_run
+        native_run, plan = _dispatch(
+            self,
+            backend=backend,
+            schedule=schedule,
+            progress=bool(progress),
+            store_full_materials=bool(store_full_materials),
+            performance=bool(performance),
+            interop_reason="sharded execution uses the CUDA interoperability binding"
+            if sharding is not None
+            else "",
+            segment=contract,
+            state=state,
+        )
+        if native_run is not None:
+            return native_run
+        return self._advance_interop(
+            contract=contract,
+            state=state,
+            progress=progress,
+            store_full_materials=store_full_materials,
+            sharding=sharding,
+            donate_state=donate_state,
+            backend=backend,
+            schedule=schedule,
+            expected_runs=expected_runs,
+            performance=performance,
+            dispatch_reason=plan.reason,
+        )
+
+    def _advance_interop(
+        self,
+        *,
+        contract=None,
+        state=None,
+        progress=False,
+        store_full_materials=False,
+        sharding=None,
+        donate_state=False,
+        backend="auto",
+        schedule=None,
+        expected_runs=1,
+        performance=True,
+        dispatch_reason="",
+    ) -> SimulationRun:
+        from beamz.simulation.cuda.engine._contracts import _StateContract
+        from beamz.simulation.cuda.engine._runtime import _clear
+
+        if contract is None:
+            contract = _StateContract(self.num_steps, steps=self.num_steps)
+        steps = contract.steps
+        remaining = contract.total_steps - contract.initial_step
+        _clear(self)
         if progress:
-            return run_simulation_with_progress(
+            run = run_simulation_with_progress(
                 self,
                 state,
                 num_steps=steps,
@@ -1680,27 +1800,47 @@ class Simulation:
                 report_performance=bool(performance),
             )
 
-        program = self.compile(
-            num_steps=steps,
-            sharding=sharding,
-            backend=backend,
-            schedule=schedule,
-            expected_runs=expected_runs,
-            progress=False,
+        else:
+            program = self.compile(
+                num_steps=steps,
+                sharding=sharding,
+                backend=backend,
+                schedule=schedule,
+                expected_runs=expected_runs,
+                progress=False,
+            )
+            if state is None:
+                state = initial_program_state(
+                    program,
+                    t=float(self.time[0]),
+                    current_step=0,
+                    monitor_steps=remaining,
+                )
+            run = run_simulation_program(
+                self,
+                program,
+                state,
+                progress=False,
+                store_full_materials=bool(store_full_materials),
+                monitor_steps=remaining,
+                donate_state=bool(donate_state),
+                performance=bool(performance),
+                report_performance=bool(performance),
+            )
+        object.__setattr__(
+            run.results,
+            "_cuda_plan",
+            MappingProxyType(
+                {
+                    **dict(run.results.cuda_plan),
+                    **({"reason": dispatch_reason} if dispatch_reason else {}),
+                    "state_ownership": contract.ownership,
+                    "initial_step": contract.initial_step,
+                    "final_step": contract._stop,
+                }
+            ),
         )
-        if state is None:
-            state = SimulationState.initial(program.grid, t=float(self.time[0]))
-        return run_simulation_program(
-            self,
-            program,
-            state,
-            progress=False,
-            store_full_materials=bool(store_full_materials),
-            monitor_steps=remaining,
-            donate_state=bool(donate_state),
-            performance=bool(performance),
-            report_performance=bool(performance),
-        )
+        return run
 
     def run(
         self,
@@ -1720,6 +1860,8 @@ class Simulation:
         ----------
         progress : bool, default=False
             Display JIT and execution progress in an interactive terminal.
+            Leave disabled for complete native CUDA schedules without intermediate
+            progress boundaries.
         store_full_materials : bool, default=False
             Retain the full material grid in result metadata. The default stores only
             material regions needed by configured analysis monitors.
@@ -1735,13 +1877,13 @@ class Simulation:
             Print JIT- and setup-free runtime and GCUPS after completion. Set to
             ``False`` to suppress reporting and timing instrumentation.
         schedule : {"auto", "streamed", "mstep"}, optional
-            CUDA execution schedule. Omitting it preserves established streamed
-            selection. ``schedule="auto"`` opts into selection by time to result;
-            unmeasured cases retain streamed. CUDA backend names remain explicit
-            schedule overrides.
+            CUDA execution schedule. The default freezes a deterministic plan
+            from workload, device and memory budget. ``streamed`` forces ordinary
+            execution; ``mstep`` requests temporal execution. Compatibility
+            backend names remain explicit schedule overrides.
         expected_runs : int, default=1
-            Expected executions reusing this program. Automatic CUDA selection
-            uses this hint to amortize compilation; it does not execute extra runs.
+            Expected executions reusing an interoperability program. Native CUDA
+            plans are independent of this hint and never execute timing trials.
 
         Returns
         -------
@@ -1779,8 +1921,47 @@ class Simulation:
         final :class:`SimulationState` is required. Use :meth:`step` only for
         state-only single-timestep debugging.
         """
+        from beamz.simulation.cuda.engine._runtime import _dispatch
+        from beamz.simulation.cuda.mstep.schedule import normalize_expected_runs
+
+        expected_runs = normalize_expected_runs(expected_runs)
+        from beamz.simulation import execute
+
+        wall_start = execute.perf_counter() if termination is not None else None
+        sharding_interop = False
+        if sharding is not None:
+            from beamz.simulation.cuda.runtime.native_sharding import _try_sharded_run
+
+            sharded_result, sharding_interop = _try_sharded_run(
+                self,
+                sharding,
+                backend=backend,
+                schedule=schedule,
+                termination=termination,
+                wall_start=wall_start,
+                progress=bool(progress),
+                store_full_materials=bool(store_full_materials),
+                performance=bool(performance),
+            )
+            if sharded_result is not None:
+                return sharded_result
+        native_result, cuda_plan = _dispatch(
+            self,
+            backend=backend,
+            schedule=schedule,
+            progress=bool(progress),
+            store_full_materials=bool(store_full_materials),
+            performance=bool(performance),
+            termination=termination,
+            _wall_start=wall_start,
+            interop_reason="sharded execution uses the CUDA interoperability binding"
+            if sharding_interop
+            else "",
+        )
+        if native_result is not None:
+            return native_result
         if termination is not None:
-            return run_until_terminated(
+            result = run_until_terminated(
                 self,
                 termination,
                 progress=bool(progress),
@@ -1790,19 +1971,25 @@ class Simulation:
                 schedule=schedule,
                 expected_runs=expected_runs,
                 performance=bool(performance),
+                _wall_start=wall_start,
             )
-        # The initial state is private to this call, so donating it is always safe and
-        # avoids retaining a second full set of device buffers during execution.
-        return self.advance(
-            progress=bool(progress),
-            store_full_materials=bool(store_full_materials),
-            sharding=sharding,
-            backend=backend,
-            schedule=schedule,
-            expected_runs=expected_runs,
-            donate_state=True,
-            performance=bool(performance),
-        ).results
+        else:
+            result = self._advance_interop(
+                progress=bool(progress),
+                store_full_materials=bool(store_full_materials),
+                sharding=sharding,
+                backend=backend,
+                schedule=schedule,
+                expected_runs=expected_runs,
+                donate_state=True,
+                performance=bool(performance),
+            ).results
+        object.__setattr__(
+            result,
+            "_cuda_plan",
+            MappingProxyType({**dict(result.cuda_plan), "reason": cuda_plan.reason}),
+        )
+        return result
 
     def plot(self, **kwargs):
         """Create a Matplotlib view of the simulation layout.

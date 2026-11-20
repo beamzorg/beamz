@@ -14,9 +14,12 @@ from jax.core import ShapedArray
 from jax.typing import DTypeLike
 
 from beamz.devices.sources.compiler import BatchedSlabGroup
+from beamz.simulation.backend import _load_extension
 from beamz.simulation.cuda.runtime import (
     _EMPTY,
+    _uniform_cpml_thickness,
     pack_dft_monitors,
+    replay_source_group_steps,
     reverse_material_step,
     run_program_steps,
     run_source_group_steps,
@@ -81,6 +84,15 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
     templates = tuple(batches[key][0] for key in keys)
     packed_monitors = pack_dft_monitors(program.monitors) if program.monitors else None
     base_context = replace(context, source_batches=None)
+    module = _load_extension()
+    native_replay = (
+        context.config.cuda_program_target is None
+        and getattr(module, "compiled_adjoint_replay", False)
+        and (not context.boundary.cpml.enabled or _uniform_cpml_thickness(context) > 0)
+    )
+    native_transpose = context.config.cuda_program_target is None and getattr(
+        module, "compiled_adjoint_chunk", False
+    )
 
     def source_values(ctx):
         return tuple(
@@ -288,7 +300,7 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
 
     def material_backward(inputs, cotangents, flags, nsteps):
         state, coeffs, sources, clock = inputs
-        ctx, _groups = restore_context(sources)
+        ctx, groups = restore_context(sources)
         axes = tuple(getattr(flags[1], f"e_source_{axis}") for axis in "xyz")
         train_material = any(axes)
         initial_step = state.current_step
@@ -302,7 +314,12 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
             return next_state, tape
 
         indices = jnp.arange(nsteps, dtype=jnp.int32)
-        if train_material:
+        if train_material and native_replay:
+            records = (
+                indices,
+                *replay_source_group_steps(state, ctx, coeffs, groups, nsteps),
+            )
+        elif train_material:
             _final, tape = jax.lax.scan(replay, state, indices)
             records = (indices, *tape)
         else:
@@ -374,9 +391,34 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
             )
             return (next_dy, next_accumulated, next_banks), None
 
-        (state_gradient, material_gradient, final_banks), _history = jax.lax.scan(
-            transpose, (initial_cotangents, gradients, psi_banks), records, reverse=True
-        )
+        if native_transpose:
+            known_h, old_psi_e = (
+                records[1:]
+                if train_material
+                else ((_EMPTY,) * 3, (_EMPTY,) * len(state.cpml_psi_e_terms))
+            )
+            state_gradient, material_gradient, final_banks = reverse_material_step(
+                pack_dft(initial_cotangents)._replace(current_step=initial_step),
+                known_h,
+                old_psi_e,
+                ctx,
+                coeffs,
+                gradients,
+                axes,
+                psi_banks,
+                indices,
+                packed_monitors=packed_monitors,
+                observation_origin=clock[0],
+                observation_step_offset=clock[1],
+            )
+            state_gradient = split_dft(state_gradient)
+        else:
+            (state_gradient, material_gradient, final_banks), _history = jax.lax.scan(
+                transpose,
+                (initial_cotangents, gradients, psi_banks),
+                records,
+                reverse=True,
+            )
         nterms = len(state.cpml_psi_h_terms)
         state_gradient = state_gradient._replace(
             t=None,

@@ -183,7 +183,7 @@ def main():
     ).hexdigest()
     root = Path(__file__).resolve().parents[1]
     digest = hashlib.sha256()
-    for path in sorted([*root.glob("beamz/**/*.py"), *root.glob("cuda/src/*")]):
+    for path in sorted([*root.glob("beamz/**/*.py"), *root.glob("cuda/src/**/*.*")]):
         if path.is_file():
             digest.update(str(path.relative_to(root)).encode())
             digest.update(path.read_bytes())

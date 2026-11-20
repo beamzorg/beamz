@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import math
 import os
+from dataclasses import fields
+from typing import Any
 
 import jax
 
@@ -78,7 +80,7 @@ def cuda_workspace_estimate(
         # dependency arrays. Retained caller state is accounted for below.
         workspace = state + fields
         if mstep_plan is not None:
-            from .cuda.capabilities import mstep_allocation_contract
+            from .cuda.runtime.capabilities import mstep_allocation_contract
 
             summary = mstep_plan.summary()
             _, placeholder_cells = mstep_allocation_contract(0)
@@ -135,13 +137,70 @@ def cuda_workspace_estimate(
     return workspace
 
 
+def _cuda_working_set(
+    program: Any = "",
+    *,
+    donate_state: bool = False,
+    low_memory: bool | str = "",
+    enforce: bool = False,
+) -> int:
+    budget = getattr(program.config, "_cuda_memory_budget_bytes", 0)
+    if not budget or program.config.backend == "jax":
+        return 0
+    if isinstance(low_memory, str):
+        low_memory = program.config.cuda_memory_policy != "speed"
+    from .observe import empty_monitor_values
+
+    plans = (
+        *program.sources,
+        *program.monitors,
+        *program.boundary.cpml.h_terms,
+        *program.boundary.cpml.e_terms,
+    )
+    values = jax.tree_util.tree_leaves(
+        (
+            program.coefficients,
+            tuple(tuple(getattr(v, f.name) for f in fields(v)) for v in plans),
+        )
+    )
+    unique = {id(v): v for v in values if hasattr(v, "dtype") and hasattr(v, "size")}
+    static = sum(int(v.size) * int(v.dtype.itemsize) for v in unique.values())
+    monitors = jax.eval_shape(
+        lambda: empty_monitor_values(program, num_steps=program.config.num_steps)
+    )
+    output = sum(
+        math.prod(v.shape) * int(v.dtype.itemsize)
+        for v in jax.tree_util.tree_leaves(monitors)
+    )
+    required = (
+        static
+        + output * (1 if donate_state else 2)
+        + cuda_workspace_estimate(
+            program, donate_state=donate_state, low_memory=bool(low_memory)
+        )
+        + (512 << 20)
+    )
+    if enforce and required > budget:
+        raise MemoryError(
+            f"CUDA estimated per-run storage {required} including reserve exceeds declared budget {budget}"
+        )
+    return required
+
+
 def cuda_capacity_schedule(program, *, donate_state: bool) -> bool:
     """Keep fast kernels when they fit; use existing in-place kernels otherwise."""
     if program.config.backend != "cuda_streamed":
         return False
     policy = program.config.cuda_memory_policy
     if policy != "auto":
+        _cuda_working_set(
+            program,
+            donate_state=donate_state,
+            low_memory=policy == "capacity",
+            enforce=True,
+        )
         return policy == "capacity"
+    _cuda_working_set(program, donate_state=donate_state, low_memory=True, enforce=True)
     available = cuda_available_bytes(program)
     # CPU contract tests and older backends may not expose allocator statistics.
     # Explicit capacity mode is available without querying or initializing a GPU.
@@ -164,6 +223,11 @@ def cuda_available_bytes(program) -> int | None:
         stats = device.memory_stats()
         if stats and "bytes_limit" in stats and "bytes_in_use" in stats:
             budgets.append(int(stats["bytes_limit"]) - int(stats["bytes_in_use"]))
+    budget = getattr(program.config, "_cuda_memory_budget_bytes", 0)
+    if budget:
+        workspace = cuda_workspace_estimate(program, donate_state=False)
+        static_and_reserve = _cuda_working_set(program, donate_state=False) - workspace
+        budgets.append(max(0, budget - static_and_reserve))
     return min(budgets) if budgets else None
 
 

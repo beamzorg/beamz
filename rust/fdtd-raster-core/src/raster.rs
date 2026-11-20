@@ -1,5 +1,8 @@
 use std::time::Instant;
 
+#[path = "raster_planes.rs"]
+mod planes;
+
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -53,6 +56,12 @@ impl OutputComponents {
 pub struct IntegrationOptions {
     pub smoothing: SmoothingMode,
     pub output_components: OutputComponents,
+    /// Keep an exactly uniform scalar tensor as one value with its full logical shape.
+    pub broadcast_uniform: bool,
+    /// Emit the diagonal consumed by each Yee component for diagonal solver material grids.
+    pub project_yee_diagonal: bool,
+    /// Allow an immutable plane dictionary for large solver rasters.
+    pub compact_planes: bool,
     /// Material IDs whose mixed supports use point ownership.
     pub staircase_materials: Vec<usize>,
     /// Complete electric/magnetic dual supports across these physical axes.
@@ -80,6 +89,9 @@ impl IntegrationOptions {
         Self {
             smoothing: SmoothingMode::Volume,
             output_components: OutputComponents::All,
+            broadcast_uniform: false,
+            project_yee_diagonal: false,
+            compact_planes: false,
             staircase_materials: Vec::new(),
             periodic_axes: [false; 3],
             minimum_depth,
@@ -95,7 +107,11 @@ pub struct TensorArray {
     /// Compact constitutive components followed by storage order `(c, z, y, x)`.
     /// `c=1` is isotropic, `c=3` diagonal, and `c=6` symmetric packed.
     pub shape: [usize; 4],
+    /// Component-major dense data, one broadcast scalar, or unique xy planes when `plane_ids` is populated.
     pub values: Vec<f32>,
+    /// When present, index one physical xy plane per logical (component, z).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plane_ids: Vec<usize>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -167,10 +183,19 @@ impl Component {
     }
 }
 
+#[derive(Clone, Copy)]
+struct RasterDomain<'a> {
+    scene: &'a Scene,
+    index: &'a ObjectIndex,
+    grid: &'a Grid,
+    options: &'a IntegrationOptions,
+}
+
 struct ObjectIndex {
     domain: Aabb,
     dimensions: [usize; 3],
     bins: Vec<Vec<usize>>,
+    object_bounds: Vec<Aabb>,
     resolved: Option<ResolvedExtrusions>,
 }
 
@@ -200,9 +225,14 @@ impl ObjectIndex {
             resolved: None,
             dimensions,
             bins: vec![Vec::new(); dimensions.iter().product()],
+            object_bounds: scene
+                .objects
+                .iter()
+                .map(|object| object.geometry.bounds())
+                .collect(),
         };
-        for (object_index, object) in scene.objects.iter().enumerate() {
-            if let Some(bounds) = object.geometry.bounds().intersection(&domain) {
+        for object_index in 0..result.object_bounds.len() {
+            if let Some(bounds) = result.object_bounds[object_index].intersection(&domain) {
                 let ranges = result.bin_ranges(&bounds);
                 for z in ranges[2].0..=ranges[2].1 {
                     for y in ranges[1].0..=ranges[1].1 {
@@ -257,22 +287,17 @@ impl ObjectIndex {
     }
 }
 
-struct Sample {
-    epsilon: f32,
-    mu: f32,
-    conductivity: f32,
-    error: f32,
-    path: SamplePath,
-    candidate_tests: u64,
-    smoothed: bool,
-    fallback: Option<FallbackReason>,
-}
-
-struct CellSample {
-    material: Material,
+#[derive(Clone, Copy)]
+struct Sample<T> {
+    values: T,
     meta: SampleMeta,
 }
+type CellSample = Sample<Material>;
+// Volume samples use (epsilon, mu, conductivity). Projected Yee samples use
+// the requested property order, so each batch carries only three scalars.
+type ScalarSample = Sample<[f32; 3]>;
 
+#[derive(Clone, Copy)]
 struct SampleMeta {
     error: f32,
     path: SamplePath,
@@ -294,62 +319,6 @@ enum InterfaceClass {
     None,
     Laminar([f64; 3]),
     Ambiguous(FallbackReason),
-}
-
-trait HasMeta {
-    fn error(&self) -> f32;
-    fn path(&self) -> SamplePath;
-    fn candidate_tests(&self) -> u64;
-    fn smoothed(&self) -> bool {
-        false
-    }
-    fn fallback(&self) -> Option<FallbackReason> {
-        None
-    }
-}
-
-impl HasMeta for Sample {
-    fn error(&self) -> f32 {
-        self.error
-    }
-
-    fn path(&self) -> SamplePath {
-        self.path
-    }
-
-    fn candidate_tests(&self) -> u64 {
-        self.candidate_tests
-    }
-
-    fn smoothed(&self) -> bool {
-        self.smoothed
-    }
-
-    fn fallback(&self) -> Option<FallbackReason> {
-        self.fallback
-    }
-}
-
-impl HasMeta for CellSample {
-    fn error(&self) -> f32 {
-        self.meta.error
-    }
-
-    fn path(&self) -> SamplePath {
-        self.meta.path
-    }
-
-    fn candidate_tests(&self) -> u64 {
-        self.meta.candidate_tests
-    }
-
-    fn smoothed(&self) -> bool {
-        self.meta.smoothed
-    }
-
-    fn fallback(&self) -> Option<FallbackReason> {
-        self.meta.fallback
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -434,36 +403,35 @@ fn rasterize_impl(
     } else {
         6
     };
+    let domain = RasterDomain {
+        scene,
+        index: &index,
+        grid,
+        options,
+    };
     let mut epsilon = Vec::with_capacity(3);
     let mut conductivity = Vec::with_capacity(3);
     for component in [Component::Ex, Component::Ey, Component::Ez] {
         if options.output_components.includes(component) {
             if scalar_volume {
-                let (shape, samples) =
-                    raster_scalar_support(scene, &index, grid, options, component);
-                record_diagnostics(&mut diagnostics, &samples);
-                epsilon.push(scalar_tensor_from_samples(shape, &samples, |sample| {
-                    sample.epsilon
-                }));
-                conductivity.push(scalar_tensor_from_samples(shape, &samples, |sample| {
-                    sample.conductivity
-                }));
+                let mut fields = raster_scalar_tensors(
+                    domain,
+                    component,
+                    &mut diagnostics,
+                    &[|s| s.values[0], |s| s.values[2]],
+                );
+                conductivity.push(fields.pop().unwrap());
+                epsilon.push(fields.pop().unwrap());
             } else {
-                let (shape, samples) =
-                    raster_material_support(scene, &index, grid, options, component);
-                record_diagnostics(&mut diagnostics, &samples);
-                epsilon.push(tensor_from_samples(
-                    shape,
-                    &samples,
-                    |sample| sample.material.epsilon_r,
+                let mut fields = raster_material_tensors(
+                    domain,
+                    component,
+                    &mut diagnostics,
                     maximum_components,
-                ));
-                conductivity.push(tensor_from_samples(
-                    shape,
-                    &samples,
-                    |sample| sample.material.conductivity,
-                    maximum_components,
-                ));
+                    &[|s| s.values.epsilon_r, |s| s.values.conductivity],
+                );
+                conductivity.push(fields.pop().unwrap());
+                epsilon.push(fields.pop().unwrap());
             }
         } else {
             epsilon.push(omitted_tensor(component, grid));
@@ -474,24 +442,29 @@ fn rasterize_impl(
     for component in [Component::Hx, Component::Hy, Component::Hz] {
         if options.output_components.includes(component) {
             if constant_unit_mu {
-                mu.push(constant_unit_tensor(component, grid));
-            } else if scalar_volume {
-                let (shape, samples) =
-                    raster_scalar_support(scene, &index, grid, options, component);
-                record_diagnostics(&mut diagnostics, &samples);
-                mu.push(scalar_tensor_from_samples(shape, &samples, |sample| {
-                    sample.mu
-                }));
-            } else {
-                let (shape, samples) =
-                    raster_material_support(scene, &index, grid, options, component);
-                record_diagnostics(&mut diagnostics, &samples);
-                mu.push(tensor_from_samples(
-                    shape,
-                    &samples,
-                    |sample| sample.material.mu_r,
-                    maximum_components,
+                mu.push(constant_unit_tensor(
+                    component,
+                    grid,
+                    options.broadcast_uniform,
                 ));
+            } else if scalar_volume {
+                mu.push(
+                    raster_scalar_tensors(domain, component, &mut diagnostics, &[|s| s.values[1]])
+                        .pop()
+                        .unwrap(),
+                );
+            } else {
+                mu.push(
+                    raster_material_tensors(
+                        domain,
+                        component,
+                        &mut diagnostics,
+                        maximum_components,
+                        &[|s| s.values.mu_r],
+                    )
+                    .pop()
+                    .unwrap(),
+                );
             }
         } else {
             mu.push(omitted_tensor(component, grid));
@@ -500,51 +473,43 @@ fn rasterize_impl(
     let node_epsilon = if options.smoothing == SmoothingMode::FarjadpourFull
         && options.output_components != OutputComponents::TwoDimensionalTm
     {
-        let (shape, samples) =
-            raster_material_support(scene, &index, grid, options, Component::Node);
-        record_diagnostics(&mut diagnostics, &samples);
-        tensor_from_samples(
-            shape,
-            &samples,
-            |sample| sample.material.epsilon_r,
+        raster_material_tensors(
+            domain,
+            Component::Node,
+            &mut diagnostics,
             maximum_components,
+            &[|s| s.values.epsilon_r],
         )
+        .pop()
+        .unwrap()
     } else {
         omitted_tensor(Component::Node, grid)
     };
     let (cell_epsilon, cell_mu, cell_conductivity) = if scalar_volume {
-        let (cell_shape, cell_samples) =
-            raster_scalar_support(scene, &index, grid, options, Component::Cell);
-        record_diagnostics(&mut diagnostics, &cell_samples);
-        (
-            scalar_tensor_from_samples(cell_shape, &cell_samples, |sample| sample.epsilon),
-            scalar_tensor_from_samples(cell_shape, &cell_samples, |sample| sample.mu),
-            scalar_tensor_from_samples(cell_shape, &cell_samples, |sample| sample.conductivity),
-        )
+        let mut fields = raster_scalar_tensors(
+            domain,
+            Component::Cell,
+            &mut diagnostics,
+            &[|s| s.values[0], |s| s.values[1], |s| s.values[2]],
+        );
+        let conductivity = fields.pop().unwrap();
+        let mu = fields.pop().unwrap();
+        (fields.pop().unwrap(), mu, conductivity)
     } else {
-        let (cell_shape, cell_samples) =
-            raster_material_support(scene, &index, grid, options, Component::Cell);
-        record_diagnostics(&mut diagnostics, &cell_samples);
-        (
-            tensor_from_samples(
-                cell_shape,
-                &cell_samples,
-                |sample| sample.material.epsilon_r,
-                maximum_components,
-            ),
-            tensor_from_samples(
-                cell_shape,
-                &cell_samples,
-                |sample| sample.material.mu_r,
-                maximum_components,
-            ),
-            tensor_from_samples(
-                cell_shape,
-                &cell_samples,
-                |sample| sample.material.conductivity,
-                maximum_components,
-            ),
-        )
+        let mut fields = raster_material_tensors(
+            domain,
+            Component::Cell,
+            &mut diagnostics,
+            maximum_components,
+            &[
+                |s| s.values.epsilon_r,
+                |s| s.values.mu_r,
+                |s| s.values.conductivity,
+            ],
+        );
+        let conductivity = fields.pop().unwrap();
+        let mu = fields.pop().unwrap();
+        (fields.pop().unwrap(), mu, conductivity)
     };
     diagnostics.validation_seconds = validation_seconds;
     diagnostics.indexing_seconds = indexing_seconds;
@@ -566,24 +531,27 @@ fn rasterize_impl(
     })
 }
 
-fn record_diagnostics<T: HasMeta>(diagnostics: &mut DiagnosticSummary, samples: &[T]) {
-    diagnostics.samples += samples.len();
+fn record_diagnostics<T>(diagnostics: &mut DiagnosticSummary, samples: &[Sample<T>], sites: usize) {
+    diagnostics.samples += sites;
+    // A certified background batch stores only its first representative.
+    diagnostics.background_samples += sites - samples.len();
     for sample in samples {
-        diagnostics.candidate_object_tests += sample.candidate_tests();
-        match sample.path() {
+        let meta = sample.meta;
+        diagnostics.candidate_object_tests += meta.candidate_tests;
+        match meta.path {
             SamplePath::Background => diagnostics.background_samples += 1,
             SamplePath::Uniform => diagnostics.uniform_samples += 1,
             SamplePath::Exact => diagnostics.exact_samples += 1,
             SamplePath::Adaptive => diagnostics.adaptive_samples += 1,
         }
-        let estimated_error = f64::from(sample.error());
+        let estimated_error = f64::from(meta.error);
         diagnostics.unresolved_samples += usize::from(estimated_error > 0.0);
         diagnostics.estimated_fraction_error_sum += estimated_error;
         diagnostics.maximum_estimated_fraction_error = diagnostics
             .maximum_estimated_fraction_error
             .max(estimated_error);
-        diagnostics.smoothed_samples += usize::from(sample.smoothed());
-        if let Some(reason) = sample.fallback() {
+        diagnostics.smoothed_samples += usize::from(meta.smoothed);
+        if let Some(reason) = meta.fallback {
             diagnostics.ambiguous_interface_samples += 1;
             match reason {
                 FallbackReason::MultipleOrientations => {
@@ -606,25 +574,26 @@ fn record_diagnostics<T: HasMeta>(diagnostics: &mut DiagnosticSummary, samples: 
 fn omitted_tensor(component: Component, grid: &Grid) -> TensorArray {
     let logical_shape = component.support().logical_shape(grid);
     TensorArray {
+        plane_ids: Vec::new(),
         shape: [0, logical_shape[2], logical_shape[1], logical_shape[0]],
         values: Vec::new(),
     }
 }
 
-fn constant_unit_tensor(component: Component, grid: &Grid) -> TensorArray {
+fn constant_unit_tensor(component: Component, grid: &Grid, broadcast: bool) -> TensorArray {
     let [nx, ny, nz] = component.support().logical_shape(grid);
     TensorArray {
+        plane_ids: Vec::new(),
         shape: [1, nz, ny, nx],
-        values: vec![1.0; nx * ny * nz],
+        values: vec![1.0; if broadcast { 1 } else { nx * ny * nz }],
     }
 }
 
-fn tensor_from_samples(
-    shape: [usize; 3],
+fn compact_component_count(
     samples: &[CellSample],
     property: impl Fn(&CellSample) -> SymmetricTensor,
     maximum_components: usize,
-) -> TensorArray {
+) -> usize {
     let mut components = 1;
     for sample in samples {
         let tensor = property(sample).0;
@@ -640,6 +609,17 @@ fn tensor_from_samples(
             components = 3;
         }
     }
+    components
+}
+
+#[cfg(test)]
+fn tensor_from_samples(
+    shape: [usize; 3],
+    samples: &[CellSample],
+    property: impl Fn(&CellSample) -> SymmetricTensor,
+    maximum_components: usize,
+) -> TensorArray {
+    let components = compact_component_count(samples, &property, maximum_components);
     let mut values = Vec::with_capacity(components * samples.len());
     for component in 0..components {
         values.extend(
@@ -649,19 +629,9 @@ fn tensor_from_samples(
         );
     }
     TensorArray {
+        plane_ids: Vec::new(),
         shape: [components, shape[0], shape[1], shape[2]],
         values,
-    }
-}
-
-fn scalar_tensor_from_samples(
-    shape: [usize; 3],
-    samples: &[Sample],
-    property: impl Fn(&Sample) -> f32,
-) -> TensorArray {
-    TensorArray {
-        shape: [1, shape[0], shape[1], shape[2]],
-        values: samples.iter().map(property).collect(),
     }
 }
 
@@ -722,7 +692,6 @@ pub fn interface_samples(
             continue;
         }
         let (_, samples) = raster_support(
-            scene,
             &index,
             grid,
             component,
@@ -763,83 +732,470 @@ pub fn interface_samples(
     output
 }
 
-fn raster_scalar_support(
-    scene: &Scene,
-    index: &ObjectIndex,
-    grid: &Grid,
-    options: &IntegrationOptions,
+fn raster_scalar_tensors(
+    domain: RasterDomain<'_>,
     component: Component,
-) -> ([usize; 3], Vec<Sample>) {
-    raster_support(
-        scene,
-        index,
-        grid,
+    diagnostics: &mut DiagnosticSummary,
+    properties: &[fn(&ScalarSample) -> f32],
+) -> Vec<TensorArray> {
+    let logical = component.support().logical_shape(domain.grid);
+    raster_scalar_layer(
+        domain,
         component,
-        options,
+        diagnostics,
+        properties,
+        logical,
+        0,
         |volume, candidates, point| {
-            integrate_scalar(scene, volume, candidates, point, options, index, grid)
+            integrate_scalar(
+                domain.scene,
+                volume,
+                candidates,
+                point,
+                domain.options,
+                domain.index,
+                domain.grid,
+            )
         },
     )
 }
 
-fn raster_material_support(
-    scene: &Scene,
-    index: &ObjectIndex,
-    grid: &Grid,
-    options: &IntegrationOptions,
+fn raster_scalar_layer(
+    domain: RasterDomain<'_>,
     component: Component,
-) -> ([usize; 3], Vec<CellSample>) {
-    raster_support(
-        scene,
-        index,
-        grid,
+    diagnostics: &mut DiagnosticSummary,
+    properties: &[fn(&ScalarSample) -> f32],
+    logical: [usize; 3],
+    offset: usize,
+    sample: impl Fn(&Aabb, &[usize], [f64; 3]) -> ScalarSample + Sync,
+) -> Vec<TensorArray> {
+    let length: usize = logical.iter().product();
+    let mut fields: Vec<Vec<f32>> = properties
+        .iter()
+        .map(|_| {
+            Vec::with_capacity(if domain.options.broadcast_uniform {
+                1
+            } else {
+                length
+            })
+        })
+        .collect();
+    for begin in (0..length).step_by(65536) {
+        let end = (begin + 65536).min(length);
+        let (_, samples) = raster_support_range(
+            domain.index,
+            domain.grid,
+            component,
+            domain.options,
+            &sample,
+            offset + begin,
+            offset + end,
+        );
+        let repeated = end - begin - samples.len();
+        record_diagnostics(diagnostics, &samples, end - begin);
+        for (values, property) in fields.iter_mut().zip(properties) {
+            if domain.options.broadcast_uniform && (values.is_empty() || values.len() < begin) {
+                let first = *values.first().unwrap_or(&property(&samples[0]));
+                if samples
+                    .iter()
+                    .all(|sample| property(sample).to_bits() == first.to_bits())
+                {
+                    if values.is_empty() {
+                        values.push(first);
+                    }
+                    continue;
+                }
+                values.resize(begin, first);
+                values.reserve_exact(length - begin);
+            }
+            if repeated > 0 {
+                values.resize(end, property(&samples[0]));
+            } else {
+                values.extend(samples.iter().map(property));
+            }
+        }
+    }
+    fields
+        .into_iter()
+        .map(|values| TensorArray {
+            plane_ids: Vec::new(),
+            shape: [1, logical[2], logical[1], logical[0]],
+            values,
+        })
+        .collect()
+}
+
+// Integrate in bounded batches, retaining only compact constitutive values.
+// Promotion is lossless: previous isotropic diagonals are duplicated and previous
+// absent off-diagonal components are zero-filled, exactly as the full-grid pass.
+fn raster_material_tensors(
+    domain: RasterDomain<'_>,
+    component: Component,
+    diagnostics: &mut DiagnosticSummary,
+    maximum_components: usize,
+    properties: &[fn(&CellSample) -> SymmetricTensor],
+) -> Vec<TensorArray> {
+    let support = component.support();
+    let [nx, ny, nz] = support.logical_shape(domain.grid);
+    let schedule = (domain.options.compact_planes
+        && domain.options.project_yee_diagonal
+        && domain.options.smoothing == SmoothingMode::FarjadpourDiagonal
+        && nz >= 8)
+        .then(|| planes::schedule(domain.scene, domain.grid, support, domain.options))
+        .flatten();
+    if let Some((layers, ids, counts)) = schedule {
+        let mut banks: Vec<planes::Bank> = (0..properties.len())
+            .map(|_| planes::Bank::default())
+            .collect();
+        let mut summary = DiagnosticSummary::default();
+        let mut discarded_bits = false;
+        for (representative, times) in layers.into_iter().zip(counts) {
+            let mut layer_diagnostics = DiagnosticSummary::default();
+            let tensors = raster_material_layer(
+                domain,
+                component,
+                &mut layer_diagnostics,
+                maximum_components,
+                properties,
+                Some(representative),
+                &mut discarded_bits,
+            );
+            if discarded_bits {
+                break;
+            }
+            planes::accumulate(&mut summary, &layer_diagnostics, times);
+            for (bank, tensor) in banks.iter_mut().zip(tensors) {
+                bank.add(tensor);
+            }
+        }
+        // A globally promoted tensor can expose bits locally below the
+        // isotropy tolerance. Evaluate the original pass in that case.
+        if !discarded_bits {
+            planes::accumulate(diagnostics, &summary, 1);
+            return banks
+                .into_iter()
+                .map(|bank| bank.finish([nz, ny, nx], &ids))
+                .collect();
+        }
+    }
+    raster_material_layer(
+        domain,
         component,
-        options,
-        |volume, candidates, point| {
-            let (material, meta) =
-                integrate_material(scene, volume, candidates, point, options, index, grid);
-            CellSample { material, meta }
-        },
+        diagnostics,
+        maximum_components,
+        properties,
+        None,
+        &mut false,
     )
 }
 
-fn raster_support<T: Send>(
-    scene: &Scene,
+fn raster_material_layer(
+    domain: RasterDomain<'_>,
+    component: Component,
+    diagnostics: &mut DiagnosticSummary,
+    maximum_components: usize,
+    properties: &[fn(&CellSample) -> SymmetricTensor],
+    z: Option<usize>,
+    discarded_bits: &mut bool,
+) -> Vec<TensorArray> {
+    let RasterDomain {
+        scene,
+        index,
+        grid,
+        options,
+    } = domain;
+    let projection = match component {
+        Component::Ex | Component::Hx => Some(0),
+        Component::Ey | Component::Hy => Some(1),
+        Component::Ez | Component::Hz => Some(2),
+        _ => None,
+    }
+    .filter(|_| {
+        options.project_yee_diagonal && options.smoothing == SmoothingMode::FarjadpourDiagonal
+    });
+    let mut logical = component.support().logical_shape(grid);
+    let plane_size = logical[0] * logical[1];
+    let offset = z.unwrap_or(0) * plane_size;
+    if z.is_some() {
+        logical[2] = 1;
+    }
+    if let Some(axis) = projection {
+        let output: [fn(&ScalarSample) -> f32; 3] =
+            [|s| s.values[0], |s| s.values[1], |s| s.values[2]];
+        return raster_scalar_layer(
+            domain,
+            component,
+            diagnostics,
+            &output[..properties.len()],
+            logical,
+            offset,
+            |volume, candidates, point| {
+                let (material, meta) =
+                    integrate_material(scene, volume, candidates, point, options, index, grid);
+                let cell = CellSample {
+                    values: material,
+                    meta,
+                };
+                let mut values = [0f32; 3];
+                for (output, property) in values.iter_mut().zip(properties) {
+                    *output = property(&cell).0[axis] as f32;
+                }
+                ScalarSample { values, meta }
+            },
+        );
+    }
+    let length: usize = logical.iter().product();
+    let mut fields: Vec<Vec<f32>> = properties
+        .iter()
+        .map(|_| {
+            if options.broadcast_uniform {
+                Vec::new()
+            } else {
+                vec![0.0; length]
+            }
+        })
+        .collect();
+    let mut deferred: Vec<Vec<Vec<(usize, f32)>>> = properties
+        .iter()
+        .map(|_| (0..maximum_components).map(|_| Vec::new()).collect())
+        .collect();
+    for begin in (0..length).step_by(65536) {
+        let end = (begin + 65536).min(length);
+        let (_, samples) = raster_support_range(
+            index,
+            grid,
+            component,
+            options,
+            |volume, candidates, point| {
+                let (material, meta) =
+                    integrate_material(scene, volume, candidates, point, options, index, grid);
+                CellSample {
+                    values: material,
+                    meta,
+                }
+            },
+            begin + offset,
+            end + offset,
+        );
+        let repeated = end - begin - samples.len();
+        record_diagnostics(diagnostics, &samples, end - begin);
+        for ((values, missing), property) in fields.iter_mut().zip(&mut deferred).zip(properties) {
+            // Defer allocating a volume while this property remains spatially constant.
+            // Compare discarded components too: a later heterogeneous batch may promote
+            // this compact tensor to three or six planes, including signed zero bits.
+            if values.len() < length {
+                let first = *values
+                    .first()
+                    .unwrap_or(&(property(&samples[0]).0[0] as f32));
+                if samples.iter().all(|sample| {
+                    let t = property(sample).0;
+                    (t[0] as f32).to_bits() == first.to_bits()
+                        && t[0].to_bits() == t[1].to_bits()
+                        && t[0].to_bits() == t[2].to_bits()
+                        && t[3..maximum_components].iter().all(|v| v.to_bits() == 0)
+                }) {
+                    if values.is_empty() {
+                        values.push(first);
+                    }
+                    continue;
+                }
+                values.resize(length, first);
+            }
+            let previous = values.len() / length;
+            let components = previous.max(compact_component_count(
+                &samples,
+                property,
+                maximum_components,
+            ));
+            values.resize(components * length, 0.0);
+            for (axis, exceptions) in missing
+                .iter_mut()
+                .enumerate()
+                .take(components)
+                .skip(previous)
+            {
+                let offset = axis * length;
+                if axis < 3 {
+                    values.copy_within(..begin, offset);
+                }
+                for (i, value) in exceptions.drain(..) {
+                    values[offset + i] = value;
+                }
+            }
+            // Keep actual rounded values for already-promoted components, even
+            // when this batch alone would pass the compact/isotropic tolerance.
+            for (axis, plane) in values.chunks_exact_mut(length).enumerate() {
+                if repeated > 0 {
+                    plane[begin..end].fill(property(&samples[0]).0[axis] as f32);
+                } else {
+                    for (value, sample) in plane[begin..end].iter_mut().zip(&samples) {
+                        *value = property(sample).0[axis] as f32;
+                    }
+                }
+            }
+            // Preserve exceptional discarded bits for a possible later promotion.
+            // Usually these lists are empty, including signed-zero-free isotropy.
+            for (c, exceptions) in missing.iter_mut().enumerate().skip(components) {
+                for (i, sample) in samples.iter().enumerate() {
+                    let tensor = property(sample).0;
+                    let value = tensor[c] as f32;
+                    let default = if c < 3 { tensor[0] as f32 } else { 0.0 };
+                    if value.to_bits() != default.to_bits() {
+                        exceptions.extend((begin + i..=begin + i + repeated).map(|j| (j, value)));
+                    }
+                }
+            }
+        }
+    }
+    if z.is_some() {
+        *discarded_bits |= deferred.iter().flatten().any(|entries| !entries.is_empty());
+    }
+    fields
+        .into_iter()
+        .map(|values| TensorArray {
+            plane_ids: Vec::new(),
+            shape: [
+                (values.len() / length).max(1),
+                logical[2],
+                logical[1],
+                logical[0],
+            ],
+            values,
+        })
+        .collect()
+}
+
+fn raster_support<T: Send + Clone>(
     index: &ObjectIndex,
     grid: &Grid,
     component: Component,
     options: &IntegrationOptions,
     integrate: impl Fn(&Aabb, &[usize], [f64; 3]) -> T + Sync,
 ) -> ([usize; 3], Vec<T>) {
+    let length = component.support().logical_shape(grid).iter().product();
+    let (shape, mut samples) =
+        raster_support_range(index, grid, component, options, integrate, 0, length);
+    if samples.len() < length {
+        samples.resize(length, samples[0].clone());
+    }
+    (shape, samples)
+}
+
+fn raster_support_range<T: Send + Clone>(
+    index: &ObjectIndex,
+    grid: &Grid,
+    component: Component,
+    options: &IntegrationOptions,
+    integrate: impl Fn(&Aabb, &[usize], [f64; 3]) -> T + Sync,
+    begin: usize,
+    end: usize,
+) -> ([usize; 3], Vec<T>) {
     let logical_shape = component.support().logical_shape(grid);
     let shape_zyx = [logical_shape[2], logical_shape[1], logical_shape[0]];
-    let length = logical_shape.iter().product();
-    let samples = (0..length)
+    let support = component.support();
+    let periodic = options.periodic_axes.iter().any(|&axis| axis);
+    if !periodic && begin < end {
+        let [nx, ny, _] = logical_shape;
+        let xyz = |flat: usize| [flat % nx, flat / nx % ny, flat / (nx * ny)];
+        let first = xyz(begin);
+        let last = xyz(end - 1);
+        let mut lo = first;
+        let mut hi = last;
+        // When a flat interval crosses a row or a plane, the enclosing box
+        // spans the entire faster axis.
+        if first[1..] != last[1..] {
+            lo[0] = 0;
+            hi[0] = nx - 1;
+        }
+        if first[2] != last[2] {
+            lo[1] = 0;
+            hi[1] = ny - 1;
+        }
+        let extent = Aabb {
+            min: support.periodic_volume(grid, lo, options.periodic_axes).min,
+            max: support.periodic_volume(grid, hi, options.periodic_axes).max,
+        };
+        if !index
+            .query(&extent)
+            .into_iter()
+            .any(|i| index.object_bounds[i].intersects(&extent))
+        {
+            let volume = support.periodic_volume(grid, first, options.periodic_axes);
+            let point = support.periodic_point(grid, first, options.periodic_axes);
+            return (shape_zyx, vec![integrate(&volume, &[], point)]);
+        }
+    }
+    // A wrapped high-face dual volume is expressed across the opposite seam.
+    // Single-sample spans keep the search valid there as well.
+    let span = if periodic { 1 } else { 64 };
+    let samples = (begin..end)
         .into_par_iter()
-        .map(|flat| {
-            let x = flat % logical_shape[0];
-            let rest = flat / logical_shape[0];
-            let y = rest % logical_shape[1];
-            let z = rest / logical_shape[1];
-            let volume =
-                component
-                    .support()
-                    .periodic_volume(grid, [x, y, z], options.periodic_axes);
-            let mut candidates = index.query(&volume);
-            candidates.retain(|candidate| {
-                scene.objects[*candidate]
-                    .geometry
-                    .bounds()
-                    .intersects(&volume)
-            });
-            integrate(
-                &volume,
-                &candidates,
-                component
-                    .support()
-                    .periodic_point(grid, [x, y, z], options.periodic_axes),
-            )
-        })
+        .with_min_len(64)
+        .map_init(
+            || (usize::MAX, Vec::new(), Vec::new(), false, [None::<T>, None]),
+            |(previous, possible, candidates, uniform, cache), flat| {
+                let x = flat % logical_shape[0];
+                let row = flat / logical_shape[0];
+                let y = row % logical_shape[1];
+                let z = row / logical_shape[1];
+                let offset = x % span;
+                let first = flat - offset;
+                if *previous != first {
+                    let lo = x - offset;
+                    let hi = (lo + span).min(logical_shape[0]) - 1;
+                    let extent = Aabb {
+                        min: support
+                            .periodic_volume(grid, [lo, y, z], options.periodic_axes)
+                            .min,
+                        max: support
+                            .periodic_volume(grid, [hi, y, z], options.periodic_axes)
+                            .max,
+                    };
+                    *possible = index.query(&extent);
+                    possible.retain(|&i| index.object_bounds[i].intersects(&extent));
+                    // Every Yee support sees identical ownership and diagnostics when the
+                    // entire span misses every surface and retains the same candidates.
+                    *uniform = !periodic
+                        && (possible.is_empty()
+                            || index.resolved.as_ref().is_some_and(|r| {
+                                possible.iter().all(|&i| {
+                                    let bounds = index.object_bounds[i];
+                                    (0..3).all(|a| {
+                                        bounds.min[a] <= extent.min[a]
+                                            && extent.max[a] <= bounds.max[a]
+                                    }) && !r.scene.objects[i]
+                                        .geometry
+                                        .surface_may_intersect(&extent)
+                                })
+                            }));
+                    cache[1] = None;
+                    *previous = first;
+                }
+                // Keep the background across spans. Occupied spans can have a
+                // different material even when each one is homogeneous.
+                let cached = &mut cache[usize::from(!possible.is_empty())];
+                if let Some(value) = cached.as_ref() {
+                    return value.clone();
+                }
+                let volume = support.periodic_volume(grid, [x, y, z], options.periodic_axes);
+                candidates.clear();
+                candidates.extend(
+                    possible
+                        .iter()
+                        .copied()
+                        .filter(|&i| index.object_bounds[i].intersects(&volume)),
+                );
+                let sample = integrate(
+                    &volume,
+                    candidates,
+                    support.periodic_point(grid, [x, y, z], options.periodic_axes),
+                );
+                if *uniform {
+                    *cached = Some(sample.clone());
+                }
+                sample
+            },
+        )
         .collect();
     (shape_zyx, samples)
 }
@@ -852,7 +1208,7 @@ fn integrate_scalar(
     options: &IntegrationOptions,
     index: &ObjectIndex,
     grid: &Grid,
-) -> Sample {
+) -> ScalarSample {
     let mixture = integrate_support_mixture(scene, index, grid, volume, candidates, point, options);
     let [epsilon, mu, conductivity] = if let Some(owner) = mixture.uniform_owner {
         let material = scene.materials[owner];
@@ -874,15 +1230,15 @@ fn integrate_scalar(
         }
         values
     };
-    Sample {
-        epsilon: epsilon as f32,
-        mu: mu as f32,
-        conductivity: conductivity as f32,
-        error: mixture.error as f32,
-        path: mixture.path,
-        candidate_tests: mixture.candidate_tests,
-        smoothed: false,
-        fallback: None,
+    ScalarSample {
+        values: [epsilon as f32, mu as f32, conductivity as f32],
+        meta: SampleMeta {
+            error: mixture.error as f32,
+            path: mixture.path,
+            candidate_tests: mixture.candidate_tests,
+            smoothed: false,
+            fallback: None,
+        },
     }
 }
 
@@ -1718,6 +2074,147 @@ mod tests {
             0,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn plane_dictionary_preserves_rectilinear_material_and_mixed_geometry() {
+        let mut scene = box_scene(
+            Aabb::new([0.14, 0.19, 0.05], [0.93, 0.86, 0.91]).unwrap(),
+            3.25,
+        );
+        scene.materials[1].mu_r = SymmetricTensor::isotropic(1.25);
+        scene.objects.push(Object {
+            id: 2,
+            material_id: 1,
+            priority: 2,
+            geometry: Geometry::Sphere {
+                center: [0.09, 0.11, 0.72],
+                radius: 0.07,
+            },
+        });
+        let grid = Grid::new(
+            vec![0., 0.05, 0.1, 0.31, 0.56, 0.73, 0.87, 1.],
+            vec![0., 0.1, 0.22, 0.43, 0.51, 0.77, 1.],
+            (0..=64).map(|i| f64::from(i) / 64.).collect(),
+        )
+        .unwrap();
+        let mut options = IntegrationOptions::for_quality(Quality::Balanced);
+        options.project_yee_diagonal = true;
+        options.smoothing = SmoothingMode::FarjadpourDiagonal;
+        options.periodic_axes = [true, false, false];
+        let reference = rasterize(&scene, &grid, &options).unwrap();
+        options.compact_planes = true;
+        let compact = rasterize(&scene, &grid, &options).unwrap();
+        assert!(!compact.epsilon[0].plane_ids.is_empty());
+        for (expected, got) in reference
+            .epsilon
+            .iter()
+            .chain(&reference.mu)
+            .chain(&reference.conductivity)
+            .chain([
+                &reference.cell_epsilon,
+                &reference.cell_mu,
+                &reference.cell_conductivity,
+            ])
+            .zip(
+                compact
+                    .epsilon
+                    .iter()
+                    .chain(&compact.mu)
+                    .chain(&compact.conductivity)
+                    .chain([
+                        &compact.cell_epsilon,
+                        &compact.cell_mu,
+                        &compact.cell_conductivity,
+                    ]),
+            )
+        {
+            assert_eq!(got.shape, expected.shape);
+            let plane = got.shape[2] * got.shape[3];
+            for (i, &value) in expected.values.iter().enumerate() {
+                let j = if got.values.len() == 1 {
+                    0
+                } else if got.plane_ids.is_empty() {
+                    i
+                } else {
+                    got.plane_ids[i / plane] * plane + i % plane
+                };
+                assert_eq!(value.to_bits(), got.values[j].to_bits());
+            }
+        }
+        assert_eq!(compact.diagnostics.samples, reference.diagnostics.samples);
+        options.periodic_axes[2] = true;
+        assert!(
+            rasterize(&scene, &grid, &options)
+                .unwrap()
+                .epsilon
+                .iter()
+                .all(|t| t.plane_ids.is_empty())
+        );
+    }
+
+    #[test]
+    fn batched_tensor_promotion_matches_full_support_bits() {
+        let mut scene = box_scene(Aabb::new([0.0, 0.0, 0.85], [1.0; 3]).unwrap(), 4.0);
+        // First batch passes isotropic tolerance but has nonzero low-bit cross
+        // terms. A later full tensor must restore those earlier values exactly.
+        scene.materials[0].epsilon_r = SymmetricTensor([1.0, 1.0, 1.0, 1e-15, -0.0, 2e-15]);
+        scene.materials[1].epsilon_r = SymmetricTensor([4.0, 5.0, 6.0, 0.1, 0.2, 0.3]);
+        let grid = UniformGrid {
+            min: [0.0; 3],
+            max: [1.0; 3],
+            shape: [73, 41, 31],
+        }
+        .build()
+        .unwrap();
+        let index = ObjectIndex::build(&scene, &grid);
+        let options = IntegrationOptions::default();
+        let mut diagnostics = DiagnosticSummary::default();
+        let actual = raster_material_tensors(
+            RasterDomain {
+                scene: &scene,
+                index: &index,
+                grid: &grid,
+                options: &options,
+            },
+            Component::Cell,
+            &mut diagnostics,
+            6,
+            &[|s| s.values.epsilon_r],
+        )
+        .pop()
+        .unwrap();
+        let (shape, samples) = raster_support(
+            &index,
+            &grid,
+            Component::Cell,
+            &options,
+            |volume, candidates, point| {
+                let (material, meta) =
+                    integrate_material(&scene, volume, candidates, point, &options, &index, &grid);
+                CellSample {
+                    values: material,
+                    meta,
+                }
+            },
+        );
+        let expected = tensor_from_samples(shape, &samples, |s| s.values.epsilon_r, 6);
+        assert_eq!(actual.shape, expected.shape);
+        assert_eq!(
+            actual
+                .values
+                .iter()
+                .map(|v| v.to_bits())
+                .collect::<Vec<_>>(),
+            expected
+                .values
+                .iter()
+                .map(|v| v.to_bits())
+                .collect::<Vec<_>>()
+        );
+        let mut reference_diagnostics = DiagnosticSummary::default();
+        record_diagnostics(&mut reference_diagnostics, &samples, samples.len());
+        assert_eq!(diagnostics, reference_diagnostics);
     }
 
     #[test]

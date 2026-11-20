@@ -2,16 +2,16 @@
 
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
+
+from tests.cuda_source_layout import CUDA_INCLUDE_FLAGS
 
 
 def test_axis_union_covers_every_staggered_component_slab(tmp_path):
     compiler = shutil.which("g++") or shutil.which("clang++")
     if compiler is None:
         pytest.skip("A C++17 compiler is required for the portable region helper")
-    root = Path(__file__).resolve().parents[2]
     source = tmp_path / "region_oracle.cc"
     source.write_text(
         r"""
@@ -58,8 +58,7 @@ int main() {
             compiler,
             "-std=c++17",
             "-O2",
-            "-I",
-            str(root / "cuda/src"),
+            *CUDA_INCLUDE_FLAGS,
             str(source),
             "-o",
             str(executable),

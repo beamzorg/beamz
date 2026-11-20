@@ -26,7 +26,9 @@ def test_softmin_full_solver_derivative_and_checkpoint(polarization, tmp_path):
     np.testing.assert_array_equal(gradient[~mask], 0)
     direction = np.random.default_rng(7).normal(size=mask.shape) * mask
     direction /= np.linalg.norm(direction)
-    for h in (0.03, 0.01):
+    # Near this point the TE objective has a small directional derivative.
+    # Use steps large enough to resolve it above FP32 subtraction noise.
+    for h in (0.08, 0.04):
         finite_difference = (
             problem.value(density + h * direction, beta=2)
             - problem.value(density - h * direction, beta=2)

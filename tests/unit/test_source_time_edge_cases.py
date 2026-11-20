@@ -9,6 +9,7 @@ from beamz import GaussianPulse, SampledSignal, ramped_cosine
 from beamz.devices.sources.time import (
     analytic_signal_quadrature,
     analytic_subband_waveforms,
+    band_taper_weights,
     chebyshev_frequency_nodes,
     gaussian_band_pulse,
     interpolate_time_signal,
@@ -99,6 +100,26 @@ def test_analytic_subbands_preserve_shape_and_reconstruct_waveform():
     np.testing.assert_array_equal(nodes, [3.0, 6.0])
     assert subbands.shape == (2, waveform.size)
     np.testing.assert_allclose(subbands.sum(axis=0), waveform, rtol=1e-10, atol=1e-10)
+
+
+def test_broadband_taper_recalibrates_profile_nodes_and_ends_exactly():
+    dt = 1 / 256
+    time = np.arange(2048) * dt
+    waveform = np.exp(-(((time - 2) / 0.12) ** 2) + 2j * np.pi * 48 * time)
+    taper = band_taper_weights(time, (4.0, 4.5))
+    nodes, subbands = analytic_subband_waveforms(
+        waveform,
+        dt=dt,
+        profile_frequencies=np.array([44, 48, 52]),
+        taper=taper,
+    )
+    np.testing.assert_array_equal(subbands[:, time >= 4.5], 0)
+    np.testing.assert_allclose(
+        subbands.sum(axis=0), waveform * taper, rtol=1e-11, atol=1e-12
+    )
+    phase = np.exp(-2j * np.pi * nodes[:, None] * time)
+    response = (phase @ subbands.T) / (phase @ (waveform * taper))[:, None]
+    np.testing.assert_allclose(response, np.eye(nodes.size), rtol=1e-10, atol=1e-10)
 
 
 def test_ramped_cosine_requires_a_complete_envelope_specification():
@@ -227,3 +248,64 @@ def test_gaussian_pulse_spectrum_matches_integrated_quadratures(remove_dc):
     np.testing.assert_allclose(
         pulse.spectrum([pulse.freq0], normalize=True), [1.0], atol=1e-14
     )
+
+
+@pytest.mark.parametrize("complex_signal", [False, True])
+def test_discrete_spectrum_matches_direct_sum_without_a_frequency_matrix(
+    monkeypatch, complex_signal
+):
+    from beamz.devices.sources.time import _discrete_spectrum
+
+    rng = np.random.default_rng(721)
+    times = np.arange(1307) * 4.7e-17 + 3e-15
+    values = rng.normal(size=times.size)
+    if complex_signal:
+        values = values + 1j * rng.normal(size=times.size)
+    freqs = np.linspace(-2e14, 3e14, 19)
+    expected = np.sum(
+        values[:, None] * np.exp(1j * 2 * np.pi * times[:, None] * freqs[None, :]),
+        axis=0,
+    )
+    original_exp = np.exp
+
+    def bounded_exp(phase, *args, **kwargs):
+        assert phase.size <= times.size, "DFT temporary grew with frequency count"
+        return original_exp(phase, *args, **kwargs)
+
+    monkeypatch.setattr(np, "exp", bounded_exp)
+    np.testing.assert_allclose(
+        _discrete_spectrum(values, times, freqs), expected, rtol=2e-13, atol=2e-12
+    )
+
+
+def test_discrete_spectrum_trims_only_exact_zero_padding(monkeypatch):
+    from beamz.devices.sources.time import _discrete_spectrum
+    from beamz.simulation.observe import _signal_dft_spectrum
+
+    times = np.arange(10000) * 1e-16
+    values = np.zeros(times.size)
+    values[400:460] = np.cos(np.arange(60))
+    values[470] = np.nextafter(0.0, 1.0)
+    freqs = np.array([1.7e14, 1.9e14])
+    expected = np.sum(
+        values[:, None] * np.exp(1j * 2 * np.pi * times[:, None] * freqs[None, :]),
+        axis=0,
+    )
+    exp = np.exp
+    sizes = []
+
+    def bounded(phase):
+        sizes.append(phase.size)
+        return exp(phase)
+
+    monkeypatch.setattr(np, "exp", bounded)
+    np.testing.assert_allclose(
+        _discrete_spectrum(values, times, freqs), expected, rtol=2e-13, atol=2e-12
+    )
+    np.testing.assert_allclose(
+        _signal_dft_spectrum(values, times, freqs),
+        2 * expected / times.size,
+        rtol=2e-13,
+        atol=2e-12,
+    )
+    assert max(sizes) == 71, "Subnormal samples must be retained; only exact zeros trim"

@@ -6,9 +6,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from beamz.simulation.cuda.material_blocks import pack_material_blocks
 
 from beamz.simulation.compile import clear_program_cache
-from beamz.simulation.cuda.material_blocks import pack_material_blocks
 from beamz.simulation.execute import build_scan
 from tests.hardware.test_cuda_mstep import STATUS, _compare, _run, _seed, _simulation
 

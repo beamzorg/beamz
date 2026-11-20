@@ -10,6 +10,8 @@ from typing import Callable
 
 import numpy as np
 
+from beamz._plane_array import material_planes
+
 # Each reader's intermediate working set is a small multiple of this tile size.
 TILE_BYTES = 16 * 1024 * 1024
 
@@ -34,6 +36,43 @@ def tiles(shape, dtype, budget=None):
         )
 
 
+def flat_tiles(shape, dtype, budget=None):
+    """Yield bounded contiguous ranges in the logical C-order traversal."""
+    elements = (TILE_BYTES if budget is None else budget) // np.dtype(dtype).itemsize
+    if elements < 1:
+        raise ValueError("Tile budget must fit at least one element")
+    if not shape or not all(shape):
+        return
+    stride = 1
+    axis = len(shape) - 1
+    while axis > 0 and stride * shape[axis] <= elements:
+        stride *= shape[axis]
+        axis -= 1
+    size = max(1, elements // stride)
+    suffix = (slice(None),) * (len(shape) - axis - 1)
+    for prefix in np.ndindex(shape[:axis]):
+        for start in range(0, shape[axis], size):
+            yield (*prefix, slice(start, min(start + size, shape[axis])), *suffix)
+
+
+def broadcast_base(array):
+    """Select one physical sample on every repeated axis, preserving rank."""
+    if 0 not in array.strides:
+        return array
+    return array[tuple(slice(0, 1) if stride == 0 else slice(None) for stride in array.strides)]
+
+
+def any_nonzero(value):
+    """Check for nonzero material values without expanding repeated volumes."""
+    if isinstance(value, RegionArray):
+        return any(np.any(value[tile]) for tile in tiles(value.shape, value.dtype))
+    array = np.asarray(value)
+    physical = material_planes(array, unique=True)
+    if physical is not None:
+        return any(np.any(plane) for plane in physical)
+    return bool(np.any(broadcast_base(array)))
+
+
 def uniform_value(value):
     """Return the shared element of an exactly uniform array, or ``None``.
 
@@ -41,10 +80,15 @@ def uniform_value(value):
     temporary is created. Mixed signed zeros count as uniform and return the first
     element's sign; any NaN keeps the array non-uniform. Empty arrays return ``None``.
     """
-    source = value if isinstance(value, RegionArray) else np.asarray(value)
+    source = value if isinstance(value, RegionArray) else broadcast_base(np.asarray(value))
     if not source.size:
         return None
     first = np.asarray(source[(0,) * source.ndim])
+    if isinstance(source, np.ndarray) and not any(source.strides):
+        return first if bool(first == first) else None
+    physical = material_planes(source, unique=True)
+    if physical is not None:
+        return first if all(np.all(plane == first) for plane in physical) else None
     for tile in tiles(source.shape, source.dtype):
         if not np.all(source[tile] == first):
             return None

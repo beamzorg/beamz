@@ -8,6 +8,7 @@ from typing import Any, Callable, cast
 import jax.numpy as jnp
 import numpy as np
 
+from beamz._region_array import SeparableMask
 from beamz.const import EPS_0, MU_0
 from beamz.constitutive import advance_e_tensor_dense
 from beamz.constitutive import collocate_yee_component as collocate_yee_component
@@ -16,7 +17,7 @@ from beamz.lattice import (
     adjacent_difference as _adjacent_difference,
 )
 from beamz.lattice import build_h_boundary_views_for_e_3d, component_axis_offsets_3d
-from beamz.simulation.boundary_masks import AxisMask
+from beamz.simulation.boundary_masks import AxisMask, compact_mask
 from beamz.simulation.material_blocks import material_values, reciprocal_material
 from beamz.simulation.model import (
     BoundaryPlan,
@@ -149,18 +150,19 @@ def constitutive_cell_widths(metrics):
 
 def cpml_coefficients(sigma, kappa, alpha, dt):
     """Precompute one CPML recurrence as ``a``, ``b``, and inverse-kappa."""
+    xp = np if all(isinstance(v, np.ndarray) for v in (sigma, kappa, alpha)) else jnp
     dtype = jnp.result_type(sigma, kappa, alpha, jnp.float32)
-    sigma = jnp.asarray(sigma, dtype=dtype)
-    kappa = jnp.maximum(jnp.asarray(kappa, dtype=dtype), 1.0)
-    alpha = jnp.asarray(alpha, dtype=dtype)
-    one = jnp.asarray(1.0, dtype=dtype)
+    sigma = xp.asarray(sigma, dtype=dtype)
+    kappa = xp.maximum(xp.asarray(kappa, dtype=dtype), 1.0)
+    alpha = xp.asarray(alpha, dtype=dtype)
+    one = xp.asarray(1.0, dtype=dtype)
     decay = (sigma / kappa + alpha) * (
-        jnp.asarray(dt, dtype=dtype) / jnp.asarray(EPS_0, dtype=dtype)
+        xp.asarray(dt, dtype=dtype) / xp.asarray(EPS_0, dtype=dtype)
     )
-    b = jnp.exp(-decay)
+    b = xp.exp(-decay)
     denominator = (sigma + kappa * alpha) * kappa
     # Preserve weak damping when exp(-decay) rounds to one; vacuum has a=0.
-    a = jnp.expm1(-decay) * (sigma / jnp.where(denominator > 0, denominator, one))
+    a = xp.expm1(-decay) * (sigma / xp.where(denominator > 0, denominator, one))
     return a, b, one / kappa
 
 
@@ -174,6 +176,8 @@ def advance_e_from_coefficients(field, curl, decay, source):
 
 def apply_zero_mask(field, mask):
     """Apply a compiled PEC mask without changing the field representation."""
+    if isinstance(mask, SeparableMask):
+        mask = compact_mask(mask)
     if isinstance(mask, AxisMask):
         combined = jnp.asarray(False)
         for profile in mask.profiles:
@@ -208,9 +212,10 @@ def _axis_region(ndim, axis, start, stop):
 
 def _pack_cpml_slab(arr, slab):
     """Gather the active low/high edge regions of one derivative."""
+    xp = np if isinstance(arr, np.ndarray) else jnp
     axis, low, high = int(slab.axis), int(slab.low), int(slab.high)
     if low <= 0 and high <= 0:
-        return jnp.zeros(slab.shape, dtype=arr.dtype)
+        return xp.zeros(slab.shape, dtype=arr.dtype)
     parts = []
     if low:
         parts.append(arr[_axis_region(arr.ndim, axis, 0, low)])
@@ -221,7 +226,7 @@ def _pack_cpml_slab(arr, slab):
         parts.append(
             arr[_axis_region(arr.ndim, axis, logical_stop - high, logical_stop)]
         )
-    return parts[0] if len(parts) == 1 else jnp.concatenate(parts, axis=axis)
+    return parts[0] if len(parts) == 1 else xp.concatenate(parts, axis=axis)
 
 
 def _unpack_cpml_slab(base, packed, slab):
@@ -1313,6 +1318,57 @@ def _replace_e(eng, ex, ey, ez, *, cpml_e=None):
     return eng._replace(**updates)
 
 
+def _permeable_h_update(
+    eng: Any = "", ctx: Any = "", coeffs: Any = "", *, cpml: bool = False
+) -> Any:
+    derivatives = tuple(
+        fit_array_to_shape(
+            _metric_difference(
+                getattr(eng, field),
+                axis,
+                (
+                    1 / ctx.resolution
+                    if ctx.config.metric_kind == "isotropic_uniform"
+                    else getattr(ctx.metrics, "e_to_h_" + name)
+                ),
+            ),
+            getattr(eng, target).shape,
+        )
+        for field, axis, name, target in (
+            ("ez", 1, "y", "hx"),
+            ("ey", 0, "z", "hx"),
+            ("ex", 0, "z", "hy"),
+            ("ez", 2, "x", "hy"),
+            ("ey", 2, "x", "hz"),
+            ("ex", 1, "y", "hz"),
+        )
+    )
+    psi = eng.cpml_psi_h_terms
+    if cpml:
+        corrected, psi = zip(
+            *(
+                correct_cpml_term(d, p, t)
+                for d, p, t in zip(
+                    derivatives, psi, ctx.boundary.cpml.h_terms, strict=True
+                )
+            ),
+            strict=True,
+        )
+        curls = tuple(corrected[i] + corrected[i + 1] for i in (0, 2, 4))
+    else:
+        curls = tuple(derivatives[i] - derivatives[i + 1] for i in (0, 2, 4))
+    values = tuple(
+        advance_h_from_coefficients(
+            getattr(eng, "h" + axis),
+            curl,
+            getattr(coeffs, "h_decay_" + axis),
+            getattr(coeffs, "h_source_" + axis),
+        )
+        for axis, curl in zip("xyz", curls, strict=True)
+    )
+    return _replace_h(eng, *values, cpml_h=psi if cpml else None)
+
+
 def update_h_3d_cpml(eng, ctx, coeffs):
     # 1. Advance H and its packed-slab CPML memories together using the coefficients and
     # slab geometry fixed during planning.
@@ -1410,6 +1466,8 @@ def update_e_3d_cpml(eng, ctx, coeffs):
 
 
 def update_h_3d_yee(eng, ctx, coeffs):
+    if coeffs.h_source_x.size:
+        return _permeable_h_update(eng, ctx, coeffs, cpml=False)
     # Return a new SimulationState so the timestep remains a pure JAX transformation.
     hx, hy, hz = fused_update_h_lossy_3d_material(
         eng.ex,
@@ -1621,6 +1679,8 @@ def update_e_2d_te_xy_cpml(eng, ctx, coeffs):
 
 
 def update_h_3d_cpml_metric(eng, ctx, coeffs):
+    if coeffs.h_source_x.size:
+        return _permeable_h_update(eng, ctx, coeffs, cpml=True)
     cpml = ctx.boundary.cpml
     hx, hy, hz, psi_h = cpml_update_h_from_e_3d_metric(
         eng.ex,
@@ -1686,6 +1746,8 @@ def update_e_3d_cpml_metric(eng, ctx, coeffs):
 
 
 def update_h_3d_yee_metric(eng, ctx, coeffs):
+    if coeffs.h_source_x.size:
+        return _permeable_h_update(eng, ctx, coeffs, cpml=False)
     hx, hy, hz = fused_update_h_lossy_3d_material_metric(
         eng.ex,
         eng.ey,
@@ -1874,7 +1936,7 @@ def select_update_kernel(ctx: CompiledStepContext) -> StepUpdateKernel:
                 "CUDA execution currently requires a three-dimensional grid"
             )
         if ctx.config.sharding.enabled:
-            from beamz.simulation.cuda.sharding import select_sharded_kernel
+            from beamz.simulation.cuda.runtime.sharding import select_sharded_kernel
 
             return select_sharded_kernel(ctx)
         from beamz.simulation.cuda import update_e, update_h

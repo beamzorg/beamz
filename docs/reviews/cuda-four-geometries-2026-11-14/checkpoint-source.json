@@ -1,5 +1,0 @@
-{
-  "selected_kernel_sha256": "130271a7bd52eed9ae7085d832de3d0f765e6a441462c8e9e29f8d16f1828533",
-  "canonical_kernel_sha256": "bbb086c743fc4ef09db7f9e60c5d0cbc2d687df2684dca9b5911679a2a0f2237",
-  "difference": "Trailing whitespace on two blank lines only; line count and C++ tokens unchanged"
-}

@@ -25,10 +25,7 @@ from .mode_launch import (
     ModeLaunchPlan,
     plan_mode_source_launch,
 )
-from .planar_tfsf import (
-    compute_discrete_3d_e_phasor_residuals,
-    compute_discrete_3d_h_phasor_residuals,
-)
+from .planar_tfsf import compute_discrete_3d_phasor_residuals
 from .specs import (
     CustomSource,
     FieldAxis3D,
@@ -41,8 +38,10 @@ from .specs import (
 )
 from .time import (
     analytic_subband_waveforms,
+    band_taper_weights,
     interpolate_time_signal,
     sample_source_waveforms,
+    sample_tapered_mode_waveform,
     sample_waveform,
 )
 
@@ -504,7 +503,7 @@ def _lower_plane_wave_source(source: PlaneWaveSource, ctx: SourceLoweringContext
         return plan
     grid = ctx.grid
     assert grid is not None  # The rectilinear operator requires grid metrics.
-    if np.asarray(ctx.fields.permittivity).ndim != 3:
+    if ctx.fields.permittivity.ndim != 3:
         raise ValueError("Rectilinear PlaneWaveSource requires a 3D grid.")
     axis, sign = _parse_direction(source.direction)
     axis_id = _AXES.index(axis)
@@ -611,7 +610,7 @@ def _lower_gaussian_source(
     source: GaussianSource,
     ctx: SourceLoweringContext,
 ) -> CompiledInjectionPlan:
-    is_3d = np.asarray(ctx.fields.permittivity).ndim == 3
+    is_3d = ctx.fields.permittivity.ndim == 3
     is_te = not is_3d and ctx.domain is not None and ctx.domain.polarization_2d == "te"
     component = "Hz" if is_te else "Ez"
     target = getattr(ctx.fields, component)
@@ -656,10 +655,7 @@ def _lower_mode_source(
     source: ModeSource,
     ctx: SourceLoweringContext,
 ) -> CompiledInjectionPlan:
-    if (
-        np.asarray(ctx.fields.permittivity).ndim == 3
-        and source.profile_frequencies().size > 1
-    ):
+    if ctx.fields.permittivity.ndim == 3 and source.profile_frequencies().size > 1:
         return _lower_broadband_mode_source(source, ctx)
 
     launch_plan = plan_mode_source_launch(
@@ -677,6 +673,7 @@ def _lower_mode_source(
         ctx,
         offset_half_step=not is_3d,
         include_quadrature=True,
+        taper=source.band_taper,
     )
     return _mode_launch_injection_plan(launch_plan, waveform, ctx)
 
@@ -693,17 +690,26 @@ def _sample_temporal_waveform(
     *,
     offset_half_step: bool = False,
     include_quadrature: bool = True,
+    taper=None,
 ) -> TemporalWaveform:
-    values, quadrature = sample_source_waveforms(
-        signal,
-        t0=ctx.t0,
-        dt=ctx.dt,
-        num_steps=ctx.num_steps,
-        total_steps=ctx.total_steps,
-        offset_fn=(lambda t, dt: t + 0.5 * dt)
-        if offset_half_step
-        else (lambda t, dt: t),
-    )
+    if taper is None:
+        values, quadrature = sample_source_waveforms(
+            signal,
+            t0=ctx.t0,
+            dt=ctx.dt,
+            num_steps=ctx.num_steps,
+            total_steps=ctx.total_steps,
+            offset_fn=(lambda t, dt: t + 0.5 * dt) if offset_half_step else None,
+        )
+    else:
+        _, values, quadrature = sample_tapered_mode_waveform(
+            signal,
+            taper,
+            t0=ctx.t0,
+            dt=ctx.dt,
+            num_steps=ctx.total_steps,
+            half_step=offset_half_step,
+        )
     return TemporalWaveform(
         values=jnp.asarray(values, dtype=jnp.float32),
         quadrature=(
@@ -721,10 +727,15 @@ def _lower_broadband_mode_source(
     analytic = np.asarray(sampled.values, dtype=np.float64) + 1j * np.asarray(
         sampled.quadrature, dtype=np.float64
     )
+    taper = None
+    if src.band_taper is not None:
+        times = ctx.t0 + np.arange(analytic.size, dtype=np.float64) * ctx.dt
+        taper = band_taper_weights(times, src.band_taper)
     nodes, subbands = analytic_subband_waveforms(
         analytic,
         dt=ctx.dt,
         profile_frequencies=src.profile_frequencies(),
+        taper=taper,
     )
     plans = []
     for freq in nodes:
@@ -732,6 +743,7 @@ def _lower_broadband_mode_source(
         profile_src = src.updated_copy(
             source_time=profile_source_time,
             mode_spec=replace(src.mode_spec, num_freqs=1),
+            band_taper=None,
         )
         plan = plan_mode_source_launch(
             profile_src,
@@ -929,7 +941,7 @@ def gaussian_spatial_profile(
 def _source_requires_rectilinear_operator(ctx: SourceLoweringContext) -> bool:
     if ctx.grid is None:
         return False
-    is_3d = np.asarray(ctx.fields.permittivity).ndim == 3
+    is_3d = ctx.fields.permittivity.ndim == 3
     axes = ("x", "y", "z") if is_3d else ("x", "y")
     return ctx.grid.metric_kind_for(axes) != "isotropic_uniform"
 
@@ -1438,21 +1450,8 @@ def field_profile_phasor_residuals(
     resolution: float,
     max_shift: int = 1,
 ):
-    return (
-        *compute_discrete_3d_h_phasor_residuals(
-            profile,
-            fields,
-            resolution=float(resolution),
-            max_shift=int(max(1, max_shift)),
-            dt=float(dt),
-        ),
-        *compute_discrete_3d_e_phasor_residuals(
-            profile,
-            fields,
-            resolution=float(resolution),
-            max_shift=int(max(1, max_shift)),
-            dt=float(dt),
-        ),
+    return compute_discrete_3d_phasor_residuals(
+        profile, fields, resolution=float(resolution), max_shift=max(1, int(max_shift)), dt=float(dt)
     )
 
 

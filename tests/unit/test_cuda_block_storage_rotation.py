@@ -6,8 +6,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
 from beamz.simulation.cuda.material_blocks import pack_material_blocks
+
 from beamz.simulation.cuda.storage import wrap_program_call
 from beamz.simulation.memory import _rotated_block_workspace_bytes
 from tests.unit.test_cuda_runtime_contract import _program_and_state

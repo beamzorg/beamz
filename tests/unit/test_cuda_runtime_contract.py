@@ -57,6 +57,7 @@ def _program_and_state(
     config = replace(
         program.config,
         backend="cuda_streamed",
+        cuda_memory_policy="speed",
         cuda_flags=backend_runtime.CUDA_DEFAULT_FLAGS,
     )
     context = kernels.CompiledStepContext(
@@ -725,6 +726,44 @@ def test_cuda_program_graph_packs_monitor_batch_and_aliases_accumulators(monkeyp
     np.testing.assert_array_equal(next_state.dft_vec_re, state.dft_vec_re)
 
 
+def test_native_gathers_pack_active_monitor_rows_in_canonical_order():
+    program, _, _ = _program_and_state(cpml=True, monitor=True)
+
+    def monitor(points, components):
+        index = np.arange(2 * points, dtype=np.int32).reshape(points, 2)
+        weights = np.full(index.shape, 0.5, np.float32)
+        return replace(
+            program.monitors[0],
+            dft_point_count=points,
+            dft_component_mask=np.isin(np.arange(6), components),
+            dft_flat_idx=(index,) * 6,
+            dft_weights=(weights,) * 6,
+        )
+
+    specs = (monitor(15, (2,)), monitor(3, (0, 1, 4, 5)))
+    indices, weights, *_ = cuda_runtime.pack_dft_monitors(specs, host=True, ragged=True)
+    dense_indices, dense_weights, *_ = cuda_runtime.pack_dft_monitors(specs, host=True)
+    rows = indices.ravel()[: 6 * len(specs)].reshape(-1, 6)
+    assert indices.ndim == 2 and indices.nbytes * 2 < dense_indices.nbytes
+    next_row = rows.size // indices.shape[1]
+    for i, spec in enumerate(specs):
+        for component, offset in enumerate(rows[i]):
+            if spec.dft_component_mask[component] == 0:
+                assert offset == -1
+                continue
+            assert offset == next_row
+            next_row += spec.dft_point_count
+            np.testing.assert_array_equal(
+                indices[offset:next_row],
+                dense_indices[i, component, : spec.dft_point_count],
+            )
+            np.testing.assert_array_equal(
+                weights[offset:next_row],
+                dense_weights[i, component, : spec.dft_point_count],
+            )
+    assert next_row == indices.shape[0]
+
+
 def test_cuda_program_graph_uses_temporal_cpml_field_banks(monkeypatch):
     program, state, context = _program_and_state(cpml=True, source=True, monitor=True)
     coefficients = program.coefficients._replace(
@@ -968,3 +1007,60 @@ def test_mstep_degenerate_runs_never_allocate_pair_workspace(monkeypatch, steps)
     scan(state, program.coefficients)
     assert calls == [(True, steps)]
     assert scan.cuda_schedule_decision["selected"] == "streamed"
+
+
+@pytest.mark.parametrize(
+    "shape,policy,override,temporal,expected",
+    [
+        ((256, 256, 256), "auto", None, False, False),
+        ((384, 384, 384), "auto", None, False, True),
+        ((16, 16, 512), "auto", None, False, False),
+        ((256, 256, 256), "speed", None, False, True),
+        ((256, 256, 256), "auto", "1", False, True),
+        ((384, 384, 384), "auto", "0", False, False),
+        ((256, 256, 256), "auto", None, True, True),
+    ],
+)
+def test_auto_cpml_bank_requires_usable_fusion(
+    monkeypatch, shape, policy, override, temporal, expected
+):
+    _, state, ctx = _program_and_state(cpml=True)
+    if override is None:
+        monkeypatch.delenv("BEAMZ_CUDA_CPML_CORE_FUSION", raising=False)
+    else:
+        monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", override)
+    from beamz.simulation.model import UpdateCoefficients
+
+    coefficients = UpdateCoefficients(
+        *(jnp.float32(1) for _ in UpdateCoefficients._fields)
+    )
+    fields = {
+        name: jax.ShapeDtypeStruct(shape, np.float32)
+        for name in ("ex", "ey", "ez", "hx", "hy", "hz")
+    }
+    state = state._replace(**fields)
+    ctx = replace(
+        ctx,
+        config=replace(
+            ctx.config,
+            cuda_memory_policy=policy,
+            cuda_flags=abi.CUDA_TEMPORAL_PAIR if temporal else 0,
+        ),
+    )
+    plan = cuda_runtime._native_schedule_plan(state, ctx, coefficients, 4, kind="steps")
+    assert plan.uses_temporal_fields is expected
+
+
+@pytest.mark.parametrize("phase", ["h", "e"])
+def test_dense_damping_uses_general_yee_schedule(phase):
+    from beamz.simulation.model import UpdateCoefficients
+
+    _, _, ctx = _program_and_state(cpml=False)
+    coefficients = UpdateCoefficients(
+        *(jnp.float32(1) for _ in UpdateCoefficients._fields)
+    )
+    assert cuda_runtime._temporal_yee_supported(ctx, coefficients, 4)
+    coefficients = coefficients._replace(
+        **{f"{phase}_decay_x": jnp.ones((4, 5, 6), dtype=jnp.float32)}
+    )
+    assert not cuda_runtime._temporal_yee_supported(ctx, coefficients, 4)

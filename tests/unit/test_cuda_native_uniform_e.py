@@ -7,7 +7,79 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from scripts.cuda_material_tile_facts import uniform_boxes
+from tests.cuda_source_layout import CUDA_INCLUDE_FLAGS
+
+
+def bit_lut(table):
+    table = np.asarray(table)
+    if (
+        table.dtype != np.dtype("float32")
+        or table.ndim != 1
+        or not 1 <= table.size <= 256
+    ):
+        raise ValueError("Expected FP32 byte-code table of length1..256")
+    lut = np.zeros(256, dtype=np.uint32)
+    lut[: table.size] = table.view(np.uint32)
+    return lut
+
+
+def uniform_boxes(packed, table, shape, origins, owned=(5, 15, 31), depth=16):
+    """Prove equality to the most frequent physical coefficient bit pattern.
+
+    An uncertified tile may still be uniform with a different value. This
+    deliberate false-negative is safe; no unsupported tile is admitted.
+    """
+    shape = tuple(int(x) for x in shape)
+    owned = np.asarray(owned, dtype=np.int64)
+    origins = np.asarray(origins, dtype=np.int64)
+    packed = np.asarray(packed)
+    if (
+        len(shape) != 3
+        or min(shape) < 1
+        or origins.ndim != 2
+        or origins.shape[1] != 3
+        or owned.shape != (3,)
+        or np.any(owned < 1)
+        or depth < 1
+        or packed.dtype != np.dtype("int32")
+        or packed.ndim != 1
+    ):
+        raise ValueError("Invalid packed field/trajectory geometry")
+    count = int(np.prod(shape, dtype=np.int64))
+    if count >= 2**31 or packed.size != (count + 3) // 4:
+        raise ValueError("Packed size or prefix count outside supported bounds")
+    # Explicit shifts preserve logical code ordering independent of host endian.
+    words = packed.view(np.uint32)
+    codes = np.empty(count, dtype=np.uint8)
+    for byte in range(4):
+        codes[byte::4] = (words[: codes[byte::4].size] >> (8 * byte)) & 255
+    lut = bit_lut(table)
+    counts = np.bincount(codes, minlength=256)
+    choices, inverse = np.unique(lut, return_inverse=True)
+    frequencies = np.zeros(choices.size, dtype=np.uint64)
+    np.add.at(frequencies, inverse, counts.astype(np.uint64))
+    bits = int(choices[np.argmax(frequencies)])
+    prefix = np.zeros(tuple(x + 1 for x in shape), dtype=np.int32)
+    prefix[1:, 1:, 1:] = (lut[codes] != bits).reshape(shape)
+    del codes
+    for axis in range(3):
+        np.cumsum(prefix, axis=axis, dtype=np.int32, out=prefix)
+    lower = np.clip(origins - depth, 0, shape)
+    upper = np.clip(origins + owned - 1, 0, shape)  # exclusive, n=1 high+1
+    bad = np.zeros(origins.shape[0], dtype=np.int64)
+    for corner in range(8):
+        coordinates = np.where([(corner >> a) & 1 for a in range(3)], upper, lower)
+        sign = 1 if corner.bit_count() % 2 else -1
+        bad += sign * prefix[tuple(coordinates.T)].astype(np.int64)
+    if np.any(bad < 0):
+        raise AssertionError("Invalid inclusion/exclusion count")
+    return {
+        "bits": bits,
+        "admitted": bad == 0,
+        "nonuniform_points": bad,
+        "lower": lower,
+        "upper": upper,
+    }
 
 
 def test_compiled_material_certificate_matches_bits_boxes_and_aliases(tmp_path):
@@ -43,10 +115,9 @@ int main(int argc,char**argv){
             compiler,
             "-std=c++17",
             "-O2",
-            "-I",
-            str(root / "cuda/src"),
+            *CUDA_INCLUDE_FLAGS,
             str(source),
-            str(root / "cuda/src/native_moving.cc"),
+            str(root / "cuda/src/temporal/host/native_moving.cc"),
             "-o",
             str(binary),
         ],
@@ -64,7 +135,7 @@ int main(int argc,char**argv){
             [33, 34, 34],
         ]
     )
-    owned = np.array([5, 15, 31])
+    owned = np.array([7, 15, 31])
     counts = (shapes.max(0) + 4 + owned - 1) // owned
     origins = np.indices(counts).reshape(3, -1).T * owned
     raw = output.read_bytes()
@@ -88,7 +159,9 @@ int main(int argc,char**argv){
                 codes[(12 * shape[1] + 17) * shape[2] + 20] = 1
             padded = np.zeros((count + 3) // 4 * 4, np.uint8)
             padded[:count] = codes
-            fact = uniform_boxes(padded.view(np.int32), table, shape, origins, depth=4)
+            fact = uniform_boxes(
+                padded.view(np.int32), table, shape, origins, owned=owned, depth=4
+            )
             expected &= fact["admitted"]
             bits.append(fact["bits"])
         offset = mode * stride

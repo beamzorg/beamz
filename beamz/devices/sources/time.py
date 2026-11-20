@@ -14,6 +14,20 @@ from beamz.const import LIGHT_SPEED
 from beamz.devices._immutable import readonly_array
 
 
+def _discrete_spectrum(values, times, freqs):
+    """Evaluate the sampled DFT without a time-by-frequency temporary."""
+    values, times = np.asarray(values), np.asarray(times)
+    active = np.flatnonzero(values)
+    if active.size and np.all(np.isfinite(times)):
+        region = slice(active[0], active[-1] + 1)
+        values, times = values[region], times[region]
+    phase = 1j * 2.0 * np.pi * times
+    return np.asarray(
+        [np.sum(values * np.exp(phase * f)) for f in np.asarray(freqs).reshape(-1)],
+        dtype=np.complex128,
+    )
+
+
 def interpolate_time_signal(signal, time, dt):
     """Linearly interpolate a real-valued source signal at an arbitrary time."""
     arr = np.asarray(signal, dtype=np.float64)
@@ -89,14 +103,13 @@ def sample_source_waveforms(
     num_steps: int,
     total_steps: int | None = None,
     signal_quadrature=None,
-    offset_fn=lambda t, _dt: t,
+    offset_fn=None,
 ):
     """Sample in-phase and quadrature source waveforms on the compiled time grid."""
     n = int(total_steps if total_steps is not None else num_steps)
-    times = np.asarray(
-        [offset_fn(float(t0) + i * float(dt), float(dt)) for i in range(n)],
-        dtype=np.float64,
-    )
+    times = float(t0) + np.arange(n, dtype=np.float64) * float(dt)
+    if offset_fn is not None:
+        times = np.fromiter((offset_fn(float(t), float(dt)) for t in times), float, n)
 
     if hasattr(source, "sample") and signal_quadrature is None:
         signal, quadrature = source.sample(times)
@@ -185,11 +198,34 @@ def partition_weights_by_frequency(
     return weights
 
 
+def band_taper_weights(times, taper):
+    start, end = taper
+    fraction = np.clip((times - start) / (end - start), 0.0, 1.0)
+    return np.where(times >= end, 0.0, 0.5 * (1.0 + np.cos(np.pi * fraction)))
+
+
+def sample_tapered_mode_waveform(source_time, taper, *, t0, dt, num_steps, half_step):
+    """Sample and taper both quadratures on the source's physical clock."""
+    times = float(t0) + np.arange(num_steps, dtype=np.float64) * float(dt)
+    if half_step:
+        times += 0.5 * dt
+    weights = band_taper_weights(times, taper)
+    signal, quadrature = source_time.sample(times)
+    signal = np.asarray(signal, dtype=np.float32).reshape(-1)
+    quadrature = np.asarray(quadrature, dtype=np.float32).reshape(-1)
+    return (
+        times,
+        (signal * weights).astype(np.float32),
+        (quadrature * weights).astype(np.float32),
+    )
+
+
 def analytic_subband_waveforms(
     analytic_waveform: np.ndarray,
     *,
     dt: float,
     profile_frequencies: np.ndarray,
+    taper: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Split an analytic source waveform into profile-frequency subbands."""
     waveform = np.asarray(analytic_waveform, dtype=np.complex128).reshape(-1)
@@ -203,6 +239,9 @@ def analytic_subband_waveforms(
     fft_freqs = np.fft.fftfreq(waveform.size, d=float(dt))
     weights = partition_weights_by_frequency(fft_freqs, nodes)
     subbands = np.fft.ifft(weights * spectrum[None, :], axis=1)
+    if taper is not None:
+        subbands *= taper
+        waveform = waveform * taper
     if nodes.size > 1:
         times = np.arange(waveform.size, dtype=float) * float(dt)
         phase = np.exp(-2j * np.pi * nodes[:, None] * times[None, :])
@@ -213,6 +252,8 @@ def analytic_subband_waveforms(
             if np.linalg.cond(response) < 1e8:
                 correction = np.linalg.solve(response, np.eye(nodes.size))
                 subbands = correction.T @ subbands
+    if taper is not None:
+        subbands[:, taper == 0.0] = 0
     return nodes, np.asarray(subbands, dtype=np.complex128)
 
 
@@ -342,11 +383,9 @@ class SampledSignal:
         frequencies = np.asarray(freqs, dtype=float)
         time = self.start_time + np.arange(self.values.size) * self.dt
         analytic = self.values + 1j * cast(np.ndarray, self.quadrature)
-        spectrum = np.sum(
-            analytic[:, None]
-            * np.exp(1j * 2.0 * np.pi * time[:, None] * frequencies.reshape(1, -1)),
-            axis=0,
-        ).reshape(frequencies.shape)
+        spectrum = _discrete_spectrum(analytic, time, frequencies).reshape(
+            frequencies.shape
+        )
         if normalize:
             scale = float(np.max(np.abs(spectrum), initial=0.0))
             if scale > 0.0:

@@ -8,9 +8,10 @@ import pathlib
 import platform
 import sys
 from collections import Counter, OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from time import perf_counter
+from types import MappingProxyType
 from typing import Any, cast
 
 import jax
@@ -43,7 +44,7 @@ from beamz.simulation.preparation_trace import trace_preparation
 from . import kernels as update_runtime
 from . import observe as monitor_runtime
 from . import sharding as sharding_runtime
-from .memory import cuda_capacity_schedule
+from .memory import _cuda_working_set, cuda_capacity_schedule
 from .results import (
     MonitorResults,
     RunTermination,
@@ -241,19 +242,29 @@ def _remaining_source_activity(
     """Return the maximum future source amplitude relative to each term's peak."""
     total_steps = int(total_steps)
     activity = np.zeros(total_steps, dtype=np.float64)
+    seen = set()
     for source in program.sources:
+        waveform_key = id(source.waveform)
+        if waveform_key in seen:
+            continue
+        seen.add(waveform_key)
         waveform = np.abs(np.asarray(source.waveform).reshape(-1))
         if waveform.size == 0:
             continue
         peak = float(np.max(waveform, initial=0.0))
         if peak > 0.0:
-            sampled = np.empty(total_steps, dtype=np.float64)
             copied = min(total_steps, waveform.size)
-            sampled[:copied] = waveform[:copied]
+            np.maximum(
+                activity[:copied],
+                waveform[:copied].astype(np.float64) / peak,
+                out=activity[:copied],
+            )
             if copied < total_steps:
-                sampled[copied:] = waveform[-1]
-            activity = np.maximum(activity, sampled / peak)
-    return np.maximum.accumulate(activity[::-1])[::-1] if activity.size else activity
+                np.maximum(
+                    activity[copied:], float(waveform[-1]) / peak, out=activity[copied:]
+                )
+    np.maximum.accumulate(activity[::-1], out=activity[::-1])
+    return activity
 
 
 def _source_residual(remaining_activity: np.ndarray, current_step: int) -> float:
@@ -350,10 +361,10 @@ def _configured_dft_weight_sum(simulation, spec) -> float:
 
 
 def _complete_converged_dft_weights(
-    results: SimulationResults, simulation, program: CompiledProgram
-) -> SimulationResults:
-    """Normalize converged DFTs as though their negligible tail had been sampled."""
-    monitors = dict(results.monitors)
+    monitors: dict[str, MonitorResults], simulation, program: CompiledProgram
+) -> dict[str, MonitorResults]:
+    """Complete raw DFT weights before the final source normalization."""
+    monitors = dict(monitors)
     for spec in program.monitors:
         if not spec.dft_enabled or spec.freq_count <= 0:
             continue
@@ -363,15 +374,7 @@ def _complete_converged_dft_weights(
         total_weight = _configured_dft_weight_sum(simulation, spec)
         weights = np.full(result.dft_weight_sum.shape, total_weight, dtype=np.float64)
         monitors[name] = replace(result, dft_weight_sum=weights)
-    # The DFT denominator now covers the configured window. Source spectra
-    # must use that same window, including its negligible unsimulated tail.
-    # Actual executed steps remain available in the termination report.
-    completed = replace(
-        results,
-        monitors=monitors,
-        metadata=replace(results.metadata, time=np.asarray(simulation.time)),
-    )
-    return completed.renormalize(results.normalization_source)
+    return monitors
 
 
 def compiled_source_batches(
@@ -747,7 +750,9 @@ class _BoundedCompileScan:
         return getattr(self.compiled, name)
 
 
-def build_step_context(program, *, donate_state: bool = False):
+def build_step_context(
+    program, *, donate_state: bool = False, low_memory: bool | str = ""
+):
     """Bind the shared source, boundary, and memory plan for one timestep."""
     cfg = program.config
     boundary = program.boundary
@@ -763,7 +768,9 @@ def build_step_context(program, *, donate_state: bool = False):
         dt_scalar=jnp.asarray(cfg.dt, dtype=jnp.float32),
         is_3d=cfg.is_3d,
         sharding_plan=program.sharding,
-        low_memory=cuda_capacity_schedule(program, donate_state=donate_state),
+        low_memory=cuda_capacity_schedule(program, donate_state=donate_state)
+        if isinstance(low_memory, str)
+        else low_memory,
     )
 
 
@@ -833,7 +840,7 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
         and (not program.monitors or packed_graph_monitors is not None)
         and (not program.sources or source_groups_supported)
     )
-    from beamz.simulation.cuda.schedule import choose_execution_schedule
+    from beamz.simulation.cuda.mstep.schedule import choose_execution_schedule
 
     mstep_plan, schedule_decision = choose_execution_schedule(
         program,
@@ -843,8 +850,11 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
         donate_state=donate_state,
     )
     if mstep_plan is not None:
-        from beamz.simulation.cuda.capabilities import mstep_allocation_contract
-        from beamz.simulation.cuda.mstep_config import ALLOWED_FLAGS, variant_summary
+        from beamz.simulation.cuda.mstep.mstep_config import (
+            ALLOWED_FLAGS,
+            variant_summary,
+        )
+        from beamz.simulation.cuda.runtime.capabilities import mstep_allocation_contract
 
         target, scratch_cells = mstep_allocation_contract(mstep_plan.scratch_cells)
         schedule_decision["mstep_ffi_target"] = target
@@ -953,7 +963,12 @@ def build_scan(program, *, donate_state: bool = False, checkpoint_interval=None)
                 sigma_h = getattr(coeffs, f"h_sigma_m_{component}")
                 sigma_e = getattr(coeffs, f"e_conductivity_{component}")
                 epsilon = getattr(coeffs, f"e_permittivity_{component}")
-                scales[f"h_source_{component}"] = dt_mu / (1 + 0.5 * dt_mu * sigma_h)
+                existing_h = getattr(coeffs, f"h_source_{component}")
+                scales[f"h_source_{component}"] = (
+                    existing_h
+                    if existing_h.size
+                    else dt_mu / (1 + 0.5 * dt_mu * sigma_h)
+                )
                 if isinstance(epsilon, MaterialBlocks) and sigma_e.ndim == 0:
                     scales[f"e_source_{component}"] = replace(
                         epsilon,
@@ -1256,6 +1271,9 @@ def execution_cache(program) -> _ExecutionCache:
 def clear_execution_cache() -> None:
     # Key cached work by semantic execution inputs so equivalent states reuse
     # compilation safely.
+    from beamz.simulation.cuda.engine._runtime import _clear
+
+    _clear()
     _EXECUTION_CACHES.clear()
 
 
@@ -1343,34 +1361,34 @@ def initial_program_state(
 
     old_h = () if continuation is None else continuation.cpml_psi_h_terms
     old_e = () if continuation is None else continuation.cpml_psi_e_terms
-    monitor_values = monitor_runtime.empty_monitor_values(
-        program,
-        num_steps=max(
-            1,
-            int(program.config.num_steps if monitor_steps is None else monitor_steps),
-        ),
+    recorder_shapes = tuple(
+        shape
+        for spec in program.monitors
+        if spec.recorder_index >= 0
+        for shape in spec.field_shapes
     )
-    recorder_buffers = monitor_values["recorded_fields"]
-    recorder_compatible = (
-        continuation is not None
-        and len(continuation.recorded_fields) == len(recorder_buffers)
-        and all(
-            old.shape[1:] == new.shape[1:]
-            for old, new in zip(
-                continuation.recorded_fields, recorder_buffers, strict=True
-            )
-        )
-    )
-    # Reuse monitor history only when its compiled shapes still match this program.
+    # Check metadata before allocating: compatible histories can be much larger
+    # than the fields, and must not need a second bank just to restore a state.
     if (
         program.monitors
         and continuation is not None
-        and continuation.counts.shape == monitor_values["counts"].shape
-        and recorder_compatible
+        and continuation.counts.shape == (len(program.monitors),)
+        and tuple(value.shape[1:] for value in continuation.recorded_fields)
+        == recorder_shapes
     ):
         monitor_values = {
             name: getattr(continuation, name) for name in monitor_runtime.MONITOR_FIELDS
         }
+    else:
+        monitor_values = monitor_runtime.empty_monitor_values(
+            program,
+            num_steps=max(
+                1,
+                int(
+                    program.config.num_steps if monitor_steps is None else monitor_steps
+                ),
+            ),
+        )
     # A continuation can promote the fields (for example, Periodic -> Bloch).
     # Promote recorder storage too, retaining all previous samples and metadata.
     recorded_fields = list(monitor_values["recorded_fields"])
@@ -1437,6 +1455,7 @@ def run_program(
     donate_state: bool = False,
 ) -> SimulationState:
     """Place state and coefficients, then execute the program's cached scan."""
+    _cuda_working_set(program, donate_state=donate_state, enforce=True)
     state = sharding_runtime.prepare_state(
         program,
         state,
@@ -1477,6 +1496,26 @@ def cuda_schedule_report(program, *, donate_state=False):
     return deepcopy(decision)
 
 
+def _execution_report(
+    program: CompiledProgram | str = "", *, donate_state: bool = False
+) -> Mapping[str, Any]:
+    if isinstance(program, str):
+        raise ValueError("A compiled program is required")
+    decision = cuda_schedule_report(program, donate_state=donate_state)
+    return MappingProxyType(
+        {
+            "backend": "jax" if program.config.backend == "jax" else "cuda",
+            "binding": "jax" if program.config.backend == "jax" else "ffi",
+            "schedule": decision.get("selected", "streamed"),
+            "memory_budget_bytes": getattr(
+                program.config, "_cuda_memory_budget_bytes", 0
+            ),
+            "memory_contract": "estimated per-run working set including reserve; allocator reservations excluded",
+            "reason": decision.get("reason", ""),
+        }
+    )
+
+
 def compile_program_execution(
     program: CompiledProgram,
     state: SimulationState,
@@ -1484,6 +1523,7 @@ def compile_program_execution(
     donate_state: bool = False,
 ) -> None:
     """Compile and cache a program executable without advancing its state."""
+    _cuda_working_set(program, donate_state=donate_state, enforce=True)
     state = sharding_runtime.prepare_state(
         program,
         state,
@@ -1532,13 +1572,23 @@ def step_program(
     return run_program(program, state, donate_state=donate_state)
 
 
-def _decode_monitor_results(sim, program, state) -> dict[str, MonitorResults]:
+def _decode_monitor_results(
+    sim,
+    program,
+    state,
+    *,
+    include_recorders: bool = True,
+    owned_recordings: bool = False,
+) -> dict[str, MonitorResults]:
     """Detach packed monitor rows into the user-visible named mapping."""
     return {
         str(
             getattr(monitor, "name", None) or f"monitor_{spec.monitor_index}"
-        ): MonitorResults.from_compiled_state(monitor, spec, state, program.config)
+        ): MonitorResults.from_compiled_state(
+            monitor, spec, state, program.config, owned_recordings=owned_recordings
+        )
         for spec in program.monitors
+        if include_recorders or spec.recorder_index < 0
         for monitor in (sim.monitors[spec.monitor_index],)
     }
 
@@ -1622,6 +1672,7 @@ def _run_program_state_timed(
     donate_state: bool,
 ) -> tuple[SimulationState, float]:
     """Run a ready executable and measure only its device-complete execution."""
+    _cuda_working_set(program, donate_state=donate_state, enforce=True)
     state = runtime_inputs(program, state, monitor_steps=monitor_steps)
     state = sharding_runtime.prepare_state(
         program,
@@ -1662,6 +1713,7 @@ def compiled_xla_memory_analysis(
     monitor_steps: int,
 ) -> dict:
     """Return backend memory data for the exact placed program and state."""
+    _cuda_working_set(program, enforce=True)
     state = sharding_runtime.prepare_state(
         program,
         runtime_inputs(program, state, monitor_steps=monitor_steps),
@@ -1742,6 +1794,9 @@ def run_simulation_program(
         ),
         performance=stats,
     )
+    object.__setattr__(
+        results, "_cuda_plan", _execution_report(program, donate_state=donate_state)
+    )
     if stats is not None and report_performance:
         _print_performance(stats)
     return SimulationRun(results=results, state=state)
@@ -1773,7 +1828,7 @@ def run_simulation_with_progress(
     expected_runs: int = 1,
 ) -> SimulationRun:
     """Run a segment in compiled chunks and report actual completed timesteps."""
-    from beamz.simulation.cuda.schedule import normalize_expected_runs
+    from beamz.simulation.cuda.mstep.schedule import normalize_expected_runs
 
     expected_runs = normalize_expected_runs(expected_runs)
     chunk_lengths = _progress_chunk_lengths(num_steps)
@@ -1849,6 +1904,9 @@ def run_simulation_with_progress(
         ),
         performance=stats,
     )
+    object.__setattr__(
+        results, "_cuda_plan", _execution_report(program, donate_state=donate_state)
+    )
     if stats is not None and report_performance:
         _print_performance(stats)
     return SimulationRun(results=results, state=state)
@@ -1865,19 +1923,25 @@ def run_until_terminated(
     performance: bool,
     schedule: str | None = None,
     expected_runs: int = 1,
+    _native=None,
+    _wall_start: float | None = None,
 ) -> SimulationResults:
     """Run reusable chunks until convergence, failure, or the configured time limit."""
     if not isinstance(policy, AutoTermination):
         raise TypeError("termination must be an AutoTermination instance or None.")
-    wall_start = perf_counter()
+    wall_start = perf_counter() if _wall_start is None else _wall_start
     chunk_steps = min(int(policy.chunk_steps), int(simulation.num_steps))
-    first_program = simulation.compile(
-        num_steps=chunk_steps,
-        sharding=sharding,
-        backend=backend,
-        schedule=schedule,
-        expected_runs=expected_runs,
-        progress=progress,
+    first_program = (
+        _native.program
+        if _native is not None
+        else simulation.compile(
+            num_steps=chunk_steps,
+            sharding=sharding,
+            backend=backend,
+            schedule=schedule,
+            expected_runs=expected_runs,
+            progress=progress,
+        )
     )
     if first_program.grid.material_grid.dispersion:
         raise ValueError(
@@ -1893,9 +1957,19 @@ def run_until_terminated(
             "Automatic termination has no applicable field or monitor criterion."
         )
 
+    monitor_session = None
+    if _native is not None and hasattr(_native, "_configure_monitor_checks"):
+        _native._monitor_check_bytes = _native._configure_monitor_checks(monitor_names)
+        if _native._monitor_check_bytes >= 0:
+            monitor_session = _native
+
     source_activity = _remaining_source_activity(first_program, simulation.num_steps)
-    terms = _energy_terms(first_program)
-    state = SimulationState.initial(first_program.grid, t=float(simulation.time[0]))
+    terms = None if _native is not None else _energy_terms(first_program)
+    state = (
+        _native.initial
+        if _native is not None
+        else SimulationState.initial(first_program.grid, t=float(simulation.time[0]))
+    )
     previous_energy: float | None = None
     previous_monitor: dict[tuple[str, str, int], np.ndarray] | None = None
     energy = peak_energy = max_field = 0.0
@@ -1904,9 +1978,16 @@ def run_until_terminated(
     successful_checks = growth_checks = 0
     reason = "time_limit"
     monitor_results: dict[str, MonitorResults] | None = None
+    defer_recorders = _native is not None and any(
+        spec.recorder_index >= 0 for spec in first_program.monitors
+    )
     program = first_program
     runtime_s = 0.0
-    compiling = progress and not program_is_compiled(first_program, donate_state=True)
+    compiling = (
+        progress
+        and _native is None
+        and not program_is_compiled(first_program, donate_state=True)
+    )
     if compiling:
         _print_inline_status("Compiling simulation...")
     elif progress:
@@ -1915,7 +1996,7 @@ def run_until_terminated(
     try:
         while int(state.current_step) < int(simulation.num_steps):
             if (
-                monitor_results is not None
+                int(state.current_step) > 0
                 and policy.max_wall_time is not None
                 and perf_counter() - wall_start >= policy.max_wall_time
             ):
@@ -1926,17 +2007,28 @@ def run_until_terminated(
             steps = min(chunk_steps, remaining)
             program = (
                 first_program
-                if steps == chunk_steps
-                else simulation.compile(
-                    num_steps=steps,
-                    sharding=sharding,
-                    backend=backend,
-                    schedule=schedule,
-                    expected_runs=expected_runs,
-                    progress=False,
+                if _native is not None
+                else (
+                    first_program
+                    if steps == chunk_steps
+                    else simulation.compile(
+                        num_steps=steps,
+                        sharding=sharding,
+                        backend=backend,
+                        schedule=schedule,
+                        expected_runs=expected_runs,
+                        progress=False,
+                    )
                 )
             )
-            if performance:
+            if _native is not None:
+                state, elapsed = _native._advance(
+                    steps, snapshot=monitor_session is None
+                )
+                if monitor_session is not None:
+                    state = _native._clock_state()
+                runtime_s += elapsed
+            elif performance:
                 state, elapsed = _run_program_state_timed(
                     program, state, monitor_steps=remaining, donate_state=True
                 )
@@ -1945,9 +2037,6 @@ def run_until_terminated(
                 state = _run_program_state(
                     program, state, monitor_steps=remaining, donate_state=True
                 )
-            # Convergence uses raw acquisitions. Building a durable result here
-            # repeatedly normalizes the full source record and copies metadata.
-            monitor_results = _decode_monitor_results(simulation, program, state)
             current_step = int(state.current_step)
             if progress:
                 if compiling:
@@ -1962,11 +2051,25 @@ def run_until_terminated(
                     label="Running simulation",
                 )
 
-            energy, max_field, fields_finite = _field_diagnostics(state, terms)
-            current_monitor = _monitor_vectors(monitor_results, monitor_names)
-            monitors_finite = all(
-                np.isfinite(value).all() for value in current_monitor.values()
+            energy, max_field, fields_finite = (
+                _native._field_diagnostics()
+                if _native is not None
+                else _field_diagnostics(state, terms)
             )
+            if monitor_session is not None:
+                current_monitor = None
+                change, monitors_finite = monitor_session._monitor_check()
+            else:
+                # Convergence reads raw acquisitions without normalizing or copying
+                # a complete result at every chunk boundary.
+                monitor_results = _decode_monitor_results(
+                    simulation, program, state, include_recorders=not defer_recorders
+                )
+                current_monitor = _monitor_vectors(monitor_results, monitor_names)
+                monitors_finite = all(
+                    np.isfinite(value).all() for value in current_monitor.values()
+                )
+                change = _relative_monitor_change(current_monitor, previous_monitor)
             if not fields_finite or not np.isfinite(energy) or not monitors_finite:
                 reason = "nonfinite"
                 break
@@ -1977,7 +2080,7 @@ def run_until_terminated(
             )
             source_decay = _source_residual(source_activity, current_step)
             source_off = source_decay <= policy.source_decay
-            monitor_change = _relative_monitor_change(current_monitor, previous_monitor)
+            monitor_change = change
 
             if (
                 source_off
@@ -2015,8 +2118,17 @@ def run_until_terminated(
         if progress:
             _finish_inline_progress()
 
+    if monitor_session is not None and int(state.current_step) > 0:
+        state = monitor_session._final_observations()
+        options = _native._recording_result_options() if defer_recorders else {}
+        monitor_results = _decode_monitor_results(simulation, program, state, **options)
     if monitor_results is None:
         raise RuntimeError("Automatic termination executed no simulation steps.")
+    if defer_recorders and monitor_session is None:
+        state = _native._final_observations()
+        monitor_results = _decode_monitor_results(
+            simulation, program, state, **_native._recording_result_options()
+        )
     report = RunTermination(
         reason=reason,
         steps=int(state.current_step),
@@ -2030,6 +2142,10 @@ def run_until_terminated(
         max_field=max_field,
         consecutive_checks=successful_checks,
     )
+    if reason == "converged":
+        monitor_results = _complete_converged_dft_weights(
+            monitor_results, simulation, first_program
+        )
     results = SimulationResults.from_run(
         simulation,
         runtime_fields=program.grid,
@@ -2042,8 +2158,6 @@ def run_until_terminated(
             program, len(simulation.sources)
         ),
     )
-    if reason == "converged":
-        results = _complete_converged_dft_weights(results, simulation, first_program)
     stats = (
         _performance_for(
             first_program, runtime_s=runtime_s, steps=int(state.current_step)
@@ -2052,6 +2166,10 @@ def run_until_terminated(
         else None
     )
     results = replace(results, termination=report, performance=stats)
+    if _native is None:
+        object.__setattr__(
+            results, "_cuda_plan", _execution_report(program, donate_state=True)
+        )
     if stats is not None:
         _print_performance(stats)
     return results
