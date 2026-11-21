@@ -268,11 +268,6 @@ struct Sample {
     fallback: Option<FallbackReason>,
 }
 
-struct CellSample {
-    material: Material,
-    meta: SampleMeta,
-}
-
 struct SampleMeta {
     error: f32,
     path: SamplePath,
@@ -327,28 +322,6 @@ impl HasMeta for Sample {
 
     fn fallback(&self) -> Option<FallbackReason> {
         self.fallback
-    }
-}
-
-impl HasMeta for CellSample {
-    fn error(&self) -> f32 {
-        self.meta.error
-    }
-
-    fn path(&self) -> SamplePath {
-        self.meta.path
-    }
-
-    fn candidate_tests(&self) -> u64 {
-        self.meta.candidate_tests
-    }
-
-    fn smoothed(&self) -> bool {
-        self.meta.smoothed
-    }
-
-    fn fallback(&self) -> Option<FallbackReason> {
-        self.meta.fallback
     }
 }
 
@@ -449,19 +422,18 @@ fn rasterize_impl(
                     sample.conductivity
                 }));
             } else {
-                let (shape, samples) =
-                    raster_material_support(scene, &index, grid, options, component);
-                record_diagnostics(&mut diagnostics, &samples);
-                epsilon.push(tensor_from_samples(
-                    shape,
-                    &samples,
-                    |sample| sample.material.epsilon_r,
+                let support = raster_material_support(scene, &index, grid, options, component);
+                diagnostics.merge(&support.diagnostics);
+                epsilon.push(tensor_from_support(
+                    scene,
+                    &support,
+                    |material| material.epsilon_r,
                     maximum_components,
                 ));
-                conductivity.push(tensor_from_samples(
-                    shape,
-                    &samples,
-                    |sample| sample.material.conductivity,
+                conductivity.push(tensor_from_support(
+                    scene,
+                    &support,
+                    |material| material.conductivity,
                     maximum_components,
                 ));
             }
@@ -483,13 +455,12 @@ fn rasterize_impl(
                     sample.mu
                 }));
             } else {
-                let (shape, samples) =
-                    raster_material_support(scene, &index, grid, options, component);
-                record_diagnostics(&mut diagnostics, &samples);
-                mu.push(tensor_from_samples(
-                    shape,
-                    &samples,
-                    |sample| sample.material.mu_r,
+                let support = raster_material_support(scene, &index, grid, options, component);
+                diagnostics.merge(&support.diagnostics);
+                mu.push(tensor_from_support(
+                    scene,
+                    &support,
+                    |material| material.mu_r,
                     maximum_components,
                 ));
             }
@@ -500,13 +471,12 @@ fn rasterize_impl(
     let node_epsilon = if options.smoothing == SmoothingMode::FarjadpourFull
         && options.output_components != OutputComponents::TwoDimensionalTm
     {
-        let (shape, samples) =
-            raster_material_support(scene, &index, grid, options, Component::Node);
-        record_diagnostics(&mut diagnostics, &samples);
-        tensor_from_samples(
-            shape,
-            &samples,
-            |sample| sample.material.epsilon_r,
+        let support = raster_material_support(scene, &index, grid, options, Component::Node);
+        diagnostics.merge(&support.diagnostics);
+        tensor_from_support(
+            scene,
+            &support,
+            |material| material.epsilon_r,
             maximum_components,
         )
     } else {
@@ -522,26 +492,25 @@ fn rasterize_impl(
             scalar_tensor_from_samples(cell_shape, &cell_samples, |sample| sample.conductivity),
         )
     } else {
-        let (cell_shape, cell_samples) =
-            raster_material_support(scene, &index, grid, options, Component::Cell);
-        record_diagnostics(&mut diagnostics, &cell_samples);
+        let support = raster_material_support(scene, &index, grid, options, Component::Cell);
+        diagnostics.merge(&support.diagnostics);
         (
-            tensor_from_samples(
-                cell_shape,
-                &cell_samples,
-                |sample| sample.material.epsilon_r,
+            tensor_from_support(
+                scene,
+                &support,
+                |material| material.epsilon_r,
                 maximum_components,
             ),
-            tensor_from_samples(
-                cell_shape,
-                &cell_samples,
-                |sample| sample.material.mu_r,
+            tensor_from_support(
+                scene,
+                &support,
+                |material| material.mu_r,
                 maximum_components,
             ),
-            tensor_from_samples(
-                cell_shape,
-                &cell_samples,
-                |sample| sample.material.conductivity,
+            tensor_from_support(
+                scene,
+                &support,
+                |material| material.conductivity,
                 maximum_components,
             ),
         )
@@ -566,8 +535,64 @@ fn rasterize_impl(
     })
 }
 
+impl DiagnosticSummary {
+    fn record(&mut self, meta: &SampleMeta) {
+        record_diagnostics_iter(self, std::iter::once(meta), 1);
+    }
+
+    fn merge(&mut self, other: &Self) {
+        self.samples += other.samples;
+        self.background_samples += other.background_samples;
+        self.uniform_samples += other.uniform_samples;
+        self.exact_samples += other.exact_samples;
+        self.adaptive_samples += other.adaptive_samples;
+        self.unresolved_samples += other.unresolved_samples;
+        self.estimated_fraction_error_sum += other.estimated_fraction_error_sum;
+        self.maximum_estimated_fraction_error = self
+            .maximum_estimated_fraction_error
+            .max(other.maximum_estimated_fraction_error);
+        self.smoothed_samples += other.smoothed_samples;
+        self.ambiguous_interface_samples += other.ambiguous_interface_samples;
+        self.fallback_multiple_orientations += other.fallback_multiple_orientations;
+        self.fallback_multiple_objects += other.fallback_multiple_objects;
+        self.fallback_unresolved_geometry += other.fallback_unresolved_geometry;
+        self.fallback_missing_surface_evidence += other.fallback_missing_surface_evidence;
+        self.candidate_object_tests += other.candidate_object_tests;
+    }
+}
+
+impl HasMeta for SampleMeta {
+    fn error(&self) -> f32 {
+        self.error
+    }
+
+    fn path(&self) -> SamplePath {
+        self.path
+    }
+
+    fn candidate_tests(&self) -> u64 {
+        self.candidate_tests
+    }
+
+    fn smoothed(&self) -> bool {
+        self.smoothed
+    }
+
+    fn fallback(&self) -> Option<FallbackReason> {
+        self.fallback
+    }
+}
+
 fn record_diagnostics<T: HasMeta>(diagnostics: &mut DiagnosticSummary, samples: &[T]) {
-    diagnostics.samples += samples.len();
+    record_diagnostics_iter(diagnostics, samples.iter(), samples.len());
+}
+
+fn record_diagnostics_iter<'a, T: HasMeta + 'a>(
+    diagnostics: &mut DiagnosticSummary,
+    samples: impl Iterator<Item = &'a T>,
+    count: usize,
+) {
+    diagnostics.samples += count;
     for sample in samples {
         diagnostics.candidate_object_tests += sample.candidate_tests();
         match sample.path() {
@@ -616,41 +641,6 @@ fn constant_unit_tensor(component: Component, grid: &Grid) -> TensorArray {
     TensorArray {
         shape: [1, nz, ny, nx],
         values: vec![1.0; nx * ny * nz],
-    }
-}
-
-fn tensor_from_samples(
-    shape: [usize; 3],
-    samples: &[CellSample],
-    property: impl Fn(&CellSample) -> SymmetricTensor,
-    maximum_components: usize,
-) -> TensorArray {
-    let mut components = 1;
-    for sample in samples {
-        let tensor = property(sample).0;
-        let scale = tensor
-            .iter()
-            .fold(1.0_f64, |current, value| current.max(value.abs()));
-        let tolerance = 256.0 * f64::EPSILON * scale;
-        if maximum_components == 6 && tensor[3..].iter().any(|value| value.abs() > tolerance) {
-            components = 6;
-            break;
-        }
-        if (tensor[0] - tensor[1]).abs() > tolerance || (tensor[0] - tensor[2]).abs() > tolerance {
-            components = 3;
-        }
-    }
-    let mut values = Vec::with_capacity(components * samples.len());
-    for component in 0..components {
-        values.extend(
-            samples
-                .iter()
-                .map(|sample| property(sample).0[component] as f32),
-        );
-    }
-    TensorArray {
-        shape: [components, shape[0], shape[1], shape[2]],
-        values,
     }
 }
 
@@ -782,25 +772,198 @@ fn raster_scalar_support(
     )
 }
 
+/// Rasterized material support stored compactly.
+///
+/// Almost every cell lies wholly inside one material, so each cell keeps a
+/// 4-byte code: the owning material ID, or (with `MIXED`) an index into its
+/// row's list of interface materials. Only interface cells store a full
+/// `Material`. Diagnostics are reduced while rasterizing.
+struct MaterialSupport {
+    shape_zyx: [usize; 3],
+    codes: Vec<u32>,
+    rows: Vec<Vec<Material>>,
+    diagnostics: DiagnosticSummary,
+}
+
+const MIXED: u32 = 1 << 31;
+
+impl MaterialSupport {
+    fn material<'a>(&'a self, scene: &'a Scene, flat: usize, row: usize) -> &'a Material {
+        let code = self.codes[flat];
+        if code & MIXED == 0 {
+            &scene.materials[code as usize]
+        } else {
+            &self.rows[row][(code & !MIXED) as usize]
+        }
+    }
+}
+
 fn raster_material_support(
     scene: &Scene,
     index: &ObjectIndex,
     grid: &Grid,
     options: &IntegrationOptions,
     component: Component,
-) -> ([usize; 3], Vec<CellSample>) {
-    raster_support(
-        scene,
-        index,
-        grid,
-        component,
-        options,
-        |volume, candidates, point| {
-            let (material, meta) =
-                integrate_material(scene, volume, candidates, point, options, index, grid);
-            CellSample { material, meta }
+) -> MaterialSupport {
+    let logical_shape = component.support().logical_shape(grid);
+    let shape_zyx = [logical_shape[2], logical_shape[1], logical_shape[0]];
+    let nx = logical_shape[0];
+    let row_count = logical_shape[1] * logical_shape[2];
+    let mut codes = vec![0_u32; nx * row_count];
+    let per_row: Vec<(Vec<Material>, DiagnosticSummary)> = codes
+        .par_chunks_mut(nx.max(1))
+        .enumerate()
+        .map(|(row, row_codes)| {
+            let y = row % logical_shape[1];
+            let z = row / logical_shape[1];
+            let mut mixed = Vec::new();
+            let mut diagnostics = DiagnosticSummary::default();
+            for (x, code) in row_codes.iter_mut().enumerate() {
+                let volume =
+                    component
+                        .support()
+                        .periodic_volume(grid, [x, y, z], options.periodic_axes);
+                let mut candidates = index.query(&volume);
+                candidates.retain(|candidate| {
+                    scene.objects[*candidate]
+                        .geometry
+                        .bounds()
+                        .intersects(&volume)
+                });
+                let point =
+                    component
+                        .support()
+                        .periodic_point(grid, [x, y, z], options.periodic_axes);
+                let mixture = integrate_support_mixture(
+                    scene,
+                    index,
+                    grid,
+                    &volume,
+                    &candidates,
+                    point,
+                    options,
+                );
+                let (meta, owner) = material_meta(scene, &mixture, options);
+                diagnostics.record(&meta);
+                *code = match (mixture.uniform_owner, owner) {
+                    (Some(owner), _) => owner as u32,
+                    (None, Some(material)) => {
+                        mixed.push(material);
+                        MIXED | (mixed.len() as u32 - 1)
+                    }
+                    (None, None) => unreachable!("mixed sample without a material"),
+                };
+            }
+            (mixed, diagnostics)
+        })
+        .collect();
+    let mut diagnostics = DiagnosticSummary::default();
+    let mut rows = Vec::with_capacity(per_row.len());
+    for (mixed, partial) in per_row {
+        diagnostics.merge(&partial);
+        rows.push(mixed);
+    }
+    MaterialSupport {
+        shape_zyx,
+        codes,
+        rows,
+        diagnostics,
+    }
+}
+
+/// The sample metadata for a mixture and, for non-uniform cells, its effective material.
+fn material_meta(
+    scene: &Scene,
+    mixture: &Mixture,
+    options: &IntegrationOptions,
+) -> (SampleMeta, Option<Material>) {
+    let (material, smoothed, fallback) = if mixture.uniform_owner.is_some() {
+        (None, false, None)
+    } else {
+        let (material, smoothed, fallback) = effective_material(
+            scene,
+            mixture.fractions.as_ref().unwrap(),
+            options.smoothing,
+            mixture.interface,
+        );
+        (Some(material), smoothed, fallback)
+    };
+    (
+        SampleMeta {
+            error: mixture.error as f32,
+            path: mixture.path,
+            candidate_tests: mixture.candidate_tests,
+            smoothed,
+            fallback,
         },
+        material,
     )
+}
+
+/// Pack a support's materials into 1, 3 or 6 f32 components: 6 when any used
+/// material has off-diagonal terms (and they are kept), 3 when any is anisotropic.
+fn tensor_from_support(
+    scene: &Scene,
+    support: &MaterialSupport,
+    property: impl Fn(&Material) -> SymmetricTensor + Sync,
+    maximum_components: usize,
+) -> TensorArray {
+    let mut used = vec![false; scene.materials.len()];
+    for &code in &support.codes {
+        if code & MIXED == 0 {
+            used[code as usize] = true;
+        }
+    }
+    let tensors = scene
+        .materials
+        .iter()
+        .zip(&used)
+        .filter(|(_, used)| **used)
+        .map(|(material, _)| property(material).0)
+        .chain(
+            support
+                .rows
+                .iter()
+                .flatten()
+                .map(|material| property(material).0),
+        );
+    let mut components = 1;
+    for tensor in tensors {
+        let scale = tensor
+            .iter()
+            .fold(1.0_f64, |current, value| current.max(value.abs()));
+        let tolerance = 256.0 * f64::EPSILON * scale;
+        if maximum_components == 6 && tensor[3..].iter().any(|value| value.abs() > tolerance) {
+            components = 6;
+            break;
+        }
+        if (tensor[0] - tensor[1]).abs() > tolerance || (tensor[0] - tensor[2]).abs() > tolerance {
+            components = 3;
+        }
+    }
+    let cells = support.codes.len();
+    let nx = support.shape_zyx[2].max(1);
+    let mut values = vec![0.0_f32; components * cells];
+    for (component, plane) in values.chunks_mut(cells.max(1)).enumerate() {
+        plane
+            .par_chunks_mut(nx)
+            .enumerate()
+            .for_each(|(row, row_values)| {
+                for (x, value) in row_values.iter_mut().enumerate() {
+                    let material = support.material(scene, row * nx + x, row);
+                    *value = property(material).0[component] as f32;
+                }
+            });
+    }
+    TensorArray {
+        shape: [
+            components,
+            support.shape_zyx[0],
+            support.shape_zyx[1],
+            support.shape_zyx[2],
+        ],
+        values,
+    }
 }
 
 fn raster_support<T: Send>(
@@ -884,38 +1047,6 @@ fn integrate_scalar(
         smoothed: false,
         fallback: None,
     }
-}
-
-fn integrate_material(
-    scene: &Scene,
-    volume: &Aabb,
-    candidates: &[usize],
-    point: [f64; 3],
-    options: &IntegrationOptions,
-    index: &ObjectIndex,
-    grid: &Grid,
-) -> (Material, SampleMeta) {
-    let mixture = integrate_support_mixture(scene, index, grid, volume, candidates, point, options);
-    let (material, smoothed, fallback) = if let Some(owner) = mixture.uniform_owner {
-        (scene.materials[owner], false, None)
-    } else {
-        effective_material(
-            scene,
-            mixture.fractions.as_ref().unwrap(),
-            options.smoothing,
-            mixture.interface,
-        )
-    };
-    (
-        material,
-        SampleMeta {
-            error: mixture.error as f32,
-            path: mixture.path,
-            candidate_tests: mixture.candidate_tests,
-            smoothed,
-            fallback,
-        },
-    )
 }
 
 /// Geometry-only integration result consumed by every constitutive rule.
@@ -2345,6 +2476,90 @@ mod tests {
                 .all(|value| value.is_finite())
         );
         assert!(result.diagnostics.ambiguous_interface_samples > 0);
+    }
+
+    fn diagonal_smoothing() -> IntegrationOptions {
+        IntegrationOptions {
+            smoothing: SmoothingMode::FarjadpourDiagonal,
+            ..IntegrationOptions::default()
+        }
+    }
+
+    #[test]
+    fn compact_material_support_counts_every_sample_and_keeps_interface_values() {
+        // The x = 0.55 face crosses one column of cells, so the grid holds
+        // background, fully filled and interface cells.
+        let scene = box_scene(Aabb::new([0.0; 3], [0.55, 1.0, 1.0]).unwrap(), 4.0);
+        let grid = UniformGrid {
+            min: [0.0; 3],
+            max: [1.0; 3],
+            shape: [10, 3, 2],
+        }
+        .build()
+        .unwrap();
+        let result = rasterize(&scene, &grid, &diagonal_smoothing()).unwrap();
+        let summary = &result.diagnostics;
+        let expected: usize = [Component::Ex, Component::Ey, Component::Ez, Component::Cell]
+            .iter()
+            .map(|component| {
+                component
+                    .support()
+                    .logical_shape(&grid)
+                    .iter()
+                    .product::<usize>()
+            })
+            .sum();
+        assert_eq!(summary.samples, expected);
+        assert_eq!(
+            summary.samples,
+            summary.background_samples
+                + summary.uniform_samples
+                + summary.exact_samples
+                + summary.adaptive_samples
+        );
+        let values = &result.epsilon[0].values;
+        assert!(values.contains(&1.0) && values.contains(&4.0));
+        assert!(values.iter().any(|value| *value > 1.0 && *value < 4.0));
+    }
+
+    #[test]
+    fn tensor_components_follow_only_materials_present_in_the_grid() {
+        let anisotropic = Material {
+            epsilon_r: SymmetricTensor([2.0, 3.0, 4.0, 0.0, 0.0, 0.0]),
+            mu_r: SymmetricTensor::isotropic(1.0),
+            conductivity: SymmetricTensor::isotropic(0.0),
+        };
+        let scene = |bounds| {
+            Scene::new(
+                vec![Material::default(), anisotropic],
+                vec![Object {
+                    id: 1,
+                    material_id: 1,
+                    priority: 0,
+                    geometry: Geometry::Box { bounds },
+                }],
+                0,
+            )
+            .unwrap()
+        };
+        let grid = UniformGrid {
+            min: [0.0; 3],
+            max: [1.0; 3],
+            shape: [4, 4, 4],
+        }
+        .build()
+        .unwrap();
+        let inside = scene(Aabb::new([0.25; 3], [0.75; 3]).unwrap());
+        let outside = scene(Aabb::new([2.0; 3], [3.0; 3]).unwrap());
+        let options = diagonal_smoothing();
+        assert_eq!(
+            rasterize(&inside, &grid, &options).unwrap().epsilon[0].shape[0],
+            3
+        );
+        assert_eq!(
+            rasterize(&outside, &grid, &options).unwrap().epsilon[0].shape[0],
+            1
+        );
     }
 }
 
