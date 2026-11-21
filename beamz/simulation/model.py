@@ -87,7 +87,7 @@ class SimulationRequest:
 # one explicit state value below.
 
 
-@dataclass(frozen=True, slots=True, eq=False)
+@dataclass(frozen=True, slots=True, eq=False, weakref_slot=True)
 class CompiledGrid:
     """One lowered Yee lattice with materials, masks, and absorber profiles."""
 

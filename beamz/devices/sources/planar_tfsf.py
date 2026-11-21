@@ -40,17 +40,6 @@ _STAGGERED_ALONG_AXIS = {
 }
 
 
-class _CroppedMetricGrid(RectilinearGrid):
-    """Retain world coordinates even when a graded grid's crop is uniform."""
-
-    @property
-    def metric_kind(self):
-        return "rectilinear"
-
-    def metric_kind_for(self, axes):
-        return "rectilinear"
-
-
 def _shift_component_indices_along_axis(
     indices: ComponentIndex | None, axis, shift, field_shape
 ) -> ComponentIndex | None:
@@ -489,22 +478,24 @@ def local_3d_phasor_context(
     ):
         return None
 
+    local_geometry = None
+    if geometry is not None:
+        # Give the window the parent's own edges (absolute coordinates, so phase
+        # references need no offset) and keep the parent's metric class. The window
+        # carries a halo where the incident state vanishes, so the window-edge
+        # metric differs from the parent's only where it multiplies zero fields.
+        local_geometry = _cropped_rectilinear_grid(geometry, component_slices)
+        if local_geometry is None:
+            return None
+
     cell_slice = tuple(slice(int(lo), int(hi)) for lo, hi in cell_bounds)
     cell_shape = tuple(int(s.stop or 0) - int(s.start or 0) for s in cell_slice)
     local_fields = SimpleNamespace(
         boundaries=getattr(fields, "boundaries", None),
         permittivity=np.empty(cell_shape, dtype=fields.permittivity.dtype),
     )
-    if geometry is not None:
-        # Preserve physical coordinates and spacing instead of translating by
-        # nominal resolution. Halo cells keep artificial crop boundaries clear
-        # of the one-step incident-field update and source-plane quadrature.
-        local_fields.geometry = _CroppedMetricGrid(
-            *(
-                geometry.axis_edges(axis)[lo : hi + 1]
-                for axis, (lo, hi) in zip("xyz", reversed(cell_bounds), strict=True)
-            )
-        )
+    if local_geometry is not None:
+        local_fields.geometry = local_geometry
 
     def local_material_attr(
         attr: str,
@@ -578,7 +569,7 @@ def local_3d_phasor_context(
 
     offset = (
         0.0
-        if geometry is not None
+        if local_geometry is not None
         else float(cell_bounds[axis_pos][0]) * float(resolution)
     )
     local_indices = {
@@ -603,6 +594,53 @@ def local_3d_phasor_context(
         power_weights=field_profile.power_weights,
     )
     return local_profile, local_fields, component_slices
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class _CroppedRectilinearGrid(RectilinearGrid):
+    """A window of a non-uniform grid that keeps the parent's metric class.
+
+    A window of a graded grid can itself be uniform; classifying it again would
+    route it to scalar-resolution kernels that use the parent's representative
+    resolution instead of the window's actual widths.
+    """
+
+    parent_metric_kind: str = "rectilinear"
+
+    @property
+    def metric_kind(self):  # type: ignore[override]
+        return self.parent_metric_kind
+
+    def metric_kind_for(self, active_axes):  # type: ignore[override]
+        return self.parent_metric_kind
+
+
+def _cropped_rectilinear_grid(
+    geometry,
+    component_slices: dict[str, tuple[slice, slice, slice]],
+) -> _CroppedRectilinearGrid | None:
+    """Slice ``geometry`` to the cell window that the component slices describe.
+
+    Ex/Ey/Ez are cell-centred along x/y/z, so their slice along that axis is the
+    window's cell range; every component must then agree with it. Returns None
+    when they do not, so the caller keeps the exact dense path.
+    """
+    edges = []
+    for axis, centred, array_axis in (("x", "Ex", 2), ("y", "Ey", 1), ("z", "Ez", 0)):
+        cells = component_slices[centred][array_axis]
+        lo, hi = int(cells.start or 0), int(cells.stop or 0)
+        parent_edges = np.asarray(geometry.axis_edges(axis))
+        if hi <= lo or hi + 1 > parent_edges.size:
+            return None
+        for component, slices in component_slices.items():
+            count = int(slices[array_axis].stop or 0) - int(
+                slices[array_axis].start or 0
+            )
+            node = component_axis_offsets_3d(component)[axis] == 0.0
+            if int(slices[array_axis].start or 0) != lo or count != hi - lo + int(node):
+                return None
+        edges.append(parent_edges[lo : hi + 1])
+    return _CroppedRectilinearGrid(*edges, parent_metric_kind=str(geometry.metric_kind))
 
 
 def dense_3d_delta_residuals(

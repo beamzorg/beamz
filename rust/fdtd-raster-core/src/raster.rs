@@ -2843,6 +2843,90 @@ mod tests {
         );
         assert!(result.diagnostics.ambiguous_interface_samples > 0);
     }
+
+    fn diagonal_smoothing() -> IntegrationOptions {
+        IntegrationOptions {
+            smoothing: SmoothingMode::FarjadpourDiagonal,
+            ..IntegrationOptions::default()
+        }
+    }
+
+    #[test]
+    fn compact_material_support_counts_every_sample_and_keeps_interface_values() {
+        // The x = 0.55 face crosses one column of cells, so the grid holds
+        // background, fully filled and interface cells.
+        let scene = box_scene(Aabb::new([0.0; 3], [0.55, 1.0, 1.0]).unwrap(), 4.0);
+        let grid = UniformGrid {
+            min: [0.0; 3],
+            max: [1.0; 3],
+            shape: [10, 3, 2],
+        }
+        .build()
+        .unwrap();
+        let result = rasterize(&scene, &grid, &diagonal_smoothing()).unwrap();
+        let summary = &result.diagnostics;
+        let expected: usize = [Component::Ex, Component::Ey, Component::Ez, Component::Cell]
+            .iter()
+            .map(|component| {
+                component
+                    .support()
+                    .logical_shape(&grid)
+                    .iter()
+                    .product::<usize>()
+            })
+            .sum();
+        assert_eq!(summary.samples, expected);
+        assert_eq!(
+            summary.samples,
+            summary.background_samples
+                + summary.uniform_samples
+                + summary.exact_samples
+                + summary.adaptive_samples
+        );
+        let values = &result.epsilon[0].values;
+        assert!(values.contains(&1.0) && values.contains(&4.0));
+        assert!(values.iter().any(|value| *value > 1.0 && *value < 4.0));
+    }
+
+    #[test]
+    fn tensor_components_follow_only_materials_present_in_the_grid() {
+        let anisotropic = Material {
+            epsilon_r: SymmetricTensor([2.0, 3.0, 4.0, 0.0, 0.0, 0.0]),
+            mu_r: SymmetricTensor::isotropic(1.0),
+            conductivity: SymmetricTensor::isotropic(0.0),
+        };
+        let scene = |bounds| {
+            Scene::new(
+                vec![Material::default(), anisotropic],
+                vec![Object {
+                    id: 1,
+                    material_id: 1,
+                    priority: 0,
+                    geometry: Geometry::Box { bounds },
+                }],
+                0,
+            )
+            .unwrap()
+        };
+        let grid = UniformGrid {
+            min: [0.0; 3],
+            max: [1.0; 3],
+            shape: [4, 4, 4],
+        }
+        .build()
+        .unwrap();
+        let inside = scene(Aabb::new([0.25; 3], [0.75; 3]).unwrap());
+        let outside = scene(Aabb::new([2.0; 3], [3.0; 3]).unwrap());
+        let options = diagonal_smoothing();
+        assert_eq!(
+            rasterize(&inside, &grid, &options).unwrap().epsilon[0].shape[0],
+            3
+        );
+        assert_eq!(
+            rasterize(&outside, &grid, &options).unwrap().epsilon[0].shape[0],
+            1
+        );
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from collections import OrderedDict
 from dataclasses import replace
 
 import numpy as np
@@ -207,6 +208,11 @@ def test_lowering_and_mutable_registry_internals_are_not_public():
 
 def test_reused_material_snapshot_does_not_need_content_fingerprints(monkeypatch):
     from beamz import _cache_tokens
+    from beamz.simulation import compile as compile_module
+
+    # Comparing distinct snapshots already in the cache may fingerprint content.
+    # Isolate this test of scan-free compilation and reuse of one owned snapshot.
+    monkeypatch.setattr(compile_module, "_PROGRAM_CACHE", OrderedDict())
 
     original = _cache_tokens.array_cache_token
 
@@ -226,7 +232,6 @@ def test_unrelated_prepared_material_does_not_fingerprint_a_new_shape(
     monkeypatch: pytest.MonkeyPatch, warm_shape: tuple[int, int]
 ) -> None:
     import importlib
-    from collections import OrderedDict
 
     from beamz import _cache_tokens
 
@@ -256,7 +261,6 @@ def test_matching_material_metadata_keeps_content_dedup_and_distinction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import importlib
-    from collections import OrderedDict
 
     compiler = importlib.import_module("beamz.simulation.compile")
     monkeypatch.setattr(compiler, "_PROGRAM_CACHE", OrderedDict())
