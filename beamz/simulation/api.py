@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from importlib import import_module
@@ -79,6 +79,7 @@ from beamz.simulation.model import (
 )
 from beamz.simulation.preparation_trace import trace_preparation
 from beamz.simulation.results import MonitorResults as MonitorResults
+from beamz.simulation.results import RunProgress
 from beamz.simulation.results import SimulationResults as SimulationResults
 from beamz.simulation.results import SimulationRun as SimulationRun
 
@@ -1578,6 +1579,7 @@ class Simulation:
         schedule=None,
         expected_runs=1,
         performance=True,
+        progress_callback=None,
     ) -> SimulationRun:
         """Execute a fresh or continued segment and return results plus next state.
 
@@ -1615,6 +1617,12 @@ class Simulation:
         expected_runs : int, default=1
             Expected executions reusing this program. Automatic CUDA selection
             uses this hint to amortize compilation; it does not execute extra runs.
+        progress_callback : callable, optional
+            Called on the host with a :class:`RunProgress` after each completed
+            chunk of timesteps, independently of ``progress``. Under automatic
+            termination the event also carries the convergence residuals of that
+            chunk. Supplying a callback without ``termination`` executes the
+            segment in about twenty compiled chunks, as ``progress=True`` does.
 
         Returns
         -------
@@ -1665,7 +1673,7 @@ class Simulation:
         steps = remaining if num_steps is None else int(num_steps)
         if not 0 < steps <= remaining:
             raise ValueError(f"num_steps must be in [1, {remaining}], got {steps}.")
-        if progress:
+        if progress or progress_callback is not None:
             return run_simulation_with_progress(
                 self,
                 state,
@@ -1679,6 +1687,8 @@ class Simulation:
                 donate_state=bool(donate_state),
                 performance=bool(performance),
                 report_performance=bool(performance),
+                show_progress=bool(progress),
+                progress_callback=progress_callback,
             )
 
         program = self.compile(
@@ -1716,6 +1726,7 @@ class Simulation:
         expected_runs=1,
         termination: AutoTermination | None = None,
         performance: bool = True,
+        progress_callback: Callable[[RunProgress], None] | None = None,
     ) -> SimulationResults:
         """Execute the complete simulation and return immutable analysis results.
 
@@ -1745,6 +1756,12 @@ class Simulation:
         expected_runs : int, default=1
             Expected executions reusing this program. Automatic CUDA selection
             uses this hint to amortize compilation; it does not execute extra runs.
+        progress_callback : callable, optional
+            Called on the host with a :class:`RunProgress` after each completed
+            chunk of timesteps, independently of ``progress``. Under automatic
+            termination the event also carries the convergence residuals of that
+            chunk. Supplying a callback without ``termination`` executes the
+            segment in about twenty compiled chunks, as ``progress=True`` does.
 
         Returns
         -------
@@ -1772,6 +1789,12 @@ class Simulation:
         reason ``"wall_time_limit"``; finishing a chunk and constructing the result
         may take execution beyond the budget.
 
+        Log each convergence check as it completes:
+
+        >>> def report(p):
+        ...     print(f"{p.step}/{p.total_steps} field_decay={p.field_decay}")
+        >>> results = sim.run(termination=AutoTermination(), progress_callback=report)
+
         Notes
         -----
         This is the normal user-facing execution method. Compilation is automatic.
@@ -1793,6 +1816,7 @@ class Simulation:
                 schedule=schedule,
                 expected_runs=expected_runs,
                 performance=bool(performance),
+                progress_callback=progress_callback,
             )
         # The initial state is private to this call, so donating it is always safe and
         # avoids retaining a second full set of device buffers during execution.
@@ -1805,6 +1829,7 @@ class Simulation:
             expected_runs=expected_runs,
             donate_state=True,
             performance=bool(performance),
+            progress_callback=progress_callback,
         ).results
 
     def plot(self, **kwargs):
