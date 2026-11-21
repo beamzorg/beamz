@@ -16,6 +16,7 @@ from beamz import (
     calc_optimal_fdtd_params,
     um,
 )
+from beamz.simulation import execute
 
 pytestmark = [pytest.mark.compiled, pytest.mark.component]
 
@@ -76,6 +77,44 @@ def test_termination_callback_reports_each_check(capsys):
     assert last.consecutive_checks == report.consecutive_checks
     assert last.time == pytest.approx(report.time)
     assert events[0].monitor_change is None
+
+
+@pytest.mark.parametrize(
+    ("fields_finite", "reason"),
+    [(False, "nonfinite"), (True, "diverged")],
+)
+def test_failure_callback_matches_termination_report(
+    monkeypatch, fields_finite, reason
+):
+    simulation = _pulse_simulation(num_steps=100)
+    policy = AutoTermination(
+        chunk_steps=15,
+        field_decay=1.0,
+        monitor_change=None,
+        source_decay=1.0,
+        growth_checks=1,
+    )
+    # A finite doubling triggers divergence after one successful check. An
+    # invalid field at the same point exercises the nonfinite termination path.
+    diagnostics = iter(((1.0, 1.0, True), (2.0, 1.0, fields_finite)))
+    monkeypatch.setattr(execute, "_field_diagnostics", lambda *_: next(diagnostics))
+    events: list[RunProgress] = []
+
+    results = simulation.run(
+        termination=policy, performance=False, progress_callback=events.append
+    )
+
+    report = results.termination
+    assert report.reason == reason
+    assert report.steps == 30
+    assert [event.step for event in events] == [15, 30]
+    last = events[-1]
+    assert last.time == pytest.approx(report.time)
+    assert last.energy == report.energy
+    assert last.field_decay == report.field_decay
+    assert last.monitor_change == report.monitor_change
+    assert last.source_decay == report.source_decay
+    assert last.consecutive_checks == report.consecutive_checks == 1
 
 
 def test_fixed_run_callback_reports_completed_steps(capsys):

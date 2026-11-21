@@ -1977,29 +1977,45 @@ def run_until_terminated(
             )
             if not fields_finite or not np.isfinite(energy) or not monitors_finite:
                 reason = "nonfinite"
-                break
+            else:
+                peak_energy = max(peak_energy, energy)
+                field_decay = (
+                    energy / peak_energy if peak_energy > np.finfo(float).tiny else 0.0
+                )
+                source_decay = _source_residual(source_activity, current_step)
+                source_off = source_decay <= policy.source_decay
+                monitor_change = _relative_monitor_change(
+                    current_monitor, previous_monitor
+                )
+                if (
+                    source_off
+                    and previous_energy is not None
+                    and previous_energy > np.finfo(float).tiny
+                    and energy > policy.growth_factor * previous_energy
+                ):
+                    growth_checks += 1
+                else:
+                    growth_checks = 0
+                if growth_checks >= policy.growth_checks:
+                    reason = "diverged"
+                else:
+                    eligible = source_off and current_step >= policy.min_steps
+                    energy_stable = (
+                        policy.field_decay == 0.0 or field_decay <= policy.field_decay
+                    )
+                    monitor_stable = not use_monitor or (
+                        monitor_change is not None
+                        and monitor_tolerance is not None
+                        and monitor_change <= monitor_tolerance
+                    )
+                    successful_checks = (
+                        successful_checks + 1
+                        if eligible and energy_stable and monitor_stable
+                        else 0
+                    )
+                    if successful_checks >= policy.consecutive_checks:
+                        reason = "converged"
 
-            peak_energy = max(peak_energy, energy)
-            field_decay = (
-                energy / peak_energy if peak_energy > np.finfo(float).tiny else 0.0
-            )
-            source_decay = _source_residual(source_activity, current_step)
-            source_off = source_decay <= policy.source_decay
-            monitor_change = _relative_monitor_change(current_monitor, previous_monitor)
-            eligible = source_off and current_step >= policy.min_steps
-            energy_stable = (
-                policy.field_decay == 0.0 or field_decay <= policy.field_decay
-            )
-            monitor_stable = not use_monitor or (
-                monitor_change is not None
-                and monitor_tolerance is not None
-                and monitor_change <= monitor_tolerance
-            )
-            checks = (
-                successful_checks + 1
-                if eligible and energy_stable and monitor_stable
-                else 0
-            )
             if progress_callback is not None:
                 progress_callback(
                     RunProgress(
@@ -2011,26 +2027,11 @@ def run_until_terminated(
                         monitor_change=monitor_change if use_monitor else None,
                         source_decay=source_decay,
                         energy=energy,
-                        consecutive_checks=checks,
+                        consecutive_checks=successful_checks,
                     )
                 )
 
-            if (
-                source_off
-                and previous_energy is not None
-                and previous_energy > np.finfo(float).tiny
-                and energy > policy.growth_factor * previous_energy
-            ):
-                growth_checks += 1
-            else:
-                growth_checks = 0
-            if growth_checks >= policy.growth_checks:
-                reason = "diverged"
-                break
-
-            successful_checks = checks
-            if successful_checks >= policy.consecutive_checks:
-                reason = "converged"
+            if reason != "time_limit":
                 break
 
             previous_energy = energy

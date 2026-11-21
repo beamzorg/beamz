@@ -175,6 +175,8 @@ class RunProgress:
     Instances are passed to the ``progress_callback`` of :meth:`Simulation.run`
     and :meth:`Simulation.advance`. They are created on the host after the
     chunk has finished on the device, so ``step`` counts completed timesteps.
+    With automatic termination, the final event's diagnostics match the
+    termination report.
 
     Attributes
     ----------
@@ -188,7 +190,8 @@ class RunProgress:
     elapsed : float
         Wall time since the call started, in seconds, including compilation.
     field_decay, monitor_change, source_decay : float or None
-        Convergence residuals evaluated after this chunk. They are ``None`` for
+        Latest convergence residuals. A nonfinite chunk retains the previous
+        residual values, if available. They are ``None`` for
         runs without automatic termination; ``monitor_change`` is also ``None``
         before a second check or when no monitor criterion applies.
     energy : float or None
