@@ -116,7 +116,9 @@ class CompiledScene:
             # The physical solver consumes one diagonal per Yee support and all
             # cell-centered tensor components. The standalone raster retains both.
             components = "solver_diagonal_" + components
-        cache_path = self._cache_path(grid, options, cache_directory, metals, components)
+        cache_path = self._cache_path(
+            grid, options, cache_directory, metals, components
+        )
         if cache_path is not None and cache_path.exists():
             try:
                 return RasterResult._from_cache(

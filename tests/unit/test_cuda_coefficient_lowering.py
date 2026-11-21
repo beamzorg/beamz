@@ -6,7 +6,8 @@ import pytest
 
 @pytest.mark.parametrize("setup_device", ["cpu", "default"])
 def test_native_preparation_never_materializes_a_yee_material_volume(
-    monkeypatch: pytest.MonkeyPatch, setup_device: str,
+    monkeypatch: pytest.MonkeyPatch,
+    setup_device: str,
 ) -> None:
     import beamz as bz
     from beamz._region_array import RegionArray

@@ -44,8 +44,14 @@ def sample_material(grid, component, shape):
     if isinstance(grid, np.ndarray) and 0 in grid.strides:
         # Translation along a repeated axis does not change Yee interpolation.
         # Compute the distinct positions once when the compact result fits a tile.
-        base_shape = tuple(1 if stride == 0 else n for n, stride in zip(shape, grid.strides, strict=True))
-        if np.prod(base_shape, dtype=np.int64) * np.dtype(np.float32).itemsize <= TILE_BYTES:
+        base_shape = tuple(
+            1 if stride == 0 else n
+            for n, stride in zip(shape, grid.strides, strict=True)
+        )
+        if (
+            np.prod(base_shape, dtype=np.int64) * np.dtype(np.float32).itemsize
+            <= TILE_BYTES
+        ):
             values = read(tuple(slice(0, n) for n in base_shape))
             return np.broadcast_to(values, shape)
     return RegionArray(tuple(shape), np.dtype(np.float32), read)
@@ -54,11 +60,19 @@ def sample_material(grid, component, shape):
 def mapped_material(shape, function, *values):
     if all(value.ndim == 0 for value in values):
         return np.asarray(function(*values), dtype=np.float32)
-    if all(value.ndim == 0 or isinstance(value, np.ndarray) and 0 in value.strides for value in values):
+    if all(
+        value.ndim == 0 or isinstance(value, np.ndarray) and 0 in value.strides
+        for value in values
+    ):
         bases = tuple(broadcast_base(np.asarray(value)) for value in values)
         physical = np.broadcast_shapes(*(base.shape for base in bases))
-        if np.prod(physical, dtype=np.int64) * np.dtype(np.float32).itemsize <= TILE_BYTES:
-            return np.broadcast_to(np.asarray(function(*bases), dtype=np.float32), shape)
+        if (
+            np.prod(physical, dtype=np.int64) * np.dtype(np.float32).itemsize
+            <= TILE_BYTES
+        ):
+            return np.broadcast_to(
+                np.asarray(function(*bases), dtype=np.float32), shape
+            )
     return RegionArray(
         tuple(shape),
         np.dtype(np.float32),

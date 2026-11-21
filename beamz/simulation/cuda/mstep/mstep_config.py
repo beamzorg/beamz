@@ -18,7 +18,7 @@ SEGMENTS = {
     "256": abi.CUDA_MSTEP_SEGMENT256,
 }
 VARIANT_FLAGS = sum(TILES.values()) | sum(SEGMENTS.values())
-ALLOWED_FLAGS = abi.CUDA_GRAPH_CACHE | abi.CUDA_BF16_PSI | VARIANT_FLAGS
+ALLOWED_FLAGS = abi.CUDA_GRAPH_CACHE | VARIANT_FLAGS
 
 
 def variant_flags_from_env():

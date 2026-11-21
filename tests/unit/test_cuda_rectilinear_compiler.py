@@ -109,7 +109,9 @@ def test_private_raster_snapshot_adopts_whole_arrays_and_detaches_partial_views(
     assert retained is tensor and not retained.flags.writeable
 
 
-@pytest.mark.parametrize("shape,axis", [((9, 13), 0), ((5, 7, 9), 1), ((6, 5, 7, 9), 3)])
+@pytest.mark.parametrize(
+    "shape,axis", [((9, 13), 0), ((5, 7, 9), 1), ((6, 5, 7, 9), 3)]
+)
 @pytest.mark.parametrize("dtype", ["f4", ">f8", "c8", "i2"])
 def test_broadcast_material_snapshot_owns_only_distinct_sites(shape, axis, dtype):
     import numpy as np

@@ -260,34 +260,6 @@ def run_case(case):
             assert len({id(program) for program in programs}) == 3
             for result in results[1:]:
                 assert_state_close(results[0], result)
-        elif case == "precision":
-            sim = H100Workload(
-                name="bf16_sharding",
-                shape_zyx=(9, 10, 11),
-                timesteps=16,
-                resolution=80e-9,
-                pml_cells=2,
-                cpml=True,
-            ).build()
-            state = seed_state(sim)
-            with patch.dict(os.environ, {"BEAMZ_CUDA_CPML_PSI_PRECISION": "bf16"}):
-                results = []
-                for axis in ("z", "y", "x"):
-                    results.append(
-                        sim.advance(
-                            num_steps=16,
-                            state=state,
-                            backend="cuda_streamed",
-                            sharding=dict(axis=axis, num_devices=4, backend="cpu"),
-                            progress=False,
-                        ).state
-                    )
-                for result in results:
-                    assert all(
-                        value.dtype == jax.numpy.bfloat16
-                        for value in result.cpml_psi_h_terms
-                    )
-                    assert_state_close(results[0], result)
         else:
             raise AssertionError(case)
 
@@ -301,7 +273,6 @@ def run_case(case):
         "tensor",
         "mode",
         "recording",
-        "precision",
         "storage",
     ],
 )

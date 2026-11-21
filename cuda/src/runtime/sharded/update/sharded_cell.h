@@ -52,11 +52,6 @@ BEAMZ_CELL float HaloValue(const BeamzBuffer& face, const int p[3], int axis) {
 
 template<class Buffer>
 BEAMZ_CELL float Read(const Buffer& a, int offset) {
-  if (a.element_type == kBeamzBF16) {
-    union { uint32_t bits; float value; } data;
-    data.bits = static_cast<uint32_t>(static_cast<const uint16_t*>(a.data)[offset]) << 16;
-    return data.value;
-  }
   return static_cast<const float*>(a.data)[offset];
 }
 
@@ -81,18 +76,7 @@ BEAMZ_CELL int PsiBase(const BeamzLaunch& l, int term) {
 }
 
 BEAMZ_CELL void Write(const BeamzBuffer& a, int offset, float value) {
-  if (a.element_type == kBeamzBF16) {
-    union { uint32_t bits; float value; } data;
-    data.value = value;
-    const uint32_t magnitude = data.bits & 0x7fffffffU;
-    // Round to nearest-even and retain NaNs instead of rounding them to infinity.
-    const uint16_t rounded = magnitude > 0x7f800000U
-        ? static_cast<uint16_t>((data.bits >> 16) | 0x40U)
-        : static_cast<uint16_t>((data.bits + 0x7fffU + ((data.bits >> 16) & 1U)) >> 16);
-    static_cast<uint16_t*>(a.data)[offset] = rounded;
-  } else {
-    static_cast<float*>(a.data)[offset] = value;
-  }
+  static_cast<float*>(a.data)[offset] = value;
 }
 
 BEAMZ_CELL float Source(const BeamzLaunch& l, int component, const int global[3]) {
@@ -232,7 +216,7 @@ inline bool Validate(const BeamzLaunch& l) {
     const auto& input = l.inputs[i < 3 ? i : 13 + 3 * l.nterms + i - 3];
     if (!ValidBuffer(a) || a.rank != 3 || input.rank != 3 ||
         a.element_type != input.element_type) return false;
-    if (a.element_type != kBeamzF32 && (i < 3 || a.element_type != kBeamzBF16)) return false;
+    if (a.element_type != kBeamzF32) return false;
     for (int d = 0; d < 3; ++d) if (a.dims[d] != input.dims[d]) return false;
   }
   for (int i = 0; i < 6; ++i)

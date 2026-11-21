@@ -379,7 +379,7 @@ int BeamzLaunchAdjoint(void* stream, const BeamzAdjointLaunch& launch) {
   const auto& phase = launch.phase;
   if (auto error = BeamzValidatePhase(phase); error != cudaSuccess) return error;
   const int payload = 13 + 4 * phase.nterms;
-  // Packed material codebooks and BF16 rounding have no exact material VJP.
+  // Packed material codebooks have no exact material VJP.
   // The differentiable planner supplies ordinary float32 coefficients instead.
   for (int index = 0; index < payload; ++index) {
     if (index == 12) continue;

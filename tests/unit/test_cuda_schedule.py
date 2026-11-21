@@ -176,7 +176,7 @@ def test_schedule_and_reuse_are_execution_cache_inputs():
     assert len(set(cuda_keys)) == 3
     assert len({_preparation_key(key) for key in cuda_keys}) == 1
     assert _preparation_key(
-        replace(cuda_keys[0], cuda_flags=abi.CUDA_BF16_PSI)
+        replace(cuda_keys[0], cuda_flags=abi.CUDA_FIELD_PAD32)
     ) != _preparation_key(cuda_keys[0])
 
 

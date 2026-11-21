@@ -965,13 +965,7 @@ def test_local_launch_power_matches_dense_yee_diagnostic(
     )
     assert context is not None
     assert np.prod(context[1].Ex.shape) < np.prod(fields.Ex.shape) / 2
-    residuals = planar.compute_discrete_3d_h_phasor_residuals(
-        profile,
-        fields,
-        resolution=1.0,
-        max_shift=12,
-        dt=dt,
-    ) + planar.compute_discrete_3d_e_phasor_residuals(
+    residuals = planar.compute_discrete_3d_phasor_residuals(
         profile,
         fields,
         resolution=1.0,
@@ -991,9 +985,7 @@ def test_local_launch_power_matches_dense_yee_diagnostic(
         source, profile, residuals, fields, resolution=1.0, dt=dt, requested_power=1.0
     )
     monkeypatch.setattr(planar, "local_3d_phasor_context", lambda *a, **kw: None)
-    dense_residuals = planar.compute_discrete_3d_h_phasor_residuals(
-        profile, fields, resolution=1.0, max_shift=12, dt=dt
-    ) + planar.compute_discrete_3d_e_phasor_residuals(
+    dense_residuals = planar.compute_discrete_3d_phasor_residuals(
         profile, fields, resolution=1.0, max_shift=12, dt=dt
     )
     assert len(residuals) == len(dense_residuals)

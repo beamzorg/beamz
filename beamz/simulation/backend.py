@@ -12,7 +12,6 @@ import jax
 
 from beamz.simulation._cuda_abi import (
     CUDA_ABI_VERSION,
-    CUDA_BF16_PSI,
     CUDA_CPML_PAIR,
     CUDA_DEFAULT_FLAGS,
     CUDA_FIELD_PAD32,
@@ -56,11 +55,6 @@ def cuda_flags_from_env() -> int:
     flags = CUDA_DEFAULT_FLAGS
     if _env_enabled("BEAMZ_CUDA_DISABLE_GRAPH_CACHE", default=False):
         flags &= ~CUDA_GRAPH_CACHE
-    precision = os.environ.get("BEAMZ_CUDA_CPML_PSI_PRECISION", "fp32").lower()
-    if precision in {"bf16", "bfloat16"}:
-        flags |= CUDA_BF16_PSI
-    elif precision not in {"fp32", "float32", ""}:
-        raise ValueError("BEAMZ_CUDA_CPML_PSI_PRECISION must be 'fp32' or 'bf16'")
     padding = os.environ.get("BEAMZ_CUDA_FIELD_PADDING", "none").lower()
     layouts = {
         "none": 0,
@@ -125,9 +119,7 @@ def _has_cuda_legacy_options(*, native_flags: int = 0) -> bool:
     changed_flags = (cuda_flags_from_env() ^ CUDA_DEFAULT_FLAGS) & ~native_flags
     axes = cuda_storage_axes_from_env()
     return (
-        changed_flags != 0
-        or axes != (0, 1, 2)
-        or bool(_cuda_legacy_schedule_options())
+        changed_flags != 0 or axes != (0, 1, 2) or bool(_cuda_legacy_schedule_options())
     )
 
 
@@ -235,7 +227,7 @@ def _compute_capability(device) -> int:
     return int(capability)
 
 
-def _validated_registrations(extension: ModuleType) -> dict[str, object]:
+def _require_cuda_abi(extension: ModuleType) -> None:
     abi_version = getattr(extension, "__abi_version__", None)
     if abi_version != CUDA_ABI_VERSION:
         raise CudaBackendUnavailable(
@@ -243,6 +235,10 @@ def _validated_registrations(extension: ModuleType) -> dict[str, object]:
             f"runtime requires v{CUDA_ABI_VERSION}, extension provides "
             f"{abi_version!r}"
         )
+
+
+def _validated_registrations(extension: ModuleType) -> dict[str, object]:
+    _require_cuda_abi(extension)
     registrations = extension.registrations()
     if not isinstance(registrations, dict) or not registrations:
         raise CudaBackendUnavailable("beamz._cuda exposes no FFI registrations")

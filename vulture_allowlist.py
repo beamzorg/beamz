@@ -144,3 +144,8 @@ _.state_ownership
 _.physics_sha256
 _.estimated_ordinary_s
 _.estimated_first_solve_s
+
+# Native resource planner keywords and reported plan fields.
+_.minimum_overlap
+_.macro_level_stride
+_.observation_slots

@@ -38,18 +38,17 @@ struct PairCpmlGrid {
   int high[3], field_high[3], extent[3], boundary[3];
 };
 
-template <int X, int Y, int K, int Mask, bool Half> struct PairPsiStage {
+template <int X, int Y, int K, int Mask> struct PairPsiStage {
   static constexpr int sx = X + 3 - K, sy = Y + 3 - K;
   static constexpr int offset = PairStage<X, Y, 3>::offset +
-                                (K == 0 ? 0 : (Half ? 1 : 2) * PairPsiTerms(Mask) * (X + 3) * (Y + 3));
-  using Value=std::conditional_t<Half,__nv_bfloat16,float>;
-  __device__ static __forceinline__ Value &At(float *shared, int term, int z,
+                                (K == 0 ? 0 : 2 * PairPsiTerms(Mask) * (X + 3) * (Y + 3));
+  __device__ static __forceinline__ float &At(float *shared, int term, int z,
                                               int y, int x) {
-    return reinterpret_cast<Value *>(shared+offset)[((PairPsiSlot(Mask,term)*2+(z&1))*sy+y)*sx+x];
+    return (shared + offset)[((PairPsiSlot(Mask,term)*2+(z&1))*sy+y)*sx+x];
   }
 };
 
-template <int X, int Y, int K, int Term, int Mask, bool Half, int Steps>
+template <int X, int Y, int K, int Term, int Mask, int Steps>
 __device__ __forceinline__ float PairCpmlDerivative(
     float derivative, float *shared, const PairCpmlPhase &p, int c, int z, int y,
     int x, int iy, int ix, bool owned) {
@@ -69,27 +68,23 @@ __device__ __forceinline__ float PairCpmlDerivative(
   const int index = pz*p.psi_plane[Term] + py*p.psi_row[Term] + px;
   float old;
   if constexpr (K < 2) {
-    if constexpr(Half) old=__bfloat162float(static_cast<const __nv_bfloat16 *>(input)[index]);
-    else old=static_cast<const float *>(input)[index];
+    old = static_cast<const float *>(input)[index];
   } else {
-    const auto value=PairPsiStage<X,Y,K-2,Mask,Half>::At(shared,Term,z,iy+1,ix+1);
-    if constexpr(Half) old=__bfloat162float(value); else old=value;
+    old = PairPsiStage<X,Y,K-2,Mask>::At(shared,Term,z,iy+1,ix+1);
   }
   const float next = beamz::cuda::yee::AdvanceCpmlPsi(
       p.profiles[3 * Term + 1][packed], old,
       p.profiles[3 * Term][packed], derivative);
   if constexpr (K < 2*(Steps-1)) {
-    auto &value=PairPsiStage<X,Y,K,Mask,Half>::At(shared,Term,z,iy,ix);
-    if constexpr(Half) value=__float2bfloat16_rn(next); else value=next;
+    PairPsiStage<X,Y,K,Mask>::At(shared,Term,z,iy,ix) = next;
   } else if (owned) {
-    if constexpr(Half) static_cast<__nv_bfloat16 *>(p.final_psi[Term])[index]=__float2bfloat16_rn(next);
-    else static_cast<float *>(p.final_psi[Term])[index]=next;
+    static_cast<float *>(p.final_psi[Term])[index] = next;
   }
   return beamz::cuda::yee::CorrectCpmlDerivative(
       sign, derivative, p.profiles[3 * Term + 2][packed], next);
 }
 
-template <bool Packed, bool Half, int X, int Y, int Z, int Mask, int Steps, int K = 0>
+template <bool Packed, int X, int Y, int Z, int Mask, int Steps, int K = 0>
 __device__ __forceinline__ void CpmlPairStages(
     float *shared, const PairCpmlPhase &h, const PairCpmlPhase &e,
     const PairFieldOutputs &final, const FusedHSources &hs,
@@ -153,14 +148,14 @@ __device__ __forceinline__ void CpmlPairStages(
           float curl;
           // Unrolled c gives constant term IDs without device-side metadata.
           if (c == 0)
-            curl = PairCpmlDerivative<X,Y,K,0,Mask,Half,Steps>(da,shared,p,c,z,y,x,iy,ix,owned) +
-                   PairCpmlDerivative<X,Y,K,1,Mask,Half,Steps>(db,shared,p,c,z,y,x,iy,ix,owned);
+            curl = PairCpmlDerivative<X,Y,K,0,Mask,Steps>(da,shared,p,c,z,y,x,iy,ix,owned) +
+                   PairCpmlDerivative<X,Y,K,1,Mask,Steps>(db,shared,p,c,z,y,x,iy,ix,owned);
           else if (c == 1)
-            curl = PairCpmlDerivative<X,Y,K,2,Mask,Half,Steps>(da,shared,p,c,z,y,x,iy,ix,owned) +
-                   PairCpmlDerivative<X,Y,K,3,Mask,Half,Steps>(db,shared,p,c,z,y,x,iy,ix,owned);
+            curl = PairCpmlDerivative<X,Y,K,2,Mask,Steps>(da,shared,p,c,z,y,x,iy,ix,owned) +
+                   PairCpmlDerivative<X,Y,K,3,Mask,Steps>(db,shared,p,c,z,y,x,iy,ix,owned);
           else
-            curl = PairCpmlDerivative<X,Y,K,4,Mask,Half,Steps>(da,shared,p,c,z,y,x,iy,ix,owned) +
-                   PairCpmlDerivative<X,Y,K,5,Mask,Half,Steps>(db,shared,p,c,z,y,x,iy,ix,owned);
+            curl = PairCpmlDerivative<X,Y,K,4,Mask,Steps>(da,shared,p,c,z,y,x,iy,ix,owned) +
+                   PairCpmlDerivative<X,Y,K,5,Mask,Steps>(db,shared,p,c,z,y,x,iy,ix,owned);
           const int logical = (z * static_cast<int>(out.dims[1]) + y) *
                                   static_cast<int>(out.dims[2]) + x;
           const float decay = phase == 1 && Packed ? 1.f : Read(f.inputs[6+c],z,y,x);
@@ -191,13 +186,13 @@ __device__ __forceinline__ void CpmlPairStages(
   }
   __syncthreads();
   if constexpr (K < 2*Steps-1)
-    CpmlPairStages<Packed,Half,X,Y,Z,Mask,Steps,K+1>(shared,h,e,final,hs,es,publication,
+    CpmlPairStages<Packed,X,Y,Z,Mask,Steps,K+1>(shared,h,e,final,hs,es,publication,
                                      active_sources,ox,oy,oz,wave,end_x,end_y,end_z);
 }
 
 // The oriented y-face tile needs three resident 384-thread blocks on SM86.
 // Bound registers so its 32-KiB shared stages, rather than registers, set residency.
-template <bool Packed, bool Half, int X, int Y, int Z, int Mask, int Steps>
+template <bool Packed, int X, int Y, int Z, int Mask, int Steps>
 __global__ __launch_bounds__(
     (Steps == 2 && ((Mask == 4 && X == 15 && Y == 16) ||
                     (Mask == 2 && X == 16 && Y == 15))) ? 384 : 256,
@@ -247,7 +242,7 @@ void TemporalCpmlPair(
       PairStages<Packed,X,Y,Z,0,false>(shared,h.field,e.field,final,hs,es,publication,
           active_sources,ox,oy,oz,wave,h.thickness,grid.field_high[0]-h.thickness,grid.field_high[1]-h.thickness,grid.field_high[2]-h.thickness);
     else
-      CpmlPairStages<Packed,Half,X,Y,Z,Mask,Steps>(shared,h,e,final,hs,es,publication,
+      CpmlPairStages<Packed,X,Y,Z,Mask,Steps>(shared,h,e,final,hs,es,publication,
                                       active_sources,ox,oy,oz,wave,end_x,end_y,end_z);
   }
 }

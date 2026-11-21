@@ -3,7 +3,7 @@
 
 Run the parent with the CUDA-capable Python. Each case gets a fresh child.
 All cases have 12-cell CPML, lossless materials and mode sources. Fields stay
-FP32; auxiliary storage can be FP32 or BF16.
+FP32, including CPML auxiliary storage.
 The default study varies CPML tiles. Other studies compare temporal schedules,
 rolling tiles, or padding. Each variant sees the same state and coefficients.
 """
@@ -126,7 +126,7 @@ def worker(args, case):
     config = dict(
         steps=256,
         presteps=0,
-        psi_precision=args.psi_precision,
+        psi_precision="fp32",
         pml=12,
         material="binary",
         source="mode",
@@ -247,32 +247,9 @@ def worker(args, case):
             strict=True,
         ):
             ref, actual = np.asarray(ref), np.asarray(actual)
-            if ref.dtype.name == "bfloat16":
-                ref, actual = ref.astype(np.float32), actual.astype(np.float32)
             if np.issubdtype(ref.dtype, np.inexact):
                 scale = float(np.max(np.abs(ref), initial=0))
-                if args.psi_precision == "bf16":
-                    # Existing BF16 application-state envelope. Long-run physical
-                    # accuracy against FP32 is assessed separately, not inferred
-                    # from this schedule-comparison gate.
-                    try:
-                        np.testing.assert_allclose(
-                            actual,
-                            ref,
-                            rtol=3e-5,
-                            atol=max(3e-6, 2e-2 * scale),
-                            err_msg=f"{tile} versus {reference_name}, leaf {len(differences)}",
-                        )
-                    except AssertionError as exc:
-                        if not args.diagnostic:
-                            raise
-                        variants[tile].setdefault("parity_failures", []).append(
-                            {"leaf_index": len(differences), "error": str(exc)}
-                        )
-                    variants[tile]["parity_gate"] = (
-                        "BF16: rtol=3e-5, atol=max(3e-6,0.02*leaf_peak)"
-                    )
-                elif args.study != "tiles":
+                if args.study != "tiles":
                     if tile != baseline_name or args.study == "pair_tiles":
                         dense_rolling = tile != "single" and not (
                             variants[tile]["native_plans"][0]["flags"]
@@ -400,12 +377,6 @@ def main():
     parser.add_argument("--rounds", type=int, default=6)
     parser.add_argument("--seed", type=int, default=37)
     parser.add_argument("--profile", action="store_true")
-    parser.add_argument(
-        "--diagnostic",
-        action="store_true",
-        help="Record BF16 parity failures and still time; does not count as validation",
-    )
-    parser.add_argument("--psi-precision", choices=("fp32", "bf16"), default="fp32")
     parser.add_argument("--worker", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.rounds < 6 or args.rounds % 6:
@@ -439,7 +410,6 @@ def main():
         BEAMZ_CUDA_CPML_SPATIAL="0",
         BEAMZ_CUDA_CPML_TILE="auto",
         BEAMZ_CUDA_CPML_SHELL_TILE="64x4",
-        BEAMZ_CUDA_CPML_PSI_PRECISION=args.psi_precision,
     )
     env.pop("BEAMZ_CUDA_CPML_CORE_FUSION", None)
     for i, case in enumerate(selected, 1):
@@ -460,12 +430,9 @@ def main():
                     str(output.resolve()),
                     "--rounds",
                     str(args.rounds),
-                    "--psi-precision",
-                    args.psi_precision,
                     "--seed",
                     str(args.seed),
                     *(["--profile"] if args.profile else []),
-                    *(["--diagnostic"] if args.diagnostic else []),
                 ],
                 cwd=root,
                 env=env,

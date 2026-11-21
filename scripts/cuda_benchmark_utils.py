@@ -36,7 +36,7 @@ def provenance():
             for name in paths
         },
         xla_flags=os.environ.get("XLA_FLAGS", ""),
-        cpml_precision=os.environ.get("BEAMZ_CUDA_CPML_PSI_PRECISION", "fp32"),
+        cpml_precision="fp32",
         preallocate=os.environ.get("XLA_PYTHON_CLIENT_PREALLOCATE", ""),
     )
 

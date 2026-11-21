@@ -254,10 +254,9 @@ BeamzDftGroupLaunch InitializeDftGroups(
 
 ffi::Error DecodeBuffer(const ffi::AnyBuffer& value, BeamzBuffer* output) {
   if (value.element_type() != ffi::DataType::F32 &&
-      value.element_type() != ffi::DataType::S32 &&
-      value.element_type() != ffi::DataType::BF16) {
+      value.element_type() != ffi::DataType::S32) {
     return ffi::Error::InvalidArgument(
-        "BeamZ CUDA accepts f32, bf16, and s32 buffers");
+        "BeamZ CUDA accepts f32 and s32 buffers");
   }
   const auto dims = value.dimensions();
   if (dims.size() > 4) {
@@ -268,8 +267,6 @@ ffi::Error DecodeBuffer(const ffi::AnyBuffer& value, BeamzBuffer* output) {
   output->rank = static_cast<int32_t>(dims.size());
   output->element_type = value.element_type() == ffi::DataType::F32
                              ? kBeamzF32
-                         : value.element_type() == ffi::DataType::BF16
-                             ? kBeamzBF16
                              : kBeamzS32;
   output->dims[0] = output->dims[1] = output->dims[2] = output->dims[3] = 1;
   for (size_t index = 0; index < dims.size(); ++index) {

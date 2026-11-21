@@ -6,7 +6,6 @@
 enum BeamzElementType : int32_t {
   kBeamzF32 = 0,
   kBeamzS32 = 1,
-  kBeamzBF16 = 2,
 };
 
 struct BeamzBuffer {

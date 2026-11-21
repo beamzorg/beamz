@@ -10,6 +10,7 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 import numpy as np
+from numpy.typing import DTypeLike
 
 from beamz._plane_array import physical_crop
 from beamz.design.grid import RectilinearGrid
@@ -109,7 +110,7 @@ def build_incident_3d_phasor_state(
     t_h,
     masked: bool,
     max_shift: int,
-    dtype=np.complex128,
+    dtype: DTypeLike = np.complex128,
 ) -> dict[str, np.ndarray]:
     """Construct a complex carrier phasor for a local 3D incident field."""
     axis = field_profile.axis
@@ -182,6 +183,8 @@ def deembed_3d_phasor_profiles(
             continue
         axis_pos = _AXIS_POS_3D[axis]
         axis_idx = _axis_index(idx, axis)
+        if axis_idx is None:
+            raise ValueError("3D source profiles require a single Yee plane")
         plane = np.take(state[component], axis_idx, axis=axis_pos).astype(
             np.complex128, copy=False
         )
@@ -300,7 +303,9 @@ def crop_local_residual(
         return None
     local_crop = []
     for axis in range(mask.ndim):
-        occupied = np.flatnonzero(mask.any(axis=tuple(d for d in range(mask.ndim) if d != axis)))
+        occupied = np.flatnonzero(
+            mask.any(axis=tuple(d for d in range(mask.ndim) if d != axis))
+        )
         local_crop.append(slice(int(occupied[0]), int(occupied[-1]) + 1))
     local_crop = tuple(local_crop)
     global_crop = tuple(
@@ -511,7 +516,11 @@ def local_3d_phasor_context(
     for component, slices in component_slices.items():
         field = getattr(fields, component)
         shape = tuple(int(s.stop or 0) - int(s.start or 0) for s in slices)
-        setattr(local_fields, component, np.broadcast_to(np.zeros((), dtype=field.dtype), shape))
+        setattr(
+            local_fields,
+            component,
+            np.broadcast_to(np.zeros((), dtype=field.dtype), shape),
+        )
 
     for component, attr_prefix in (
         ("Ex", "x"),
@@ -864,39 +873,3 @@ def compute_discrete_3d_phasor_residuals(
             "e",
         )
     return result
-
-
-def compute_discrete_3d_h_phasor_residuals(
-    field_profile: FieldProfile3D,
-    fields,
-    *,
-    resolution: float,
-    max_shift: int,
-    dt: float,
-) -> tuple[ModeSource3DResidual, ...]:
-    return compute_discrete_3d_phasor_residuals(
-        field_profile,
-        fields,
-        resolution=resolution,
-        max_shift=max_shift,
-        dt=dt,
-        electric=False,
-    )
-
-
-def compute_discrete_3d_e_phasor_residuals(
-    field_profile: FieldProfile3D,
-    fields,
-    *,
-    resolution: float,
-    max_shift: int,
-    dt: float,
-) -> tuple[ModeSource3DResidual, ...]:
-    return compute_discrete_3d_phasor_residuals(
-        field_profile,
-        fields,
-        resolution=resolution,
-        max_shift=max_shift,
-        dt=dt,
-        magnetic=False,
-    )

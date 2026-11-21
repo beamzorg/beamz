@@ -142,7 +142,6 @@ def _preparation_key(key: CompiledProgramKey):
     # CUDA schedules share constitutive arrays. Kernel/workspace choices must
     # not create extra material banks when trying several launch configurations.
     from ._cuda_abi import (
-        CUDA_BF16_PSI,
         CUDA_FIELD_PAD32,
         CUDA_FIELD_PAD64,
         CUDA_FIELD_PAD_Y8,
@@ -162,7 +161,7 @@ def _preparation_key(key: CompiledProgramKey):
         cuda_expected_runs=1,
         backend="cuda_streamed" if cuda_backend else key.backend,
         cuda_flags=key.cuda_flags
-        & (CUDA_BF16_PSI | CUDA_FIELD_PAD32 | CUDA_FIELD_PAD64 | CUDA_FIELD_PAD_Y8)
+        & (CUDA_FIELD_PAD32 | CUDA_FIELD_PAD64 | CUDA_FIELD_PAD_Y8)
         if cuda_backend
         else key.cuda_flags,
         cuda_memory_policy="auto",
@@ -214,7 +213,11 @@ def _elide_uniform_grid(value, *, compact=False):
 
     first = uniform_value(value)
     if first is None:
-        return broadcast_base(value) if compact and isinstance(value, np.ndarray) else value
+        return (
+            broadcast_base(value)
+            if compact and isinstance(value, np.ndarray)
+            else value
+        )
     return jnp.asarray(first, dtype=value.dtype)
 
 
@@ -230,7 +233,8 @@ def _permeable_h_coefficients(
     if (
         isinstance(mu, RegionArray)
         or isinstance(sigma, RegionArray)
-        or isinstance(mu, np.ndarray) and 0 in mu.strides
+        or isinstance(mu, np.ndarray)
+        and 0 in mu.strides
     ):
         shape = mu.shape if mu.ndim else sigma.shape
         base = np.asarray(ops.precompute_h_update_coefficients(np.float32(0), dt)[1])

@@ -106,7 +106,6 @@ def main():
         LD_LIBRARY_PATH="",
         XLA_PYTHON_CLIENT_PREALLOCATE="false",
         XLA_PYTHON_CLIENT_MEM_FRACTION=".80",
-        BEAMZ_CUDA_CPML_PSI_PRECISION="fp32",
         NUMPY_MADVISE_HUGEPAGE="0",
     )
     started = time.monotonic()

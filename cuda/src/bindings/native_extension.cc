@@ -166,11 +166,11 @@ struct MovingDependencyEvent {
 struct CompiledZeroBuffer {
  const std::vector<int64_t>shape;const std::string dtype;size_t elements=1;
  CompiledZeroBuffer(std::vector<int64_t>dims,std::string type):shape(std::move(dims)),dtype(std::move(type)){
-  if(shape.empty()||shape.size()>4||(dtype!="float32"&&dtype!="int32"&&dtype!="bfloat16"))throw std::invalid_argument("zero descriptor requires rank1..4 and FP32, int32 or BF16");
+  if(shape.empty()||shape.size()>4||(dtype!="float32"&&dtype!="int32"))throw std::invalid_argument("zero descriptor requires rank1..4 and FP32 or int32");
   for(int64_t n:shape){if(n<0||n>INT32_MAX||(n&&elements>size_t(INT32_MAX)/n))throw std::invalid_argument("zero descriptor offsets exceed int32");elements*=n;}
   if(shape.size()==3&&shape[1]*shape[2]>INT32_MAX)throw std::invalid_argument("zero descriptor plane stride exceeds int32");
  }
- size_t nbytes()const{return elements*(dtype=="bfloat16"?2:4);}
+ size_t nbytes()const{return elements*sizeof(float);}
 };
 
 struct HostBuffer {
@@ -267,7 +267,7 @@ HostBuffer Describe(nb::handle value, const nb::module_& numpy, bool copy) {
     result.array=nb::borrow<nb::object>(value);result.dtype=numpy.attr("dtype")(zero.dtype);
     result.shape=nb::steal<nb::tuple>(PyTuple_New(zero.shape.size()));
     result.descriptor.rank=int(zero.shape.size());
-    result.descriptor.element_type=zero.dtype=="float32"?kBeamzF32:zero.dtype=="bfloat16"?kBeamzBF16:kBeamzS32;
+    result.descriptor.element_type=zero.dtype=="float32"?kBeamzF32:kBeamzS32;
     for(int a=0;a<4;++a)result.descriptor.dims[a]=a<int(zero.shape.size())?zero.shape[a]:1;
     for(size_t a=0;a<zero.shape.size();++a)PyTuple_SET_ITEM(result.shape.ptr(),a,PyLong_FromLongLong(zero.shape[a]));
     if(zero.shape.size()==3){result.descriptor.row_stride=int(zero.shape[2]);result.descriptor.plane_stride=int(zero.shape[1]*zero.shape[2]);}
@@ -285,8 +285,7 @@ HostBuffer Describe(nb::handle value, const nb::module_& numpy, bool copy) {
   const std::string name = nb::cast<std::string>(result.dtype.attr("name"));
   if (name == "float32") result.descriptor.element_type = kBeamzF32;
   else if (name == "int32") result.descriptor.element_type = kBeamzS32;
-  else if (name == "bfloat16") result.descriptor.element_type = kBeamzBF16;
-  else throw std::invalid_argument("native inputs support float32, int32 and bfloat16");
+  else throw std::invalid_argument("native inputs support float32 and int32");
   if (!nb::cast<bool>(result.dtype.attr("isnative")))
     throw std::invalid_argument("native inputs require native byte order");
   result.shape = nb::cast<nb::tuple>(result.array.attr("shape"));
@@ -1905,8 +1904,8 @@ class NativeSession {
     for (size_t i = 0; i < outputs_.size(); ++i) {
       const int input = output_aliases_[i];
       if (!persistent_.count(input)) continue;
-      if (outputs_[i].element_type != kBeamzF32 && outputs_[i].element_type != kBeamzBF16)
-        throw std::invalid_argument("native CUDA checkpoints require FP32 or BF16 buffers");
+      if (outputs_[i].element_type != kBeamzF32)
+        throw std::invalid_argument("native CUDA checkpoints require FP32 buffers");
       bytes = (bytes + 255) & ~size_t(255);
       leaves.emplace_back(i, bytes);
       bytes += host_[input].bytes;
@@ -1954,12 +1953,9 @@ class NativeSession {
       size_t shape[4]{};
       for (int axis = 0; axis < value.rank; ++axis)
         shape[axis] = size_t(value.dims[axis]);
-      const auto dtype = value.element_type == kBeamzBF16
-          ? nb::dlpack::dtype{uint8_t(nb::dlpack::dtype_code::Bfloat), 16, 1}
-          : nb::dtype<float>();
       result.append(nb::ndarray<nb::jax, nb::device::cuda, nb::c_contig>(
           destination + offset, value.rank, shape, owner, nullptr,
-          dtype, nb::device::cuda::value, device_).cast());
+          nb::dtype<float>(), nb::device::cuda::value, device_).cast());
     }
     return result;
   }
@@ -2122,14 +2118,14 @@ class NativeSession {
         throw std::invalid_argument("inconsistent partition CPML");
       auto append = [&](const BeamzBuffer& src, const BeamzBuffer& dst, int a, int b, int width) {
         if (width <= 0 || !src.dims[0] || !src.dims[1] || !src.dims[2]) return;
-        if (src.rank != 3 || dst.rank != 3 || (src.element_type != kBeamzF32 && src.element_type != kBeamzBF16) ||
+        if (src.rank != 3 || dst.rank != 3 || src.element_type != kBeamzF32 ||
             dst.element_type != src.element_type || src.compact_slots || dst.compact_slots || a < 0 || b < 0 ||
             a + width > src.dims[axis] || b + width > dst.dims[axis])
           throw std::invalid_argument("unsupported temporal exchange buffer");
         for (int k = 0; k < 3; ++k)
           if (k != axis && src.dims[k] != dst.dims[k])
             throw std::invalid_argument("cross-section mismatch");
-        const int element_bytes = src.element_type == kBeamzBF16 ? 2 : 4;
+        const int element_bytes = sizeof(float);
         cudaMemcpy3DPeerParms q{};
         q.srcDevice = s.device_;
         q.dstDevice = d.device_;
@@ -2908,9 +2904,9 @@ class NativeSession {
         if(low<0||high<0||packed>target.dims[axis]||
            (p.uniform_cpml_thickness>0&&(low!=p.uniform_cpml_thickness||high!=p.uniform_cpml_thickness)))
           throw std::invalid_argument("moving CPML metadata disagrees with the Yee supports");
-        if(psi.rank!=3||(psi.element_type!=kBeamzF32&&psi.element_type!=kBeamzBF16)||
+        if(psi.rank!=3||psi.element_type!=kBeamzF32||
            p.outputs[3+term].element_type!=psi.element_type||p.outputs[3+term].data!=psi.data||psi.compact_slots)
-          throw std::invalid_argument("moving requires in-place FP32 or BF16 packed psi");
+          throw std::invalid_argument("moving requires in-place FP32 packed psi");
         for(int d=0;d<3;++d)if(psi.dims[d]!=(d==axis?packed:target.dims[d]))throw std::invalid_argument("moving packed psi shape differs");
         if(!packed)continue;
         if(psi.row_stride!=psi.dims[2]||psi.plane_stride!=psi.dims[1]*psi.dims[2])throw std::invalid_argument("moving psi must be canonical packed slabs");
@@ -3440,7 +3436,6 @@ void RegisterNativeCuda(nb::module_& module) {
   module.attr("compiled_temporal_sources") = true;
   module.attr("compiled_temporal_recorders") = true;
   module.attr("compiled_temporal_diagonal_materials") = true;
-  module.attr("compiled_temporal_bf16_psi") = true;
   module.attr("compiled_temporal_tensor") = true;
   module.attr("compiled_budgeted_overlap")=true;
   module.attr("compiled_observation_spacing")=true;

@@ -306,13 +306,15 @@ def test_immutable_palette_aliases_share_owned_snapshots_and_never_mutable_state
                 tuple(values), attrs, preserve_inputs=False, kind="mstep"
             )
             solvers.append(rolling)
-            for component, invalid in enumerate((2**31 - 1, -2**31, palette.size)):
+            for component, invalid in enumerate((2**31 - 1, -(2**31), palette.size)):
                 malformed = list(values)
                 headers = values[40 + component].copy()
                 headers[0, -1] = invalid
                 malformed[40 + component] = headers
                 with pytest.raises(ValueError, match="coefficient pool"):
-                    module.NativeSession(tuple(malformed), attrs, preserve_inputs=False, kind="mstep")
+                    module.NativeSession(
+                        tuple(malformed), attrs, preserve_inputs=False, kind="mstep"
+                    )
         assert moving.metadata()["initialize_scratch"] is False
         assert moving.metadata()["scratch_zero_bytes_per_run"] == 0
         moving_resident = moving.metadata()["resident_bytes"]
@@ -346,7 +348,10 @@ def test_immutable_palette_aliases_share_owned_snapshots_and_never_mutable_state
             for solver in solvers:
                 solver.reset()
             if rolling is not None:
-                assert rolling.metadata()["retired_coefficient_host_bytes"] == expected_retired
+                assert (
+                    rolling.metadata()["retired_coefficient_host_bytes"]
+                    == expected_retired
+                )
                 rolling.run_moving([32, 1], 16, 4)
             separate.run_schedule([33])
             shared.run_schedule([33])
@@ -591,8 +596,11 @@ def test_rolling_material_trace_checks_each_staggered_plane_and_its_halo():
         boundaries=[bz.PML(formulation="cpml", thickness=12 * dx)],
         monitors=[
             bz.FieldMonitor(
-                center=(0.3e-6,) * 3, size=(0, 0.16e-6, 0.16e-6),
-                freqs=[4e14], fields=("Ex", "Hy"), name="probe",
+                center=(0.3e-6,) * 3,
+                size=(0, 0.16e-6, 0.16e-6),
+                freqs=[4e14],
+                fields=("Ex", "Hy"),
+                name="probe",
             )
         ],
     )
@@ -617,8 +625,11 @@ def test_rolling_material_trace_checks_each_staggered_plane_and_its_halo():
         for kind, band in (("generated", 0), ("mstep", 32)):
             owners.append(
                 module.NativeSession(
-                    tuple(args), dict(prepared.packet.attributes, rolling_band=band),
-                    preserve_inputs=False, kind=kind, initialize_scratch=False,
+                    tuple(args),
+                    dict(prepared.packet.attributes, rolling_band=band),
+                    preserve_inputs=False,
+                    kind=kind,
+                    initialize_scratch=False,
                 )
             )
         ordinary, rolling = owners
@@ -626,7 +637,9 @@ def test_rolling_material_trace_checks_each_staggered_plane_and_its_halo():
         rolling.run_moving([32, 3], 16, 4)
         expected, actual = ordinary.download(), rolling.download()
         for field in (*range(18), 30, 31, 32):
-            np.testing.assert_array_equal(actual[field].view(np.uint8), expected[field].view(np.uint8))
+            np.testing.assert_array_equal(
+                actual[field].view(np.uint8), expected[field].view(np.uint8)
+            )
         assert ordinary.clocks() == rolling.clocks()
     finally:
         for owner in owners:

@@ -179,7 +179,7 @@ inline bool MakeMstepCompactEdge(const BeamzLaunch&p,MstepCompactEdgeView*v,int*
     const int low=widths?widths[term].low:12, high=widths?widths[term].high:12;
     const int64_t packed=int64_t(low)+high;
     if(low<0||high<0||packed>target.dims[axis]||in.rank!=3||out.rank!=3||
-       (in.element_type!=kBeamzF32&&(!widths||in.element_type!=kBeamzBF16))||
+       in.element_type!=kBeamzF32||
        out.element_type!=in.element_type||in.compact_slots||out.compact_slots)return false;
     if(widths&&p.uniform_cpml_thickness>0&&(low!=p.uniform_cpml_thickness||high!=p.uniform_cpml_thickness))return false;
     for(int a=0;a<3;++a)if(in.dims[a]!=(a==axis?packed:target.dims[a])||out.dims[a]!=in.dims[a])return false;

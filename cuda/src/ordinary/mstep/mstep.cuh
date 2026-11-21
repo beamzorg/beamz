@@ -537,20 +537,20 @@ __global__ __launch_bounds__(MstepTile<X,Y>::threads, 1) void MstepPackedColumnC
 #include "mstep_register.cuh"
 #endif
 
-template <int Phase, bool Packed, bool HasMetallicEdges, int PsiType,
+template <int Phase, bool Packed, bool HasMetallicEdges,
           int ActiveAxes>
 __device__ __forceinline__ void MstepUniformEdgeComponents(
     const BeamzLaunch &launch, int z, int y, int x) {
-  UpdateComponent<Phase, 0, true, 0, HasMetallicEdges, true, PsiType,
+  UpdateComponent<Phase, 0, true, 0, HasMetallicEdges, true,
                   Packed, true, false, ActiveAxes>(launch, z, y, x);
-  UpdateComponent<Phase, 1, true, 0, HasMetallicEdges, true, PsiType,
+  UpdateComponent<Phase, 1, true, 0, HasMetallicEdges, true,
                   Packed, true, false, ActiveAxes>(launch, z, y, x);
-  UpdateComponent<Phase, 2, true, 0, HasMetallicEdges, true, PsiType,
+  UpdateComponent<Phase, 2, true, 0, HasMetallicEdges, true,
                   Packed, true, false, ActiveAxes>(launch, z, y, x);
 }
 
 template <int Phase, bool Cpml, bool Packed, bool UniformCpml = false,
-          bool HasMetallicEdges = true, int PsiType = -1>
+          bool HasMetallicEdges = true>
 __global__ void MstepEdgePhase(const __grid_constant__ BeamzLaunch launch,
                                const __grid_constant__ BeamzBuffer cells,
                                int ny, int nx, const MstepIndexDecode decode) {
@@ -581,7 +581,7 @@ __global__ void MstepEdgePhase(const __grid_constant__ BeamzLaunch launch,
     // Only proven-inactive axes bypass the recurrence. Included axes retain
     // CorrectCpml's own staggered-extent, precision and packed-index checks.
 #define BEAMZ_MSTEP_AXIS_CASE(mask) \
-    case mask: MstepUniformEdgeComponents<Phase, Packed, HasMetallicEdges, PsiType, mask>(launch, z, y, x); break
+    case mask: MstepUniformEdgeComponents<Phase, Packed, HasMetallicEdges, mask>(launch, z, y, x); break
     switch (axes) {
       BEAMZ_MSTEP_AXIS_CASE(0);
       BEAMZ_MSTEP_AXIS_CASE(1);
@@ -611,24 +611,23 @@ __global__ void MstepEdgePhase(const __grid_constant__ BeamzLaunch launch,
                            launch.outputs[2].dims[2]) - low;
     if (z >= low && y >= low && x >= low &&
         z < high_z && y < high_y && x < high_x) {
-      UpdateComponent<Phase, 0, false, 0, false, false, -1, Packed, true>(launch, z, y, x);
-      UpdateComponent<Phase, 1, false, 0, false, false, -1, Packed, true>(launch, z, y, x);
-      UpdateComponent<Phase, 2, false, 0, false, false, -1, Packed, true>(launch, z, y, x);
+      UpdateComponent<Phase, 0, false, 0, false, false, Packed, true>(launch, z, y, x);
+      UpdateComponent<Phase, 1, false, 0, false, false, Packed, true>(launch, z, y, x);
+      UpdateComponent<Phase, 2, false, 0, false, false, Packed, true>(launch, z, y, x);
       return;
     }
   }
 #endif
-  UpdateComponent<Phase, 0, Cpml, 0, HasMetallicEdges, UniformCpml, PsiType, Packed, true>(launch, z,
+  UpdateComponent<Phase, 0, Cpml, 0, HasMetallicEdges, UniformCpml, Packed, true>(launch, z,
                                                                     y, x);
-  UpdateComponent<Phase, 1, Cpml, 0, HasMetallicEdges, UniformCpml, PsiType, Packed, true>(launch, z,
+  UpdateComponent<Phase, 1, Cpml, 0, HasMetallicEdges, UniformCpml, Packed, true>(launch, z,
                                                                     y, x);
-  UpdateComponent<Phase, 2, Cpml, 0, HasMetallicEdges, UniformCpml, PsiType, Packed, true>(launch, z,
+  UpdateComponent<Phase, 2, Cpml, 0, HasMetallicEdges, UniformCpml, Packed, true>(launch, z,
                                                                     y, x);
 }
 
 #if BEAMZ_CUDA_MSTEP_INPLACE_EDGES || BEAMZ_CUDA_MSTEP_FULL_INTERMEDIATES
-template <int Phase, bool Cpml, bool Packed, bool UniformCpml, bool CopyCore,
-          int PsiType = -1, bool HasMetallicEdges = true, int CoefficientLayout = 0>
+template <int Phase, bool Cpml, bool Packed, bool UniformCpml, bool CopyCore, bool HasMetallicEdges = true, int CoefficientLayout = 0>
 __global__ void MstepFullEdgePhase(
     const __grid_constant__ BeamzLaunch launch,
     const __grid_constant__ BeamzBuffer cells, int ny, int nx,
@@ -661,13 +660,13 @@ __global__ void MstepFullEdgePhase(
   // The core kernel has already finished all reads of the frozen input bank.
   // During each edge phase only this family is written; every neighbour read
   // is from the opposite family and therefore cannot race another row here.
-  UpdateComponent<Phase, 0, Cpml, 0, HasMetallicEdges, UniformCpml, PsiType, Packed, false, false, -1, CoefficientLayout>(launch, z, y, x);
-  UpdateComponent<Phase, 1, Cpml, 0, HasMetallicEdges, UniformCpml, PsiType, Packed, false, false, -1, CoefficientLayout>(launch, z, y, x);
-  UpdateComponent<Phase, 2, Cpml, 0, HasMetallicEdges, UniformCpml, PsiType, Packed, false, false, -1, CoefficientLayout>(launch, z, y, x);
+  UpdateComponent<Phase, 0, Cpml, 0, HasMetallicEdges, UniformCpml, Packed, false, false, -1, CoefficientLayout>(launch, z, y, x);
+  UpdateComponent<Phase, 1, Cpml, 0, HasMetallicEdges, UniformCpml, Packed, false, false, -1, CoefficientLayout>(launch, z, y, x);
+  UpdateComponent<Phase, 2, Cpml, 0, HasMetallicEdges, UniformCpml, Packed, false, false, -1, CoefficientLayout>(launch, z, y, x);
 }
 
 #if BEAMZ_CUDA_MSTEP_FULL_EDGE_TYPED
-template <bool CopyCore, int PsiType, bool HasMetallicEdges>
+template <bool CopyCore, bool HasMetallicEdges>
 void LaunchMstepTypedFullEdge(
     cudaStream_t stream, const BeamzLaunch &launch, const BeamzBuffer &cells,
     int ny, int nx, int blocks, const MstepIndexDecode &decode,
@@ -679,7 +678,7 @@ void LaunchMstepTypedFullEdge(
       scalar &= launch.inputs[material].rank == 0 &&
                 launch.inputs[material].element_type == kBeamzF32;
     if (scalar) {
-      MstepFullEdgePhase<0, true, false, true, CopyCore, PsiType, HasMetallicEdges, -1>
+      MstepFullEdgePhase<0, true, false, true, CopyCore, HasMetallicEdges, -1>
           <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, decode, publication);
       return;
     }
@@ -694,25 +693,25 @@ void LaunchMstepTypedFullEdge(
           launch.inputs[6 + c].dims[0] > 0 &&
           launch.inputs[6 + c].dims[0] <= INT32_MAX;
     if (homogeneous && layout == 1) {
-      MstepFullEdgePhase<1, true, true, true, CopyCore, PsiType, HasMetallicEdges, 1>
+      MstepFullEdgePhase<1, true, true, true, CopyCore, HasMetallicEdges, 1>
           <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, decode, publication);
       return;
     }
     if (homogeneous && layout == 2) {
-      MstepFullEdgePhase<1, true, true, true, CopyCore, PsiType, HasMetallicEdges, 2>
+      MstepFullEdgePhase<1, true, true, true, CopyCore, HasMetallicEdges, 2>
           <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, decode, publication);
       return;
     }
   }
 #endif
   if (launch.phase == 0)
-    MstepFullEdgePhase<0, true, false, true, CopyCore, PsiType, HasMetallicEdges>
+    MstepFullEdgePhase<0, true, false, true, CopyCore, HasMetallicEdges>
         <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, decode, publication);
   else if (launch.inputs[9].element_type == kBeamzS32)
-    MstepFullEdgePhase<1, true, true, true, CopyCore, PsiType, HasMetallicEdges>
+    MstepFullEdgePhase<1, true, true, true, CopyCore, HasMetallicEdges>
         <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, decode, publication);
   else
-    MstepFullEdgePhase<1, true, false, true, CopyCore, PsiType, HasMetallicEdges>
+    MstepFullEdgePhase<1, true, false, true, CopyCore, HasMetallicEdges>
         <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, decode, publication);
 }
 
@@ -721,25 +720,8 @@ void LaunchMstepUniformFullEdge(
     cudaStream_t stream, const BeamzLaunch &launch, const BeamzBuffer &cells,
     int ny, int nx, int blocks, const MstepIndexDecode &decode,
     const MstepPublicationView &publication) {
-  // Prove homogeneous auxiliary precision from every input AND output term.
-  // Mixed foreign payloads retain the original dynamic decoder and PEC path.
-  int psi_type = launch.outputs[3].element_type;
-  for (int term = 0; term < 6; ++term) {
-    if (launch.inputs[31 + term].element_type != psi_type ||
-        launch.outputs[3 + term].element_type != psi_type) {
-      psi_type = -1;
-      break;
-    }
-  }
-  if (psi_type == kBeamzF32)
-    LaunchMstepTypedFullEdge<CopyCore, kBeamzF32, HasMetallicEdges>(
-        stream, launch, cells, ny, nx, blocks, decode, publication);
-  else if (psi_type == kBeamzBF16)
-    LaunchMstepTypedFullEdge<CopyCore, kBeamzBF16, HasMetallicEdges>(
-        stream, launch, cells, ny, nx, blocks, decode, publication);
-  else
-    LaunchMstepTypedFullEdge<CopyCore, -1, true>(
-        stream, launch, cells, ny, nx, blocks, decode, publication);
+  LaunchMstepTypedFullEdge<CopyCore, HasMetallicEdges>(
+      stream, launch, cells, ny, nx, blocks, decode, publication);
 }
 #endif
 
@@ -799,25 +781,8 @@ cudaError_t LaunchMstepFullEdge(
 template <int Phase, bool Packed, bool HasMetallicEdges>
 void LaunchMstepUniformEdge(cudaStream_t stream, const BeamzLaunch &launch,
                            const BeamzBuffer &cells, int ny, int nx, int blocks) {
-  // Foreign FFI callers can provide mixed auxiliary precision. Retain the
-  // dynamic fallback unless every input/output term proves the same type.
-  int psi_type = launch.outputs[3].element_type;
-  for (int term = 0; term < 6; ++term) {
-    if (launch.inputs[31 + term].element_type != psi_type ||
-        launch.outputs[3 + term].element_type != psi_type) {
-      psi_type = -1;
-      break;
-    }
-  }
-  if (psi_type == kBeamzF32)
-    MstepEdgePhase<Phase, true, Packed, true, HasMetallicEdges, kBeamzF32>
-        <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, MakeMstepIndexDecode(ny, nx));
-  else if (psi_type == kBeamzBF16)
-    MstepEdgePhase<Phase, true, Packed, true, HasMetallicEdges, kBeamzBF16>
-        <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, MakeMstepIndexDecode(ny, nx));
-  else
-    MstepEdgePhase<Phase, true, Packed, true, HasMetallicEdges>
-        <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, MakeMstepIndexDecode(ny, nx));
+  MstepEdgePhase<Phase, true, Packed, true, HasMetallicEdges>
+      <<<blocks, 256, 0, stream>>>(launch, cells, ny, nx, MakeMstepIndexDecode(ny, nx));
 }
 
 template <int Phase, bool Packed>

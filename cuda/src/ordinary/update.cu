@@ -1,6 +1,5 @@
 #include <cuda_runtime_api.h>
 
-#include <cuda_bf16.h>
 #include <cuda_pipeline.h>
 #include <cmath>
 #include <cstddef>
@@ -276,9 +275,7 @@ cudaError_t ValidatePhase(const BeamzLaunch& launch) {
       const BeamzBuffer& input = launch.inputs[psi_input_base + term];
       const BeamzBuffer& output = launch.outputs[3 + term];
       const BeamzBuffer& target = launch.outputs[term / 2];
-      const bool supported_type = HasType(input, kBeamzF32) ||
-                                  HasType(input, kBeamzBF16);
-      if (!supported_type || input.element_type != output.element_type ||
+      if (!HasType(input, kBeamzF32) || input.element_type != output.element_type ||
           !IsCpmlPsi(input, target, beamz::cuda::yee::CpmlAxis(term)) ||
           !IsCpmlPsi(output, target, beamz::cuda::yee::CpmlAxis(term)) ||
           !SameShape(input, output)) {
@@ -412,7 +409,7 @@ __device__ __forceinline__ float BoundaryDifference(const BeamzBuffer& value,
       Read3D<Compact>(value, z, y, x) - Read3D<Compact>(value, low_z, low_y, low_x), inv_dx);
 }
 
-template <int Term, bool UniformCpml = false, int PsiType = -1>
+template <int Term, bool UniformCpml = false>
 __device__ __forceinline__ float CorrectCpml(float derivative, int z, int y,
                                              int x, const BeamzLaunch& launch) {
   // The 3D compiler emits the six curl terms in this fixed derivative order.
@@ -461,32 +458,11 @@ __device__ __forceinline__ float CorrectCpml(float derivative, int z, int y,
   const int psi_offset = (pz * static_cast<int>(psi_output.dims[1]) + py) *
                              static_cast<int>(psi_output.dims[2]) +
                          px;
-  float old_psi;
-  if constexpr (PsiType == kBeamzBF16) {
-    old_psi = __bfloat162float(
-        static_cast<const __nv_bfloat16*>(psi_input.data)[psi_offset]);
-  } else if constexpr (PsiType == kBeamzF32) {
-    old_psi = static_cast<const float*>(psi_input.data)[psi_offset];
-  } else {
-    old_psi = psi_input.element_type == kBeamzBF16
-                  ? __bfloat162float(static_cast<const __nv_bfloat16*>(
-                                         psi_input.data)[psi_offset])
-                  : static_cast<const float*>(psi_input.data)[psi_offset];
-  }
+  const float old_psi = static_cast<const float*>(psi_input.data)[psi_offset];
   const float next_psi = beamz::cuda::yee::AdvanceCpmlPsi(
       static_cast<const float*>(b.data)[packed], old_psi,
       static_cast<const float*>(a.data)[packed], derivative);
-  if constexpr (PsiType == kBeamzBF16) {
-    static_cast<__nv_bfloat16*>(psi_output.data)[psi_offset] =
-        __float2bfloat16_rn(next_psi);
-  } else if constexpr (PsiType == kBeamzF32) {
-    static_cast<float*>(psi_output.data)[psi_offset] = next_psi;
-  } else if (psi_output.element_type == kBeamzBF16) {
-    static_cast<__nv_bfloat16*>(psi_output.data)[psi_offset] =
-        __float2bfloat16_rn(next_psi);
-  } else {
-    static_cast<float*>(psi_output.data)[psi_offset] = next_psi;
-  }
+  static_cast<float*>(psi_output.data)[psi_offset] = next_psi;
   return beamz::cuda::yee::CorrectCpmlDerivative(
       sign, derivative, static_cast<const float*>(inv_kappa.data)[packed],
       next_psi);
@@ -494,8 +470,7 @@ __device__ __forceinline__ float CorrectCpml(float derivative, int z, int y,
 
 // Only mstep edge kernels opt into compact field addressing.
 template <int Phase, int Component, bool Cpml, int MetricKind,
-          bool HasMetallicEdges = true, bool UniformCpml = false,
-          int PsiType = -1, bool PackedLosslessMaterial = false, bool Compact = false,
+          bool HasMetallicEdges = true, bool UniformCpml = false, bool PackedLosslessMaterial = false, bool Compact = false,
           bool Tensor = false, int ActiveAxes = -1, int CoefficientLayout = 0>
 __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
                                                 int z, int y, int x,
@@ -539,19 +514,19 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
   float curl;
   if constexpr (Cpml) {
     if constexpr (ActiveAxes < 0) {
-      curl = CorrectCpml<2 * Component, UniformCpml, PsiType>(
+      curl = CorrectCpml<2 * Component, UniformCpml>(
                  derivative0, z, y, x, launch) +
-             CorrectCpml<2 * Component + 1, UniformCpml, PsiType>(
+             CorrectCpml<2 * Component + 1, UniformCpml>(
                  derivative1, z, y, x, launch);
     } else {
       float corrected0, corrected1;
       if constexpr (ActiveAxes & (1 << first_term.derivative_axis))
-        corrected0 = CorrectCpml<2 * Component, UniformCpml, PsiType>(
+        corrected0 = CorrectCpml<2 * Component, UniformCpml>(
             derivative0, z, y, x, launch);
       else
         corrected0 = beamz::cuda::yee::CpmlSign(2 * Component) * derivative0;
       if constexpr (ActiveAxes & (1 << second_term.derivative_axis))
-        corrected1 = CorrectCpml<2 * Component + 1, UniformCpml, PsiType>(
+        corrected1 = CorrectCpml<2 * Component + 1, UniformCpml>(
             derivative1, z, y, x, launch);
       else
         corrected1 = beamz::cuda::yee::CpmlSign(2 * Component + 1) * derivative1;
@@ -610,18 +585,15 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
 #include "tensor.cuh"
 
 template <int Phase, bool Cpml, int MetricKind, bool HasMetallicEdges = true,
-          bool UniformCpml = false, int PsiType = -1,
+          bool UniformCpml = false,
           bool PackedLosslessMaterial = false>
 __global__ void UpdateFusedComponents(BeamzLaunch launch) {
   const int x = blockIdx.x * blockDim.x + threadIdx.x;
   const int y = blockIdx.y * blockDim.y + threadIdx.y;
   const int z = blockIdx.z * blockDim.z + threadIdx.z;
-  UpdateComponent<Phase, 0, Cpml, MetricKind, HasMetallicEdges, UniformCpml,
-                  PsiType, PackedLosslessMaterial>(launch, z, y, x);
-  UpdateComponent<Phase, 1, Cpml, MetricKind, HasMetallicEdges, UniformCpml,
-                  PsiType, PackedLosslessMaterial>(launch, z, y, x);
-  UpdateComponent<Phase, 2, Cpml, MetricKind, HasMetallicEdges, UniformCpml,
-                  PsiType, PackedLosslessMaterial>(launch, z, y, x);
+  UpdateComponent<Phase, 0, Cpml, MetricKind, HasMetallicEdges, UniformCpml, PackedLosslessMaterial>(launch, z, y, x);
+  UpdateComponent<Phase, 1, Cpml, MetricKind, HasMetallicEdges, UniformCpml, PackedLosslessMaterial>(launch, z, y, x);
+  UpdateComponent<Phase, 2, Cpml, MetricKind, HasMetallicEdges, UniformCpml, PackedLosslessMaterial>(launch, z, y, x);
 }
 
 template <int Phase>
@@ -841,7 +813,7 @@ __device__ __forceinline__ float FusedEValue(const FusedYeePhase& launch,
   return decay * old_field + source * curl;
 }
 
-template <int Phase, int PsiType, bool PackedLosslessMaterial,
+template <int Phase, bool PackedLosslessMaterial,
           bool HasMetallicEdges, bool WarpTile = false, int TileX = 64,
           int TileY = 4, int CoreTileX = TileX, int CoreTileY = TileY>
 __device__ __forceinline__ void UpdateCombinedCpmlQueueBlock(
@@ -898,11 +870,11 @@ __device__ __forceinline__ void UpdateCombinedCpmlQueueBlock(
       x = local_x < low ? local_x : high_x + local_x - low;
       if (y >= high_y || local_x >= outer_x) return;
     }
-    UpdateComponent<Phase, 0, true, 0, HasMetallicEdges, true, PsiType,
+    UpdateComponent<Phase, 0, true, 0, HasMetallicEdges, true,
                     PackedLosslessMaterial>(launch, z, y, x);
-    UpdateComponent<Phase, 1, true, 0, HasMetallicEdges, true, PsiType,
+    UpdateComponent<Phase, 1, true, 0, HasMetallicEdges, true,
                     PackedLosslessMaterial>(launch, z, y, x);
-    UpdateComponent<Phase, 2, true, 0, HasMetallicEdges, true, PsiType,
+    UpdateComponent<Phase, 2, true, 0, HasMetallicEdges, true,
                     PackedLosslessMaterial>(launch, z, y, x);
     return;
   }
@@ -921,22 +893,22 @@ __device__ __forceinline__ void UpdateCombinedCpmlQueueBlock(
   y = low + block_y * core_tile_y + core_y_thread;
   x = low + block_x * core_tile_x + core_x_thread;
   if (z >= high_z || y >= high_y || x >= high_x) return;
-  UpdateComponent<Phase, 0, false, 0, HasMetallicEdges, false, -1,
+  UpdateComponent<Phase, 0, false, 0, HasMetallicEdges, false,
                   PackedLosslessMaterial>(launch, z, y, x);
-  UpdateComponent<Phase, 1, false, 0, HasMetallicEdges, false, -1,
+  UpdateComponent<Phase, 1, false, 0, HasMetallicEdges, false,
                   PackedLosslessMaterial>(launch, z, y, x);
-  UpdateComponent<Phase, 2, false, 0, HasMetallicEdges, false, -1,
+  UpdateComponent<Phase, 2, false, 0, HasMetallicEdges, false,
                   PackedLosslessMaterial>(launch, z, y, x);
 }
 
-template <int Phase, int PsiType, bool PackedLosslessMaterial,
+template <int Phase, bool PackedLosslessMaterial,
           bool HasMetallicEdges, int TileX, int TileY, int CoreTileX,
           int CoreTileY>
 __global__ void UpdateCombinedCpmlQueue(
     BeamzLaunch launch, int max_z, int max_y, int max_x, int high_z,
     int high_y, int high_x, int z_region_blocks, int y_region_blocks,
     int shell_blocks, int core_x_blocks, int core_y_blocks) {
-  UpdateCombinedCpmlQueueBlock<Phase, PsiType, PackedLosslessMaterial,
+  UpdateCombinedCpmlQueueBlock<Phase, PackedLosslessMaterial,
                                HasMetallicEdges, false, TileX, TileY,
                                CoreTileX, CoreTileY>(
       launch, max_z, max_y, max_x, high_z, high_y, high_x, z_region_blocks,
@@ -1161,18 +1133,6 @@ __global__ __launch_bounds__(Tile::X* Tile::Y, 6) void FusedCpmlCore(
 template <int MetricKind, bool HasMetallicEdges, bool UniformCpml>
 void LaunchFusedUpdate(cudaStream_t stream, const BeamzLaunch& launch,
                        dim3 blocks, dim3 threads) {
-  int psi_type = -1;
-  if (launch.nterms != 0) {
-    constexpr int psi_input_base = 13 + 3 * 6;
-    psi_type = launch.outputs[3].element_type;
-    for (int term = 0; term < 6; ++term) {
-      if (launch.inputs[psi_input_base + term].element_type != psi_type ||
-          launch.outputs[3 + term].element_type != psi_type) {
-        psi_type = -1;
-        break;
-      }
-    }
-  }
   const bool packed_lossless_material =
       launch.phase == 1 && launch.inputs[6].rank == 1 &&
       launch.inputs[7].rank == 1 && launch.inputs[8].rank == 1 &&
@@ -1186,50 +1146,20 @@ void LaunchFusedUpdate(cudaStream_t stream, const BeamzLaunch& launch,
     UpdateFusedComponents<0, false, MetricKind, HasMetallicEdges, UniformCpml>
         <<<blocks, threads, 0, stream>>>(launch);
   } else if (launch.phase == 0) {
-    if (psi_type == kBeamzBF16) {
-      UpdateFusedComponents<0, true, MetricKind, HasMetallicEdges, UniformCpml,
-                            kBeamzBF16>
-          <<<blocks, threads, 0, stream>>>(launch);
-    } else if (psi_type == kBeamzF32) {
-      UpdateFusedComponents<0, true, MetricKind, HasMetallicEdges, UniformCpml,
-                            kBeamzF32>
-          <<<blocks, threads, 0, stream>>>(launch);
-    } else {
-      UpdateFusedComponents<0, true, MetricKind, HasMetallicEdges, UniformCpml>
-          <<<blocks, threads, 0, stream>>>(launch);
-    }
+    UpdateFusedComponents<0, true, MetricKind, HasMetallicEdges, UniformCpml>
+        <<<blocks, threads, 0, stream>>>(launch);
   } else if (launch.nterms == 0) {
     if (packed_lossless_material) {
-      UpdateFusedComponents<1, false, MetricKind, HasMetallicEdges, UniformCpml,
-                            -1, true><<<blocks, threads, 0, stream>>>(launch);
+      UpdateFusedComponents<1, false, MetricKind, HasMetallicEdges, UniformCpml, true><<<blocks, threads, 0, stream>>>(launch);
     } else {
       UpdateFusedComponents<1, false, MetricKind, HasMetallicEdges, UniformCpml>
           <<<blocks, threads, 0, stream>>>(launch);
     }
+  } else if (packed_lossless_material) {
+    UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml, true><<<blocks, threads, 0, stream>>>(launch);
   } else {
-    if (psi_type == kBeamzBF16 && packed_lossless_material) {
-      UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml,
-                            kBeamzBF16, true>
-          <<<blocks, threads, 0, stream>>>(launch);
-    } else if (psi_type == kBeamzF32 && packed_lossless_material) {
-      UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml,
-                            kBeamzF32, true>
-          <<<blocks, threads, 0, stream>>>(launch);
-    } else if (packed_lossless_material) {
-      UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml,
-                            -1, true><<<blocks, threads, 0, stream>>>(launch);
-    } else if (psi_type == kBeamzBF16) {
-      UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml,
-                            kBeamzBF16>
-          <<<blocks, threads, 0, stream>>>(launch);
-    } else if (psi_type == kBeamzF32) {
-      UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml,
-                            kBeamzF32>
-          <<<blocks, threads, 0, stream>>>(launch);
-    } else {
-      UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml>
-          <<<blocks, threads, 0, stream>>>(launch);
-    }
+    UpdateFusedComponents<1, true, MetricKind, HasMetallicEdges, UniformCpml>
+        <<<blocks, threads, 0, stream>>>(launch);
   }
 }
 
@@ -1331,19 +1261,7 @@ bool HasPackedLosslessMaterial(const BeamzLaunch& launch) {
          launch.inputs[11].element_type == kBeamzS32;
 }
 
-int UniformPsiType(const BeamzLaunch& launch) {
-  constexpr int psi_input_base = 13 + 3 * 6;
-  int psi_type = launch.outputs[3].element_type;
-  for (int term = 0; term < 6; ++term) {
-    if (launch.inputs[psi_input_base + term].element_type != psi_type ||
-        launch.outputs[3 + term].element_type != psi_type) {
-      return -1;
-    }
-  }
-  return psi_type;
-}
-
-template <int Phase, int PsiType, bool PackedLosslessMaterial, int TileX, int TileY>
+template <int Phase, bool PackedLosslessMaterial, int TileX, int TileY>
 void LaunchCpmlQueueTile(cudaStream_t stream,
                                     const BeamzLaunch &launch,
                                     const CpmlGeometry &geometry,
@@ -1379,14 +1297,14 @@ void LaunchCpmlQueueTile(cudaStream_t stream,
   const int core_blocks = core_x_blocks * core_y_blocks * (high_z - low);
   const dim3 threads(tile_x, tile_y, 1);
   if (launch.metallic_edges == 0) {
-    UpdateCombinedCpmlQueue<Phase, PsiType, PackedLosslessMaterial, false,
+    UpdateCombinedCpmlQueue<Phase, PackedLosslessMaterial, false,
                             tile_x, tile_y, core_tile_x, core_tile_y>
         <<<shell_blocks + (shell_only ? 0 : core_blocks), threads, 0, stream>>>(
             launch, max_z, max_y, max_x, high_z, high_y, high_x,
             z_region_blocks, y_region_blocks, shell_blocks, core_x_blocks,
             core_y_blocks);
   } else {
-    UpdateCombinedCpmlQueue<Phase, PsiType, PackedLosslessMaterial, true,
+    UpdateCombinedCpmlQueue<Phase, PackedLosslessMaterial, true,
                             tile_x, tile_y, core_tile_x, core_tile_y>
         <<<shell_blocks + (shell_only ? 0 : core_blocks), threads, 0, stream>>>(
             launch, max_z, max_y, max_x, high_z, high_y, high_x,
@@ -1395,15 +1313,15 @@ void LaunchCpmlQueueTile(cudaStream_t stream,
   }
 }
 
-template <int Phase, int PsiType, bool Packed>
-void LaunchCombinedCpmlQueueForType(cudaStream_t stream, const BeamzLaunch& launch,
+template <int Phase, bool Packed>
+void LaunchCombinedCpmlQueueForPhase(cudaStream_t stream, const BeamzLaunch& launch,
                                     const CpmlGeometry& geometry, bool shell_only) {
   if (launch.cuda_flags & beamz::cuda::abi::kBeamzShell32x8)
-    LaunchCpmlQueueTile<Phase, PsiType, Packed, 32, 8>(stream, launch, geometry, shell_only);
+    LaunchCpmlQueueTile<Phase, Packed, 32, 8>(stream, launch, geometry, shell_only);
   else if (launch.cuda_flags & beamz::cuda::abi::kBeamzShell32x4)
-    LaunchCpmlQueueTile<Phase, PsiType, Packed, 32, 4>(stream, launch, geometry, shell_only);
+    LaunchCpmlQueueTile<Phase, Packed, 32, 4>(stream, launch, geometry, shell_only);
   else
-    LaunchCpmlQueueTile<Phase, PsiType, Packed, PsiType == kBeamzBF16 ? 32 : 64, 4>(
+    LaunchCpmlQueueTile<Phase, Packed, 64, 4>(
         stream, launch, geometry, shell_only);
 }
 
@@ -1411,37 +1329,12 @@ cudaError_t LaunchCombinedCpmlQueuePhase(cudaStream_t stream,
                                          const BeamzLaunch &launch,
                                          bool shell_only = false) {
   const CpmlGeometry geometry = MakeCpmlGeometry(launch);
-  const int psi_type = UniformPsiType(launch);
-  const bool packed = launch.phase == 1 && HasPackedLosslessMaterial(launch);
   if (launch.phase == 0) {
-    if (psi_type == kBeamzBF16) {
-      LaunchCombinedCpmlQueueForType<0, kBeamzBF16, false>(
-          stream, launch, geometry, shell_only);
-    } else if (psi_type == kBeamzF32) {
-      LaunchCombinedCpmlQueueForType<0, kBeamzF32, false>(stream, launch,
-                                                          geometry, shell_only);
-    } else {
-      LaunchCombinedCpmlQueueForType<0, -1, false>(stream, launch, geometry,
-                                                   shell_only);
-    }
-  } else if (packed && psi_type == kBeamzBF16) {
-    LaunchCombinedCpmlQueueForType<1, kBeamzBF16, true>(stream, launch,
-                                                        geometry, shell_only);
-  } else if (packed && psi_type == kBeamzF32) {
-    LaunchCombinedCpmlQueueForType<1, kBeamzF32, true>(stream, launch, geometry,
-                                                       shell_only);
-  } else if (packed) {
-    LaunchCombinedCpmlQueueForType<1, -1, true>(stream, launch, geometry,
-                                                shell_only);
-  } else if (psi_type == kBeamzBF16) {
-    LaunchCombinedCpmlQueueForType<1, kBeamzBF16, false>(stream, launch,
-                                                         geometry, shell_only);
-  } else if (psi_type == kBeamzF32) {
-    LaunchCombinedCpmlQueueForType<1, kBeamzF32, false>(stream, launch,
-                                                        geometry, shell_only);
+    LaunchCombinedCpmlQueueForPhase<0, false>(stream, launch, geometry, shell_only);
+  } else if (HasPackedLosslessMaterial(launch)) {
+    LaunchCombinedCpmlQueueForPhase<1, true>(stream, launch, geometry, shell_only);
   } else {
-    LaunchCombinedCpmlQueueForType<1, -1, false>(stream, launch, geometry,
-                                                 shell_only);
+    LaunchCombinedCpmlQueueForPhase<1, false>(stream, launch, geometry, shell_only);
   }
   return cudaPeekAtLastError();
 }
@@ -1648,7 +1541,7 @@ cudaError_t BeamzEnqueueCpmlPairBand(cudaStream_t stream, const BeamzLaunch &h,
 }
 
 
-template <bool Packed, bool Half, int X, int Y, int Z, int Mask, int Steps>
+template <bool Packed, int X, int Y, int Z, int Mask, int Steps>
 cudaError_t LaunchTemporalCpmlMask(cudaStream_t stream,
     const PairCpmlPhase &h, const PairCpmlPhase &e, const PairFieldOutputs &final,
     const FusedHSources &hs, const FusedHSources &es, BeamzBuffer publication,
@@ -1661,16 +1554,16 @@ cudaError_t LaunchTemporalCpmlMask(cudaStream_t stream,
     if (!counts[a]) return cudaSuccess;
   }
   constexpr size_t bytes=Steps==1 ? PairStage<X-2,Y-2,1>::offset*sizeof(float)
-      : PairPsiStage<X,Y,1,Mask,Half>::offset*sizeof(float)+
-        2*PairPsiTerms(Mask)*(X+2)*(Y+2)*(Half?sizeof(__nv_bfloat16):sizeof(float));
-  TemporalCpmlPair<Packed,Half,X,Y,Z,Mask,Steps>
+      : PairPsiStage<X,Y,1,Mask>::offset*sizeof(float)+
+        2*PairPsiTerms(Mask)*(X+2)*(Y+2)*sizeof(float);
+  TemporalCpmlPair<Packed,X,Y,Z,Mask,Steps>
       <<<dim3(counts[2],counts[1],counts[0]),
          (Steps == 2 && ((Mask == 4 && X == 15 && Y == 16) || (Mask == 2 && X == 16 && Y == 15))) ? 384 : 256,
          bytes,stream>>>(h,e,final,hs,es,publication,grid);
   return cudaPeekAtLastError();
 }
 
-template <bool Packed, bool Half, int Tile, int Steps=2>
+template <bool Packed, int Tile, int Steps=2>
 cudaError_t LaunchTemporalCpmlMasks(cudaStream_t stream, const BeamzLaunch &h,
     const BeamzLaunch &e, const BeamzBuffer *final_fields,
     const BeamzSourceGroupLaunch *groups, int step, BeamzBuffer publication) {
@@ -1699,7 +1592,7 @@ cudaError_t LaunchTemporalCpmlMasks(cudaStream_t stream, const BeamzLaunch &h,
     constexpr int X=Steps==1 ? ((M&4)?15:31) : M==0?16:Tile==2&&face?(M==4?15:M==2?16:32):16; \
     constexpr int Y=Steps==1 ? ((M&4)?15:7) : M==0?8:Tile==2&&face?(M==4?16:M==2?15:4):8; \
     constexpr int Z=Steps==1 ? 16 : M==0||Tile==0||Tile==2&&face?16:4; \
-    auto error=LaunchTemporalCpmlMask<Packed,Half,X,Y,Z,M,Steps>( \
+    auto error=LaunchTemporalCpmlMask<Packed,X,Y,Z,M,Steps>( \
         stream,hp,ep,final,hs,es,publication,grid); \
     if(error!=cudaSuccess)return error; \
   }
@@ -1713,14 +1606,9 @@ cudaError_t BeamzEnqueueTemporalCpml(cudaStream_t stream, const BeamzLaunch &h,
     const BeamzLaunch &e, const BeamzBuffer *final_fields,
     const BeamzSourceGroupLaunch *groups, int step, BeamzBuffer publication, int tile) {
 #define LAUNCH_TILE(T) \
-  if (HasPackedLosslessMaterial(e)) { \
-    if(h.inputs[31].element_type==kBeamzBF16) \
-      return LaunchTemporalCpmlMasks<true,true,T>(stream,h,e,final_fields,groups,step,publication); \
-    return LaunchTemporalCpmlMasks<true,false,T>(stream,h,e,final_fields,groups,step,publication); \
-  } \
-  if(h.inputs[31].element_type==kBeamzBF16) \
-    return LaunchTemporalCpmlMasks<false,true,T>(stream,h,e,final_fields,groups,step,publication); \
-  return LaunchTemporalCpmlMasks<false,false,T>(stream,h,e,final_fields,groups,step,publication);
+  if (HasPackedLosslessMaterial(e)) \
+    return LaunchTemporalCpmlMasks<true,T>(stream,h,e,final_fields,groups,step,publication); \
+  return LaunchTemporalCpmlMasks<false,T>(stream,h,e,final_fields,groups,step,publication);
   switch(tile) {
     case 0: {LAUNCH_TILE(0)}
     case 1: {LAUNCH_TILE(1)}
@@ -1735,14 +1623,9 @@ cudaError_t BeamzEnqueueSpatialCpml(cudaStream_t stream, const BeamzLaunch &h,
     const BeamzLaunch &e, const BeamzSourceGroupLaunch *groups, int step) {
   BeamzBuffer final[6];
   for(int c=0;c<3;++c){final[c]=h.outputs[c];final[3+c]=e.outputs[c];}
-  if (HasPackedLosslessMaterial(e)) {
-    if(h.inputs[31].element_type==kBeamzBF16)
-      return LaunchTemporalCpmlMasks<true,true,2,1>(stream,h,e,final,groups,step,{});
-    return LaunchTemporalCpmlMasks<true,false,2,1>(stream,h,e,final,groups,step,{});
-  }
-  if(h.inputs[31].element_type==kBeamzBF16)
-    return LaunchTemporalCpmlMasks<false,true,2,1>(stream,h,e,final,groups,step,{});
-  return LaunchTemporalCpmlMasks<false,false,2,1>(stream,h,e,final,groups,step,{});
+  if (HasPackedLosslessMaterial(e))
+    return LaunchTemporalCpmlMasks<true,2,1>(stream,h,e,final,groups,step,{});
+  return LaunchTemporalCpmlMasks<false,2,1>(stream,h,e,final,groups,step,{});
 }
 
 template <bool Packed, bool ScalarH, int X, int Y>

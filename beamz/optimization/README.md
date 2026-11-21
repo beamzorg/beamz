@@ -106,8 +106,7 @@ continues to provide ordinary decoded analysis results; use the differentiable
 state and helpers within a gradient objective.
 
 CUDA provides first-order reverse mode; forward-mode JVPs and higher derivatives
-of native FFI calls are not implemented. BF16 absorber state, sharded execution,
-and coupled full-tensor constitutive updates are outside the native autodiff
+of native FFI calls are not implemented. Sharded execution and coupled full-tensor constitutive updates are outside the native autodiff
 path. For JAX tensor optimization or independent magnetic losses, use
 `solver.run_coefficients(state, coefficients, source_amplitudes=None)` with
 dynamic `UpdateCoefficients`. Checkpointing stores full chunk-boundary states, so

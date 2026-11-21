@@ -144,7 +144,9 @@ def test_layered_material_keeps_bitwise_page_carries(monkeypatch):
     for component in ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz"):
         sampled = sample_material(material, component, (6, 4, 14))
         reference = np.asarray(sample_material(material.copy(), component, (6, 4, 14)))
-        np.testing.assert_array_equal(np.asarray(sampled).view("u4"), reference.view("u4"))
+        np.testing.assert_array_equal(
+            np.asarray(sampled).view("u4"), reference.view("u4")
+        )
     inputs = (material, np.broadcast_to(np.float32(-0.0), (5, 3, 17)))
     pools, headers = pack_material_blocks(inputs, max_bytes=np.inf, host=True)
     for source, pool, codes in zip(inputs, pools, headers, strict=True):
@@ -155,7 +157,7 @@ def test_layered_material_keeps_bitwise_page_carries(monkeypatch):
 
 @pytest.mark.parametrize("shape", [(9, 7, 33), (8, 4, 64), (7, 1, 65), (23, 1, 63)])
 def test_layer_run_headers_match_dense_encoding_for_unaligned_interfaces(shape):
-    values = np.resize(np.array([1, 1, -0., 0., 3, 7, 7], np.float32), shape[0])
+    values = np.resize(np.array([1, 1, -0.0, 0.0, 3, 7, 7], np.float32), shape[0])
     layers = np.broadcast_to(values[::-1, None, None], shape)
     dense = layers.copy()
     for size in (np.inf, dense.nbytes // 3):
@@ -164,4 +166,6 @@ def test_layer_run_headers_match_dense_encoding_for_unaligned_interfaces(shape):
         assert (actual is None) == (expected is None)
         if expected is not None:
             np.testing.assert_array_equal(actual[1][0], expected[1][0])
-            np.testing.assert_array_equal(actual[0][0].view(np.uint32), expected[0][0].view(np.uint32))
+            np.testing.assert_array_equal(
+                actual[0][0].view(np.uint32), expected[0][0].view(np.uint32)
+            )

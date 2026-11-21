@@ -296,14 +296,6 @@ def test_cuda_trainable_cpml12_checkpoints_match_live_jax_objective():
     assert_close(actual[1], expected[1])
 
 
-def test_cuda_autodiff_rejects_bf16_cpml(monkeypatch):
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "bf16")
-    sim, _ = make_simulation(cpml=True)
-    assert sim.differentiable().program.config.backend == "jax"
-    with pytest.raises(ValueError, match="fp32"):
-        sim.differentiable(backend="cuda")
-
-
 @pytest.mark.parametrize("phase", ["h", "e"])
 def test_cuda_phase_state_vjps_match_jax(phase):
     """Check every uniquely written field/psi gradient without timestep graphs."""

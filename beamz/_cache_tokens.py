@@ -34,11 +34,18 @@ def array_cache_token(value: object) -> HashToken | None:
         # volumes while bounding the temporary used for each noncontiguous slice.
         digest = hashlib.blake2b(digest_size=16)
         for chunk in np.nditer(
-            arr, flags=["buffered", "external_loop", "zerosize_ok"], order="C",
+            arr,
+            flags=["buffered", "external_loop", "zerosize_ok"],
+            order="C",
             buffersize=max(1, (1 << 20) // max(1, arr.itemsize)),
         ):
             digest.update(np.ascontiguousarray(chunk).view(np.uint8).data)
-    return ("array", tuple(int(v) for v in arr.shape), str(arr.dtype), digest.hexdigest())
+    return (
+        "array",
+        tuple(int(v) for v in arr.shape),
+        str(arr.dtype),
+        digest.hexdigest(),
+    )
 
 
 def cache_token(value: object, *, legacy_defaults: bool = False) -> HashToken:

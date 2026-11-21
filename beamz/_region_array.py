@@ -59,7 +59,9 @@ def broadcast_base(array):
     """Select one physical sample on every repeated axis, preserving rank."""
     if 0 not in array.strides:
         return array
-    return array[tuple(slice(0, 1) if stride == 0 else slice(None) for stride in array.strides)]
+    return array[
+        tuple(slice(0, 1) if stride == 0 else slice(None) for stride in array.strides)
+    ]
 
 
 def any_nonzero(value):
@@ -80,7 +82,9 @@ def uniform_value(value):
     temporary is created. Mixed signed zeros count as uniform and return the first
     element's sign; any NaN keeps the array non-uniform. Empty arrays return ``None``.
     """
-    source = value if isinstance(value, RegionArray) else broadcast_base(np.asarray(value))
+    source = (
+        value if isinstance(value, RegionArray) else broadcast_base(np.asarray(value))
+    )
     if not source.size:
         return None
     first = np.asarray(source[(0,) * source.ndim])

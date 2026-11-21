@@ -367,7 +367,7 @@ def _component_plane_plan_3d(
     dtype = np.int64 if math.prod(field_shape) > np.iinfo(np.int32).max else np.int32
     if not size:
         return np.empty((0, 8), dtype), np.empty((0, 8), np.float32)
-    strides = dict(
+    strides: dict[str, int] = dict(
         zip(
             ("z", "y", "x"),
             (field_shape[1] * field_shape[2], field_shape[2], 1),
@@ -388,7 +388,10 @@ def _component_plane_plan_3d(
     def batches():
         for row in range(0, shape[0], rows_per_batch):
             for column in range(0, shape[1], columns_per_batch):
-                yield slice(row, row + rows_per_batch), slice(column, column + columns_per_batch)
+                yield (
+                    slice(row, row + rows_per_batch),
+                    slice(column, column + columns_per_batch),
+                )
 
     def corner_weights(rows, columns):
         return np.stack(

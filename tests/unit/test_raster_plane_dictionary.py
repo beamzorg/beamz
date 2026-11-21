@@ -115,3 +115,45 @@ def test_full_and_cropped_snapshots_copy_only_selected_repeated_layers(bank):
         copied[::321].view(np.uint32), planes[ids[::321]].view(np.uint32)
     )
     assert len(np.unique(plane_dictionary(copied)[1])) == 3
+
+
+def test_cpml_extrusion_preserves_mapped_cell_and_yee_materials(bank):
+    from beamz import PML
+    from beamz.design import MaterialGrid
+    from beamz.devices._boundary_compile import lower_boundaries
+    from beamz.lattice import component_shapes
+
+    planes, ids = bank
+    volume = mapped_planes(1.0 + planes, ids[:1])[0]
+    shape = (6, 8, 20)
+    supports = component_shapes(shape)
+    permittivity = volume[:6, :8, :20]
+    ex_z, ex_y, ex_x = supports["Ex"]
+    yee_x = volume[:ex_z, :ex_y, :ex_x]
+    dx = 1e-7
+    grid = MaterialGrid(
+        permittivity,
+        np.float32(0),
+        np.float32(1),
+        dx,
+        shape,
+        yee_materials={"eps_x": yee_x},
+    )
+    boundaries = (PML(edges=("left", "back"), thickness=2 * dx, formulation="cpml"),)
+    lowered = lower_boundaries(
+        grid,
+        supports,
+        boundaries,
+        tuple(n * dx for n in reversed(shape)),
+        1e-16,
+        region_setup=True,
+    )
+    for original, actual in (
+        (permittivity, lowered.permittivity),
+        (yee_x, lowered.yee_materials["eps_x"]),
+    ):
+        assert plane_dictionary(actual) is not None
+        expected = original.copy()
+        expected[:, :, :2] = expected[:, :, 2:3]
+        expected[-2:] = expected[-3:-2]
+        np.testing.assert_array_equal(actual, expected)

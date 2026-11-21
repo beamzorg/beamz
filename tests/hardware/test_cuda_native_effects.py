@@ -106,8 +106,12 @@ def test_native_recorders_and_irregular_sources_share_exact_chunk_clock(scene):
     _assert_same(repeated, got)
 
 
-@pytest.mark.parametrize("source_z, phase_z", [(15, 32), (63, 64)], ids=["separate", "two-planes"])
-def test_rolling_cuda_replays_seeded_cpml_sources_and_recorders(monkeypatch, source_z, phase_z):
+@pytest.mark.parametrize(
+    "source_z, phase_z", [(15, 32), (63, 64)], ids=["separate", "two-planes"]
+)
+def test_rolling_cuda_replays_seeded_cpml_sources_and_recorders(
+    monkeypatch, source_z, phase_z
+):
     from dataclasses import replace
 
     from beamz.simulation.cuda.engine import _runtime
@@ -121,7 +125,7 @@ def test_rolling_cuda_replays_seeded_cpml_sources_and_recorders(monkeypatch, sou
         bz.CustomSource(
             component,
             phase,
-            (np.array([phase_z-1, phase_z, phase_z]), 28, 36),
+            (np.array([phase_z - 1, phase_z, phase_z]), 28, 36),
             [0.3, -0.1, 0.4],
             np.sin(np.arange(38) * 0.17),
             component_shape_3d(component, shape),
@@ -210,7 +214,8 @@ def test_native_adaptive_recording_retains_the_exact_acquired_prefix(scene):
 
 
 @pytest.mark.parametrize(
-    "interval,cohort,weighted", [(17, False, False), (32, True, False), (32, True, True)]
+    "interval,cohort,weighted",
+    [(17, False, False), (32, True, False), (32, True, True)],
 )
 def test_boundary_recording_preserves_staggered_frames_across_reset_resume_and_termination(
     monkeypatch, interval, cohort, weighted
@@ -222,7 +227,11 @@ def test_boundary_recording_preserves_staggered_frames_across_reset_resume_and_t
         pytest.skip("Rolling volume recording build required")
     if weighted and not getattr(module, "compiled_boundary_acquisition", False):
         pytest.skip("Boundary gather recording build required")
-    region = dict(center=(397e-9, 355e-9, 333e-9), size=(221e-9, 239e-9, 0)) if weighted else {}
+    region = (
+        dict(center=(397e-9, 355e-9, 333e-9), size=(221e-9, 239e-9, 0))
+        if weighted
+        else {}
+    )
     scene = _scene(4 * interval + 1, (67, 57, 71))
     components = ("Hx", "Ex") if cohort else ("Hx",)
     extra = (

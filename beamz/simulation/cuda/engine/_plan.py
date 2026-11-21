@@ -154,14 +154,14 @@ def _boundary_recorder_bytes(recorders, shape, module):
 
 def _choose(inputs: tuple[_Buffer, ...] = (), module: _ResourcePlanner | str = "",
             device: Mapping[str, Any] = MappingProxyType({}), *, recorders: tuple = (),
-            recorder_staging_bytes: int = 0, **options) -> _Plan:
+            recorder_staging_bytes: int = 0, **options: Any) -> _Plan:
     """Compare a boundary download with ordinary/staged execution at its own memory cost."""
     if (recorders and 0 < recorder_staging_bytes <= options.get("extra_payload_bytes", 0)
             and device.get("name") == "NVIDIA GeForce RTX 3090"
             and options.get("requested") != "ordinary" and options.get("memory_policy") != "capacity"):
         boundary_bytes = _boundary_recorder_bytes(recorders, inputs[0].shape, module)
         if boundary_bytes is not None and boundary_bytes <= recorder_staging_bytes:
-            direct = dict(options, direct_volume_recording=boundary_bytes == 0,
+            direct: dict[str, Any] = dict(options, direct_volume_recording=boundary_bytes == 0,
                           boundary_gather_bytes=boundary_bytes,
                           extra_payload_bytes=options["extra_payload_bytes"] - recorder_staging_bytes + boundary_bytes)
             prior = None
@@ -255,7 +255,7 @@ def _schedule(
         return replace(base, reason="temporal cost model unvalidated for this device")
     # Measured RTX3090 tile-step priors: bulk, CPML-only, and remaining source/observer work.
     # Counts and frontier costs come from the shared native planner, never geometry names.
-    effects = {name: values for name, values in (("scatters", scatters), ("recorders", recorders)) if values}
+    effects: dict[str, Any] = {name: values for name, values in (("scatters", scatters), ("recorders", recorders)) if values}
     # Once the preferred depth exhausts its overlap choices, a shorter
     # block can keep the field updates tiled inside the same device budget.
     compiled_depths = getattr(module, "compiled_depths", (16,))

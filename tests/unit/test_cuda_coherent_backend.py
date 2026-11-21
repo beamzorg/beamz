@@ -165,10 +165,20 @@ def test_boundary_gathers_price_one_interpolated_frame_and_keep_staged_fallback(
         idx.nbytes + weights.nbytes + history[0].nbytes
     )
     for cadence in (16, 33, 65):
-        assert _boundary_recorder_bytes(((5, cadence, *record[2:]),), shape, gpu) is None
+        assert (
+            _boundary_recorder_bytes(((5, cadence, *record[2:]),), shape, gpu) is None
+        )
     assert _boundary_recorder_bytes((record,), shape, SimpleNamespace()) is None
-    assert _boundary_recorder_bytes((record, (5, 64, 1, idx[:0], weights[:0], history)), shape, gpu) is None
-    assert _boundary_recorder_bytes((record[:-1] + (history[:, ::-1],),), shape, gpu) is None
+    assert (
+        _boundary_recorder_bytes(
+            (record, (5, 64, 1, idx[:0], weights[:0], history)), shape, gpu
+        )
+        is None
+    )
+    assert (
+        _boundary_recorder_bytes((record[:-1] + (history[:, ::-1],),), shape, gpu)
+        is None
+    )
 
 
 def test_boundary_gather_keeps_ordinary_when_no_band_fits_its_actual_payload():
@@ -177,14 +187,29 @@ def test_boundary_gather_keeps_ordinary_when_no_band_fits_its_actual_payload():
     gpu.compiled_boundary_acquisition = True
     resource = gpu.moving_resource_plan
     gpu.moving_resource_plan = lambda inputs, **options: dict(
-        resource(inputs, **options), macro_slab_count=8, policy_tile_counts=[10**7] * 6,
+        resource(inputs, **options),
+        macro_slab_count=8,
+        policy_tile_counts=[10**7] * 6,
         rolling_band_bytes={32: 1 << 20, 64: 2 << 20},
     )
     indices = np.zeros((16, 4), np.int32)
-    record = (5, 32, 1, indices, indices.astype(np.float32), np.empty((4, 16), np.float32))
+    record = (
+        5,
+        32,
+        1,
+        indices,
+        indices.astype(np.float32),
+        np.empty((4, 16), np.float32),
+    )
     plan = _choose(
-        packet(512), gpu, device(), steps=128, recorders=(record,), extra_payload_bytes=4096,
-        recorder_staging_bytes=4096, attributes={"boundary_code": 12 << 8},
+        packet(512),
+        gpu,
+        device(),
+        steps=128,
+        recorders=(record,),
+        extra_payload_bytes=4096,
+        recorder_staging_bytes=4096,
+        attributes={"boundary_code": 12 << 8},
     )
     assert plan.schedule == "ordinary" and plan.boundary_gather_bytes == 0
 
@@ -325,7 +350,11 @@ def test_explicit_cuda_unavailability_does_not_silently_become_jax(monkeypatch):
     monkeypatch.setattr(
         backend,
         "_load_extension",
-        lambda: SimpleNamespace(coherent_backend_version=1, device_info=unavailable),
+        lambda: SimpleNamespace(
+            coherent_backend_version=1,
+            __abi_version__=backend.CUDA_ABI_VERSION,
+            device_info=unavailable,
+        ),
     )
     simulation = SimpleNamespace(is_3d=True)
     with pytest.raises(backend.CudaBackendUnavailable, match="no CUDA device"):
@@ -343,7 +372,11 @@ def test_explicit_legacy_default_tile_keeps_the_interop_binding(monkeypatch):
 
     monkeypatch.setenv("BEAMZ_CUDA_CPML_SHELL_TILE", "64x4")
     monkeypatch.setattr(
-        backend, "_load_extension", lambda: SimpleNamespace(coherent_backend_version=1)
+        backend,
+        "_load_extension",
+        lambda: SimpleNamespace(
+            coherent_backend_version=1, __abi_version__=backend.CUDA_ABI_VERSION
+        ),
     )
     result, plan = _dispatch(Simulation(), backend="cuda_streamed")
     assert result is None and plan.binding == "ffi"

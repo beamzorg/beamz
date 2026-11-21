@@ -51,7 +51,6 @@ struct Parameters {
  const int32_t* slots;const int32_t* face_lines;const uint8_t* flags;float* trails;
  uint64_t* owner_tags;const uint32_t* epoch;int32_t* bad;
  int nz,ny,nx,frontier,macro_step,macro_level_stride;int physical_n[3];float h_source;float common_e[3];int raw_slots=3;int source_wave_count=0;int source_wave_offsets[6]{};
- unsigned bf16_psi;
  int material_layout,depth;
  bool isotropic_h;
 };
@@ -239,17 +238,11 @@ template<class Layout,bool Fast,bool IsotropicH,int Policy=(Fast?0:5),bool Unifo
   // Mutable within the same CTA/window: ordinary coherent loads, never __ldg.
   const auto* input=p.phase[slot/6].psi[slot%6].input;
   const int offset=PsiOffset(slot,z,y,x);
-  if constexpr(General)if(p.bf16_psi&(1u<<slot))
-   return __bfloat162float(reinterpret_cast<const __nv_bfloat16*>(input)[offset]);
   return input[offset];
  }
  __device__ __forceinline__ void StoreLocal(int slot,int z,int y,int x,float value)const{
   auto* output=p.phase[slot/6].psi[slot%6].output;
   const int offset=PsiOffset(slot,z,y,x);
-  if constexpr(General)if(p.bf16_psi&(1u<<slot)){
-   reinterpret_cast<__nv_bfloat16*>(output)[offset]=__float2bfloat16_rn(value);
-   return;
-  }
   output[offset]=value;
  }
  __device__ __forceinline__ float Coefficient(int kind,int index,int z,int y,int x)const{
@@ -892,10 +885,7 @@ inline bool Prepare(const BeamzProgramLaunch&program,const BeamzBuffer*final,
    out->general_effects|=DenseMaterial;
  for(int term=0;term<h.nterms;++term){
   if(h.inputs[31+term].data!=h.outputs[3+term].data||e.inputs[31+term].data!=e.outputs[3+term].data)return false;
-  if(h.inputs[31+term].element_type==kBeamzBF16)out->bf16_psi|=1u<<term;
-  if(e.inputs[31+term].element_type==kBeamzBF16)out->bf16_psi|=1u<<(6+term);
  }
- if(out->bf16_psi)out->general_effects|=WideBoundary;
  int minimum[3]={INT32_MAX,INT32_MAX,INT32_MAX},maximum[3]={0,0,0};
  for(int field=0;field<6;++field){const auto&f=FinalField(*out,field);const int dim[3]={f.z,f.y,f.x};for(int a=0;a<3;++a){minimum[a]=std::min(minimum[a],dim[a]);maximum[a]=std::max(maximum[a],dim[a]);}
   for(int input=0;input<6;++input)if(field!=input&&f.data==InitialField(*out,input).data)return false; // Only same-component aliasing is proved.
@@ -1096,7 +1086,7 @@ int BeamzPrepareNativeRolling(void*opaque,const BeamzProgramLaunch&program,
  moving_native::Parameters p;int layout=0;
  if(!w.rolling||!w.rolling_masks||!moving_native::Prepare(program,final,w,0,&p,&layout)||
     program.e_ab.tensor||p.general_effects&(moving_native::WideBoundary|moving_native::DenseMaterial)||
-    layout!=2||!p.isotropic_h||p.bf16_psi||p.phase[0].metric_kind||p.phase[1].metric_kind||
+    layout!=2||!p.isotropic_h||p.phase[0].metric_kind||p.phase[1].metric_kind||
     w.depth%8)return cudaErrorNotSupported;
  for(const auto& band:w.rolling->bands){
   const auto status=rolling::Prepare(static_cast<cudaStream_t>(opaque),p,band,w.rolling_masks);

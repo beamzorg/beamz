@@ -30,7 +30,6 @@ from beamz.devices.sources.compiler import (
     CompiledSourceSpec,
     batch_slab_specs,
 )
-from beamz.simulation.backend import CUDA_BF16_PSI
 from beamz.simulation.boundary_masks import compact_boundary_masks
 from beamz.simulation.model import (
     AutoTermination,
@@ -1288,13 +1287,6 @@ def initial_program_state(
 ) -> SimulationState:
     """Allocate or restore every runtime buffer required by a compiled plan."""
     cpml, layout = program.boundary.cpml, program.sharding.layout
-    psi_dtype = None
-    if (
-        program.config.backend in {"cuda_streamed", "cuda_mstep"}
-        and cpml.enabled
-        and program.config.cuda_flags & CUDA_BF16_PSI
-    ):
-        psi_dtype = jnp.bfloat16
 
     def field(name):
         if continuation is None and layout.enabled:
@@ -1337,7 +1329,6 @@ def initial_program_state(
 
     # Continue compatible packed CPML memories; a changed boundary plan starts clean.
     def restore_psi(old, terms, dtype):
-        dtype = dtype if psi_dtype is None else psi_dtype
         shapes = tuple(term.slab.shape for term in terms)
         if len(old) == len(shapes) and all(
             tuple(value.shape)
@@ -2120,11 +2111,15 @@ def run_until_terminated(
 
     if monitor_session is not None and int(state.current_step) > 0:
         state = monitor_session._final_observations()
-        options = _native._recording_result_options() if defer_recorders else {}
+        options = (
+            _native._recording_result_options()
+            if defer_recorders and _native is not None
+            else {}
+        )
         monitor_results = _decode_monitor_results(simulation, program, state, **options)
     if monitor_results is None:
         raise RuntimeError("Automatic termination executed no simulation steps.")
-    if defer_recorders and monitor_session is None:
+    if _native is not None and defer_recorders and monitor_session is None:
         state = _native._final_observations()
         monitor_results = _decode_monitor_results(
             simulation, program, state, **_native._recording_result_options()

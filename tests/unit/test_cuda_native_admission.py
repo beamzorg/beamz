@@ -37,6 +37,7 @@ def ownership(monkeypatch):
     gates = {}
     module = SimpleNamespace(
         coherent_backend_version=1,
+        __abi_version__=backend.CUDA_ABI_VERSION,
         device_info=lambda: {"uuid": getattr(local, "uuid", "device-A")},
     )
 
@@ -54,8 +55,7 @@ def ownership(monkeypatch):
         ):
             self.key = (requested, budget, memory_policy)
             self.cuda_options = (
-                backend.cuda_flags_from_env()
-                & (backend.CUDA_GRAPH_CACHE | backend.CUDA_BF16_PSI),
+                backend.cuda_flags_from_env() & backend.CUDA_GRAPH_CACHE,
                 backend.cuda_graph_cache_capacity_from_env(),
             )
             self.device_uuid = module.device_info()["uuid"]
@@ -322,6 +322,7 @@ def test_sharded_capacity_policy_uses_ordinary_and_rejects_forced_workspace(
         is_3d=True, num_steps=512, grid=SimpleNamespace(shape_zyx=(4096, 256, 512))
     )
     module = SimpleNamespace(
+        __abi_version__=backend.CUDA_ABI_VERSION,
         _device_count=lambda: 2,
         NativeSession=SimpleNamespace(_run_temporal_partitions=True),
         _has_direct_exchange=lambda a, b: True,
@@ -370,6 +371,7 @@ def test_temporal_sharding_sizes_frontier_per_physical_device(
         is_3d=True, num_steps=512, grid=SimpleNamespace(shape_zyx=shape)
     )
     module = SimpleNamespace(
+        __abi_version__=backend.CUDA_ABI_VERSION,
         _device_count=lambda: 2,
         NativeSession=SimpleNamespace(_run_temporal_partitions=True),
         _has_direct_exchange=lambda a, b: True,
@@ -447,8 +449,14 @@ def test_rolling_band_respects_the_previous_workspace_and_device_headroom():
     # A narrow source can use the field storage already charged to wavefront.
     wider = dict(resource, extra_gpu_bytes=60, field_frontier_bytes=50)
     assert _admit_rolling(wider, 1024, 128, 500) == (64, 80)
-    assert _admit_rolling(dict(wider, scatter_sweep_planes=2), 1024, 128, 500) == (32, 40)
-    assert _admit_rolling(dict(wider, scatter_sweep_planes=3), 1024, 128, 500) == (0, None)
+    assert _admit_rolling(dict(wider, scatter_sweep_planes=2), 1024, 128, 500) == (
+        32,
+        40,
+    )
+    assert _admit_rolling(dict(wider, scatter_sweep_planes=3), 1024, 128, 500) == (
+        0,
+        None,
+    )
 
 
 def test_a100_temporal_sharding_uses_measured_long_axis():
@@ -459,6 +467,7 @@ def test_a100_temporal_sharding_uses_measured_long_axis():
     assert _temporal_shard_choice((4096, 256, 512), 0, 2, 256, board, **options)
     assert not _temporal_shard_choice((171, 545, 1375), 2, 2, 512, board, **options)
 
+
 def test_small_a100_exchange_band_falls_back_on_auto_and_remains_forceable(monkeypatch):
     from types import SimpleNamespace
 
@@ -467,26 +476,42 @@ def test_small_a100_exchange_band_falls_back_on_auto_and_remains_forceable(monke
 
     board = {"name": "NVIDIA A100-SXM4-80GB", "multiprocessors": 108}
     module = SimpleNamespace(
-        _device_count=lambda: 2, device_info=lambda _: board,
-        _has_direct_exchange=lambda a, b: True, compiled_owned_zyx=(7, 15, 31),
+        __abi_version__=backend.CUDA_ABI_VERSION,
+        _device_count=lambda: 2,
+        device_info=lambda _: board,
+        _has_direct_exchange=lambda a, b: True,
+        compiled_owned_zyx=(7, 15, 31),
         NativeSession=SimpleNamespace(_run_temporal_partitions=True),
     )
     simulation = SimpleNamespace(
         is_3d=True, num_steps=256, grid=SimpleNamespace(shape_zyx=(4096, 256, 512))
     )
+
     def dispatch(*args, minimum_band=0, temporal=(), **kwargs):
         if minimum_band > 32:
             raise sharding._Unsupported("The admitted rolling band underfills this GPU")
         return "temporal" if temporal else "ordinary"
+
     monkeypatch.setattr(backend, "_load_extension", lambda: module)
     monkeypatch.setattr(backend, "_has_cuda_legacy_options", lambda **_: False)
     monkeypatch.setattr(sharding, "_run_shards", dispatch)
     monkeypatch.setenv("BEAMZ_CUDA_MEMORY_POLICY", "auto")
     config = {"num_devices": 2, "axis": "auto"}
-    options = dict(backend="cuda", termination=None, wall_start=None, progress=False,
-                   store_full_materials=False, performance=False)
-    assert sharding._try_sharded_run(simulation, config, schedule=None, **options) == ("ordinary", False)
-    assert sharding._try_sharded_run(simulation, config, schedule="mstep", **options) == ("temporal", False)
+    options = dict(
+        backend="cuda",
+        termination=None,
+        wall_start=None,
+        progress=False,
+        store_full_materials=False,
+        performance=False,
+    )
+    assert sharding._try_sharded_run(simulation, config, schedule=None, **options) == (
+        "ordinary",
+        False,
+    )
+    assert sharding._try_sharded_run(
+        simulation, config, schedule="mstep", **options
+    ) == ("temporal", False)
 
 
 def test_rolling_admits_compact_apertures_inside_the_wavefront_memory_budget():
@@ -495,7 +520,8 @@ def test_rolling_admits_compact_apertures_inside_the_wavefront_memory_budget():
     shape = (171, 545, 1375)
     preferred = _rolling_band(shape, {"name": "NVIDIA GeForce RTX 5090"}, 512)
     resource = dict(
-        observation_keys=511178, extra_gpu_bytes=2800582812,
+        observation_keys=511178,
+        extra_gpu_bytes=2800582812,
         rolling_band_bytes={32: 1061000000, 64: 1640087560, 128: 2839812872},
     )
     assert _admit_rolling(resource, 128143125, preferred, 4 << 30) == (64, 1640087560)
@@ -514,13 +540,22 @@ def test_rolling_admits_compact_apertures_inside_the_wavefront_memory_budget():
         ((0, 0, 1, 2), (8, 16, 8), ((1, 2),), (False, True, False), (0, 8, 8, 0)),
     ],
 )
-def test_peer_packet_scratch_belongs_to_both_endpoints(devices, room, direct, links, charges):
+def test_peer_packet_scratch_belongs_to_both_endpoints(
+    devices, room, direct, links, charges
+):
     from beamz.simulation.cuda.runtime.native_sharding import _admit_peer_packets
 
-    module = SimpleNamespace(temporal_peer_staging_bytes=8, _has_direct_exchange=lambda a, b: (a, b) in direct)
+    module = SimpleNamespace(
+        temporal_peer_staging_bytes=8,
+        _has_direct_exchange=lambda a, b: (a, b) in direct,
+    )
     remaining = dict(enumerate(room))
     payloads = [100] * len(devices)
     assert _admit_peer_packets(devices, remaining, payloads, module) == links
     assert payloads == [100 + charge for charge in charges]
     for device, available in enumerate(room):
-        assert remaining[device] == available - sum(charge for dev, charge in zip(devices, charges, strict=True) if dev == device)
+        assert remaining[device] == available - sum(
+            charge
+            for dev, charge in zip(devices, charges, strict=True)
+            if dev == device
+        )

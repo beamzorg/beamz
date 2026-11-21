@@ -51,15 +51,8 @@ def test_mstep_small_cpml12_sanitizer():
 
 
 @pytest.mark.parametrize("source", ["gaussian", "mode"])
-@pytest.mark.parametrize(
-    "steps,bf16",
-    [(2, False), (3, False), (4, False), (5, False), (2, True), (5, True), (17, False)],
-)
-def test_published_edges_preserve_initial_state_repeats_and_split_clocks(
-    monkeypatch, source, steps, bf16
-):
-    if bf16:
-        monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "bf16")
+@pytest.mark.parametrize("steps", [2, 3, 4, 5, 17])
+def test_published_edges_preserve_initial_state_repeats_and_split_clocks(source, steps):
     sim = _simulation(shape=(59, 81, 113), steps=33, source=source)
     sim = sim.updated_copy(
         boundaries=(
@@ -70,15 +63,6 @@ def test_published_edges_preserve_initial_state_repeats_and_split_clocks(
     # material metadata in the mstep fast path as well as public input aliases.
     initial = _seed(sim.compile(backend="cuda_streamed", num_steps=steps))
     initial = jax.tree.map(jnp.asarray, initial)
-    if bf16:
-        initial = initial._replace(
-            cpml_psi_h_terms=tuple(
-                a.astype(jnp.bfloat16) for a in initial.cpml_psi_h_terms
-            ),
-            cpml_psi_e_terms=tuple(
-                a.astype(jnp.bfloat16) for a in initial.cpml_psi_e_terms
-            ),
-        )
     saved = _snapshot(initial)
 
     def advance(state, count, backend="cuda_mstep"):

@@ -1451,7 +1451,11 @@ def field_profile_phasor_residuals(
     max_shift: int = 1,
 ):
     return compute_discrete_3d_phasor_residuals(
-        profile, fields, resolution=float(resolution), max_shift=max(1, int(max_shift)), dt=float(dt)
+        profile,
+        fields,
+        resolution=float(resolution),
+        max_shift=max(1, int(max_shift)),
+        dt=float(dt),
     )
 
 

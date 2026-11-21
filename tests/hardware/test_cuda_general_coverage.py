@@ -888,48 +888,6 @@ def test_native_temporal_dense_loss_and_magnetic_coefficients(boundary):
 
 
 @pytest.mark.parametrize("metric", ["uniform", "smooth"])
-def test_temporal_bf16_cpml_matches_ordinary_across_restart(metric, monkeypatch):
-    if not getattr(_load_extension(), "compiled_temporal_bf16_psi", False):
-        pytest.skip("Native BF16 CPML build required")
-    simulation = _simulation(metric, steps=273)
-    try:
-        monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "fp32")
-        fp32 = simulation.advance(
-            num_steps=33, backend="cuda", schedule="mstep", performance=False
-        )
-        monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "bf16")
-        first = simulation.advance(
-            num_steps=33, backend="cuda", schedule="mstep", performance=False
-        )
-        assert first.results.cuda_plan["binding"] == "native"
-        assert first.results.cuda_plan["temporal_blocks"] == 2
-        assert first.state.cpml_psi_h_terms[0].dtype.name == "bfloat16"
-        assert fp32.state.cpml_psi_h_terms[0].dtype.name == "float32"
-        expected = simulation.advance(
-            state=first.state, backend="cuda", schedule="streamed", performance=False
-        )
-        actual = simulation.advance(
-            state=first.state, backend="cuda", schedule="mstep", performance=False
-        )
-        assert actual.results.cuda_plan["binding"] == "native"
-        assert actual.results.cuda_plan["temporal_blocks"] == 15
-        assert int(actual.state.current_step) == simulation.num_steps
-        for name in ("ex", "ey", "ez", "hx", "hy", "hz", "dft_vec_re", "dft_vec_im"):
-            np.testing.assert_array_equal(
-                getattr(actual.state, name), getattr(expected.state, name)
-            )
-        psi = (*actual.state.cpml_psi_h_terms, *actual.state.cpml_psi_e_terms)
-        reference = (*expected.state.cpml_psi_h_terms, *expected.state.cpml_psi_e_terms)
-        assert any(np.any(np.asarray(p).astype(np.float32)) for p in psi)
-        for a, b in zip(psi, reference, strict=True):
-            assert a.dtype.name == "bfloat16"
-            np.testing.assert_array_equal(np.asarray(a).view(np.uint8),
-                                          np.asarray(b).view(np.uint8))
-    finally:
-        simulation.clear_compiled_cache()
-
-
-@pytest.mark.parametrize("metric", ["uniform", "smooth"])
 def test_temporal_full_tensor_preserves_phase_and_mixed_macro_tails(metric):
     if not getattr(_load_extension(), "compiled_temporal_tensor", False):
         pytest.skip("Native temporal tensor component required")
@@ -944,14 +902,19 @@ def test_temporal_full_tensor_preserves_phase_and_mixed_macro_tails(metric):
     )
     simulation = simulation.updated_copy(material_grid=material)
     monitor = simulation.monitors[0]
-    simulation = simulation.updated_copy(monitors=(
-        monitor,
-        bz.FieldRecorder(
-            ("Ex", "Hz"), interval=3, center=monitor.center,
-            size=monitor.size, name="plane",
-        ),
-        bz.FieldRecorder(("Ey",), interval=4, name="volume"),
-    ))
+    simulation = simulation.updated_copy(
+        monitors=(
+            monitor,
+            bz.FieldRecorder(
+                ("Ex", "Hz"),
+                interval=3,
+                center=monitor.center,
+                size=monitor.size,
+                name="plane",
+            ),
+            bz.FieldRecorder(("Ey",), interval=4, name="volume"),
+        )
+    )
     try:
         reference = simulation.advance(
             backend="cuda", schedule="streamed", performance=False
@@ -984,10 +947,14 @@ def test_temporal_full_tensor_preserves_phase_and_mixed_macro_tails(metric):
             prefix = first.results[name]
             _assert_close(
                 (baseline.field_steps, baseline.field_times, *baseline.fields.values()),
-                (frames.field_steps, frames.field_times, *(frames.fields[c] for c in baseline.fields)),
+                (
+                    frames.field_steps,
+                    frames.field_times,
+                    *(frames.fields[c] for c in baseline.fields),
+                ),
             )
             np.testing.assert_array_equal(
-                prefix.field_steps, baseline.field_steps[:len(prefix.field_steps)]
+                prefix.field_steps, baseline.field_steps[: len(prefix.field_steps)]
             )
     finally:
         simulation.clear_compiled_cache()
@@ -1388,7 +1355,7 @@ def test_native_memory_policy_changes_replace_owner_without_changing_fields(
 
 @pytest.mark.parametrize("metric", ["sharp", "smooth"])
 def test_long_graded_vacuum_wave_has_physical_delay_phase_and_small_cpml_reflection(
-    metric: str
+    metric: str,
 ) -> None:
     short, longer = _vacuum_wave(metric), _vacuum_wave(metric, cells=288)
     native = short.updated_copy(
@@ -1650,7 +1617,7 @@ def test_moving_resource_plan_rejects_unsafe_host_metadata(invalid: str) -> None
 
 
 def test_native_one_bank_budget_bypasses_preserved_ffi_estimate(
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from beamz.simulation.memory import _cuda_working_set
 
@@ -1698,9 +1665,7 @@ def test_native_one_bank_budget_bypasses_preserved_ffi_estimate(
 
 
 @pytest.mark.parametrize("backend", ["cuda_streamed", "cuda_mstep"])
-def test_volume_diagonal_mu_keeps_public_source_and_dft_physics(
-    backend: str
-) -> None:
+def test_volume_diagonal_mu_keeps_public_source_and_dft_physics(backend: str) -> None:
     from beamz.lattice import component_shapes
 
     grid = RectilinearGrid.from_spacing((104, 103, 100), 20e-9)

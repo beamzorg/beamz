@@ -1721,14 +1721,22 @@ class Simulation:
         _, expected_runs = normalize_schedule_request(
             normalize_backend(backend), schedule, expected_runs
         )
+        sharding_interop = False
         if sharding is not None:
             from beamz.simulation.cuda.runtime.native_sharding import _try_sharded_run
 
-            native_run, _ = _try_sharded_run(
-                self, sharding, backend=backend, schedule=schedule, termination=None,
-                wall_start=None, progress=bool(progress),
-                store_full_materials=bool(store_full_materials), performance=bool(performance),
-                segment=contract, state=state,
+            native_run, sharding_interop = _try_sharded_run(
+                self,
+                sharding,
+                backend=backend,
+                schedule=schedule,
+                termination=None,
+                wall_start=None,
+                progress=bool(progress),
+                store_full_materials=bool(store_full_materials),
+                performance=bool(performance),
+                segment=contract,
+                state=state,
             )
             if native_run is not None:
                 return native_run
@@ -1740,7 +1748,7 @@ class Simulation:
             store_full_materials=bool(store_full_materials),
             performance=bool(performance),
             interop_reason="sharded execution uses the CUDA interoperability binding"
-            if sharding is not None
+            if sharding_interop
             else "",
             segment=contract,
             state=state,

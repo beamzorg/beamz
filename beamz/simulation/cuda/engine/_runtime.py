@@ -10,11 +10,11 @@ from contextlib import ExitStack, suppress
 from dataclasses import replace
 from math import prod
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from beamz.simulation._cuda_abi import CUDA_BF16_PSI, CUDA_GRAPH_CACHE
+from beamz.simulation._cuda_abi import CUDA_GRAPH_CACHE
 
 from ._capabilities import _Unsupported
 from ._contracts import (
@@ -77,10 +77,10 @@ class _Session:
             self.program = _compile(simulation, module, steps=prepared_steps, memory_budget=effective_budget)
             config = self.program.config
             self.cuda_options = (
-                config.cuda_flags & (CUDA_BF16_PSI | CUDA_GRAPH_CACHE),
+                config.cuda_flags & CUDA_GRAPH_CACHE,
                 config.cuda_graph_cache_capacity,
             )
-            psi_zero = np.zeros((), dtype=jax.numpy.bfloat16 if config.cuda_flags & CUDA_BF16_PSI else np.float32)
+            psi_zero = np.zeros((), dtype=np.float32)
             if compact_monitors and getattr(module, "compiled_compact_dft_components", False):
                 self.program = self._pack_monitor_components(self.program)
                 self._compact_monitors = any(m.dft_packed_components is not None for m in self.program.monitors)
@@ -623,6 +623,12 @@ def _dispatch(simulation: Any = "", *, backend: str = "auto", schedule: str | No
     except (ImportError,OSError): return None, _Plan(binding="ffi",reason="installed component has no coherent native runtime")
     if not getattr(module,"coherent_backend_version",0):
         return None, _Plan(binding="ffi",reason="legacy component: preserve its registered CUDA interface")
+    try:
+        backends._require_cuda_abi(module)
+    except backends.CudaBackendUnavailable as error:
+        if name == "auto":
+            return None, _Plan(binding="jax", reason=str(error))
+        raise
     if segment is not None:
         if not hasattr(module.NativeSession, "restore_state"):
             return None, _Plan(binding="ffi", reason="installed component lacks native continuation")
@@ -634,14 +640,11 @@ def _dispatch(simulation: Any = "", *, backend: str = "auto", schedule: str | No
                 for value in fields
             ):
                 return None, _Plan(binding="ffi", reason="continuation requires unsharded FP32 Yee state")
-    supported_flags = CUDA_GRAPH_CACHE
-    if getattr(module, "compiled_temporal_bf16_psi", False):
-        supported_flags |= CUDA_BF16_PSI
-    if backends._has_cuda_legacy_options(native_flags=supported_flags):
+    if backends._has_cuda_legacy_options(native_flags=CUDA_GRAPH_CACHE):
         _clear(simulation)
         return None, _Plan(binding="ffi", reason="explicit legacy CUDA options")
     cuda_options = (
-        backends.cuda_flags_from_env() & supported_flags,
+        backends.cuda_flags_from_env() & CUDA_GRAPH_CACHE,
         backends.cuda_graph_cache_capacity_from_env(),
     )
     try: device = module.device_info()
@@ -653,7 +656,7 @@ def _dispatch(simulation: Any = "", *, backend: str = "auto", schedule: str | No
         device_lock = _DEVICE_LOCKS.setdefault(str(device["uuid"]), threading.RLock())
     with device_lock, ExitStack() as ownership:
         with _LOCK:
-            session = _SESSIONS.get(simulation)
+            session = cast("_Session | None", _SESSIONS.get(simulation))
             if requested == "auto" and segment is not None and segment.steps < 16 and (
                 session is None or session.key != (requested, budget, memory_policy)
                 or session.cuda_options != cuda_options

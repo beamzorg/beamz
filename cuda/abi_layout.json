@@ -1,6 +1,6 @@
 {
-  "abi_version": 30,
-  "component_version": "0.30.0",
+  "abi_version": 31,
+  "component_version": "0.31.0",
   "targets": {
     "streamed": "beamz_cuda_streamed",
     "sharded": "beamz_cuda_sharded",
@@ -19,7 +19,6 @@
   ],
   "flags": {
     "graph_cache": 7,
-    "bf16_psi": 12,
     "field_pad32": 13,
     "field_pad64": 14,
     "field_pad_y8": 15,

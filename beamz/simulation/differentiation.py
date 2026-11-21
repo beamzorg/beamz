@@ -23,7 +23,6 @@ from beamz.lattice import (
 )
 from beamz.simulation import kernels
 from beamz.simulation._cuda_abi import (
-    CUDA_BF16_PSI,
     CUDA_CPML_PAIR,
     CUDA_FIELD_PAD32,
     CUDA_FIELD_PAD64,
@@ -31,7 +30,6 @@ from beamz.simulation._cuda_abi import (
     CUDA_TEMPORAL_PAIR,
 )
 from beamz.simulation.backend import (
-    cuda_flags_from_env,
     cuda_storage_axes_from_env,
     resolve_backend,
 )
@@ -48,16 +46,13 @@ def _resolve_differentiable_backend(backend):
     if backend != "auto":
         return resolve_backend(backend)
     if (
-        jax.config.x64_enabled
+        jax.config.read("jax_enable_x64")
         or jax.default_backend() != "gpu"
-        or getattr(jax.config.jax_default_device, "platform", "gpu") != "gpu"
+        or getattr(jax.config.values["jax_default_device"], "platform", "gpu") != "gpu"
     ):
         return "jax"
     resolved = resolve_backend(backend)
-    if resolved != "jax" and (
-        cuda_flags_from_env() & CUDA_BF16_PSI
-        or cuda_storage_axes_from_env() != (0, 1, 2)
-    ):
+    if resolved != "jax" and cuda_storage_axes_from_env() != (0, 1, 2):
         return "jax"
     return resolved
 
@@ -116,8 +111,6 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
         raise ValueError(
             "Differentiable execution currently requires an unsharded grid"
         )
-    if cfg.backend != "jax" and cfg.cuda_flags & CUDA_BF16_PSI:
-        raise ValueError("CUDA autodiff requires BEAMZ_CUDA_CPML_PSI_PRECISION=fp32")
     if cfg.num_steps < 1:
         raise ValueError("Differentiable execution requires at least one timestep")
     interval = _checkpoint_interval(checkpoint_interval, program)

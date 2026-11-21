@@ -15,7 +15,16 @@ from beamz.simulation.cuda.runtime.native_sharding import _run_shards
 pytestmark = pytest.mark.hardware
 
 
-def _scene(graded, pec, *, cells=(45, 48, 51), thickness=None, use_recorders=False, boundaries=None, use_scatter=False):
+def _scene(
+    graded,
+    pec,
+    *,
+    cells=(45, 48, 51),
+    thickness=None,
+    use_recorders=False,
+    boundaries=None,
+    use_scatter=False,
+):
     edges = [
         np.r_[
             0.0,
@@ -43,21 +52,33 @@ def _scene(graded, pec, *, cells=(45, 48, 51), thickness=None, use_recorders=Fal
         name="field",
     )
     recorders = (
-        bz.FieldRecorder(("Ez",), interval=17, name="volume"),
-        bz.FieldRecorder(
-            ("Ez", "Hy"), interval=7, name="slice", center=center,
-            size=(360e-9, 300e-9, 0),
-        ),
-    ) if use_recorders else ()
+        (
+            bz.FieldRecorder(("Ez",), interval=17, name="volume"),
+            bz.FieldRecorder(
+                ("Ez", "Hy"),
+                interval=7,
+                name="slice",
+                center=center,
+                size=(360e-9, 300e-9, 0),
+            ),
+        )
+        if use_recorders
+        else ()
+    )
     scatter = ()
     if use_scatter:
         shape = materials.grid.shape_zyx
         z, y, x = (n // 2 for n in shape)
-        scatter = (bz.CustomSource(
-            "Ez", "e", (np.array([z, z, z + 1]), y, np.array([x - 1, x, x + 1])),
-            np.asarray([0.001, 0.002, 0.003], np.float32),
-            np.sin(np.arange(steps) * 0.19), (shape[0], shape[1] + 1, shape[2] + 1),
-        ),)
+        scatter = (
+            bz.CustomSource(
+                "Ez",
+                "e",
+                (np.array([z, z, z + 1]), y, np.array([x - 1, x, x + 1])),
+                np.asarray([0.001, 0.002, 0.003], np.float32),
+                np.sin(np.arange(steps) * 0.19),
+                (shape[0], shape[1] + 1, shape[2] + 1),
+            ),
+        )
     return bz.Simulation(
         material_grid=materials,
         sources=[
@@ -66,7 +87,9 @@ def _scene(graded, pec, *, cells=(45, 48, 51), thickness=None, use_recorders=Fal
             ),
             *scatter,
         ],
-        boundaries=boundaries if boundaries is not None else [
+        boundaries=boundaries
+        if boundaries is not None
+        else [
             bz.PML(formulation="cpml", thickness=thickness),
             *([bz.PEC(edges=("left",))] if pec else []),
         ],
@@ -257,12 +280,22 @@ def test_temporal_shards_exchange_fields_and_finish_tail(monkeypatch, bands):
         from beamz.simulation.cuda.engine._runtime import _SESSIONS
 
         stepper = _SESSIONS[sim]
-        if bands == (32, 32) and getattr(module, "compiled_temporal_packet_links", False):
+        if bands == (32, 32) and getattr(
+            module, "compiled_temporal_packet_links", False
+        ):
             spans, axis, window, depth, slots, links = stepper.temporal
             assert links == (False,)  # Two logical ranks share one physical device.
             with pytest.raises(ValueError, match="one entry per temporal interface"):
                 module.NativeSession._run_temporal_partitions(
-                    [shard[1] for shard in stepper.shards], spans, axis, 1, window, depth, slots, True, [True, True]
+                    [shard[1] for shard in stepper.shards],
+                    spans,
+                    axis,
+                    1,
+                    window,
+                    depth,
+                    slots,
+                    True,
+                    [True, True],
                 )
         paired = stepper._snapshot()
         stepper.reset()
@@ -440,15 +473,28 @@ def test_general_temporal_shards_with_adaptive_rectilinear_cpml(axis, physical):
             backend="cuda_streamed", termination=termination, performance=False
         )
         result = _run_shards(
-            sim, module, (0, int(physical)), axis, performance=False,
-            temporal=(16, 8, 4), termination=termination,
+            sim,
+            module,
+            (0, int(physical)),
+            axis,
+            performance=False,
+            temporal=(16, 8, 4),
+            termination=termination,
         )
         assert result.cuda_plan["schedule"] == "mstep"
         assert result.cuda_plan["temporal_windows"] == 2
         _compare(result, reference, steps=39)
-        assert result.termination.reason == reference.termination.reason == "wall_time_limit"
-        assert result.termination.energy == pytest.approx(reference.termination.energy, rel=3e-6)
-        assert result.termination.max_field == pytest.approx(reference.termination.max_field, rel=3e-6)
+        assert (
+            result.termination.reason
+            == reference.termination.reason
+            == "wall_time_limit"
+        )
+        assert result.termination.energy == pytest.approx(
+            reference.termination.energy, rel=3e-6
+        )
+        assert result.termination.max_field == pytest.approx(
+            reference.termination.max_field, rel=3e-6
+        )
     finally:
         sim.clear_compiled_cache()
 
@@ -459,24 +505,46 @@ def test_temporal_shards_record_interior_steps_and_tail(physical, adaptive):
     module = _module()
     if physical and module._device_count() < 2:
         pytest.skip("Two physical CUDA GPUs required")
-    sim = _scene(True, False, cells=(84, 35, 38), thickness=7 * 20e-9, use_recorders=True, use_scatter=True)
-    termination = bz.AutoTermination(chunk_steps=39, max_wall_time=1e-12) if adaptive else None
+    sim = _scene(
+        True,
+        False,
+        cells=(84, 35, 38),
+        thickness=7 * 20e-9,
+        use_recorders=True,
+        use_scatter=True,
+    )
+    termination = (
+        bz.AutoTermination(chunk_steps=39, max_wall_time=1e-12) if adaptive else None
+    )
     try:
-        reference = sim.run(backend="cuda_streamed", performance=False, termination=termination)
+        reference = sim.run(
+            backend="cuda_streamed", performance=False, termination=termination
+        )
         result = _run_shards(
-            sim, module, (0, int(physical)), 2, performance=False, temporal=(16, 8, 4), termination=termination,
+            sim,
+            module,
+            (0, int(physical)),
+            2,
+            performance=False,
+            temporal=(16, 8, 4),
+            termination=termination,
         )
         assert result.cuda_plan["schedule"] == "mstep"
         _compare(result, reference, steps=39 if adaptive else 113)
         for name in ("volume", "slice"):
             actual, expected = result[name], reference[name]
             np.testing.assert_array_equal(actual.field_steps, expected.field_steps)
-            np.testing.assert_array_max_ulp(actual.field_times, expected.field_times, maxulp=1)
+            np.testing.assert_array_max_ulp(
+                actual.field_times, expected.field_times, maxulp=1
+            )
             for component, values in actual.fields.items():
                 expected_values = expected.fields[component]
                 assert np.any(expected_values != 0)
                 np.testing.assert_allclose(
-                    values, expected_values, rtol=5e-5, atol=2e-6 * np.max(np.abs(expected_values)),
+                    values,
+                    expected_values,
+                    rtol=5e-5,
+                    atol=2e-6 * np.max(np.abs(expected_values)),
                 )
     finally:
         sim.clear_compiled_cache()
@@ -486,10 +554,13 @@ def test_temporal_shards_record_interior_steps_and_tail(physical, adaptive):
 def test_temporal_asymmetric_cpml_across_internal_cut(absorber_crosses_cut):
     module = _module()
     sim = _scene(
-        True, False, cells=(84, 35, 38),
+        True,
+        False,
+        cells=(84, 35, 38),
         boundaries=(
             bz.PML(
-                edges=("left",), formulation="cpml",
+                edges=("left",),
+                formulation="cpml",
                 thickness=(48 if absorber_crosses_cut else 7) * 20e-9,
             ),
             bz.PEC(edges=("right",)),
@@ -497,7 +568,9 @@ def test_temporal_asymmetric_cpml_across_internal_cut(absorber_crosses_cut):
     )
     try:
         reference = sim.run(backend="cuda_streamed", performance=False)
-        result = _run_shards(sim, module, (0, 0), 2, performance=False, temporal=(16, 8, 4))
+        result = _run_shards(
+            sim, module, (0, 0), 2, performance=False, temporal=(16, 8, 4)
+        )
         _compare(result, reference)
     finally:
         sim.clear_compiled_cache()
@@ -510,7 +583,9 @@ def test_temporal_shards_without_cpml(sponge):
     sim = _scene(True, False, cells=(84, 35, 38), boundaries=boundaries)
     try:
         reference = sim.run(backend="cuda_streamed", performance=False)
-        result = _run_shards(sim, module, (0, 0), 2, performance=False, temporal=(16, 8, 4))
+        result = _run_shards(
+            sim, module, (0, 0), 2, performance=False, temporal=(16, 8, 4)
+        )
         assert result.cuda_plan["temporal_windows"] == 7
         _compare(result, reference)
     finally:
@@ -529,16 +604,26 @@ def test_temporal_shards_full_tensor_rectilinear(physical, adaptive):
     material = MaterialGrid.from_raster_result(
         rasterize(
             Scene((bz.Material(permittivity=(2.25, 2.5, 2.75, 0.25, 0.1, 0.15)),)),
-            sim.grid, options=RasterOptions(smoothing="farjadpour_full"),
+            sim.grid,
+            options=RasterOptions(smoothing="farjadpour_full"),
         ),
         dimensions=3,
     )
     sim = sim.updated_copy(material_grid=material)
-    termination = bz.AutoTermination(chunk_steps=39, max_wall_time=1e-12) if adaptive else None
+    termination = (
+        bz.AutoTermination(chunk_steps=39, max_wall_time=1e-12) if adaptive else None
+    )
     try:
-        reference = sim.run(backend="cuda_streamed", performance=False, termination=termination)
+        reference = sim.run(
+            backend="cuda_streamed", performance=False, termination=termination
+        )
         result = _run_shards(
-            sim, module, (0, int(physical)), 2, performance=False, temporal=(8, 4, 6),
+            sim,
+            module,
+            (0, int(physical)),
+            2,
+            performance=False,
+            temporal=(8, 4, 6),
             termination=termination,
         )
         steps = 39 if adaptive else 113
@@ -546,26 +631,12 @@ def test_temporal_shards_full_tensor_rectilinear(physical, adaptive):
         _compare(result, reference, steps=steps, atol_fraction=5e-5)
         if adaptive:
             assert result.termination.reason == reference.termination.reason
-            assert result.termination.energy == pytest.approx(reference.termination.energy, rel=3e-6)
-            assert result.termination.max_field == pytest.approx(reference.termination.max_field, rel=3e-6)
-    finally:
-        sim.clear_compiled_cache()
-
-
-@pytest.mark.parametrize("physical", [False, True])
-def test_temporal_shards_bf16_cpml(monkeypatch, physical):
-    module = _module()
-    if physical and module._device_count() < 2:
-        pytest.skip("Two physical CUDA GPUs required")
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "bf16")
-    sim = _scene(True, False, cells=(84, 35, 38), thickness=7 * 20e-9)
-    try:
-        reference = sim.run(backend="cuda_streamed", performance=False)
-        result = _run_shards(
-            sim, module, (0, int(physical)), 2, performance=False, temporal=(16, 8, 4)
-        )
-        assert result.cuda_plan["temporal_windows"] == 7
-        _compare(result, reference)
+            assert result.termination.energy == pytest.approx(
+                reference.termination.energy, rel=3e-6
+            )
+            assert result.termination.max_field == pytest.approx(
+                reference.termination.max_field, rel=3e-6
+            )
     finally:
         sim.clear_compiled_cache()
 
@@ -574,20 +645,31 @@ def test_public_temporal_adaptive_recorders_on_two_physical_gpus():
     module = _module()
     if module._device_count() < 2:
         pytest.skip("Two physical CUDA GPUs required")
-    sim = _scene(True, True, cells=(108, 35, 38), thickness=7 * 20e-9, use_recorders=True)
+    sim = _scene(
+        True, True, cells=(108, 35, 38), thickness=7 * 20e-9, use_recorders=True
+    )
     termination = bz.AutoTermination(chunk_steps=39, max_wall_time=1e-12)
     try:
-        reference = sim.run(backend="cuda_streamed", termination=termination, performance=False)
+        reference = sim.run(
+            backend="cuda_streamed", termination=termination, performance=False
+        )
         result = sim.run(
-            backend="cuda", schedule="mstep", sharding={"axis": "x", "num_devices": 2},
-            termination=termination, performance=False,
+            backend="cuda",
+            schedule="mstep",
+            sharding={"axis": "x", "num_devices": 2},
+            termination=termination,
+            performance=False,
         )
         assert result.cuda_plan["shard_devices"] == (0, 1)
         assert result.cuda_plan["temporal_windows"] > 0
         _compare(result, reference, steps=39)
-        np.testing.assert_array_equal(result["slice"].field_steps, reference["slice"].field_steps)
+        np.testing.assert_array_equal(
+            result["slice"].field_steps, reference["slice"].field_steps
+        )
         assert result.termination.steps == reference.termination.steps
-        assert result.termination.energy == pytest.approx(reference.termination.energy, rel=3e-6)
+        assert result.termination.energy == pytest.approx(
+            reference.termination.energy, rel=3e-6
+        )
     finally:
         sim.clear_compiled_cache()
 
@@ -596,22 +678,37 @@ def test_temporal_shards_converge_at_the_reference_check():
     module = _module()
     sim = _scene(True, True, cells=(84, 35, 38), thickness=7 * 20e-9)
     termination = bz.AutoTermination(
-        chunk_steps=19, min_steps=20, field_decay=1.0, source_decay=1.0,
-        monitor_change=None, consecutive_checks=2,
+        chunk_steps=19,
+        min_steps=20,
+        field_decay=1.0,
+        source_decay=1.0,
+        monitor_change=None,
+        consecutive_checks=2,
     )
     try:
-        reference = sim.run(backend="cuda_streamed", termination=termination, performance=False)
+        reference = sim.run(
+            backend="cuda_streamed", termination=termination, performance=False
+        )
         result = _run_shards(
-            sim, module, (0, 0), 2, performance=False, temporal=(16, 8, 4),
+            sim,
+            module,
+            (0, 0),
+            2,
+            performance=False,
+            temporal=(16, 8, 4),
             termination=termination,
         )
         assert reference.termination.reason == result.termination.reason == "converged"
         assert reference.termination.steps == result.termination.steps
         assert result.cuda_plan["temporal_windows"] == result.termination.steps // 19
-        assert result.termination.energy == pytest.approx(reference.termination.energy, rel=3e-6)
+        assert result.termination.energy == pytest.approx(
+            reference.termination.energy, rel=3e-6
+        )
         for name, expected in reference["field"].dft_fields.items():
             peak = np.max(np.abs(expected))
-            np.testing.assert_allclose(result["field"].dft_fields[name], expected, rtol=3e-5, atol=2e-6 * peak)
+            np.testing.assert_allclose(
+                result["field"].dft_fields[name], expected, rtol=3e-5, atol=2e-6 * peak
+            )
     finally:
         sim.clear_compiled_cache()
 
@@ -623,8 +720,14 @@ def test_temporal_shards_preserve_public_checkpoint_branches(physical, monkeypat
     module = _module()
     if physical and module._device_count() < 2:
         pytest.skip("Two physical CUDA GPUs required")
-    scene = _scene(True, True, cells=(108, 35, 38), thickness=7 * 20e-9,
-                   use_recorders=True, use_scatter=True)
+    scene = _scene(
+        True,
+        True,
+        cells=(108, 35, 38),
+        thickness=7 * 20e-9,
+        use_recorders=True,
+        use_scatter=True,
+    )
     count = 2 if physical else 1
     if not physical:
         monkeypatch.setattr(native_sharding, "_minimum_temporal_slabs", lambda *a: 2)
@@ -632,13 +735,21 @@ def test_temporal_shards_preserve_public_checkpoint_branches(physical, monkeypat
     try:
         reference = scene.advance(backend="cuda_streamed", performance=False)
         first = scene.advance(
-            num_steps=39, backend="cuda", schedule="mstep", sharding=config, performance=False,
+            num_steps=39,
+            backend="cuda",
+            schedule="mstep",
+            sharding=config,
+            performance=False,
         )
         assert first.results.cuda_plan["temporal_windows"] > 0
         initial_field = np.copy(first.state.ez)
         for _ in range(2):
             resumed = scene.advance(
-                state=first.state, backend="cuda", schedule="mstep", sharding=config, performance=False,
+                state=first.state,
+                backend="cuda",
+                schedule="mstep",
+                sharding=config,
+                performance=False,
             )
             assert resumed.results.cuda_plan["temporal_windows"] > 0
             assert resumed.results.cuda_plan["initial_step"] == 39
@@ -647,20 +758,34 @@ def test_temporal_shards_preserve_public_checkpoint_branches(physical, monkeypat
             for field in ("ex", "ey", "ez", "hx", "hy", "hz"):
                 expected = np.asarray(getattr(reference.state, field))
                 np.testing.assert_allclose(
-                    getattr(resumed.state, field), expected,
-                    rtol=3e-5, atol=2e-6 * np.max(np.abs(expected)),
+                    getattr(resumed.state, field),
+                    expected,
+                    rtol=3e-5,
+                    atol=2e-6 * np.max(np.abs(expected)),
                 )
             for name in ("cpml_psi_h_terms", "cpml_psi_e_terms"):
-                for actual, expected in zip(getattr(resumed.state, name), getattr(reference.state, name), strict=True):
-                    np.testing.assert_allclose(actual, expected, rtol=4e-5,
-                                               atol=2e-6 * np.max(np.abs(expected), initial=0.0))
+                for actual, expected in zip(
+                    getattr(resumed.state, name),
+                    getattr(reference.state, name),
+                    strict=True,
+                ):
+                    np.testing.assert_allclose(
+                        actual,
+                        expected,
+                        rtol=4e-5,
+                        atol=2e-6 * np.max(np.abs(expected), initial=0.0),
+                    )
             for name in ("volume", "slice"):
                 recording = resumed.results[name]
                 expected = reference.results[name]
-                np.testing.assert_array_equal(recording.field_steps, expected.field_steps)
+                np.testing.assert_array_equal(
+                    recording.field_steps, expected.field_steps
+                )
                 for component, values in expected.fields.items():
                     np.testing.assert_allclose(
-                        recording.fields[component], values, rtol=3e-5,
+                        recording.fields[component],
+                        values,
+                        rtol=3e-5,
                         atol=2e-6 * np.max(np.abs(values)),
                     )
             np.testing.assert_array_equal(first.state.ez, initial_field)

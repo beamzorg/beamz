@@ -51,7 +51,8 @@ def test_coherent_cuda_status_honors_optional_ffi_registration(monkeypatch):
     monkeypatch.setattr(backend_runtime, "_load_extension", lambda: extension)
     monkeypatch.setattr(backend_runtime, "_REGISTERED_MODULE", None)
     monkeypatch.setattr(
-        backend_runtime.jax.ffi, "register_ffi_target",
+        backend_runtime.jax.ffi,
+        "register_ffi_target",
         lambda name, capsule, **kwargs: registered.append(name),
     )
     status = backend_runtime.cuda_backend_status(register=False)

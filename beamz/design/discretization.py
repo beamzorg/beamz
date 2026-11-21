@@ -43,7 +43,9 @@ def _allclose_bounded(
         return True
     source_planes = material_planes(array, unique=True)
     if source_planes is not None and np.ndim(target) == 0:
-        return all(np.allclose(plane, target, rtol=rtol, atol=atol) for plane in source_planes)
+        return all(
+            np.allclose(plane, target, rtol=rtol, atol=atol) for plane in source_planes
+        )
     array, reference = np.broadcast_arrays(array, np.asarray(target))
     # An axis repeated in both operands contributes a single comparison.
     compact = tuple(
@@ -575,6 +577,7 @@ class MaterialGrid:
             )
         epsilon_diagonal = _tensor_diagonal(epsilon_tensor)
         conductivity_diagonal = _tensor_diagonal(conductivity_tensor)
+
         def cell_mean(diagonal):
             if plane_owner(diagonal) is not None:
                 shared = mean_diagonal(diagonal)
@@ -582,7 +585,8 @@ class MaterialGrid:
                     return shared
             # Preserve the three-term reduction on every physical sample.
             spatial = tuple(
-                slice(0, 1) if stride == 0 else slice(None) for stride in diagonal.strides[1:]
+                slice(0, 1) if stride == 0 else slice(None)
+                for stride in diagonal.strides[1:]
             )
             mean = np.mean(diagonal[(slice(None), *spatial)], axis=0)
             return np.broadcast_to(mean, diagonal.shape[1:])

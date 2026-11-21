@@ -3,43 +3,17 @@
 from dataclasses import replace
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 import pytest
 from beamz.simulation.cuda.material_blocks import pack_material_blocks
 
 from beamz.simulation.compile import clear_program_cache
 from beamz.simulation.execute import build_scan
-from tests.hardware.test_cuda_mstep import STATUS, _compare, _run, _seed, _simulation
+from tests.hardware.test_cuda_mstep import STATUS, _compare, _seed, _simulation
 
 pytestmark = pytest.mark.skipif(
     not STATUS.available, reason=STATUS.reason or "CUDA component unavailable"
 )
-
-
-def test_mstep_mixed_psi_precision_matches_dynamic_streamed():
-    """Typed edge dispatch must retain per-term decoding for mixed psi state."""
-    import beamz as bz
-
-    clear_program_cache()
-    sim = _simulation(shape=(59, 81, 113), steps=5)
-    sim = sim.updated_copy(
-        boundaries=(
-            bz.PML(edges="all", thickness=12 * sim.resolution, formulation="cpml"),
-        )
-    )
-    state = _seed(sim.compile(backend="cuda_streamed", num_steps=5))
-    state = state._replace(
-        cpml_psi_h_terms=tuple(
-            jnp.asarray(a, dtype=jnp.bfloat16 if term % 2 else jnp.float32)
-            for term, a in enumerate(state.cpml_psi_h_terms)
-        ),
-        cpml_psi_e_terms=tuple(
-            jnp.asarray(a, dtype=jnp.float32 if term % 2 else jnp.bfloat16)
-            for term, a in enumerate(state.cpml_psi_e_terms)
-        ),
-    )
-    _compare(_run(sim, state, "cuda_streamed", 5), _run(sim, state, "cuda_mstep", 5))
 
 
 @pytest.mark.parametrize("steps", [2, 5])

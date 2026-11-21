@@ -140,14 +140,10 @@ def _coefficient_table(simulation, module):
 def _compile(simulation: Any = "", module: Any = "", *, steps: int = 0, memory_budget: int = -1) -> Any:
     import jax
 
-    from beamz.simulation.backend import CUDA_ABI_VERSION, CudaBackendUnavailable
+    from beamz.simulation.backend import CudaBackendUnavailable, _require_cuda_abi
     from beamz.simulation.compile import compile_program
 
-    if (
-        not getattr(module, "jax_independent", False)
-        or getattr(module, "__abi_version__", None) != CUDA_ABI_VERSION
-    ):
-        raise ValueError("Compatible explicit native CUDA module required")
+    _require_cuda_abi(module)
     if (
         not simulation.is_3d
         or simulation.grid.metric_kind
@@ -230,7 +226,7 @@ def _pack(arguments: tuple[Any, ...] = (), fields: tuple[Any, ...] = (), *, cpml
     return tuple(values)
 
 
-def _source_scatter(spec, shape, timing, component, *, index_dtype=np.int32):
+def _source_scatter(spec, shape, timing, component, *, index_dtype: type[np.int32] | type[np.int64] = np.int32):
     """Flatten NumPy-style indices without constructing a dense coordinate grid."""
     if prod(shape) > np.iinfo(index_dtype).max:
         raise _Unsupported("Native sparse sources exceed the field index range")

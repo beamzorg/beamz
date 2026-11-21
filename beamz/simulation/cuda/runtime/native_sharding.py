@@ -9,11 +9,11 @@ from dataclasses import dataclass, field, replace
 from math import prod
 from os import getenv
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
-from beamz.simulation._cuda_abi import CUDA_BF16_PSI, CUDA_GRAPH_CACHE
+from beamz.simulation._cuda_abi import CUDA_GRAPH_CACHE
 from beamz.simulation.cuda.engine._capabilities import _Unsupported, _validate
 from beamz.simulation.cuda.engine._contracts import _CPML, _DFT, _FIELDS, _YEE
 from beamz.simulation.cuda.engine._plan import (
@@ -200,7 +200,9 @@ def _local_scatters(sources, logical, shapes, axis, lo):
         keep = (coordinates[axis] >= 0) & (coordinates[axis] < shapes[name][axis])
         if not np.any(keep):
             continue
-        local = np.ravel_multi_index(tuple(values[keep] for values in coordinates), shapes[name])
+        local = np.ravel_multi_index(
+            tuple(values[keep] for values in coordinates), shapes[name]
+        )
         if np.max(local) > np.iinfo(np.int32).max:
             raise _Unsupported("A local CUDA sparse source index exceeds int32")
         if ends.size:
@@ -209,7 +211,9 @@ def _local_scatters(sources, logical, shapes, axis, lo):
             ends = np.cumsum(counts[keep], dtype=np.int32)
         else:
             coefficients = coefficients[keep]
-        packets.append((timing, component, local.astype(np.int32), ends, coefficients, waveform))
+        packets.append(
+            (timing, component, local.astype(np.int32), ends, coefficients, waveform)
+        )
     return packets
 
 
@@ -221,8 +225,12 @@ def _local_recorders(monitors, state, logical, shapes, axis, lo, begin, end, win
             continue
         interval = spec.record_interval
         for component, sign, index, raw, weights in zip(
-            spec.canonical_components, spec.component_signs, spec.field_buffer_indices,
-            spec.field_interp_flat_idx, spec.field_interp_weights, strict=True,
+            spec.canonical_components,
+            spec.component_signs,
+            spec.field_buffer_indices,
+            spec.field_interp_flat_idx,
+            spec.field_interp_weights,
+            strict=True,
         ):
             name = component.lower()
             shape = logical[name]
@@ -232,9 +240,14 @@ def _local_recorders(monitors, state, logical, shapes, axis, lo, begin, end, win
                     continue
                 region = tuple(extent if k == axis else n for k, n in enumerate(shape))
                 positions = np.unravel_index(np.arange(prod(region)), region)
-                global_positions = tuple(pos + begin if k == axis else pos for k, pos in enumerate(positions))
+                global_positions = tuple(
+                    pos + begin if k == axis else pos for k, pos in enumerate(positions)
+                )
                 rows = np.ravel_multi_index(global_positions, shape)
-                positions = tuple(pos + begin - lo if k == axis else pos for k, pos in enumerate(positions))
+                positions = tuple(
+                    pos + begin - lo if k == axis else pos
+                    for k, pos in enumerate(positions)
+                )
                 indices = np.ravel_multi_index(positions, shapes[name]).reshape(-1, 1)
                 weights = np.ones(indices.shape, dtype=np.float32)
             else:
@@ -246,25 +259,39 @@ def _local_recorders(monitors, state, logical, shapes, axis, lo, begin, end, win
                 if not rows.size:
                     continue
                 positions = [coordinate[rows] for coordinate in coordinates]
-                positions[axis] = np.clip(positions[axis] - lo, 0, shapes[name][axis] - 1)
+                positions[axis] = np.clip(
+                    positions[axis] - lo, 0, shapes[name][axis] - 1
+                )
                 indices = np.ravel_multi_index(positions, shapes[name])
                 keep = owned[rows]
                 # Zero-weight neighbors must still have a valid local index.
-                anchor = np.take_along_axis(indices, np.argmax(keep, axis=1)[:, None], axis=1)
+                anchor = np.take_along_axis(
+                    indices, np.argmax(keep, axis=1)[:, None], axis=1
+                )
                 indices = np.where(keep, indices, anchor)
-                weights = np.ascontiguousarray(np.where(keep, weights[rows], 0), dtype=np.float32)
+                weights = np.ascontiguousarray(
+                    np.where(keep, weights[rows], 0), dtype=np.float32
+                )
             if np.max(indices) > np.iinfo(np.int32).max:
                 raise _Unsupported("A local CUDA recorder index exceeds int32")
             indices = indices.astype(np.int32)
             count = state.recorded_fields[index].shape[0]
             history = np.zeros((count, rows.size), dtype=np.float32)
-            plans.append((_FIELDS.index(name), interval, sign, indices, weights, history))
+            plans.append(
+                (_FIELDS.index(name), interval, sign, indices, weights, history)
+            )
             outputs.append((index, rows, history, interval))
-            payload += indices.nbytes + weights.nbytes + 4 * rows.size * min(count, (window + interval - 1) // interval)
+            payload += (
+                indices.nbytes
+                + weights.nbytes
+                + 4 * rows.size * min(count, (window + interval - 1) // interval)
+            )
     return plans, outputs, payload
 
 
-def _local_coefficients(program, coefficient_table, axis, lo, stops, logical, *, pack_lossless=True):
+def _local_coefficients(
+    program, coefficient_table, axis, lo, stops, logical, *, pack_lossless=True
+):
     from beamz._region_array import uniform_value
     from beamz.const import EPS_0
     from beamz.simulation.cuda.storage.material_blocks import pack_material_blocks
@@ -315,10 +342,14 @@ def _local_cpml_profiles(terms, profiles, axis, runtime):
             metadata[index, 2:4] = (low, shape[axis] - low)
         for value in (term.a, term.b, term.inv_kappa):
             if not value.size or not shape[term.axis]:
-                empty = tuple(0 if dimension == term.axis else 1 for dimension in range(3))
+                empty = tuple(
+                    0 if dimension == term.axis else 1 for dimension in range(3)
+                )
                 values.append(np.empty(empty, dtype=np.float32))
             elif term.axis == axis:
-                values.append(np.asarray(value)[_slice(axis, offset, offset + shape[axis])])
+                values.append(
+                    np.asarray(value)[_slice(axis, offset, offset + shape[axis])]
+                )
             else:
                 values.append(value)
     return metadata, *values
@@ -353,21 +384,46 @@ def _local_tensor(payload, module, axis, start, stop):
     if widths[axis].ndim:
         widths[axis] = widths[axis][start:stop]
     scratch = [
-        module.ZeroBuffer([n - int(a == 2 - c) for a, n in enumerate(cross.shape[:3])], "float32")
+        module.ZeroBuffer(
+            [n - int(a == 2 - c) for a, n in enumerate(cross.shape[:3])], "float32"
+        )
         for c in range(3)
     ]
     return np.ascontiguousarray(cross), origin, *widths, *scratch
 
 
-def _local_effects(module, program, state, logical, args, axis, lo, hi,
-                   ownership, temporal, tensor_payload, scatter_sources):
+def _local_effects(
+    module,
+    program,
+    state,
+    logical,
+    args,
+    axis,
+    lo,
+    hi,
+    ownership,
+    temporal,
+    tensor_payload,
+    scatter_sources,
+):
     if not temporal or not (tensor_payload or scatter_sources or state.recorded_fields):
         return (), (), (), (), 0
     shapes = {name: arg.shape for name, arg in zip(_FIELDS, args[:6], strict=True)}
-    tensor = _local_tensor(tensor_payload, module, axis, lo, hi) if tensor_payload else ()
+    tensor = (
+        _local_tensor(tensor_payload, module, axis, lo, hi) if tensor_payload else ()
+    )
     scatters = _local_scatters(scatter_sources, logical, shapes, axis, lo)
+    assert ownership is not None
     recorders, outputs, bytes_ = _local_recorders(
-        program.monitors, state, logical, shapes, axis, lo, *ownership, temporal[0],
+        program.monitors,
+        state,
+        logical,
+        shapes,
+        axis,
+        lo,
+        ownership[0],
+        ownership[1],
+        temporal[0],
     )
     bytes_ += sum(array.nbytes for array in tensor)
     bytes_ += sum(array.nbytes for packet in scatters for array in packet[2:])
@@ -395,8 +451,7 @@ def _local_packet(
     from beamz.simulation.cuda import runtime as rt
 
     cpml = program.boundary.cpml
-    psi_dtype = "bfloat16" if program.config.cuda_flags & CUDA_BF16_PSI else "float32"
-    psi_zero = np.zeros((), dtype=psi_dtype)
+    psi_zero = np.zeros((), dtype=np.float32)
     # Each halo uses the staggered supports of a standalone Yee grid.
     minimum = min(shape[axis] for shape in logical.values())
     stops = {
@@ -428,7 +483,11 @@ def _local_packet(
         else:
             profiles = [
                 _compact_psi(
-                    term, axis, lo, stops[term.component.lower()], logical[term.component.lower()]
+                    term,
+                    axis,
+                    lo,
+                    stops[term.component.lower()],
+                    logical[term.component.lower()],
                 )
                 for term in terms
             ]
@@ -456,8 +515,16 @@ def _local_packet(
             )
         )
     specs, scatter = _local_monitors(
-        (spec for spec in program.monitors if spec.dft_enabled and spec.freq_count and spec.dft_point_count),
-        logical, owned, axis, *(ownership or (lo, hi)), origin=lo
+        (
+            spec
+            for spec in program.monitors
+            if spec.dft_enabled and spec.freq_count and spec.dft_point_count
+        ),
+        logical,
+        owned,
+        axis,
+        *(ownership or (lo, hi)),
+        origin=lo,
     )
     local_program = replace(program, monitors=specs)
     state = initial._replace(
@@ -472,7 +539,12 @@ def _local_packet(
     if tensor_coefficients is not None:
         program = replace(program, coefficients=tensor_coefficients)
     coefficients = _local_coefficients(
-        program, coefficient_table or module.electric_coefficient_table, axis, lo, stops, logical,
+        program,
+        coefficient_table or module.electric_coefficient_table,
+        axis,
+        lo,
+        stops,
+        logical,
         pack_lossless=tensor_coefficients is None,
     )
     args, values, aliases = rt._graph_io(state, context, coefficients)
@@ -481,7 +553,7 @@ def _local_packet(
         values_in = list(args)
         for phase, start in (("h", 12), ("e", abi.CPML_E_PSI_INPUT_OFFSET - 19)):
             if phase in local_profiles:
-                values_in[start:start + 19] = local_profiles[phase]
+                values_in[start : start + 19] = local_profiles[phase]
         for phase, names in enumerate((_FIELDS[:3], _FIELDS[3:])):
             index = graph_count - 6 + 3 * phase + axis
             metric = np.asarray(values_in[index])
@@ -566,7 +638,7 @@ def _local_packet(
     }
     if ownership and not fixed_cpml:
         # Local metadata is authoritative. Internal Yee faces are transparent.
-        boundary_code = attributes["boundary_code"] & 0x3f
+        boundary_code = attributes["boundary_code"] & 0x3F
         if lo:
             boundary_code &= ~(1 << (2 * axis))
         if hi < minimum:
@@ -695,19 +767,29 @@ class _ShardStepper:
     def restore_checkpoint(self, simulation, state, contract):
         from beamz.simulation.execute import runtime_inputs
 
-        self.prefix = runtime_inputs(self.program, state, monitor_steps=simulation.num_steps - contract.initial_step)
+        self.prefix = runtime_inputs(
+            self.program,
+            state,
+            monitor_steps=simulation.num_steps - contract.initial_step,
+        )
         step = contract.initial_step
         origin = np.float32(simulation.time[0])
         spacing = np.float32(self.program.config.dt)
         time = np.float32(state.t)
         if not np.isfinite(time):
-            raise _Unsupported("Native sharded continuation requires a finite state time")
-        on_grid = np.abs(time - (origin + spacing * np.float32(step))) <= np.spacing(abs(time))
+            raise _Unsupported(
+                "Native sharded continuation requires a finite state time"
+            )
+        on_grid = np.abs(time - (origin + spacing * np.float32(step))) <= np.spacing(
+            abs(time)
+        )
         if not on_grid:
             origin = time
             self.observation_step = step
         axis = self.temporal[1]
-        for (ordinal, owner, specs, _), (lo, hi) in zip(self.shards, self.regions, strict=True):
+        for (ordinal, owner, specs, _), (lo, hi) in zip(
+            self.shards, self.regions, strict=True
+        ):
             packet = []
             for name, selection in self._checkpoint_slices(axis, lo, hi):
                 if isinstance(name, tuple):
@@ -722,7 +804,9 @@ class _ShardStepper:
             )
             packet.extend(np.zeros(n, np.float32) for n in (lengths[0], *lengths))
             with _on_device(self.module, ordinal):
-                owner.restore_state(packet, float(origin), step, step - self.observation_step)
+                owner.restore_state(
+                    packet, float(origin), step, step - self.observation_step
+                )
         self.prefix = self.prefix._replace(
             **{name: getattr(self.initial, name) for name in _FIELDS},
             cpml_psi_h_terms=(),
@@ -732,23 +816,32 @@ class _ShardStepper:
 
     def checkpoint(self, state):
         axis = self.temporal[1]
-        leaves = {
-            name: np.empty(getattr(self.initial, name).shape, np.float32) for name in _FIELDS
+        leaves: dict[str | tuple[str, int], np.ndarray] = {
+            name: np.empty(getattr(self.initial, name).shape, np.float32)
+            for name in _FIELDS
         }
         cpml = self.program.boundary.cpml
         for phase in ("h", "e"):
-            leaves.update({
-                (phase, i): np.empty(term.slab.shape, dtype=self.psi_dtype)
-                for i, term in enumerate(getattr(cpml, phase + "_terms"))
-            })
-        for rank, ((ordinal, owner, _, _), (lo, hi)) in enumerate(zip(self.shards, self.regions, strict=True)):
-            begin, end = self.edges[rank:rank + 2]
+            leaves.update(
+                {
+                    (phase, i): np.empty(term.slab.shape, dtype=np.float32)
+                    for i, term in enumerate(getattr(cpml, phase + "_terms"))
+                }
+            )
+        for rank, ((ordinal, owner, _, _), (lo, hi)) in enumerate(
+            zip(self.shards, self.regions, strict=True)
+        ):
+            begin, end = self.edges[rank : rank + 2]
             # Internal cuts assign the staggered interface sample to the upper
             # owner. The final rank owns the actual staggered exterior sample.
             local = self._checkpoint_slices(axis, lo, hi)
-            owned = self._checkpoint_slices(axis, begin, end, staggered_high=end == self.edges[-1])
+            owned = self._checkpoint_slices(
+                axis, begin, end, staggered_high=end == self.edges[-1]
+            )
             with _on_device(self.module, ordinal):
-                for index, ((name, region), (_, target)) in enumerate(zip(local, owned, strict=True)):
+                for index, ((name, region), (_, target)) in enumerate(
+                    zip(local, owned, strict=True)
+                ):
                     region, target = region[axis], target[axis]
                     if target.start == target.stop:
                         continue
@@ -758,17 +851,17 @@ class _ShardStepper:
                     values = np.empty(shape, dtype=array.dtype)
                     owner.download_into(index, values)
                     array[_slice(axis, target.start, target.stop)] = values[
-                        _slice(axis, target.start - region.start, target.stop - region.start)
+                        _slice(
+                            axis,
+                            target.start - region.start,
+                            target.stop - region.start,
+                        )
                     ]
         return state._replace(
             **{name: leaves[name] for name in _FIELDS},
             cpml_psi_h_terms=tuple(leaves["h", i] for i in range(len(cpml.h_terms))),
             cpml_psi_e_terms=tuple(leaves["e", i] for i in range(len(cpml.e_terms))),
         )
-
-    @property
-    def psi_dtype(self):
-        return "bfloat16" if self.program.config.cuda_flags & CUDA_BF16_PSI else "float32"
 
     def _advance(self, steps, *, snapshot=True):
         owners = [owner for _, owner, _, _ in self.shards]
@@ -816,31 +909,42 @@ class _ShardStepper:
                 values += np.asarray(getattr(self.prefix, name))
         recordings = {}
         if include_recorders and self.initial.recorded_fields:
-            specs = tuple(spec for spec in self.program.monitors if spec.recorder_index >= 0)
+            specs = tuple(
+                spec for spec in self.program.monitors if spec.recorder_index >= 0
+            )
             counts = tuple(self.completed // spec.record_interval for spec in specs)
             indices = tuple(
                 np.arange(1, count + 1, dtype=np.int32) * spec.record_interval
                 for count, spec in zip(counts, specs, strict=True)
             )
-            histories = tuple(np.zeros_like(history) for history in self.initial.recorded_fields)
+            histories = tuple(
+                np.zeros_like(history) for history in self.initial.recorded_fields
+            )
             previous_steps = 0 if self.prefix is None else int(self.prefix.current_step)
-            if previous_steps:
+            if self.prefix is not None and previous_steps:
                 for spec in specs:
                     count = previous_steps // spec.record_interval
                     for index in spec.field_buffer_indices:
-                        histories[index][:count] = self.prefix.recorded_fields[index][:count]
+                        histories[index][:count] = self.prefix.recorded_fields[index][
+                            :count
+                        ]
             for shard in self.recordings:
                 for index, rows, history, interval in shard:
                     count = self.completed // interval
                     start = previous_steps // interval
-                    histories[index].reshape(history.shape[0], -1)[start:count, rows] += history[start:count]
+                    histories[index].reshape(history.shape[0], -1)[
+                        start:count, rows
+                    ] += history[start:count]
             times = tuple(
                 np.float32(clocks["observation_origin"])
-                + (steps - self.observation_step).astype(np.float32) * np.float32(self.program.config.dt)
+                + (steps - self.observation_step).astype(np.float32)
+                * np.float32(self.program.config.dt)
                 for steps in indices
             )
-            if previous_steps:
-                for target, original, spec in zip(times, self.prefix.recorded_times, specs, strict=True):
+            if self.prefix is not None and previous_steps:
+                for target, original, spec in zip(
+                    times, self.prefix.recorded_times, specs, strict=True
+                ):
                     count = previous_steps // spec.record_interval
                     target[:count] = original[:count]
             recordings = dict(
@@ -882,8 +986,11 @@ def _admit_peer_packets(devices, remaining, payloads, module):
     cost = module.temporal_peer_staging_bytes
     links = []
     for rank, (left, right) in enumerate(zip(devices[:-1], devices[1:], strict=True)):
-        pack = (left != right and not module._has_direct_exchange(left, right)
-                and min(remaining[left], remaining[right]) >= cost)
+        pack = (
+            left != right
+            and not module._has_direct_exchange(left, right)
+            and min(remaining[left], remaining[right]) >= cost
+        )
         links.append(pack)
         if pack:
             for index, dev in ((rank, left), (rank + 1, right)):
@@ -897,11 +1004,21 @@ def _shard_diagnostics(program, axis, lo, hi, begin, end, ownership, tensor):
 
     if tensor:
         return _diagnostic_inputs(program, (axis, lo, hi), owned=ownership)
-    return _diagnostic_inputs(program, (axis, begin, ownership[1] if ownership else end))
+    return _diagnostic_inputs(
+        program, (axis, begin, ownership[1] if ownership else end)
+    )
 
 
 def _prepare_shards(
-    simulation, module, devices, axis, adaptive, budget, resources, temporal=(), reference=(),
+    simulation,
+    module,
+    devices,
+    axis,
+    adaptive,
+    budget,
+    resources,
+    temporal=(),
+    reference=(),
     minimum_band=0,
     checkpoint=False,
 ):
@@ -933,12 +1050,17 @@ def _prepare_shards(
     tensor = bool(program.coefficients.e_inverse_offdiagonal.size)
     if tensor:
         if not temporal or not getattr(module, "compiled_temporal_tensor", False):
-            raise _Unsupported("Sharded tensor CUDA requires a tensor-capable temporal component")
+            raise _Unsupported(
+                "Sharded tensor CUDA requires a tensor-capable temporal component"
+            )
         from beamz.simulation.cuda.storage import tensor as tensors
 
         tensor_payload = tensors.payload(
-            context, program.coefficients,
-            scratch_factory=lambda shape, dtype: np.broadcast_to(np.zeros((), dtype), shape),
+            context,
+            program.coefficients,
+            scratch_factory=lambda shape, dtype: np.broadcast_to(
+                np.zeros((), dtype), shape
+            ),
         )
         tensor_coefficients = tensors.coefficients(context, program.coefficients)
     groups = tuple(
@@ -951,14 +1073,24 @@ def _prepare_shards(
     }
     scatter_sources = []
     if temporal:
-        for timing, (phase, components) in enumerate(execute.SOURCE_PHASE_COMPONENTS.items()):
+        for timing, (phase, components) in enumerate(
+            execute.SOURCE_PHASE_COMPONENTS.items()
+        ):
             for component, name in enumerate(components):
                 _, rest = context.source_batches[(phase, name)]
                 for spec in rest:
-                    packet = _source_scatter(spec, logical[name.lower()], timing, component, index_dtype=np.int64)
+                    packet = _source_scatter(
+                        spec,
+                        logical[name.lower()],
+                        timing,
+                        component,
+                        index_dtype=np.int64,
+                    )
                     if packet is not None:
                         scatter_sources.append(packet)
     length = max(shape[axis] for shape in logical.values())
+    window = depth = slots = exchange = guard = 0
+    fast_cpml = False
     if temporal:
         from beamz.simulation.cuda.runtime import _uniform_cpml_thickness
 
@@ -990,7 +1122,10 @@ def _prepare_shards(
         cpml_psi_h_terms=(),
         cpml_psi_e_terms=(),
         **execute.monitor_runtime.empty_monitor_values(
-            program, num_steps=simulation.num_steps, host_recorders=True, virtual_dft=True
+            program,
+            num_steps=simulation.num_steps,
+            host_recorders=True,
+            virtual_dft=True,
         ),
         t=np.asarray(simulation.time[0], np.float32),
         current_step=np.asarray(0, np.int32),
@@ -1000,9 +1135,14 @@ def _prepare_shards(
     reserve = 512 << 20
     remaining = {}
     shard_recordings, shard_regions = [], []
-    bf16 = bool(program.config.cuda_flags & CUDA_BF16_PSI)
-    per_link_packets = temporal and axis == 0 and not bf16 and getattr(
-        module, "compiled_temporal_packet_links", False,
+    per_link_packets = (
+        temporal
+        and axis == 0
+        and getattr(
+            module,
+            "compiled_temporal_packet_links",
+            False,
+        )
     )
 
     def close(owner, device):
@@ -1053,14 +1193,26 @@ def _prepare_shards(
                 fixed_cpml=bool(temporal and fast_cpml),
             )
             local_tensor, scatters, recorders, outputs, effect_bytes = _local_effects(
-                module, program, initial, logical, args, axis, lo, hi,
-                ownership, temporal, tensor_payload, scatter_sources,
+                module,
+                program,
+                initial,
+                logical,
+                args,
+                axis,
+                lo,
+                hi,
+                ownership,
+                temporal,
+                tensor_payload,
+                scatter_sources,
             )
             shard_recordings.append(outputs)
             payload += effect_bytes
-            diagnostics = _shard_diagnostics(
-                program, axis, lo, hi, begin, end, ownership, tensor
-            ) if adaptive else None
+            diagnostics = (
+                _shard_diagnostics(program, axis, lo, hi, begin, end, ownership, tensor)
+                if adaptive
+                else None
+            )
             if diagnostics is not None:
                 payload += diagnostics[3]
             info = module.device_info()
@@ -1076,7 +1228,10 @@ def _prepare_shards(
                 if axis != 0:
                     from beamz.simulation import _cuda_abi as abi
 
-                    staged = sum(peer >= 0 and not module._has_direct_exchange(ordinal, peer) for peer in neighbors)
+                    staged = sum(
+                        peer >= 0 and not module._has_direct_exchange(ordinal, peer)
+                        for peer in neighbors
+                    )
                     if staged:
                         fields = list(args[:6])
                         cpml = program.boundary.cpml
@@ -1108,15 +1263,12 @@ def _prepare_shards(
                 band = 0
                 if (
                     fast_cpml
-                    and not bf16
                     and axis == 0
                     and cut
                     and depth % 8 == 0
                     and getattr(module, "compiled_rolling_tiles", False)
                 ):
-                    band = _rolling_band(
-                        local_shape, info, simulation.num_steps
-                    )
+                    band = _rolling_band(local_shape, info, simulation.num_steps)
                     if band:
                         cut["rolling_band"] = band
                 resource_plan = module.moving_resource_plan(
@@ -1129,33 +1281,54 @@ def _prepare_shards(
                     tensor=tensor,
                     **cut,
                 )
-                available_extra = min(available, info["free_memory_bytes"] - reserve) - payload
+                available_extra = (
+                    min(available, info["free_memory_bytes"] - reserve) - payload
+                )
                 envelope = None
                 if reference and resource_plan.get("rolling_extra_bytes") is not None:
                     # Shortening the exchange removes entire resident Yee planes.
                     # Price the old workspace on the smaller input conservatively.
                     old_window, old_depth, old_slots = reference
                     old_plan = module.moving_resource_plan(
-                        args, depth=old_depth, raw_slots=old_slots,
+                        args,
+                        depth=old_depth,
+                        raw_slots=old_slots,
                         macro_slab_count=old_window // old_depth,
                         recorders=recorders,
                         scatters=scatters,
-                        **{key: value for key, value in cut.items() if key != "rolling_band"},
+                        **{
+                            key: value
+                            for key, value in cut.items()
+                            if key != "rolling_band"
+                        },
                     )
                     neighbors = int(rank > 0) + int(rank + 1 < len(devices))
                     fields_per_plane = sum(prod(field.shape[1:]) for field in args[:6])
                     envelope = (
-                        old_plan["extra_gpu_bytes"] + old_plan.get("field_frontier_bytes", 0)
+                        old_plan["extra_gpu_bytes"]
+                        + old_plan.get("field_frontier_bytes", 0)
                         + 4 * fields_per_plane * neighbors * (old_window - window)
                     )
-                width, rolling_bytes = _admit_rolling(
-                    resource_plan, prod(local_shape), band, available_extra, envelope=envelope
-                ) if band else (0, None)
+                width, rolling_bytes = (
+                    _admit_rolling(
+                        resource_plan,
+                        prod(local_shape),
+                        band,
+                        available_extra,
+                        envelope=envelope,
+                    )
+                    if band
+                    else (0, None)
+                )
                 if reference and (not width or width < minimum_band):
                     raise _RollingUnavailable
                 if width:
                     attrs = dict(attrs, rolling_band=width)
-                payload += int(resource_plan["extra_gpu_bytes"] if rolling_bytes is None else rolling_bytes)
+                payload += int(
+                    resource_plan["extra_gpu_bytes"]
+                    if rolling_bytes is None
+                    else rolling_bytes
+                )
                 if axis == 0 and not per_link_packets:
                     # Older binaries can still exchange dense faces without scratch.
                     attrs = dict(attrs, allow_peer_packets=0)
@@ -1163,7 +1336,9 @@ def _prepare_shards(
                 raise MemoryError(
                     f"CUDA shard {rank} needs {payload} bytes plus {reserve} reserve"
                 )
-            remaining[ordinal] = min(available, info["free_memory_bytes"] - reserve) - payload
+            remaining[ordinal] = (
+                min(available, info["free_memory_bytes"] - reserve) - payload
+            )
             kind = "mstep" if temporal else "generated"
             if neighbor_storage and (info.get("major"), info.get("minor")) in (
                 (8, 0),
@@ -1189,11 +1364,19 @@ def _prepare_shards(
                     owner._configure_shard(geometry)
             if diagnostics is not None:
                 domain_measure = diagnostics[2]
-                selection = (axis, begin - lo, end - lo if rank + 1 < len(devices) else -1)
-                if tensor:
-                    owner.configure_diagnostics(*diagnostics[:3], interpolation=diagnostics[4])
+                selection = (
+                    axis,
+                    begin - lo,
+                    end - lo if rank + 1 < len(devices) else -1,
+                )
+                if len(diagnostics) == 5:
+                    owner.configure_diagnostics(
+                        *diagnostics[:3], interpolation=diagnostics[4]
+                    )
                 else:
-                    owner.configure_diagnostics(*diagnostics[:3], *((selection,) if ownership else ()))
+                    owner.configure_diagnostics(
+                        *diagnostics[:3], *((selection,) if ownership else ())
+                    )
             shards.append((ordinal, owner, specs, scatter))
             payloads.append(
                 payload
@@ -1201,7 +1384,11 @@ def _prepare_shards(
                 else int(owner.metadata()["allocated_payload_bytes"])
             )
             del args, geometry
-    packet_links = (_admit_peer_packets(devices, remaining, payloads, module),) if per_link_packets else ()
+    packet_links = (
+        (_admit_peer_packets(devices, remaining, payloads, module),)
+        if per_link_packets
+        else ()
+    )
     return (
         program,
         initial,
@@ -1235,6 +1422,7 @@ def _run_shards(
     import jax
 
     from beamz._helpers import _finish_inline_progress, _print_inline_progress
+    from beamz.simulation import backend as backends
     from beamz.simulation import execute
     from beamz.simulation.cuda.engine._runtime import (
         _DEVICE_LOCKS,
@@ -1259,6 +1447,10 @@ def _run_shards(
         budget = int(getenv("BEAMZ_CUDA_MEMORY_BUDGET_BYTES", "0"))
         if budget < 0:
             raise ValueError("CUDA memory budget must be nonnegative")
+        graph_options = (
+            backends.cuda_flags_from_env() & CUDA_GRAPH_CACHE,
+            backends.cuda_graph_cache_capacity_from_env(),
+        )
         key = (
             "sharded",
             checkpoint,
@@ -1268,10 +1460,11 @@ def _run_shards(
             termination is not None,
             temporal,
             minimum_band,
+            graph_options,
         )
         with _LOCK:
             _retire_overlapping(simulation, set(uuids))
-            stepper = _SESSIONS.get(simulation)
+            stepper = cast("_ShardStepper | None", _SESSIONS.get(simulation))
             if stepper is not None and (
                 stepper.key != key or stepper.device_uuids != tuple(uuids)
             ):
@@ -1280,16 +1473,34 @@ def _run_shards(
             reused = stepper is not None
             if stepper is None:
                 with ExitStack() as resources:
-                    preparation = (simulation, module, devices, axis, termination is not None, budget)
+                    preparation = (
+                        simulation,
+                        module,
+                        devices,
+                        axis,
+                        termination is not None,
+                        budget,
+                    )
                     parts = None
-                    if not checkpoint and temporal and axis == 0 and getattr(module, "compiled_rolling_tiles", False):
+                    if (
+                        not checkpoint
+                        and temporal
+                        and axis == 0
+                        and getattr(module, "compiled_rolling_tiles", False)
+                    ):
                         shape = simulation.grid.shape_zyx
                         owned = (shape[0] // len(devices), *shape[1:])
-                        if temporal[0] > 16 and _rolling_band(owned, infos[devices[0]], simulation.num_steps):
+                        if temporal[0] > 16 and _rolling_band(
+                            owned, infos[devices[0]], simulation.num_steps
+                        ):
                             with ExitStack() as trial:
                                 try:
                                     parts = _prepare_shards(
-                                        *preparation, trial, (16, 8, 6), temporal, minimum_band
+                                        *preparation,
+                                        trial,
+                                        (16, 8, 6),
+                                        temporal,
+                                        minimum_band,
                                     )
                                 except _RollingUnavailable:
                                     pass
@@ -1297,10 +1508,20 @@ def _run_shards(
                                     resources.enter_context(trial.pop_all())
                     if parts is None:
                         if minimum_band:
-                            raise _Unsupported("The admitted rolling band underfills this GPU")
-                        parts = _prepare_shards(*preparation, resources, temporal, checkpoint=checkpoint)
+                            raise _Unsupported(
+                                "The admitted rolling band underfills this GPU"
+                            )
+                        parts = _prepare_shards(
+                            *preparation, resources, temporal, checkpoint=checkpoint
+                        )
                     release = weakref.finalize(simulation, resources.pop_all().close)
-                    stepper = _ShardStepper(module, *parts, key, tuple(uuids), release)
+                    stepper = _ShardStepper(
+                        module,
+                        *parts,
+                        key=key,
+                        device_uuids=tuple(uuids),
+                        release=release,
+                    )
                 _SESSIONS[simulation] = stepper
 
             # Drop the rank locks before taking the registry lock on failure.
@@ -1366,7 +1587,10 @@ def _run_shards(
                 simulation,
                 runtime_fields=program.grid,
                 monitor_results=execute._decode_monitor_results(
-                    simulation, program, snapshot, owned_recordings=True,
+                    simulation,
+                    program,
+                    snapshot,
+                    owned_recordings=True,
                 ),
                 completed_steps=stepper.completed,
                 store_full_materials=store_full_materials,
@@ -1547,10 +1771,19 @@ def _try_sharded_run(
         return None, True
     try:
         module = backends._load_extension()
-        if not hasattr(module, "_device_count"):
-            return None, config.num_devices != 1
-        device_count = module._device_count()
     except (ImportError, OSError, RuntimeError):
+        return None, config.num_devices != 1
+    if not hasattr(module, "_device_count"):
+        return None, config.num_devices != 1
+    try:
+        backends._require_cuda_abi(module)
+    except backends.CudaBackendUnavailable:
+        if name == "auto":
+            return None, True
+        raise
+    try:
+        device_count = module._device_count()
+    except RuntimeError:
         return None, config.num_devices != 1
     count = device_count if config.num_devices is None else int(config.num_devices)
     if count < 1 or (count == 1 and device_count == 0):
@@ -1560,7 +1793,7 @@ def _try_sharded_run(
             f"Requested {count} sharding devices, but only {device_count} CUDA devices are available"
         )
     normalized, _ = normalize_schedule_request(name, schedule, 1)
-    if backends._has_cuda_legacy_options(native_flags=CUDA_BF16_PSI | CUDA_GRAPH_CACHE):
+    if backends._has_cuda_legacy_options(native_flags=CUDA_GRAPH_CACHE):
         return None, count > 1
     capacity = getenv("BEAMZ_CUDA_MEMORY_POLICY", "auto").strip().lower() == "capacity"
     if capacity and normalized == "mstep":
@@ -1597,10 +1830,13 @@ def _try_sharded_run(
             # two-macro exchange between checks whenever the cadence allows it.
             while depth > 4 and 2 * depth > termination.chunk_steps:
                 depth //= 2
-            window = min(window, max(2 * depth, termination.chunk_steps // (2 * depth) * (2 * depth)))
+            window = min(
+                window,
+                max(2 * depth, termination.chunk_steps // (2 * depth) * (2 * depth)),
+            )
             temporal = window, depth, slots
     devices = tuple(range(count))
-    options = dict(
+    options: dict[str, Any] = dict(
         progress=progress,
         store_full_materials=store_full_materials,
         performance=performance,
@@ -1613,7 +1849,9 @@ def _try_sharded_run(
             shape, temporal_axis, count, window, _halo_guard(module)
         )
         minimum = tuple(ordinal for ordinal in devices for _ in range(per_gpu))
-        placements = [(minimum, temporal)] if len(minimum) > 1 else []
+        placements: list[tuple[tuple[int, ...], tuple[int, int, int]]] = (
+            [(minimum, temporal)] if len(minimum) > 1 else []
+        )
         if per_gpu == 1 and _split_underfilled_frontier(
             shape,
             temporal_axis,
@@ -1632,13 +1870,22 @@ def _try_sharded_run(
                     placement,
                     temporal_axis,
                     temporal=choice,
-                    minimum_band=(64 if normalized == "auto" and device.get("name") == "NVIDIA A100-SXM4-80GB" else 0),
+                    minimum_band=(
+                        64
+                        if normalized == "auto"
+                        and device.get("name") == "NVIDIA A100-SXM4-80GB"
+                        else 0
+                    ),
                     segment=segment,
                     state=state,
                     **options,
                 ), False
             except _Unsupported:
                 break
+            except backends.CudaBackendUnavailable:
+                if name != "auto" or normalized != "auto":
+                    raise
+                return None, True
             except MemoryError:
                 if placement == minimum and (per_gpu > 1 or normalized == "mstep"):
                     raise

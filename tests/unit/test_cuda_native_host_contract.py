@@ -154,10 +154,13 @@ def driver(monkeypatch):
                 for spec, history in zip(self.recorders, histories, strict=True)
             )
 
-        def configure_diagnostics(self, materials, axes, domain_measure):
+        def configure_diagnostics(
+            self, materials, axes, domain_measure, selection=None
+        ):
             assert len(materials) == len(axes) == 6
             assert domain_measure > 0
             self.diagnostics = (materials, axes)
+            self.diagnostic_selection = selection
             return {
                 "gpu_bytes": sum(a.nbytes for item in materials for a in item.values())
             }
@@ -198,8 +201,7 @@ def driver(monkeypatch):
     _runtime._clear()
 
 
-def scene(*, recorder=False, graded=False, cpml=True):
-    shape = (30, 32, 34)
+def scene(*, recorder=False, graded=False, cpml=True, shape=(30, 32, 34), steps=11):
     dx = 20e-9
     source = bz.CustomSource(
         "Ez",
@@ -244,28 +246,12 @@ def scene(*, recorder=False, graded=False, cpml=True):
         geometry.update(domain=tuple(n * dx for n in reversed(shape)), resolution=dx)
     return bz.Simulation(
         **geometry,
-        time=1e-16 + np.arange(11) * 2.5e-17,
+        time=1e-16 + np.arange(steps) * 2.5e-17,
         sources=(source,),
         monitors=monitors,
         normalize_source=None,
         boundaries=(bz.PML(),) if cpml else (bz.PEC(),),
         setup_device="cpu",
-    )
-
-
-def test_cpml_precision_replaces_resident_owner_and_casts_restart(driver, monkeypatch):
-    driver.compiled_temporal_bf16_psi = True
-    simulation = scene()
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "fp32")
-    first = simulation.advance(num_steps=3, backend="cuda")
-    original = driver.sessions[-1]
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "bf16")
-    resumed = simulation.advance(state=first.state, num_steps=3, backend="cuda")
-    assert original.closed and len(driver.sessions) == 2
-    assert driver.sessions[-1].restores[0][2:] == (3, 3)
-    assert all(
-        p.dtype.name == "bfloat16"
-        for p in (*resumed.state.cpml_psi_h_terms, *resumed.state.cpml_psi_e_terms)
     )
 
 
@@ -413,7 +399,9 @@ def test_sharded_packets_keep_dft_window_and_device_ownership(driver, graded, cp
 def test_collecting_sharded_simulation_releases_both_devices(driver):
     sim = scene()
     sim.run(backend="cuda", sharding=dict(axis="z", num_devices=2))
-    assert len(driver.sessions) == 2 and all(not owner.closed for owner in driver.sessions)
+    assert len(driver.sessions) == 2 and all(
+        not owner.closed for owner in driver.sessions
+    )
     ref = weakref.ref(sim)
     del sim
     gc.collect()
@@ -477,3 +465,192 @@ def test_native_automatic_shard_axis_accounts_for_strided_faces(shape, count, ex
     assert _native_shard_axis("auto", shape, count) == expected
     for axis, name in enumerate("zyx"):
         assert _native_shard_axis(name, shape, count) == axis
+
+
+@pytest.mark.parametrize("sharding", [False, {"enabled": False}, {"num_devices": 1}])
+def test_single_device_continuation_keeps_native_dispatch(driver, sharding):
+    sim = scene()
+    first = sim.advance(
+        backend="cuda", sharding=sharding, num_steps=3, performance=False
+    )
+    tail = sim.advance(
+        backend="cuda", sharding=sharding, state=first.state, performance=False
+    )
+    assert (
+        first.results.cuda_plan["binding"]
+        == tail.results.cuda_plan["binding"]
+        == "native"
+    )
+    assert tail.results.cuda_plan["reused_resident_checkpoint"]
+
+
+@pytest.mark.parametrize("sharding", [None, {"num_devices": 1}])
+def test_abi_mismatch_falls_back_only_for_auto(driver, monkeypatch, sharding):
+    driver.__abi_version__ -= 1
+    monkeypatch.delenv("JAX_PLATFORMS", raising=False)
+    monkeypatch.setattr(backend, "_gpu_devices", lambda: ())
+    sim = scene()
+    assert (
+        sim.run(backend="auto", sharding=sharding, performance=False).cuda_plan[
+            "binding"
+        ]
+        == "jax"
+    )
+    with pytest.raises(backend.CudaBackendUnavailable, match="ABI mismatch"):
+        sim.run(backend="cuda", sharding=sharding, performance=False)
+    assert not driver.sessions
+
+
+def test_sharded_abi_mismatch_rejects_before_allocating_ranks(driver, monkeypatch):
+    driver.__abi_version__ -= 1
+    monkeypatch.delenv("JAX_PLATFORMS", raising=False)
+    with pytest.raises(backend.CudaBackendUnavailable, match="ABI mismatch"):
+        scene().run(backend="cuda", sharding={"num_devices": 2}, performance=False)
+    assert not driver.sessions
+
+
+def test_auto_temporal_shard_capability_rejection_uses_jax(driver, monkeypatch):
+    from beamz.simulation.cuda.runtime import native_sharding
+
+    monkeypatch.delenv("JAX_PLATFORMS", raising=False)
+    monkeypatch.setattr(driver, "_has_direct_exchange", lambda *_: True, raising=False)
+    monkeypatch.setattr(
+        driver.NativeSession, "_run_temporal_partitions", True, raising=False
+    )
+    monkeypatch.setattr(
+        native_sharding, "_temporal_shard_choice", lambda *_, **__: (32, 16, 6)
+    )
+    monkeypatch.setattr(native_sharding, "_minimum_temporal_slabs", lambda *_, **__: 2)
+    sim = scene().updated_copy(boundaries=(bz.Periodic(axes=("x",)),))
+    sharding = {"num_devices": 1}
+    with pytest.raises(backend.CudaBackendUnavailable, match="periodic"):
+        sim.run(backend="cuda_mstep", sharding=sharding, performance=False)
+    with pytest.raises(backend.CudaBackendUnavailable, match="periodic"):
+        sim.run(backend="auto", schedule="mstep", sharding=sharding, performance=False)
+    assert (
+        sim.run(backend="auto", sharding=sharding, performance=False).cuda_plan[
+            "binding"
+        ]
+        == "jax"
+    )
+    assert not driver.sessions
+
+
+@pytest.mark.parametrize(
+    ("option", "setting", "attribute", "expected"),
+    [
+        ("BEAMZ_CUDA_DISABLE_GRAPH_CACHE", "1", "cuda_flags", 0),
+        ("BEAMZ_CUDA_GRAPH_CACHE_CAPACITY", "7", "graph_cache_capacity", 7),
+    ],
+)
+def test_sharded_graph_options_replace_resident_owner(
+    driver, monkeypatch, option, setting, attribute, expected
+):
+    monkeypatch.delenv("BEAMZ_CUDA_DISABLE_GRAPH_CACHE", raising=False)
+    monkeypatch.delenv("BEAMZ_CUDA_GRAPH_CACHE_CAPACITY", raising=False)
+    sim = scene()
+    options = dict(backend="cuda", sharding={"num_devices": 2}, performance=False)
+    sim.run(**options)
+    original = tuple(driver.sessions)
+    monkeypatch.setenv(option, setting)
+    sim.run(**options)
+    assert len(driver.sessions) == 4
+    assert all(owner.closed for owner in original)
+    for owner in driver.sessions[2:]:
+        value = owner.attributes[attribute]
+        assert (
+            value & abi.CUDA_GRAPH_CACHE if attribute == "cuda_flags" else value
+        ) == expected
+
+
+def test_temporal_shards_restore_fp32_cpml_and_observations(driver, monkeypatch):
+    import jax.numpy as jnp
+
+    launched = []
+
+    def run_temporal(owners, spans, axis, steps, window, depth, slots, overlaps):
+        assert axis == 2 and window == 2 * depth and slots > 0 and overlaps
+        assert spans[0][0] == spans[0][1] == 0
+        assert spans[1][0] < spans[1][1] == spans[0][2]
+        for owner in owners:
+            previous = driver._set_device(owner.device)
+            try:
+                owner.run_schedule((steps,))
+            finally:
+                driver._set_device(previous)
+        launched.append((steps, window, spans))
+        return 0.125
+
+    monkeypatch.setattr(
+        driver.NativeSession,
+        "_run_temporal_partitions",
+        staticmethod(run_temporal),
+        raising=False,
+    )
+    monkeypatch.setattr(driver, "_has_direct_exchange", lambda *_: False, raising=False)
+    monkeypatch.setattr(driver, "compiled_transparent_halos", True, raising=False)
+    monkeypatch.setattr(driver, "compiled_shard_resource_cuts", True, raising=False)
+    monkeypatch.setattr(
+        driver,
+        "moving_resource_plan",
+        lambda *_, **__: {"extra_gpu_bytes": 0},
+        raising=False,
+    )
+    sim = scene(recorder=True, graded=True, shape=(30, 32, 76), steps=21).updated_copy(
+        boundaries=(bz.PML(formulation="cpml", thickness=85e-9),)
+    )
+    options = dict(
+        backend="cuda_mstep",
+        sharding={"axis": "x", "num_devices": 2},
+        performance=False,
+    )
+    fixed = sim.run(**options)
+    assert fixed.cuda_plan["schedule"] == "mstep"
+    assert fixed.cuda_plan["partition_devices"] == (0, 1)
+    np.testing.assert_array_equal(fixed["frames"].field_steps, np.arange(2, 21, 2))
+    np.testing.assert_array_equal(fixed["dft"].dft_fields["Ez"], 42)
+
+    adaptive = sim.run(**options, termination=bz.AutoTermination(chunk_steps=17))
+    check_window = adaptive.cuda_plan["exchange_window"]
+    assert 0 < check_window <= 17
+    assert adaptive.cuda_plan["temporal_windows"] >= 1
+    assert adaptive.termination.steps == 21
+    rank_zero, rank_one = launched[-1][2]
+    assert [owner.diagnostic_selection for owner in driver.sessions[-2:]] == [
+        (2, 0, rank_zero[2]),
+        (2, rank_one[1] - rank_one[0], -1),
+    ]
+
+    head = sim.advance(**options, num_steps=10)
+    legacy = head.state._replace(
+        cpml_psi_h_terms=tuple(
+            a.astype(jnp.bfloat16) for a in head.state.cpml_psi_h_terms
+        ),
+        cpml_psi_e_terms=tuple(
+            a.astype(jnp.bfloat16) for a in head.state.cpml_psi_e_terms
+        ),
+    )
+    resumed = sim.advance(**options, state=legacy)
+    assert resumed.results.cuda_plan["schedule"] == "mstep"
+    assert [(steps, window) for steps, window, _ in launched] == [
+        (21, fixed.cuda_plan["exchange_window"]),
+        (17, check_window),
+        (4, check_window),
+        (10, head.results.cuda_plan["exchange_window"]),
+        (11, resumed.results.cuda_plan["exchange_window"]),
+    ]
+    for owner in driver.sessions[-2:]:
+        packet, _, step, elapsed = owner.restores[0]
+        assert (step, elapsed) == (10, 10)
+        cpml = packet[abi.FIELD_COUNT : abi.FIELD_COUNT + 2 * abi.CPML_TERM_COUNT]
+        assert any(leaf.size for leaf in cpml)
+        for leaf in cpml:
+            assert leaf.dtype == np.float32
+            np.testing.assert_array_equal(leaf, 10)
+    for result in (adaptive, resumed.results):
+        np.testing.assert_array_equal(
+            result["frames"].field_times, fixed["frames"].field_times
+        )
+        np.testing.assert_array_equal(
+            result["frames"].fields["Ez"], fixed["frames"].fields["Ez"]
+        )

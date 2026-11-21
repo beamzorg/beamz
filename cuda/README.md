@@ -36,6 +36,9 @@ python -m pip wheel ./cuda --no-deps
 python -m pip install beamz_cuda_component-*.whl
 ```
 
+CUDA component ABI 31 stores CPML auxiliary fields in FP32. Rebuild and reinstall
+the optional component when updating from an earlier ABI.
+
 For a direct CMake build, set the architecture for the target GPU and configure
 the toolkit, Python, and nanobind paths for your environment.
 

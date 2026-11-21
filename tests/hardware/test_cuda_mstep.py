@@ -241,7 +241,9 @@ def test_mstep_reports_a_real_core_and_matches_ordinary_recorder_samples():
         time=sim.time,
     )
     state = _seed(recorded.compile(backend="jax", num_steps=19))
-    expected = recorded.advance(state=state, num_steps=19, backend="cuda_streamed").state
+    expected = recorded.advance(
+        state=state, num_steps=19, backend="cuda_streamed"
+    ).state
     actual = recorded.advance(state=state, num_steps=19, backend="cuda_mstep").state
     assert int(actual.recorded_counts[0]) == 19
     assert np.any(np.asarray(actual.recorded_fields[0]))
@@ -255,22 +257,6 @@ def test_mstep_without_cpml_sources_or_monitors():
     )
     state = _seed(bare.compile(backend="jax", num_steps=5))
     _compare(_run(bare, state, "cuda", 5), _run(bare, state, "cuda_mstep", 5))
-
-
-def test_mstep_bf16_recurrence_matches_cuda(monkeypatch):
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "bf16")
-    sim = _simulation()
-    program = sim.compile(backend="cuda_mstep", num_steps=5)
-    state = _seed(program)
-    state = state._replace(
-        cpml_psi_h_terms=tuple(
-            a.astype(jax.numpy.bfloat16) for a in state.cpml_psi_h_terms
-        ),
-        cpml_psi_e_terms=tuple(
-            a.astype(jax.numpy.bfloat16) for a in state.cpml_psi_e_terms
-        ),
-    )
-    _compare(_run(sim, state, "cuda", 5), _run(sim, state, "cuda_mstep", 5))
 
 
 def test_mstep_mode_source_and_windowed_interval_dft():

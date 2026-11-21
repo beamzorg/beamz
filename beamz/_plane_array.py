@@ -1,6 +1,7 @@
 """Access the physical dictionary behind an immutable layered raster."""
 
 import sys
+from importlib import import_module
 
 import numpy as np
 
@@ -85,13 +86,23 @@ def plane_dictionary(array):
     return bank, ids
 
 
+def _plane_dictionaries(arrays):
+    dictionaries = []
+    for array in arrays:
+        dictionary = plane_dictionary(array)
+        if dictionary is None:
+            return None
+        dictionaries.append(dictionary)
+    return dictionaries
+
+
 def material_planes(value, *, unique=False):
     """Iterate material in logical C-order or visit each physical plane once."""
     if plane_owner(value) is None or value.ndim not in (3, 4):
         return None
     arrays = value if value.ndim == 4 else (value,)
-    dictionaries = tuple(plane_dictionary(array) for array in arrays)
-    if any(item is None for item in dictionaries):
+    dictionaries = _plane_dictionaries(arrays)
+    if dictionaries is None:
         return None
     return (
         bank[i]
@@ -101,12 +112,12 @@ def material_planes(value, *, unique=False):
 
 
 def mapped_planes(rows, ids):
-    from beamz.design.raster import _native
+    native = import_module("beamz.design.raster._native")
 
     bank = np.ascontiguousarray(rows, dtype=np.float32)
     c, z = ids.shape
     try:
-        return _native.map_planes(bank, ids.ravel(), (c, z, *bank.shape[1:]))
+        return native.map_planes(bank, ids.ravel(), (c, z, *bank.shape[1:]))
     except OSError:
         dense = bank[ids]
         dense.setflags(write=False)
@@ -118,8 +129,8 @@ def detached_planes(value):
     if plane_owner(value) is None or value.ndim not in (3, 4) or value.nbytes < 1 << 20:
         return None
     rows = value if value.ndim == 4 else (value,)
-    parts = tuple(plane_dictionary(row) for row in rows)
-    if any(item is None for item in parts):
+    parts = _plane_dictionaries(rows)
+    if not parts:
         return None
     physical = parts[0][0]
     if any(bank.ctypes.data != physical.ctypes.data for bank, _ in parts):
@@ -133,8 +144,8 @@ def detached_planes(value):
 
 
 def mean_diagonal(diagonal):
-    dictionaries = [plane_dictionary(a) for a in diagonal]
-    if any(item is None for item in dictionaries):
+    dictionaries = _plane_dictionaries(diagonal)
+    if dictionaries is None:
         return None
     banks, indices = zip(*dictionaries, strict=True)
     combinations, inverse = np.unique(

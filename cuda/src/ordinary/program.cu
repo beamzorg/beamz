@@ -276,7 +276,7 @@ cudaError_t ValidateProgram(const BeamzProgramLaunch& program) {
   if (program.field_bank_count == 3) {
     if (FlagEnabled(program.h_ab, kBeamzCpmlPair)) {
       const int type=program.h_ab.inputs[31].element_type;
-      if(type!=kBeamzF32 && type!=kBeamzBF16) return cudaErrorInvalidValue;
+      if(type!=kBeamzF32) return cudaErrorInvalidValue;
       for (int t=0;t<6;++t)
         if (program.h_ab.inputs[31+t].element_type != type ||
             program.e_ab.inputs[31+t].element_type != type ||

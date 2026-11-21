@@ -1,6 +1,5 @@
 // Private moving consumer; no cross-TU device calls.
 #include <cuda_runtime.h>
-#include <cuda_bf16.h>
 #include <cuda_pipeline.h>
 #include <cmath>
 #include <cstddef>
