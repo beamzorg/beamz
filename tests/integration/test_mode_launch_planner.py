@@ -963,3 +963,144 @@ def test_local_launch_power_matches_dense_yee_diagnostic(
     assert len(powers) == 2  # Neither path may silently fall back to modal weights.
     np.testing.assert_allclose(powers[0], powers[1], rtol=2e-6, atol=1e-10)
     assert local == pytest.approx(dense, rel=2e-6, abs=1e-10)
+
+
+def _graded_waveguide_simulation(axis, direction="+", *, full_plane=False, core=0.5e-6):
+    """A square silicon core whose refined cells make the grid rectilinear."""
+    from beamz import (
+        PML,
+        Design,
+        GridSpec,
+        Material,
+        MeshOverride,
+        Rectangle,
+        Simulation,
+    )
+
+    um = 1e-6
+    normal = "xyz".index(axis)
+    size = [3.0 * um] * 3
+    size[normal] = 4.0 * um
+    design = Design(*size, material=Material(permittivity=1.444**2))
+    extent = [core] * 3
+    extent[normal] = size[normal]
+    design += Rectangle(
+        position=tuple((s - e) / 2 for s, e in zip(size, extent, strict=True)),
+        width=extent[0],
+        height=extent[1],
+        depth=extent[2],
+        material=Material(permittivity=3.476**2),
+    )
+    refined = tuple(size[i] if i == normal else 2.0 * core for i in range(3))
+    grid_spec = GridSpec.auto(
+        min_steps_per_wvl=10,
+        wavelength=1.55 * um,
+        overrides=(
+            MeshOverride(
+                center=tuple(s / 2 for s in size),
+                size=refined,
+                dl=tuple(None if i == normal else 0.03 * um for i in range(3)),
+            ),
+        ),
+    )
+    center = [s / 2 for s in size]
+    center[normal] = 1.5 * um if direction == "+" else size[normal] - 1.5 * um
+    plane = list(size) if full_plane else [2.0 * um] * 3
+    plane[normal] = 0.0
+    frequency = 299_792_458.0 / (1.55 * um)
+    source = ModeSource(
+        center=tuple(center),
+        size=tuple(plane),
+        direction=direction,
+        mode_spec=ModeSpec(num_modes=1),
+        source_time=GaussianPulse(freq0=frequency, fwidth=frequency / 10),
+    )
+    return Simulation(
+        design=design,
+        sources=[source],
+        monitors=[],
+        boundaries=[PML(edges="all", thickness=0.8 * um, formulation="cpml")],
+        grid_spec=grid_spec,
+        run_time=2e-14,
+    )
+
+
+def _expanded_residuals(residuals, fields):
+    expanded = {}
+    for residual in residuals:
+        values = expanded.setdefault(
+            residual.component,
+            np.zeros(getattr(fields, residual.component).shape, dtype=np.complex128),
+        )
+        values[residual.index] += residual.residual
+    return expanded
+
+
+@pytest.mark.parametrize(
+    ("axis", "direction", "full_plane"),
+    (
+        ("x", "+", False),
+        ("x", "-", False),
+        ("y", "+", False),
+        ("z", "-", False),
+        # A plane spanning the PML crops the window at both domain faces.
+        ("x", "+", True),
+    ),
+)
+def test_rectilinear_launch_is_source_local_and_matches_dense_residuals(
+    monkeypatch, axis, direction, full_plane
+):
+    """Graded-grid launches must not plan over the whole domain.
+
+    The source-local window must be used and must reproduce the full-grid
+    TF/SF residuals exactly.
+    """
+    planar = mode_launch_module.planar_tfsf
+    compared = []
+    for timing in ("e", "h"):
+        local = getattr(planar, f"compute_discrete_3d_{timing}_phasor_residuals")
+        dense = getattr(planar, f"_compute_3d_{timing}_phasor_residuals_dense")
+
+        def checked(profile, fields, *, local=local, dense=dense, timing=timing, **kw):
+            assert fields.geometry.metric_kind == "rectilinear"
+            assert planar.local_3d_phasor_context(
+                profile,
+                fields,
+                resolution=kw["resolution"],
+                max_shift=kw["max_shift"],
+            )
+            residuals = local(profile, fields, **kw)
+            actual = _expanded_residuals(residuals, fields)
+            expected = _expanded_residuals(dense(profile, fields, **kw), fields)
+            assert actual.keys() == expected.keys() and actual
+            for component, values in expected.items():
+                np.testing.assert_array_equal(actual[component], values)
+            compared.append(timing)
+            return residuals
+
+        monkeypatch.setattr(
+            planar, f"compute_discrete_3d_{timing}_phasor_residuals", checked
+        )
+    _graded_waveguide_simulation(axis, direction, full_plane=full_plane).compile(
+        num_steps=1
+    )
+    assert sorted(compared) == ["e", "h"]
+
+
+def test_segment_recompile_reuses_mode_launch_plan(monkeypatch):
+    """A shorter continuation segment must not solve and plan the launch again."""
+    calls = []
+    plan = mode_launch_module._plan_3d_mode_source
+
+    def counted(*args, **kwargs):
+        calls.append(args[0])
+        return plan(*args, **kwargs)
+
+    monkeypatch.setattr(mode_launch_module, "_plan_3d_mode_source", counted)
+    # A core width used by no other test keeps the program cache cold.
+    simulation = _graded_waveguide_simulation("x", core=0.47e-6)
+    first = simulation.compile(num_steps=4)
+    second = simulation.compile(num_steps=3)
+    assert len(calls) == 1
+    assert second.grid is first.grid
+    assert second.config.num_steps == 3
