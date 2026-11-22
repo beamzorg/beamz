@@ -14,6 +14,20 @@ from beamz.const import LIGHT_SPEED
 from beamz.devices._immutable import readonly_array
 
 
+def _discrete_spectrum(values, times, freqs):
+    """Evaluate the sampled DFT without a time-by-frequency temporary."""
+    values, times = np.asarray(values), np.asarray(times)
+    active = np.flatnonzero(values)
+    if active.size and np.all(np.isfinite(times)):
+        region = slice(active[0], active[-1] + 1)
+        values, times = values[region], times[region]
+    phase = 1j * 2.0 * np.pi * times
+    return np.asarray(
+        [np.sum(values * np.exp(phase * f)) for f in np.asarray(freqs).reshape(-1)],
+        dtype=np.complex128,
+    )
+
+
 def interpolate_time_signal(signal, time, dt):
     """Linearly interpolate a real-valued source signal at an arbitrary time."""
     arr = np.asarray(signal, dtype=np.float64)
@@ -342,11 +356,9 @@ class SampledSignal:
         frequencies = np.asarray(freqs, dtype=float)
         time = self.start_time + np.arange(self.values.size) * self.dt
         analytic = self.values + 1j * cast(np.ndarray, self.quadrature)
-        spectrum = np.sum(
-            analytic[:, None]
-            * np.exp(1j * 2.0 * np.pi * time[:, None] * frequencies.reshape(1, -1)),
-            axis=0,
-        ).reshape(frequencies.shape)
+        spectrum = _discrete_spectrum(analytic, time, frequencies).reshape(
+            frequencies.shape
+        )
         if normalize:
             scale = float(np.max(np.abs(spectrum), initial=0.0))
             if scale > 0.0:

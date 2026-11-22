@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from types import SimpleNamespace
 from typing import cast
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
+from beamz.design.grid import RectilinearGrid
 from beamz.devices._immutable import readonly_array
 from beamz.devices.modes.discrete import ComponentIndex
 from beamz.devices.modes.fields import _axis_coordinate, _axis_index, _phase_delay
@@ -378,11 +381,7 @@ def local_3d_phasor_context(
     max_shift: int,
 ):
     geometry = getattr(fields, "geometry", None)
-    if geometry is not None and geometry.metric_kind != "isotropic_uniform":
-        # A cropped component support may omit one outer edge, while derivative
-        # metrics are cell based. Keep the exact full-grid metric alignment for
-        # rectilinear launches; compact uniform launches retain the fast path.
-        return None
+    rectilinear = geometry is not None and geometry.metric_kind != "isotropic_uniform"
     axis = field_profile.axis
     axis_pos = _AXIS_POS_3D[axis]
     field_shapes = {
@@ -452,12 +451,24 @@ def local_3d_phasor_context(
     ):
         return None
 
+    local_geometry = None
+    if rectilinear:
+        # Give the window the parent's own edges (absolute coordinates, so phase
+        # references need no offset) and keep the parent's metric class. The window
+        # carries a halo where the incident state vanishes, so the window-edge
+        # metric differs from the parent's only where it multiplies zero fields.
+        local_geometry = _cropped_rectilinear_grid(geometry, component_slices)
+        if local_geometry is None:
+            return None
+
     cell_slice = tuple(slice(int(lo), int(hi)) for lo, hi in cell_bounds)
     cell_shape = tuple(int(s.stop or 0) - int(s.start or 0) for s in cell_slice)
     local_fields = SimpleNamespace(
         boundaries=getattr(fields, "boundaries", None),
         permittivity=np.empty(cell_shape, dtype=fields.permittivity.dtype),
     )
+    if local_geometry is not None:
+        local_fields.geometry = local_geometry
 
     def local_material_attr(
         attr: str,
@@ -543,7 +554,11 @@ def local_3d_phasor_context(
         for name, values in magnetic.items()
     }
 
-    offset = float(cell_bounds[axis_pos][0]) * float(resolution)
+    offset = (
+        0.0
+        if local_geometry is not None
+        else float(cell_bounds[axis_pos][0]) * float(resolution)
+    )
     local_indices = {
         component: shift_3d_component_index_to_local(
             index,
@@ -566,6 +581,53 @@ def local_3d_phasor_context(
         power_weights=field_profile.power_weights,
     )
     return local_profile, local_fields, component_slices
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class _CroppedRectilinearGrid(RectilinearGrid):
+    """A window of a non-uniform grid that keeps the parent's metric class.
+
+    A window of a graded grid can itself be uniform; classifying it again would
+    route it to scalar-resolution kernels that use the parent's representative
+    resolution instead of the window's actual widths.
+    """
+
+    parent_metric_kind: str = "rectilinear"
+
+    @property
+    def metric_kind(self):  # type: ignore[override]
+        return self.parent_metric_kind
+
+    def metric_kind_for(self, active_axes):  # type: ignore[override]
+        return self.parent_metric_kind
+
+
+def _cropped_rectilinear_grid(
+    geometry,
+    component_slices: dict[str, tuple[slice, slice, slice]],
+) -> _CroppedRectilinearGrid | None:
+    """Slice ``geometry`` to the cell window that the component slices describe.
+
+    Ex/Ey/Ez are cell-centred along x/y/z, so their slice along that axis is the
+    window's cell range; every component must then agree with it. Returns None
+    when they do not, so the caller keeps the exact dense path.
+    """
+    edges = []
+    for axis, centred, array_axis in (("x", "Ex", 2), ("y", "Ey", 1), ("z", "Ez", 0)):
+        cells = component_slices[centred][array_axis]
+        lo, hi = int(cells.start or 0), int(cells.stop or 0)
+        parent_edges = np.asarray(geometry.axis_edges(axis))
+        if hi <= lo or hi + 1 > parent_edges.size:
+            return None
+        for component, slices in component_slices.items():
+            count = int(slices[array_axis].stop or 0) - int(
+                slices[array_axis].start or 0
+            )
+            node = component_axis_offsets_3d(component)[axis] == 0.0
+            if int(slices[array_axis].start or 0) != lo or count != hi - lo + int(node):
+                return None
+        edges.append(parent_edges[lo : hi + 1])
+    return _CroppedRectilinearGrid(*edges, parent_metric_kind=str(geometry.metric_kind))
 
 
 def dense_3d_delta_residuals(
@@ -593,31 +655,35 @@ def dense_3d_delta_residuals(
     return tuple(out)
 
 
-def advance_incident_h_3d(fields, state, dt, *, resolution: float):
-    """Advance an incident 3D state through the source-free H half-step."""
-    ex = jnp.asarray(state["Ex"])
-    ey = jnp.asarray(state["Ey"])
-    ez = jnp.asarray(state["Ez"])
-    hx = jnp.asarray(state["Hx"])
-    hy = jnp.asarray(state["Hy"])
-    hz = jnp.asarray(state["Hz"])
-    grid = getattr(fields, "geometry", None)
-    curl_hx, curl_hy, curl_hz = (
+@partial(jax.jit, static_argnames=("dt", "resolution", "grid"))
+def _incident_h_step(state, sigma, dt, *, resolution, grid):
+    ex, ey, ez, hx, hy, hz = (state[c] for c in _FIELD_COMPONENTS_3D)
+    curls = (
         curl_e_to_h_3d(ex, ey, ez, resolution)
         if grid is None or grid.metric_kind == "isotropic_uniform"
         else curl_e_to_h_3d_metric(ex, ey, ez, grid)
     )
-    advanced = {
-        "Hx": np.asarray(
-            advance_h_field(hx, curl_hx, fields.sigma_m_hx, dt),
-        ),
-        "Hy": np.asarray(
-            advance_h_field(hy, curl_hy, fields.sigma_m_hy, dt),
-        ),
-        "Hz": np.asarray(
-            advance_h_field(hz, curl_hz, fields.sigma_m_hz, dt),
-        ),
-    }
+    return tuple(
+        advance_h_field(field, curl, loss, dt)
+        for field, curl, loss in zip((hx, hy, hz), curls, sigma, strict=True)
+    )
+
+
+def advance_incident_h_3d(
+    fields, state, dt, *, resolution: float
+) -> dict[str, np.ndarray]:
+    """Advance a static incident state with one compiled H half-step."""
+    grid = getattr(fields, "geometry", None)
+    updated = _incident_h_step(
+        {c: jnp.asarray(state[c]) for c in _FIELD_COMPONENTS_3D},
+        tuple(jnp.asarray(getattr(fields, "sigma_m_h" + a)) for a in "xyz"),
+        float(dt),
+        resolution=resolution,
+        grid=grid,
+    )
+    advanced: dict[str, np.ndarray] = dict(
+        zip(_H_COMPONENTS_3D, map(np.asarray, updated), strict=True)
+    )
     return _map_through_permeability(fields, state, advanced, dt, grid)
 
 
@@ -640,7 +706,7 @@ def _map_through_permeability(fields, before, after, dt, grid):
     from beamz.const import MU_0
     from beamz.constitutive import apply_tensor_dense, lossy_tensor_inverse
 
-    components = ("Hx", "Hy", "Hz")
+    components = _H_COMPONENTS_3D
     losses = {
         c: dt
         * np.asarray(getattr(fields, "sigma_m_h" + c[-1].lower()), dtype=np.float64)
@@ -680,55 +746,34 @@ def _map_through_permeability(fields, before, after, dt, grid):
     }
 
 
-def advance_incident_e_3d(
-    fields, state, h_next, dt, *, resolution: float
-) -> dict[str, np.ndarray]:
-    """Advance an incident 3D state through the source-free E half-step."""
-    from beamz.devices._boundary_compile import resolve_metallic_edges
-
-    ex = jnp.asarray(state["Ex"])
-    ey = jnp.asarray(state["Ey"])
-    ez = jnp.asarray(state["Ez"])
-    hx = jnp.asarray(h_next["Hx"])
-    hy = jnp.asarray(h_next["Hy"])
-    hz = jnp.asarray(h_next["Hz"])
-    boundaries = getattr(fields, "boundaries", None)
-    boundary_views = build_h_boundary_views_for_e_3d(
-        hx, hy, hz, frozenset(resolve_metallic_edges(boundaries, is_3d=True))
-    )
-    grid = getattr(fields, "geometry", None)
-    curl_kwargs = dict(
+@partial(
+    jax.jit, static_argnames=("dt", "resolution", "grid", "edges", "regions", "coupled")
+)
+def _incident_e_step(
+    state, magnetic, materials, dt, *, resolution, grid, edges, regions, coupled
+):
+    ex, ey, ez = (state[c] for c in _E_COMPONENTS_3D)
+    hx, hy, hz = (magnetic[c] for c in _H_COMPONENTS_3D)
+    kwargs = dict(
         ex_shape=ex.shape,
         ey_shape=ey.shape,
         ez_shape=ez.shape,
-        boundary_views=boundary_views,
+        boundary_views=build_h_boundary_views_for_e_3d(hx, hy, hz, edges),
     )
-    curl_hx, curl_hy, curl_hz = (
-        curl_h_to_e_3d(hx, hy, hz, resolution, **curl_kwargs)
+    curls = (
+        curl_h_to_e_3d(hx, hy, hz, resolution, **kwargs)
         if grid is None or grid.metric_kind == "isotropic_uniform"
-        else curl_h_to_e_3d_metric(hx, hy, hz, grid, **curl_kwargs)
+        else curl_h_to_e_3d_metric(hx, hy, hz, grid, **kwargs)
     )
-    material_grid = getattr(fields, "material_grid", None)
-    tensors = getattr(fields, "yee_tensors", None)
-    if tensors is None:
-        tensors = getattr(material_grid, "yee_tensors", {})
-    from beamz.devices.modes.constitutive import has_cross_terms
+    if coupled:
+        from beamz.constitutive import advance_e_tensor_dense
 
-    if has_cross_terms(tensors):
-        from beamz.constitutive import (
-            advance_e_tensor_dense,
-            electric_tensor_coefficients,
-        )
-
-        if any(np.any(np.asarray(getattr(fields, "sig_" + a)) != 0) for a in "xyz"):
-            raise ValueError("Tensor incident fields require lossless electric updates")
-        diagonal, cross = electric_tensor_coefficients(tensors)
-        updated = advance_e_tensor_dense(
+        return advance_e_tensor_dense(
             (ex, ey, ez),
-            (curl_hx, curl_hy, curl_hz),
-            tuple(jnp.asarray(v) for v in diagonal),
-            jnp.asarray(cross),
-            ("Ex", "Ey", "Ez"),
+            curls,
+            materials[0],
+            materials[1],
+            _E_COMPONENTS_3D,
             dt,
             cell_widths=(
                 tuple(np.asarray(grid.cell_widths(a)) for a in "xyz")
@@ -736,24 +781,61 @@ def advance_incident_e_3d(
                 else None
             ),
         )
-        return dict(zip(("Ex", "Ey", "Ez"), map(np.asarray, updated), strict=True))
-    return {
-        "Ex": np.asarray(
-            advance_e_field(
-                ex, curl_hx, fields.sig_x, fields.eps_x, dt, fields.region_x
-            ),
+    return tuple(
+        advance_e_field(
+            field, curl, sigma, epsilon, dt, tuple(slice(*bounds) for bounds in region)
+        )
+        for field, curl, (sigma, epsilon), region in zip(
+            (ex, ey, ez), curls, materials, regions, strict=True
+        )
+    )
+
+
+def advance_incident_e_3d(
+    fields, state, h_next, dt, *, resolution: float
+) -> dict[str, np.ndarray]:
+    """Advance a static incident state with one compiled E half-step."""
+    from beamz.devices._boundary_compile import resolve_metallic_edges
+    from beamz.devices.modes.constitutive import has_cross_terms
+
+    tensors = getattr(fields, "yee_tensors", None)
+    if tensors is None:
+        tensors = getattr(getattr(fields, "material_grid", None), "yee_tensors", {})
+    coupled = has_cross_terms(tensors)
+    if coupled:
+        from beamz.constitutive import electric_tensor_coefficients
+
+        if any(np.any(np.asarray(getattr(fields, "sig_" + a)) != 0) for a in "xyz"):
+            raise ValueError("Tensor incident fields require lossless electric updates")
+        diagonal, cross = electric_tensor_coefficients(tensors)
+        materials = (tuple(jnp.asarray(v) for v in diagonal), jnp.asarray(cross))
+    else:
+        materials = tuple(
+            (
+                jnp.asarray(getattr(fields, "sig_" + a)),
+                jnp.asarray(getattr(fields, "eps_" + a)),
+            )
+            for a in "xyz"
+        )
+    updated = _incident_e_step(
+        {c: jnp.asarray(state[c]) for c in _E_COMPONENTS_3D},
+        {c: jnp.asarray(h_next[c]) for c in _H_COMPONENTS_3D},
+        materials,
+        float(dt),
+        resolution=resolution,
+        grid=getattr(fields, "geometry", None),
+        edges=frozenset(
+            resolve_metallic_edges(getattr(fields, "boundaries", None), is_3d=True)
         ),
-        "Ey": np.asarray(
-            advance_e_field(
-                ey, curl_hy, fields.sig_y, fields.eps_y, dt, fields.region_y
-            ),
+        regions=()
+        if coupled
+        else tuple(
+            tuple((s.start, s.stop, s.step) for s in getattr(fields, "region_" + a))
+            for a in "xyz"
         ),
-        "Ez": np.asarray(
-            advance_e_field(
-                ez, curl_hz, fields.sig_z, fields.eps_z, dt, fields.region_z
-            ),
-        ),
-    }
+        coupled=coupled,
+    )
+    return dict(zip(_E_COMPONENTS_3D, map(np.asarray, updated), strict=True))
 
 
 def _compute_3d_h_phasor_residuals_dense(
@@ -872,7 +954,7 @@ def _compute_3d_e_phasor_residuals_dense(
         fields,
         full_prev,
         h_full_next,
-        dt,
+        float(dt),
         resolution=resolution,
     )
     e_target_next = mask_incident_3d_state_to_launched_side(
@@ -884,7 +966,7 @@ def _compute_3d_e_phasor_residuals_dense(
         fields,
         masked_prev,
         h_target_next,
-        dt,
+        float(dt),
         resolution=resolution,
     )
     delta = {

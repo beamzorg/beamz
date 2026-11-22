@@ -227,3 +227,64 @@ def test_gaussian_pulse_spectrum_matches_integrated_quadratures(remove_dc):
     np.testing.assert_allclose(
         pulse.spectrum([pulse.freq0], normalize=True), [1.0], atol=1e-14
     )
+
+
+@pytest.mark.parametrize("complex_signal", [False, True])
+def test_discrete_spectrum_matches_direct_sum_without_a_frequency_matrix(
+    monkeypatch, complex_signal
+):
+    from beamz.devices.sources.time import _discrete_spectrum
+
+    rng = np.random.default_rng(721)
+    times = np.arange(1307) * 4.7e-17 + 3e-15
+    values = rng.normal(size=times.size)
+    if complex_signal:
+        values = values + 1j * rng.normal(size=times.size)
+    freqs = np.linspace(-2e14, 3e14, 19)
+    expected = np.sum(
+        values[:, None] * np.exp(1j * 2 * np.pi * times[:, None] * freqs[None, :]),
+        axis=0,
+    )
+    original_exp = np.exp
+
+    def bounded_exp(phase, *args, **kwargs):
+        assert phase.size <= times.size, "DFT temporary grew with frequency count"
+        return original_exp(phase, *args, **kwargs)
+
+    monkeypatch.setattr(np, "exp", bounded_exp)
+    np.testing.assert_allclose(
+        _discrete_spectrum(values, times, freqs), expected, rtol=2e-13, atol=2e-12
+    )
+
+
+def test_discrete_spectrum_trims_only_exact_zero_padding(monkeypatch):
+    from beamz.devices.sources.time import _discrete_spectrum
+    from beamz.simulation.observe import _signal_dft_spectrum
+
+    times = np.arange(10000) * 1e-16
+    values = np.zeros(times.size)
+    values[400:460] = np.cos(np.arange(60))
+    values[470] = np.nextafter(0.0, 1.0)
+    freqs = np.array([1.7e14, 1.9e14])
+    expected = np.sum(
+        values[:, None] * np.exp(1j * 2 * np.pi * times[:, None] * freqs[None, :]),
+        axis=0,
+    )
+    exp = np.exp
+    sizes = []
+
+    def bounded(phase):
+        sizes.append(phase.size)
+        return exp(phase)
+
+    monkeypatch.setattr(np, "exp", bounded)
+    np.testing.assert_allclose(
+        _discrete_spectrum(values, times, freqs), expected, rtol=2e-13, atol=2e-12
+    )
+    np.testing.assert_allclose(
+        _signal_dft_spectrum(values, times, freqs),
+        2 * expected / times.size,
+        rtol=2e-13,
+        atol=2e-12,
+    )
+    assert max(sizes) == 71, "Subnormal samples must be retained; only exact zeros trim"

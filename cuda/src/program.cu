@@ -493,7 +493,8 @@ bool FuseCpmlCore(const BeamzProgramLaunch &program) {
         shape[axis] = h.outputs[component].dims[axis];
     }
   }
-  if (shape[2] < 384 || shape[0] * shape[1] * shape[2] < 12 * 1024 * 1024)
+  if (shape[2] < kCpmlFusionMinWidth ||
+      shape[0] * shape[1] * shape[2] < kCpmlFusionMinCells)
     return false;
   int device, major, minor;
   if (cudaGetDevice(&device) != cudaSuccess ||

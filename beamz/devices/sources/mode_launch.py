@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import weakref
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -696,14 +697,20 @@ def _launch_power_diagnostics_3d(
                     for residual in residuals
                 )
                 origin = tuple(int(s.start or 0) for s in slices["Ex"])
-                diagnostic_source = replace(
-                    source,
-                    center=tuple(
-                        float(coord) - offset * float(resolution)
-                        for coord, offset in zip(
-                            source.center, reversed(origin), strict=True
-                        )
-                    ),
+                # A rectilinear window keeps absolute coordinates; only the
+                # uniform window is re-origined and needs the source moved.
+                diagnostic_source = (
+                    source
+                    if getattr(diagnostic_fields, "geometry", None) is not None
+                    else replace(
+                        source,
+                        center=tuple(
+                            float(coord) - offset * float(resolution)
+                            for coord, offset in zip(
+                                source.center, reversed(origin), strict=True
+                            )
+                        ),
+                    )
                 )
             state = _reconstructed_3d_launch_phasor_state(
                 diagnostic_profile,
@@ -824,7 +831,41 @@ def _yee_plane_power_3d(
     return float(np.asarray(power))
 
 
+# Launch plans depend on the source, the logical grid, its resolution and dt, not on
+# the number of steps compiled. A continuation segment of a different length (such as
+# AutoTermination's final partial chunk) recompiles the program, so reuse the plan
+# instead of solving the mode and planning the TF/SF update again beside the live
+# fields. Entries are keyed by grid identity and dropped when the grid is collected.
+_LAUNCH_PLANS: dict[tuple, tuple[weakref.ref, object, ModeLaunchPlan]] = {}
+
+
 def plan_mode_source_launch(
+    source: ModeSource,
+    fields,
+    *,
+    resolution: float,
+    dt: float | None,
+    grid=None,
+) -> ModeLaunchPlan:
+    try:
+        key = (id(fields), id(grid), source, float(resolution), dt)
+        hash(key)
+        reference = weakref.ref(fields, lambda _, key=key: _LAUNCH_PLANS.pop(key, None))
+    except TypeError:
+        return _plan_mode_source_launch(
+            source, fields, resolution=resolution, dt=dt, grid=grid
+        )
+    cached = _LAUNCH_PLANS.get(key)
+    if cached is not None and cached[0]() is fields and cached[1] is grid:
+        return cached[2]
+    plan = _plan_mode_source_launch(
+        source, fields, resolution=resolution, dt=dt, grid=grid
+    )
+    _LAUNCH_PLANS[key] = (reference, grid, plan)
+    return plan
+
+
+def _plan_mode_source_launch(
     source: ModeSource,
     fields,
     *,

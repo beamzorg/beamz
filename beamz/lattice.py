@@ -1107,11 +1107,15 @@ def _base_coefficients(total_sigma, e_terms, sigma_m, mu_terms):
     return data
 
 
-def _material_slice_for_e_3d(permittivity, conductivity, orientation):
+def _material_slice_for_e_3d(permittivity, conductivity, orientation, epsilon=None):
     """Collocate material values with one staggered 3D electric component."""
     component = {"x": "Ex", "y": "Ey", "z": "Ez"}[orientation]
     region = (slice(None), slice(None), slice(None))
-    eps = sample_voxel_grid_at_e_component_3d_centered(permittivity, component)
+    eps = (
+        sample_voxel_grid_at_e_component_3d_centered(permittivity, component)
+        if epsilon is None
+        else jnp.asarray(epsilon)
+    )
     sig = (
         jnp.asarray(conductivity)
         if jnp.asarray(conductivity).ndim == 0
@@ -1164,13 +1168,18 @@ def _material_conductivities(fields):
     return total_sigma, magnetic_sigma
 
 
-def build_material_coefficients(fields):
+def build_material_coefficients(fields, *, yee_materials=None):
     """Collocate every material array once before runtime execution."""
 
     total_sigma, magnetic_sigma = _material_conductivities(fields)
     if fields.permittivity.ndim == 3:
         e_terms = tuple(
-            _material_slice_for_e_3d(fields.permittivity, total_sigma, axis)
+            _material_slice_for_e_3d(
+                fields.permittivity,
+                total_sigma,
+                axis,
+                (yee_materials or {}).get("eps_" + axis),
+            )
             for axis in "xyz"
         )
         sigma_m = _magnetic_conductivity_terms_3d(
