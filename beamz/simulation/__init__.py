@@ -9,6 +9,7 @@ from beamz.simulation.api import Simulation
 from beamz.simulation.model import AutoTermination, SimulationState
 from beamz.simulation.results import (
     MonitorResults,
+    RunProgress,
     RunTermination,
     SimulationResults,
     SimulationRun,
@@ -26,6 +27,7 @@ __all__ = [
     "SimulationRun",
     "SimulationState",
     "AutoTermination",
+    "RunProgress",
     "RunTermination",
     "GridSpec",
     "GaussianPulse",

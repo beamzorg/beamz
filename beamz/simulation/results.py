@@ -169,6 +169,54 @@ class RunTermination:
                 object.__setattr__(self, name, float(value))
 
 
+@dataclass(frozen=True, slots=True)
+class RunProgress:
+    """Describe execution progress after one completed chunk of timesteps.
+
+    Instances are passed to the ``progress_callback`` of :meth:`Simulation.run`
+    and :meth:`Simulation.advance`. They are created on the host after the
+    chunk has finished on the device, so ``step`` counts completed timesteps.
+    With automatic termination, the final event's diagnostics match the
+    termination report.
+
+    Attributes
+    ----------
+    step : int
+        Absolute number of timesteps completed.
+    total_steps : int
+        Final timestep of this call. Under automatic termination this is the
+        time-grid upper bound; the run may stop earlier.
+    time : float
+        Physical time of the runtime state, in seconds.
+    elapsed : float
+        Wall time since the call started, in seconds, including compilation.
+    field_decay, monitor_change, source_decay : float or None
+        Latest convergence residuals. A nonfinite chunk retains the previous
+        residual values, if available. They are ``None`` for
+        runs without automatic termination; ``monitor_change`` is also ``None``
+        before a second check or when no monitor criterion applies.
+    energy : float or None
+        Integrated electromagnetic energy after this chunk.
+    consecutive_checks : int
+        Successful convergence checks accumulated so far.
+    """
+
+    step: int
+    total_steps: int
+    time: float
+    elapsed: float
+    field_decay: float | None = None
+    monitor_change: float | None = None
+    source_decay: float | None = None
+    energy: float | None = None
+    consecutive_checks: int = 0
+
+    @property
+    def fraction(self) -> float:
+        """Completed fraction of ``total_steps``."""
+        return self.step / max(self.total_steps, 1)
+
+
 def _array_snapshot(value: Any, dtype=None) -> np.ndarray:
     # Copy only analysis-required data so results remain reproducible without live
     # simulation ownership.

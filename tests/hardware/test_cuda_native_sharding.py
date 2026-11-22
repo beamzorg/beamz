@@ -791,3 +791,67 @@ def test_temporal_shards_preserve_public_checkpoint_branches(physical, monkeypat
             np.testing.assert_array_equal(first.state.ez, initial_field)
     finally:
         scene.clear_compiled_cache()
+
+
+@pytest.mark.parametrize("backend", ["cuda_streamed", "cuda_mstep", "sharded"])
+def test_native_progress_callback(backend, monkeypatch, capsys):
+    from beamz.simulation.cuda.runtime import native_sharding
+
+    _module()
+    simulation = _scene(True, True, cells=(108, 35, 38), thickness=7 * 20e-9)
+    options = {"backend": backend, "performance": False}
+    if backend == "sharded":
+        monkeypatch.setattr(native_sharding, "_minimum_temporal_slabs", lambda *a: 2)
+        options.update(backend="cuda_mstep", sharding={"axis": "x", "num_devices": 1})
+    events = []
+    try:
+        reference = simulation.run(**options)
+        fixed = simulation.run(**options, progress_callback=events.append)
+        _compare(fixed, reference)
+        if backend == "sharded":
+            assert fixed.cuda_plan["temporal_windows"] > 0
+        steps = [event.step for event in events]
+        assert len(steps) > 1
+        assert steps == sorted(set(steps))
+        assert steps[-1] == simulation.num_steps
+        assert all(event.total_steps == simulation.num_steps for event in events)
+        np.testing.assert_allclose(
+            [event.time for event in events],
+            simulation.time[0] + np.asarray(steps) * simulation.dt,
+            rtol=2e-6,
+        )
+
+        first = simulation.advance(**options, num_steps=39)
+        events.clear()
+        resumed = simulation.advance(
+            **options, state=first.state, progress_callback=events.append
+        )
+        _compare(resumed.results, reference)
+        assert 39 < events[0].step <= events[-1].step == simulation.num_steps
+        assert events[-1].time == float(resumed.state.t)
+        assert all(event.total_steps == simulation.num_steps for event in events)
+
+        events.clear()
+        policy = bz.AutoTermination(
+            chunk_steps=37,
+            min_steps=35,
+            field_decay=1.0,
+            source_decay=1.0,
+            monitor_change=None,
+            consecutive_checks=2,
+        )
+        result = simulation.run(
+            **options, termination=policy, progress_callback=events.append
+        )
+        assert result.cuda_plan["binding"] == "native"
+        report = result.termination
+        assert report.reason == "converged"
+        assert events[-1].step == report.steps
+        assert events[-1].time == report.time
+        assert events[-1].energy == report.energy
+        assert events[-1].field_decay == report.field_decay
+        assert events[-1].source_decay == report.source_decay
+        assert events[-1].consecutive_checks == report.consecutive_checks
+        assert capsys.readouterr().out == ""
+    finally:
+        simulation.clear_compiled_cache()

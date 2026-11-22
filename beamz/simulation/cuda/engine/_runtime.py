@@ -398,18 +398,24 @@ class _Session:
         self._completed = step
         return restored
 
-    def _execute(self, total, *, progress, snapshot=True):
+    def _execute(
+        self, total, *, progress, snapshot=True, progress_callback=None, wall_start=None
+    ):
         from beamz._helpers import _finish_inline_progress, _print_inline_progress
         from beamz.simulation import execute
+        from beamz.simulation.results import RunProgress
 
         completed = 0
         elapsed = 0.0
         state = None
-        outer = execute._progress_chunk_lengths(total) if progress else (total,)
-        if progress and self.plan.schedule == "temporal":
-            slab = self.plan.depth * self.plan.macro_slab_count
-            stride = ((outer[0] + slab - 1) // slab) * slab
-            outer = tuple(min(stride, total - start) for start in range(0, total, stride))
+        chunked = progress or progress_callback is not None
+        alignment = (
+            self.plan.depth * self.plan.macro_slab_count
+            if chunked and self.plan.schedule == "temporal" else 1
+        )
+        outer = execute._progress_chunk_lengths(total, alignment=alignment) if chunked else (total,)
+        final_step = self._completed + total
+        callback_start = time.perf_counter() if wall_start is None else wall_start
         try:
             for length in outer:
                 state, duration = self._advance(length, snapshot=snapshot and completed + length == total)
@@ -417,6 +423,16 @@ class _Session:
                 completed += length
                 if progress:
                     _print_inline_progress(completed, total, label="Running simulation")
+                if progress_callback is not None:
+                    clock = self._clock_state() if state is None else state
+                    progress_callback(
+                        RunProgress(
+                            step=int(clock.current_step),
+                            total_steps=final_step,
+                            time=float(clock.t),
+                            elapsed=time.perf_counter() - callback_start,
+                        )
+                    )
         finally:
             if progress:
                 _finish_inline_progress()
@@ -478,7 +494,7 @@ class _Session:
             ),
         }
 
-    def _run(self, simulation: Any = "", *, progress: bool = False, store_full_materials: bool = False, performance: bool = True, termination=None, wall_start=None) -> Any:
+    def _run(self, simulation: Any = "", *, progress: bool = False, store_full_materials: bool = False, performance: bool = True, termination=None, wall_start=None, progress_callback=None) -> Any:
         from beamz.simulation import execute
         from beamz.simulation.results import SimulationResults
 
@@ -493,7 +509,8 @@ class _Session:
                 try:
                     result = execute.run_until_terminated(simulation, termination, progress=progress,
                         store_full_materials=store_full_materials, performance=performance, sharding=None,
-                        backend="cuda", _native=self, _wall_start=wall_start)
+                        backend="cuda", _native=self, _wall_start=wall_start,
+                        progress_callback=progress_callback)
                 finally:
                     if hasattr(self.native, "_clear_monitor_diagnostics"):
                         self.native._clear_monitor_diagnostics()
@@ -503,7 +520,8 @@ class _Session:
                     "monitor_convergence_gpu_bytes": max(0, self._monitor_check_bytes)}))
                 return result
             total = self.state_contract.steps
-            state, elapsed = self._execute(total, progress=progress)
+            state, elapsed = self._execute(total, progress=progress,
+                progress_callback=progress_callback, wall_start=wall_start)
             stats = execute._performance_for(self.program,runtime_s=elapsed,steps=total) if performance else None
             result = SimulationResults.from_run(simulation,runtime_fields=self.program.grid,
                 monitor_results=execute._decode_monitor_results(simulation,self.program,state,**self._recording_result_options()),completed_steps=total,
@@ -512,7 +530,7 @@ class _Session:
             if stats is not None: execute._print_performance(stats)
             return result
 
-    def _run_segment(self, simulation, contract, state, *, state_only, progress, store_full_materials, performance):
+    def _run_segment(self, simulation, contract, state, *, state_only, progress, store_full_materials, performance, progress_callback=None, wall_start=None):
         import jax
 
         from beamz.simulation import execute
@@ -538,7 +556,8 @@ class _Session:
             template = state
         else:
             template = self._restore_checkpoint(simulation, state, contract)
-        _, elapsed = self._execute(contract.steps, progress=progress, snapshot=False)
+        _, elapsed = self._execute(contract.steps, progress=progress, snapshot=False,
+            progress_callback=progress_callback, wall_start=wall_start)
         clocks = self.native.clocks()
         if int(clocks["current_step"]) != contract._stop:
             raise RuntimeError("CUDA execution did not complete the requested physical horizon")
@@ -594,7 +613,7 @@ def _clear(simulation: Any = "") -> None:
             _SESSIONS.clear()
 
 
-def _dispatch(simulation: Any = "", *, backend: str = "auto", schedule: str | None = "", progress: bool = False, store_full_materials: bool = False, performance: bool = True, interop_reason: str = "", termination=None, _wall_start=None, segment: _StateContract | None = None, state=None, state_only: bool = False) -> tuple[Any, _Plan]:
+def _dispatch(simulation: Any = "", *, backend: str = "auto", schedule: str | None = "", progress: bool = False, store_full_materials: bool = False, performance: bool = True, interop_reason: str = "", termination=None, _wall_start=None, segment: _StateContract | None = None, state=None, state_only: bool = False, progress_callback=None) -> tuple[Any, _Plan]:
     from beamz.simulation import backend as backends
 
     wall_start = time.perf_counter() if _wall_start is None else _wall_start
@@ -698,8 +717,13 @@ def _dispatch(simulation: Any = "", *, backend: str = "auto", schedule: str | No
         if segment is not None:
             try:
                 result = session._run_segment(simulation, segment, state, state_only=state_only,
-                    progress=progress, store_full_materials=store_full_materials, performance=performance)
+                    progress=progress, store_full_materials=store_full_materials, performance=performance,
+                    progress_callback=progress_callback, wall_start=wall_start)
             except _Unsupported as error:
                 return None, _Plan(binding="ffi", reason=str(error))
             return result, session.plan
-        return session._run(simulation,progress=progress,store_full_materials=store_full_materials,performance=performance, **({"termination":termination,"wall_start":wall_start} if termination is not None else {})), session.plan
+        return session._run(
+            simulation, progress=progress, store_full_materials=store_full_materials,
+            performance=performance, termination=termination, wall_start=wall_start,
+            progress_callback=progress_callback,
+        ), session.plan

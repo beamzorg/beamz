@@ -257,7 +257,11 @@ def scene(*, recorder=False, graded=False, cpml=True, shape=(30, 32, 34), steps=
 
 def test_compact_result_and_device_checks_share_the_native_clock(driver):
     sim = scene()
-    fixed = sim.run(backend="cuda", performance=False)
+    events = []
+    fixed = sim.run(backend="cuda", performance=False, progress_callback=events.append)
+    assert [event.step for event in events] == list(range(1, 12))
+    assert all(event.total_steps == 11 for event in events)
+    assert len(driver.sessions[-1].downloads) == 3
     assert fixed.cuda_plan["final_step"] == 11
     np.testing.assert_array_equal(fixed["dft"].dft_fields["Ez"], 22)
     policy = bz.AutoTermination(
@@ -267,7 +271,15 @@ def test_compact_result_and_device_checks_share_the_native_clock(driver):
         consecutive_checks=1,
         monitor_names=("dft",),
     )
-    result = sim.run(backend="cuda", termination=policy, performance=False)
+    events.clear()
+    result = sim.run(
+        backend="cuda",
+        termination=policy,
+        performance=False,
+        progress_callback=events.append,
+    )
+    assert [event.step for event in events] == [3, 6]
+    assert events[-1].monitor_change == result.termination.monitor_change
     owner = driver.sessions[-1]
     assert driver.sessions[0].closed
     assert result.termination.converged and result.termination.steps == 6
@@ -364,7 +376,10 @@ def test_sharded_packets_keep_dft_window_and_device_ownership(driver, graded, cp
 
     driver.electric_coefficient_table = track_table
     sharding = dict(axis="z", num_devices=2)
-    result = sim.run(backend="cuda", sharding=sharding, progress=True)
+    events = []
+    result = sim.run(backend="cuda", sharding=sharding, progress_callback=events.append)
+    assert [event.step for event in events] == list(range(1, 12))
+    assert all(event.total_steps == 11 for event in events)
     plan = result.cuda_plan
     assert plan["shard_devices"] == (0, 1)
     assert bool(calls) == (setup_device == "default")
@@ -473,9 +488,16 @@ def test_single_device_continuation_keeps_native_dispatch(driver, sharding):
     first = sim.advance(
         backend="cuda", sharding=sharding, num_steps=3, performance=False
     )
+    events = []
     tail = sim.advance(
-        backend="cuda", sharding=sharding, state=first.state, performance=False
+        backend="cuda",
+        sharding=sharding,
+        state=first.state,
+        performance=False,
+        progress_callback=events.append,
     )
+    assert [event.step for event in events] == list(range(4, 12))
+    assert events[-1].time == float(tail.state.t)
     assert (
         first.results.cuda_plan["binding"]
         == tail.results.cuda_plan["binding"]
@@ -654,3 +676,12 @@ def test_temporal_shards_restore_fp32_cpml_and_observations(driver, monkeypatch)
         np.testing.assert_array_equal(
             result["frames"].fields["Ez"], fixed["frames"].fields["Ez"]
         )
+
+    events = []
+    callback_result = sim.run(**options, progress_callback=events.append)
+    window = callback_result.cuda_plan["exchange_window"]
+    assert [event.step for event in events] == [*range(window, 21, window), 21]
+    assert all(event.total_steps == 21 for event in events)
+    np.testing.assert_array_equal(
+        callback_result["dft"].dft_fields["Ez"], fixed["dft"].dft_fields["Ez"]
+    )
