@@ -147,7 +147,7 @@ nanobind_add_module(
   src/bindings/ffi_handler.cc
   src/bindings/native_extension.cc
   src/runtime/sharded/adjoint.cu
-  src/tensor_media.cu
+  src/physics/tensor/tensor_media.cu
 )
 target_compile_features(_cuda PRIVATE cxx_std_17)
 target_include_directories(_cuda PRIVATE "${JAX_FFI_INCLUDE}" ${BEAMZ_CUDA_INCLUDE_DIRS} ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})

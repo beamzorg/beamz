@@ -582,7 +582,7 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
       beamz::cuda::yee::AdvanceYeeField(Phase, old_field, decay, source, curl);
 }
 
-#include "tensor.cuh"
+#include "tensor/tensor.cuh"
 
 template <int Phase, bool Cpml, int MetricKind, bool HasMetallicEdges = true,
           bool UniformCpml = false,
