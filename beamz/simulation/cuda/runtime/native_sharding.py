@@ -8,6 +8,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, replace
 from math import prod
 from os import getenv
+from time import perf_counter
 from types import MappingProxyType
 from typing import Any, cast
 
@@ -1417,6 +1418,7 @@ def _run_shards(
     minimum_band=0,
     segment=None,
     state=None,
+    progress_callback=None,
 ):
     """Execute spatial partitions on their assigned CUDA devices."""
     import jax
@@ -1431,8 +1433,9 @@ def _run_shards(
         _clear,
         _retire_overlapping,
     )
-    from beamz.simulation.results import SimulationResults, SimulationRun
+    from beamz.simulation.results import RunProgress, SimulationResults, SimulationRun
 
+    callback_start = perf_counter() if wall_start is None else wall_start
     checkpoint = segment is not None
     steps_requested = segment.steps if checkpoint else simulation.num_steps
     infos = {ordinal: dict(module.device_info(ordinal)) for ordinal in set(devices)}
@@ -1551,24 +1554,46 @@ def _run_shards(
                 performance=performance,
                 sharding=None,
                 _native=stepper,
-                _wall_start=wall_start,
+                _wall_start=callback_start
+                if progress_callback is not None
+                else wall_start,
+                progress_callback=progress_callback,
             )
         else:
+            alignment = (
+                stepper.temporal[2]
+                if progress_callback is not None and stepper.temporal
+                else 1
+            )
             batches = (
-                execute._progress_chunk_lengths(steps_requested)
-                if progress
+                execute._progress_chunk_lengths(steps_requested, alignment=alignment)
+                if progress or progress_callback is not None
                 else (steps_requested,)
             )
             elapsed = 0.0
+            initial_step = stepper.completed
+            final_step = initial_step + steps_requested
             try:
                 for steps in batches:
                     _, duration = stepper._advance(steps, snapshot=False)
                     elapsed += duration
                     if progress:
                         _print_inline_progress(
-                            stepper.completed,
+                            stepper.completed - initial_step,
                             steps_requested,
                             label="Running simulation",
+                        )
+                    if progress_callback is not None:
+                        ordinal, owner, _, _ = stepper.shards[0]
+                        with _on_device(module, ordinal):
+                            clock = owner.clocks()
+                        progress_callback(
+                            RunProgress(
+                                step=int(clock["current_step"]),
+                                total_steps=final_step,
+                                time=float(np.float32(clock["time"])),
+                                elapsed=perf_counter() - callback_start,
+                            )
                         )
             finally:
                 if progress:
@@ -1754,6 +1779,7 @@ def _try_sharded_run(
     performance,
     segment=None,
     state=None,
+    progress_callback=None,
 ):
     """Admit physical multi-GPU runs while preserving explicit legacy policies."""
     from beamz.simulation import backend as backends
@@ -1843,6 +1869,8 @@ def _try_sharded_run(
         termination=termination,
         wall_start=wall_start,
     )
+    if progress_callback is not None:
+        options["progress_callback"] = progress_callback
     if temporal:
         window, depth, slots = temporal
         per_gpu = _minimum_temporal_slabs(

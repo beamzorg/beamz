@@ -53,6 +53,7 @@ FUNCTION_EXPORTS = (
 RUNTIME_EXPORTS = (
     "ModeData",
     "MonitorResults",
+    "RunProgress",
     "RunTermination",
     "SimulationResults",
     "SimulationRun",

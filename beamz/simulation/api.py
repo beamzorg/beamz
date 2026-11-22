@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import os
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from importlib import import_module
+from time import perf_counter
 from types import MappingProxyType
 from typing import Any, Literal
 
@@ -80,6 +81,7 @@ from beamz.simulation.model import (
 )
 from beamz.simulation.preparation_trace import trace_preparation
 from beamz.simulation.results import MonitorResults as MonitorResults
+from beamz.simulation.results import RunProgress
 from beamz.simulation.results import SimulationResults as SimulationResults
 from beamz.simulation.results import SimulationRun as SimulationRun
 
@@ -1617,6 +1619,7 @@ class Simulation:
         schedule=None,
         expected_runs=1,
         performance=True,
+        progress_callback: Callable[[RunProgress], None] | None = None,
     ) -> SimulationRun:
         """Execute a fresh or continued segment and return results plus next state.
 
@@ -1656,6 +1659,10 @@ class Simulation:
         expected_runs : int, default=1
             Expected executions reusing an interoperability program. Native CUDA
             plans are independent of this hint and never execute timing trials.
+        progress_callback : callable, optional
+            Called on the host with a :class:`RunProgress` after each completed
+            chunk, independently of terminal progress output. Steps are
+            counted from the start of the simulation, including on continuation.
 
         Returns
         -------
@@ -1703,6 +1710,7 @@ class Simulation:
         """
         from beamz.simulation.cuda.engine._contracts import _StateContract
 
+        wall_start = perf_counter() if progress_callback is not None else None
         current_step = 0 if state is None else int(state.current_step)
         if not 0 <= current_step <= self.num_steps:
             raise ValueError("state.current_step is outside the simulation time grid.")
@@ -1731,7 +1739,8 @@ class Simulation:
                 backend=backend,
                 schedule=schedule,
                 termination=None,
-                wall_start=None,
+                wall_start=wall_start,
+                progress_callback=progress_callback,
                 progress=bool(progress),
                 store_full_materials=bool(store_full_materials),
                 performance=bool(performance),
@@ -1752,6 +1761,8 @@ class Simulation:
             else "",
             segment=contract,
             state=state,
+            _wall_start=wall_start,
+            progress_callback=progress_callback,
         )
         if native_run is not None:
             return native_run
@@ -1767,6 +1778,8 @@ class Simulation:
             expected_runs=expected_runs,
             performance=performance,
             dispatch_reason=plan.reason,
+            progress_callback=progress_callback,
+            wall_start=wall_start,
         )
 
     def _advance_interop(
@@ -1783,6 +1796,8 @@ class Simulation:
         expected_runs=1,
         performance=True,
         dispatch_reason="",
+        progress_callback=None,
+        wall_start=None,
     ) -> SimulationRun:
         from beamz.simulation.cuda.engine._contracts import _StateContract
         from beamz.simulation.cuda.engine._runtime import _clear
@@ -1792,7 +1807,7 @@ class Simulation:
         steps = contract.steps
         remaining = contract.total_steps - contract.initial_step
         _clear(self)
-        if progress:
+        if progress or progress_callback is not None:
             run = run_simulation_with_progress(
                 self,
                 state,
@@ -1806,6 +1821,9 @@ class Simulation:
                 donate_state=bool(donate_state),
                 performance=bool(performance),
                 report_performance=bool(performance),
+                show_progress=bool(progress),
+                _wall_start=wall_start,
+                progress_callback=progress_callback,
             )
 
         else:
@@ -1861,6 +1879,7 @@ class Simulation:
         expected_runs=1,
         termination: AutoTermination | None = None,
         performance: bool = True,
+        progress_callback: Callable[[RunProgress], None] | None = None,
     ) -> SimulationResults:
         """Execute the complete simulation and return immutable analysis results.
 
@@ -1892,6 +1911,10 @@ class Simulation:
         expected_runs : int, default=1
             Expected executions reusing an interoperability program. Native CUDA
             plans are independent of this hint and never execute timing trials.
+        progress_callback : callable, optional
+            Called on the host with a :class:`RunProgress` after each completed
+            chunk, independently of terminal progress output. With automatic
+            termination, each event also carries the convergence diagnostics.
 
         Returns
         -------
@@ -1919,6 +1942,12 @@ class Simulation:
         reason ``"wall_time_limit"``; finishing a chunk and constructing the result
         may take execution beyond the budget.
 
+        Log each convergence check as it completes:
+
+        >>> def report(p):
+        ...     print(f"{p.step}/{p.total_steps} field_decay={p.field_decay}")
+        >>> results = sim.run(termination=AutoTermination(), progress_callback=report)
+
         Notes
         -----
         This is the normal user-facing execution method. Compilation is automatic.
@@ -1929,13 +1958,16 @@ class Simulation:
         final :class:`SimulationState` is required. Use :meth:`step` only for
         state-only single-timestep debugging.
         """
+        from beamz.simulation import execute
         from beamz.simulation.cuda.engine._runtime import _dispatch
         from beamz.simulation.cuda.mstep.schedule import normalize_expected_runs
 
         expected_runs = normalize_expected_runs(expected_runs)
-        from beamz.simulation import execute
-
-        wall_start = execute.perf_counter() if termination is not None else None
+        wall_start = (
+            execute.perf_counter()
+            if termination is not None or progress_callback is not None
+            else None
+        )
         sharding_interop = False
         if sharding is not None:
             from beamz.simulation.cuda.runtime.native_sharding import _try_sharded_run
@@ -1947,6 +1979,7 @@ class Simulation:
                 schedule=schedule,
                 termination=termination,
                 wall_start=wall_start,
+                progress_callback=progress_callback,
                 progress=bool(progress),
                 store_full_materials=bool(store_full_materials),
                 performance=bool(performance),
@@ -1962,6 +1995,7 @@ class Simulation:
             performance=bool(performance),
             termination=termination,
             _wall_start=wall_start,
+            progress_callback=progress_callback,
             interop_reason="sharded execution uses the CUDA interoperability binding"
             if sharding_interop
             else "",
@@ -1980,6 +2014,7 @@ class Simulation:
                 expected_runs=expected_runs,
                 performance=bool(performance),
                 _wall_start=wall_start,
+                progress_callback=progress_callback,
             )
         else:
             result = self._advance_interop(
@@ -1991,6 +2026,8 @@ class Simulation:
                 expected_runs=expected_runs,
                 donate_state=True,
                 performance=bool(performance),
+                progress_callback=progress_callback,
+                wall_start=wall_start,
             ).results
         object.__setattr__(
             result,

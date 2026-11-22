@@ -29,6 +29,7 @@ STABLE_SIMULATION_EXPORTS = {
     "Periodic",
     "Bloch",
     "Port",
+    "RunProgress",
     "RunTermination",
     "Simulation",
     "SimulationResults",
