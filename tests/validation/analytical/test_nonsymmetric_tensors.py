@@ -10,6 +10,7 @@ effective tensor ``T + i cot(omega dt / 2) B``, which tends to the physical
 from __future__ import annotations
 
 import warnings
+from contextlib import contextmanager
 
 import jax.numpy as jnp
 import numpy as np
@@ -25,6 +26,7 @@ FREQUENCY = LIGHT_SPEED / WAVELENGTH
 EPS = np.diag([3.0, 2.0, 2.5])
 
 
+@contextmanager
 def _drop_box_terms(monkeypatch):
     """Negative control: compile without the antisymmetric/off-diagonal terms.
 
@@ -34,13 +36,20 @@ def _drop_box_terms(monkeypatch):
     from beamz.simulation.compile import clear_program_cache
     from beamz.simulation.execute import clear_execution_cache
 
-    monkeypatch.setattr(
-        anisotropic,
-        "_static_extras",
-        lambda medium, family, dt: (np.zeros((3, 3)), np.zeros((3, 3))),
-    )
-    clear_program_cache()  # programs compiled earlier still hold the full plan
-    clear_execution_cache()
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                anisotropic,
+                "_static_extras",
+                lambda medium, family, dt: (np.zeros((3, 3)), np.zeros((3, 3))),
+            )
+            clear_program_cache()
+            clear_execution_cache()
+            yield
+    finally:
+        # Discard plans and executables compiled with the patched constitutive terms.
+        clear_program_cache()
+        clear_execution_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -181,8 +190,8 @@ def test_uniform_field_follows_the_semi_implicit_recurrence(
 
     # Negative control: without the new antisymmetric/off-diagonal terms the
     # same run misses the oracle by far more than the tolerance.
-    _drop_box_terms(monkeypatch)
-    dropped = _uniform(medium, family, steps, dt, (1.0, 0.0))
+    with _drop_box_terms(monkeypatch):
+        dropped = _uniform(medium, family, steps, dt, (1.0, 0.0))
     assert np.abs(dropped - expected).max() > 0.1
 
 
@@ -418,8 +427,8 @@ def test_plane_waves_split_into_circular_modes_of_the_full_tensor(case):
 
 
 def test_plane_wave_negative_control_loses_the_circular_splitting(monkeypatch):
-    _drop_box_terms(monkeypatch)
-    measured, discrete, _ = _circular_indices("hermitian_eps")
+    with _drop_box_terms(monkeypatch):
+        measured, discrete, _ = _circular_indices("hermitian_eps")
     # Both circular modes then see the same isotropic eps.
     np.testing.assert_allclose(measured[0], measured[1], rtol=1e-3)
     assert np.abs(measured / discrete - 1).max() > 0.05

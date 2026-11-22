@@ -44,8 +44,7 @@ MU = ((1.6, 0.25, 0.1), (0.25, 1.4, 0.2), (0.1, 0.2, 1.3))
 ISO = ((3.0, 0.0, 0.0), (0.0, 3.0, 0.0), (0.0, 0.0, 3.0))
 
 
-def _guide_2d(core, polarization, monitors=(), freqs=(FREQUENCY,)):
-    spacing = 50e-9
+def _guide_2d(core, polarization, monitors=(), freqs=(FREQUENCY,), *, spacing=50e-9):
     design = bz.Design(width=6e-6, height=3e-6, material=bz.Material(1.0))
     design += bz.Rectangle(
         position=(0.0, 1.3e-6), width=6e-6, height=0.4e-6, material=core
@@ -142,13 +141,13 @@ def _slab_neff(eps_zz, mu_xx, mu_yy, half_width, k0):
 def test_2d_anisotropic_permeability_slab_matches_analytic_dispersion(mu):
     """mu_xx and mu_yy play distinct roles: swapping them moves neff by 0.46."""
     simulation = _guide_2d(
-        bz.AnisotropicMedium(permittivity=2.0, permeability=mu), "tm"
+        bz.AnisotropicMedium(permittivity=2.0, permeability=mu), "tm", spacing=25e-9
     )
     source = cast(bz.ModeSource, simulation.sources[0])
     data = source.solve_modes(simulation, freqs=[FREQUENCY])
     neff = float(np.real(np.asarray(data.neffs)).ravel()[0])
     exact = _slab_neff(2.0, mu[0], mu[1], 0.2e-6, 2 * np.pi * FREQUENCY / LIGHT_SPEED)
-    # Discretization error at 8 cells across the core is ~0.5%.
+    # Compare the Yee-grid result at 16 cells across the core to the continuum root.
     assert abs(neff - exact) < 0.015, (neff, exact)
 
 

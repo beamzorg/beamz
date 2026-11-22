@@ -587,10 +587,9 @@ def forward_step(
             logical_shapes=ctx.boundary.logical_component_shapes,
         )
         state = state._replace(ex=ex, ey=ey, ez=ez)
-    anisotropic = (
-        program.dispersion is not None and program.dispersion.anisotropic is not None
-    )
-    if anisotropic:
+    dispersion = program.dispersion
+    anisotropic = dispersion.anisotropic if dispersion is not None else None
+    if anisotropic is not None:
         from beamz.simulation.anisotropic import snapshot_electric, snapshot_magnetic
         from beamz.simulation.dispersion import (
             update_anisotropic_electric,
@@ -599,12 +598,12 @@ def forward_step(
 
         # Streamed CUDA runs the corrections as native kernels.
         native_tensor = cfg.backend == "cuda_streamed" and not cfg.sharding.enabled
-        old_h_boxes = snapshot_magnetic(state, program.dispersion.anisotropic)
+        old_h_boxes = snapshot_magnetic(state, anisotropic)
     state = update_kernel.update_h(state, ctx, coeffs)
-    if anisotropic:
+    if anisotropic is not None:
         # Map the vacuum increment through mu^-1 before H sources inject.
         state = update_anisotropic_magnetic(
-            old_h_boxes, state, program.dispersion, native_tensor
+            old_h_boxes, state, dispersion, native_tensor
         )
 
     # 2. H-phase sources may overwrite constrained cells, so reapply the compiled masks
@@ -656,17 +655,15 @@ def forward_step(
 
     # 3. Advance E, inject its sources, and restore its masks before observation.
     old_e_state = state
-    if anisotropic:
-        old_e_boxes = snapshot_electric(state, program.dispersion.anisotropic)
+    if anisotropic is not None:
+        old_e_boxes = snapshot_electric(state, anisotropic)
     state = update_kernel.update_e(state, ctx, coeffs)
-    if anisotropic:
+    if anisotropic is not None:
         from beamz.simulation.anisotropic import update_static_electric
 
         # Map the vacuum increment through the full static tensors before E
         # sources inject, mirroring the permeability mapping above.
-        state = update_static_electric(
-            old_e_boxes, state, program.dispersion.anisotropic, native_tensor
-        )
+        state = update_static_electric(old_e_boxes, state, anisotropic, native_tensor)
     state = apply_source_phase(
         state,
         state.current_step,
@@ -678,11 +675,11 @@ def forward_step(
     )
     from beamz.simulation.dispersion import update_dispersion
 
-    if program.dispersion is not None:
-        state = update_dispersion(old_e_state, state, program.dispersion)
-    if anisotropic:
+    if dispersion is not None:
+        state = update_dispersion(old_e_state, state, dispersion)
+    if anisotropic is not None:
         state = update_anisotropic_electric(
-            old_e_boxes, state, program.dispersion, native_tensor
+            old_e_boxes, state, dispersion, native_tensor
         )
     if not kernel_owns_pec:
         ex, ey, ez = update_runtime.apply_post_source_boundaries(
@@ -776,7 +773,7 @@ def scan_compiler_options(program) -> dict:
     # Empirical fusion autotuning allocates full-sized trial inputs/outputs during
     # compilation, outside executable.memory_analysis(). Use default emitters for
     # both FDTD backends so an otherwise fitting run can compile near capacity.
-    options = {"xla_gpu_autotune_level": 0}
+    options: dict[str, int | str] = {"xla_gpu_autotune_level": 0}
     if program.dispersion is not None and program.dispersion.anisotropic is not None:
         # XLA (jax 0.9) segfaults on the host executing CUDA graphs of some
         # tensor-media scans, depending on region sizes and on both backends.

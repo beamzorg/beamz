@@ -814,9 +814,7 @@ def coupled_operators(grid, box: YeeBox, dt, media):
         inverses[support] = np.linalg.inv(tensor + loss)
         losses[support] = loss
 
-    def operator(matrices, allow_empty):
-        if allow_empty and not any(np.any(m != 0.0) for m in matrices.values()):
-            return None
+    def operator(matrices) -> InverseOperator:
         diagonal = tuple(
             jnp.asarray(matrices[c][..., k, k], dtype=jnp.float32)
             for k, c in enumerate(components)
@@ -842,7 +840,10 @@ def coupled_operators(grid, box: YeeBox, dt, media):
 
         return InverseOperator(diagonal, cross(symmetric), cross(skew))
 
-    return operator(inverses, False), operator(losses, True)
+    damping = (
+        operator(losses) if any(np.any(m != 0.0) for m in losses.values()) else None
+    )
+    return operator(inverses), damping
 
 
 def static_electric_box(grid, periodic_axes=frozenset()) -> YeeBox | None:
@@ -897,7 +898,7 @@ def vacuum_coefficient_grid(grid, periodic_axes=frozenset()):
             if axis in seam_axes:
                 continue
             for end in (0, -1):
-                edge = [slice(None)] * len(box.shared_shape)
+                edge: list[int | slice] = [slice(None)] * len(box.shared_shape)
                 edge[position] = end
                 ring[tuple(edge)] = True
         if np.any(np.abs(node[3:][:, ring]) > 1e-10):

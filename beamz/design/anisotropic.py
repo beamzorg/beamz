@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.design.materials import Material
@@ -73,7 +74,9 @@ def packed_to_matrix(packed) -> np.ndarray:
     return packed[..., np.asarray(_PACKED_INDEX)]
 
 
-def _matrix_from_any(value: Any, name: str, dtype=np.float64) -> np.ndarray:
+def _matrix_from_any(
+    value: Any, name: str, dtype: npt.DTypeLike = np.float64
+) -> npt.NDArray:
     """Return a full 3x3 tensor from scalar, 3, 6 (packed), 9 (row-major), or 3x3."""
 
     array = np.asarray(value, dtype=dtype)
@@ -722,9 +725,9 @@ class AnisotropicMedium(Material):
         principal axes. ``frequency_range`` spans the models' fit bands.
         """
 
-        models = (x, x, x) if y is None and z is None else (x, y, z)
-        if any(m is None for m in models):
+        if x is None or (y is None) != (z is None):
             raise ValueError("Pass one model (isotropic) or all three axis models.")
+        models = (x, y, z) if y is not None and z is not None else (x, x, x)
         groups: dict = {}
         for axis, model in enumerate(models):
             groups.setdefault(model.cache_spec(), (model, []))[1].append(axis)
@@ -789,10 +792,10 @@ class AnisotropicMedium(Material):
         epsilon = _matrix_from_any(permittivity, "permittivity", complex)
         mu = _matrix_from_any(permeability, "permeability", complex)
         return cls(
-            epsilon.real,
-            mu.real,
-            conductivity=omega * EPS_0 * epsilon.imag,
-            magnetic_conductivity=omega * MU_0 * mu.imag,
+            np.real(epsilon),
+            np.real(mu),
+            conductivity=omega * EPS_0 * np.imag(epsilon),
+            magnetic_conductivity=omega * MU_0 * np.imag(mu),
             **kwargs,
         )
 

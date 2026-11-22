@@ -316,6 +316,7 @@ def compile_ccpr_region(region, poles, fraction, grid, dt, periodic):
     edot_diagonal, edot_offdiagonal = tensor_pole_weights(cropped, drive, box)
     if box.family == "E" and material_grid.uses_full_permittivity:
         tensors = electric_kernel_tensors(grid, dt, periodic)
+        assert tensors is not None  # The active electric CCPR region contributes to K.
         components = box.components
         support = {c: tensors["eps_" + c[-1].lower()] for c in components}
         _require_positive_definite(
