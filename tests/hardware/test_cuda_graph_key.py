@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.cuda_source_layout import CUDA_INCLUDE_FLAGS
+
 
 @pytest.mark.skipif(shutil.which("nvcc") is None, reason="requires CUDA toolkit")
 def test_every_monitor_buffer_address_participates_in_graph_identity(tmp_path):
@@ -15,9 +17,8 @@ def test_every_monitor_buffer_address_participates_in_graph_identity(tmp_path):
         [
             shutil.which("nvcc"),
             "-std=c++17",
-            "-I",
-            str(root / "cuda/src"),
-            str(root / "cuda/src/graph.cu"),
+            *CUDA_INCLUDE_FLAGS,
+            str(root / "cuda/src/common/graph.cu"),
             str(root / "cuda/tests/graph_key.cc"),
             "-o",
             str(executable),

@@ -44,6 +44,7 @@ class RunSpec:
     cuda_memory_policy: str = "auto"
     cuda_schedule: str = "streamed"
     cuda_expected_runs: int = 1
+    _cuda_memory_budget_bytes: int = field(default=0, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +74,7 @@ class SimulationRequest:
         hash=False,
         repr=False,
     )
+    _native_preparation: bool = field(default=False, kw_only=True)
 
     def __post_init__(self) -> None:
         # Snapshot the only request member that may arrive as a mutable backend object.
@@ -517,6 +519,8 @@ class RunConfig:
     cuda_memory_policy: str = "auto"
     cuda_schedule: str = "streamed"
     cuda_expected_runs: int = 1
+    _cuda_memory_budget_bytes: int = field(default=0, kw_only=True)
+    cuda_program_target: str | None = None
 
 
 @dataclass(frozen=True, slots=True, eq=False)

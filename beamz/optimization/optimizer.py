@@ -1,6 +1,5 @@
 """Adam workflow and inspectable, non-pickle optimization histories."""
 
-import hashlib
 import inspect
 import time
 import types
@@ -19,7 +18,12 @@ from ._validation import step_count
 from .design import InverseDesign
 from .objectives import ModalObjective
 from .region import FilterProject, Specification
-from .result import InverseDesignResult, OptimizationStep, load_result
+from .result import (
+    InverseDesignResult,
+    OptimizationStep,
+    _checkpoint_fingerprint,
+    load_result,
+)
 from .schedules import OptimizationSchedule
 from .topology import _readonly_array as _frozen
 
@@ -93,7 +97,7 @@ def _optimize(
     return result
 
 
-def _function_token(function, seen=None):
+def _function_token(function, seen=None, *, legacy_defaults=False):
     """Include closure/configuration values, not merely a callable's name."""
     seen = set() if seen is None else seen
     if id(function) in seen:
@@ -107,9 +111,9 @@ def _function_token(function, seen=None):
             return ("module", value.__name__)
         if isinstance(value, types.FunctionType):
             return (
-                _function_token(value, seen)
+                _function_token(value, seen, legacy_defaults=legacy_defaults)
                 if value.__module__ == function.__module__
-                else cache_token(value)
+                else cache_token(value, legacy_defaults=legacy_defaults)
             )
         if isinstance(value, types.CodeType):
             return (
@@ -117,7 +121,7 @@ def _function_token(function, seen=None):
                 tuple(token(v) for v in value.co_consts),
                 value.co_names,
             )
-        return cache_token(value)
+        return cache_token(value, legacy_defaults=legacy_defaults)
 
     closure = inspect.getclosurevars(function)
     return (
@@ -166,24 +170,24 @@ class AdamOptimizer(Specification):
         ):
             raise ValueError("objective_id must be a nonempty string.")
 
-    def _fingerprint(self, post_process_fn):
+    def _fingerprint(self, post_process_fn, *, legacy_defaults=False):
         if not callable(post_process_fn):
             raise TypeError("Supply a callable post_process_fn.")
         function = self.objective_id or (
-            cache_token(post_process_fn)
+            cache_token(post_process_fn, legacy_defaults=legacy_defaults)
             if isinstance(post_process_fn, ModalObjective)
-            else _function_token(post_process_fn)
+            else _function_token(post_process_fn, legacy_defaults=legacy_defaults)
         )
         # Also track captured configuration in user-defined transformations and
         # penalties; a function's qualified name alone does not identify it.
         region = self.design.design_region
         pipeline = tuple(
-            _function_token(fn)
+            _function_token(fn, legacy_defaults=legacy_defaults)
             if isinstance(fn, types.FunctionType)
-            else cache_token(fn)
+            else cache_token(fn, legacy_defaults=legacy_defaults)
             for fn in region.transformations + region.penalties
         )
-        token = cache_token(
+        return _checkpoint_fingerprint(
             (
                 TOPOLOGY_NUMERICS_VERSION,
                 self.design,
@@ -194,9 +198,10 @@ class AdamOptimizer(Specification):
                 self.schedule,
                 region.penalty_input,
                 self.design.adjoint_source_grouping,
-            )
+            ),
+            self.design.simulation,
+            legacy_defaults=legacy_defaults,
         )
-        return hashlib.sha256(repr(token).encode()).hexdigest()
 
     def run(
         self,
@@ -262,4 +267,9 @@ class AdamOptimizer(Specification):
             optimizer=optax.adam(self.learning_rate),
             shape=self.design.design_region.params_shape,
             schedule=self.schedule,
+            legacy_fingerprint=(
+                (lambda: self._fingerprint(post_process_fn, legacy_defaults=True))
+                if self.design.backend == "jax"
+                else None
+            ),
         )

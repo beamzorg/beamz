@@ -203,6 +203,7 @@ def test_tensor_cuda_phase_matches_graph_without_monitors(boundary):
 
 def test_tensor_cuda_rejects_unimplemented_adjoint():
     from beamz.simulation.cuda.tensor import payload
+
     from beamz.simulation.differentiation import build_differentiable_scan
 
     p = tensor_simulation().compile(num_steps=1, backend="cuda_streamed")

@@ -31,7 +31,6 @@ def main():
     if min(a.shape) <= 24 or a.presteps < 0:
         p.error("need a nonempty 12-cell CPML interior and nonnegative presteps")
     os.environ.update(
-        BEAMZ_CUDA_CPML_PSI_PRECISION="fp32",
         BEAMZ_CUDA_TEMPORAL_STEPS="1",
         BEAMZ_CUDA_CPML_TEMPORAL="0",
         BEAMZ_CUDA_CPML_PAIR_TILE="oriented",

@@ -73,6 +73,69 @@ def test_placement_never_materializes_recipe(monkeypatch):
     assert reads and max(reads) * 4 <= 256
 
 
+@pytest.mark.parametrize("region_setup", [False, True])
+@pytest.mark.parametrize(
+    "shape,polarization,edge,axis,index,active",
+    [
+        ((4, 5, 6), "tm", "front", 0, 0, ("Ex", "Ey", "Hz")),
+        ((4, 5), "tm", "right", 1, -1, ("Ez", "Hx")),
+        ((4, 5), "te", "right", 1, -1, ("Ey",)),
+    ],
+)
+def test_wall_profiles_preserve_yee_faces(
+    region_setup: bool,
+    shape: tuple[int, ...],
+    polarization: str,
+    edge: str,
+    axis: int,
+    index: int,
+    active: tuple[str, ...],
+) -> None:
+    from beamz.devices._boundary_compile import compile_metallic_masks
+    from beamz.devices.boundaries import PEC
+    from beamz.simulation.kernels import apply_zero_mask
+
+    shapes = component_shapes(shape, polarization)
+    masks = compile_metallic_masks(
+        shapes,
+        shape,
+        (PEC(edges=(edge,)),),
+        polarization_2d=polarization,
+        region_setup=region_setup,
+    )
+    for name, mask in masks.items():
+        expected = np.zeros(shapes[name], bool)
+        if name in active:
+            selection = [slice(None)] * len(shape)
+            selection[axis] = index
+            expected[tuple(selection)] = True
+        np.testing.assert_array_equal(np.asarray(mask), expected)
+        field = np.arange(np.prod(shapes[name]), dtype=np.float32).reshape(shapes[name])
+        np.testing.assert_array_equal(
+            apply_zero_mask(field, mask), np.where(expected, 0, field)
+        )
+
+
+def test_empty_wall_masks_use_axis_storage_without_volume_allocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from beamz.devices._boundary_compile import compile_metallic_masks
+    from beamz.devices.boundaries import PML
+    from beamz.simulation.boundary_masks import compact_mask
+
+    def no_array(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Empty PEC preparation materialized a full volume")
+
+    monkeypatch.setattr(RegionArray, "__array__", no_array)
+    shapes = component_shapes((512, 512, 512))
+    masks = compile_metallic_masks(shapes, (512, 512, 512), (PML(),))
+    assert sum(p.nbytes for mask in masks.values() for p in mask.profiles) < 10_000
+    assert all(
+        mask.shape == shapes[name] and compact_mask(mask) is None
+        for name, mask in masks.items()
+    )
+
+
 def test_public_partitioned_pipeline_without_recipe_materialization():
     import os
     import subprocess
@@ -130,6 +193,58 @@ def test_boundary_extrusion_copy_only_when_required():
     assert not _extrusion_changes_material(material, edges)
     material[0, 3, 4] = 2
     assert _extrusion_changes_material(material, edges)
+
+
+def test_region_yee_extrusion_preserves_copy_order_without_dense_materialization(
+    monkeypatch,
+):
+    from beamz.devices._boundary_compile import _edge_regions, _extruded_yee_material
+
+    values = np.arange(9 * 7 * 11, dtype=np.float32).reshape(9, 7, 11)
+    recipe = RegionArray(values.shape, values.dtype, values.__getitem__)
+    passes = (
+        (("front", 0, "low", 5), ("right", 2, "high", 2)),
+        (("back", 0, "high", 5), ("bottom", 1, "low", 2)),
+    )
+
+    def no_array(*args, **kwargs):
+        raise AssertionError("CPML preparation materialized the Yee support")
+
+    monkeypatch.setattr(RegionArray, "__array__", no_array)
+    expected = values.copy()
+    for edges in passes:
+        recipe = _extruded_yee_material(recipe, edges)
+        for _, axis, side, count in edges:
+            slab, reference = _edge_regions(values.shape, axis, side, count)
+            expected[slab] = expected[reference]
+    for tile in tiles(values.shape, values.dtype, budget=128):
+        np.testing.assert_array_equal(recipe[tile], expected[tile])
+    np.testing.assert_array_equal(values[0, 0], np.arange(11, dtype=np.float32))
+
+
+def test_native_energy_material_runs_join_across_bounded_reads(monkeypatch):
+    from beamz._region_array import flat_tiles
+    from beamz.simulation.cuda.engine._prepare import _encode_diagnostic_material
+
+    data = np.repeat(np.array([1, 3, 5], np.float32), (23, 13, 24)).reshape(3, 4, 5)
+    recipe = RegionArray(data.shape, data.dtype, data.__getitem__)
+    monkeypatch.setattr(
+        "beamz._region_array.flat_tiles",
+        lambda shape, dtype, **_: flat_tiles(shape, dtype, budget=28),
+    )
+    dense = np.arange(data.size, dtype=np.float32).reshape(data.shape)
+    np.testing.assert_array_equal(
+        _encode_diagnostic_material(dense)["values"], dense.ravel()
+    )
+
+    def no_array(*args, **kwargs):
+        raise AssertionError("Energy diagnostics materialized a compressible material")
+
+    monkeypatch.setattr(RegionArray, "__array__", no_array)
+    packed = _encode_diagnostic_material(recipe)
+    np.testing.assert_array_equal(packed["values"], [1, 3, 5])
+    np.testing.assert_array_equal(packed["ends"], [23, 36, 60])
+    assert packed["ends"].dtype == np.int32
 
 
 def test_region_basic_negative_and_strided_slices():

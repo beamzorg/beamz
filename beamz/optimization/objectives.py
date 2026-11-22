@@ -255,7 +255,10 @@ class ModePower(ModalObjective):
             if item.monitor_index == list(results.monitors).index(self.monitor)
         )
         normalization = normalization_from_result(
-            results, results[self.monitor], source=0
+            results,
+            results[self.monitor],
+            source=0,
+            spectra=cache.setdefault("source_spectra", {}),
         )
         if normalization is None:
             raise ValueError(

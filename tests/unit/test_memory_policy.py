@@ -160,9 +160,19 @@ def test_scan_remains_composable_under_jit_and_grad():
     np.testing.assert_allclose(jax.jit(jax.grad(energy))(1.0), 2 * expected, rtol=1e-5)
 
 
-def test_mstep_estimate_counts_compact_fields_and_plan():
+@pytest.mark.parametrize("placeholder_cells,scratch_bytes", [(0, 8192), (128, 3072)])
+def test_mstep_estimate_counts_compact_fields_and_plan(
+    monkeypatch, placeholder_cells, scratch_bytes
+):
     import math
 
+    from beamz.simulation.cuda.runtime import capabilities
+
+    monkeypatch.setattr(
+        capabilities,
+        "mstep_allocation_contract",
+        lambda cells: ("target", placeholder_cells),
+    )
     program, _, context = _program_and_state(cpml=True)
     program = replace(
         program, config=replace(context.config, cuda_memory_policy="auto")
@@ -181,13 +191,13 @@ def test_mstep_estimate_counts_compact_fields_and_plan():
     retained = memory.cuda_workspace_estimate(
         program, donate_state=False, mstep_plan=plan
     )
-    assert donated == 2 * fields + psi + 8192 + 1024
+    assert donated == 2 * fields + psi + scratch_bytes + 1024
     assert retained - donated == fields + psi
     for donate, full in ((True, donated), (False, retained)):
         minimum = memory.cuda_workspace_estimate(
             program, donate_state=donate, mstep=True
         )
-        assert full - minimum == 8192 + 1024
+        assert full - minimum == scratch_bytes + 1024
 
 
 @pytest.mark.parametrize("policy,available", [("auto", 1), ("capacity", 1 << 30)])

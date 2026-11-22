@@ -62,7 +62,7 @@ def topology_yee_permittivity(program, permittivity, mask):
 
 
 def topology_coefficients(program, permittivity, mask):
-    """Bind scalar design permittivity to an existing JAX execution plan."""
+    """Bind scalar design permittivity to an existing execution plan."""
     updates = {}
     for axis, component, eps in zip(
         "xyz",
@@ -72,7 +72,8 @@ def topology_coefficients(program, permittivity, mask):
     ):
         if program.config.is_3d:
             updates[f"e_permittivity_{axis}"] = eps
-            continue
+            if program.config.backend == "jax":
+                continue
         decay, source = precompute_e_update_coefficients(
             shape=program.grid.component_shapes[component],
             conductivity=getattr(program.grid, f"sig_{axis}"),
@@ -80,7 +81,9 @@ def topology_coefficients(program, permittivity, mask):
             dt=program.config.dt,
             region=getattr(program.grid, f"region_{axis}"),
         )
-        updates[f"e_decay_{axis}"] = decay
+        updates[f"e_decay_{axis}"] = (
+            decay if program.config.backend == "jax" else jnp.float32(1.0)
+        )
         updates[f"e_source_{axis}"] = source
     return program.coefficients._replace(**updates)
 

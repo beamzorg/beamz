@@ -27,10 +27,8 @@ pytestmark = pytest.mark.skipif(
     ],
 )
 @pytest.mark.parametrize("schedule", ["ordinary", "pair", "cpml_pair"])
-@pytest.mark.parametrize("precision", ["fp32", "bf16"])
-def test_cyclic_graph(axes, material, workload, schedule, precision, monkeypatch):
+def test_cyclic_graph(axes, material, workload, schedule, monkeypatch):
     monkeypatch.setenv("BEAMZ_CUDA_STORAGE_AXES", "012")
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", precision)
     monkeypatch.setenv(
         "BEAMZ_CUDA_TEMPORAL_STEPS", "1" if schedule == "ordinary" else "2"
     )
@@ -129,7 +127,6 @@ def test_cyclic_public_single_step(monkeypatch):
     from beamz.simulation.cuda import storage
 
     monkeypatch.setenv("BEAMZ_CUDA_STORAGE_AXES", "012")
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "fp32")
     monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "2")
     monkeypatch.setenv("BEAMZ_CUDA_CPML_TEMPORAL", "1")
     monkeypatch.setenv("BEAMZ_CUDA_CPML_PAIR_TILE", "oriented")

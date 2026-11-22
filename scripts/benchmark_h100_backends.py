@@ -157,7 +157,6 @@ def main():
         XLA_PYTHON_CLIENT_PREALLOCATE="false",
         XLA_PYTHON_CLIENT_MEM_FRACTION=".80",
         LD_LIBRARY_PATH="",
-        BEAMZ_CUDA_CPML_PSI_PRECISION="fp32",
         NUMPY_MADVISE_HUGEPAGE="0",
     )
     summary = []
@@ -171,7 +170,7 @@ def main():
         },
     }
     source_hash = hashlib.sha256()
-    for path in sorted([*root.glob("beamz/**/*.py"), *root.glob("cuda/src/*")]):
+    for path in sorted([*root.glob("beamz/**/*.py"), *root.glob("cuda/src/**/*.*")]):
         if path.is_file():
             source_hash.update(str(path.relative_to(root)).encode())
             source_hash.update(path.read_bytes())

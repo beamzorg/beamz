@@ -60,9 +60,12 @@ than forming a second public solver API.
 | `advance()` | Chunking, continuation, checkpointing, or branching | `SimulationRun(results, state)` | Preserved by default; donation is explicit |
 | `step()` | Single-timestep debugging and numerical verification | `SimulationState` | Preserved by default; donation is explicit |
 
-All three methods use the same lazily compiled JAX engine. `compile()` is optional
-and intended for advanced inspection or prewarming; there is no separate
-"uncompiled" execution path.
+All three methods share immutable compilation and numerical contracts. Eligible
+3D CUDA runs, continuation and single steps use a resident native session.
+Public checkpoints keep the same field, CPML, acquisition and clock state across
+both native and interoperability routes. JAX execution remains available
+explicitly. `compile()` is optional and intended for advanced inspection or
+prewarming.
 
 Pass `AutoTermination` to `run(termination=...)` when the configured time grid
 should be a maximum rather than a mandatory duration. Execution reuses a fixed
@@ -73,6 +76,20 @@ are constructed once after the stopping decision, avoiding repeated full-record
 Fourier transforms during long runs.
 `SimulationResults.termination` contains the executed step count, stop reason,
 and final diagnostics. It remains `None` for an ordinary full-grid run.
+
+Native CUDA uses this same stopping controller for both ordinary and temporal
+schedules. Fields, CPML state, clocks and cumulative DFT sums stay in the resident
+session between checks. GPU reductions supply energy, maximum field and finiteness.
+When the selected DFT rows fit the scratch budget, the GPU also reduces their
+convergence residual before transferring a scalar. The full monitor data is
+then detached after stopping. Diagnostic
+materials and separable Yee integration weights are allocated only for adaptive
+runs and included in the CUDA memory plan. The wall-time budget includes setup.
+Early convergence retains the configured DFT normalization window; a wall-time
+stop returns the actual acquired prefix. Inspect `results.cuda_plan` to verify
+the selected binding, schedule, and monitor convergence location. A broadband
+`ModeSource` can use `band_taper=(start, end)` to give the emitted subbands a
+smooth, finite tail. Validate that the chosen end time preserves the spectrum.
 
 ## Ownership
 
@@ -85,7 +102,9 @@ and final diagnostics. It remains `None` for an ordinary full-grid run.
   mathematics. Periodic, PML, sponge, and PEC profile lowering lives with the boundary
   specifications in `beamz.devices._boundary_compile`.
 - `sharding.py`: optional multi-device lowering, padding, placement, and cropping.
-- `cuda/sharding.py`: explicit neighbor exchange and packed CPML ownership for
+- `cuda/engine`: native packet preparation, capability checks, a frozen ordinary
+  or temporal plan, and resident ownership. See the [CUDA guide](../../cuda/README.md).
+- `cuda/runtime/sharding.py`: explicit neighbor exchange and packed CPML ownership for
   sharded streamed CUDA phases; sources and monitors share the JAX timestep.
 - `observe.py`: monitor accumulation plus the numerical interpretation and
   source normalization of those acquisitions.
@@ -110,8 +129,9 @@ there is no public adapter or lowering registry.
 Compiled programs, discretizations, and JIT execution artifacts live outside
 immutable specs and plans in bounded private caches.
 `Simulation.clear_compiled_cache()` is the supported explicit clear operation.
-Cache identity is derived from
-canonical immutable configuration tokens, never live object identity.
+Compiled-plan identity is derived from canonical immutable configuration tokens.
+Resident native CUDA sessions are weakly owned by their immutable Simulation;
+clearing compilation caches also closes those sessions and releases their buffers.
 
 ## Output policy
 
@@ -203,10 +223,11 @@ methods resolve analysis functions only when called.
 
 ## Differentiable execution
 
-Build `solver = simulation.differentiable(backend="cuda")` once (or select `"jax"`), then
+Build `solver = simulation.differentiable()` once, then
 call `solver(permittivity, conductivity=..., state=..., source_amplitudes=...)`
-inside `jax.grad` or `jax.value_and_grad`. It returns a JAX-native
-`SimulationState`, including differentiable monitor accumulators. Use
+inside `jax.grad` or `jax.value_and_grad`. The solver selects native CUDA autodiff
+when supported. Use `backend="jax"` or `backend="cuda"` for explicit selection.
+It returns a JAX-native `SimulationState` with differentiable monitor accumulators. Use
 `solver.monitor_fields(state, name)` and `solver.monitor_flux(state, name)` for
 frequency-domain objectives. The [optimization guide](../optimization/README.md)
 covers checkpointing, native CUDA reverse mode, and parameter restrictions.

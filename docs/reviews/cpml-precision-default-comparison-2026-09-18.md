@@ -1,5 +1,8 @@
 # CPML storage precision: RTX3090 JAX and CUDA comparison
 
+These results and reproduction commands refer to the pre-ABI-31 CUDA
+implementation.
+
 The comparison changes only CPML auxiliary storage: fields, coefficients and
 recurrence/correction arithmetic stay FP32. All simulations are lossless, have
 exactly 12 CPML cells, a mode source and two compact mode monitors at three

@@ -47,7 +47,6 @@ def test_cuda_abi_layout_relationships_are_explicit():
     } == set(range(layout["source_group_buffer_count"]))
     assert layout["cpml_e_psi_input_offset"] == abi.CPML_E_PSI_INPUT_OFFSET
     assert 1 << schema["flags"]["graph_cache"] == abi.CUDA_GRAPH_CACHE
-    assert 1 << schema["flags"]["bf16_psi"] == abi.CUDA_BF16_PSI
     assert abi.CUDA_DEFAULT_FLAGS == abi.CUDA_GRAPH_CACHE
 
 

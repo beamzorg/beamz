@@ -97,7 +97,7 @@ the executed notebook includes those figures. HTML browser inspection remains
 incomplete because the T3 preview could not connect to the local server.
 
 CUDA supports first-order reverse mode on one GPU with FP32 3D fields. Native
-JVPs, higher derivatives, BF16 autodiff, coupled tensor updates, axis permutations,
+JVPs, higher derivatives, coupled tensor updates, axis permutations,
 dispersive binding, and sharded CUDA autodiff remain unsupported. Rebuild the
 component for ABI 27 before running this API. See the
 [optimization guide](../../beamz/optimization/README.md) for the public API.

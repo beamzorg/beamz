@@ -236,3 +236,103 @@ def test_node_curl_metrics_use_actual_primal_and_neighboring_dual_widths():
     for primal, dual in metrics:
         np.testing.assert_array_equal(primal, [2, 4])
         np.testing.assert_array_equal(dual, [1.5, 3, 6])
+
+
+@pytest.mark.parametrize(
+    "loss,elliptical", [(False, False), (True, False), (False, True)]
+)
+def test_fixed_beta_phase_basis_preserves_complex_modes(loss, elliptical):
+    from scipy import sparse
+    from scipy.sparse import linalg
+
+    from beamz.devices.modes._yee import _converged_shift_invert_eigenpairs
+
+    phase = np.array([1j, 1j, 1, 1, 1, 1])
+    core = np.diag(np.arange(2.0, 8.0)) + np.diag(np.ones(5), 1)
+    operator = sparse.csc_matrix(phase[:, None] * core * phase.conj())
+    operator = operator * (1 + 0.01j * loss)
+    mass = sparse.eye(6)
+    seed = phase.copy()
+    if elliptical:
+        seed[-1] *= 1j
+
+    seen = []
+
+    class Solver:
+        def eigs(self, a, **kwargs):
+            seen.append(a.dtype.kind)
+            return linalg.eigs(a, **kwargs)
+
+    values, modes = _converged_shift_invert_eigenpairs(
+        Solver(),
+        operator,
+        mass,
+        seed=seed,
+        count=2,
+        target=4.6,
+        longitudinal_size=2,
+    )
+    assert seen == ["c" if (loss or elliptical) else "f"]
+    np.testing.assert_allclose(operator @ modes, (mass @ modes) * values, atol=1e-7)
+
+
+def test_corrected_propagation_constant_tracks_an_isolated_real_mode():
+    from scipy import sparse
+    from scipy.sparse.linalg import aslinearoperator
+
+    from beamz.devices.modes._yee import _track_corrected_mode
+
+    angle = 1e-5
+    basis = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+    target = 1.0
+    values = np.array([target + 1e-9, 2.0])
+    original = np.array([target - 1e-4, 2.0])
+    operator = sparse.csc_matrix((basis * values) @ basis.T)
+    mass = sparse.eye(2)
+    previous = aslinearoperator(np.diag(1 / (original - target)))
+    value, vector = _track_corrected_mode(
+        operator, mass, target, np.array([1.0, 0.0]), previous
+    )
+    np.testing.assert_allclose(value, values[0], rtol=1e-12)
+    np.testing.assert_allclose(abs(np.vdot(vector, basis[:, 0])), 1, atol=1e-12)
+    assert _track_corrected_mode(operator, mass, target, np.ones(2), previous) is None
+
+
+def test_transverse_projection_restores_full_maxwell_eigenpairs_on_a_graded_grid():
+    from scipy import linalg, sparse
+    from scipy.sparse import linalg as spla
+
+    from beamz.devices.modes._yee import _transverse_eigenpairs, _yee_curl_operators
+
+    shapes, profiles, _, _ = _refinement_fixture()
+    shape = shapes["Ex"]
+    rng = np.random.default_rng(119)
+    metrics = tuple(
+        (rng.uniform(0.7, 1.3, n - 1), rng.uniform(0.8, 1.4, n)) for n in shape
+    )
+    delta = -0.53j
+    curl_e, curl_h, *_ = _yee_curl_operators(
+        sparse, profiles, resolution=1, delta=delta, transverse_metrics=metrics
+    )
+    eps = rng.uniform(1, 5, size=curl_e.shape[1])
+    mu = rng.uniform(0.5, 2, size=curl_e.shape[0])
+    operator = curl_h @ sparse.diags(1 / mu) @ curl_e
+    values, vectors = linalg.eig(operator.toarray(), np.diag(eps))
+    index = np.argsort(values.real)[2 * len(values) // 3]
+    target = values[index].real * 1.0002
+    seed = vectors[:, index]
+
+    def project(epsilon, beta):
+        return _transverse_eigenpairs(
+            sparse, spla, curl_h, curl_e, epsilon, mu, beta, seed, target, shape, {}
+        )
+
+    projected, modes = project(eps, delta)
+    k = np.argmin(abs(projected - values[index]))
+    np.testing.assert_allclose(projected[k], values[index], rtol=1e-11)
+    np.testing.assert_allclose(abs(np.vdot(seed, modes[:, k])), 1, atol=1e-10)
+    np.testing.assert_allclose(
+        operator @ modes, eps[:, None] * modes * projected, atol=1e-10
+    )
+    assert project(eps, 0j) is None
+    assert project(eps + 1e-5j, delta) is None

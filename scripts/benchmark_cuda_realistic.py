@@ -351,7 +351,7 @@ def main():
     memory = executable.memory_analysis()
 
     root = Path(bz.__file__).resolve().parents[1]
-    sources = sorted([*root.glob("beamz/**/*.py"), *root.glob("cuda/src/*")])
+    sources = sorted([*root.glob("beamz/**/*.py"), *root.glob("cuda/src/**/*.*")])
     source_hash = hashlib.sha256()
     for path in sources:
         if path.is_file():

@@ -9,6 +9,7 @@ from beamz import GaussianPulse, SampledSignal, ramped_cosine
 from beamz.devices.sources.time import (
     analytic_signal_quadrature,
     analytic_subband_waveforms,
+    band_taper_weights,
     chebyshev_frequency_nodes,
     gaussian_band_pulse,
     interpolate_time_signal,
@@ -99,6 +100,26 @@ def test_analytic_subbands_preserve_shape_and_reconstruct_waveform():
     np.testing.assert_array_equal(nodes, [3.0, 6.0])
     assert subbands.shape == (2, waveform.size)
     np.testing.assert_allclose(subbands.sum(axis=0), waveform, rtol=1e-10, atol=1e-10)
+
+
+def test_broadband_taper_recalibrates_profile_nodes_and_ends_exactly():
+    dt = 1 / 256
+    time = np.arange(2048) * dt
+    waveform = np.exp(-(((time - 2) / 0.12) ** 2) + 2j * np.pi * 48 * time)
+    taper = band_taper_weights(time, (4.0, 4.5))
+    nodes, subbands = analytic_subband_waveforms(
+        waveform,
+        dt=dt,
+        profile_frequencies=np.array([44, 48, 52]),
+        taper=taper,
+    )
+    np.testing.assert_array_equal(subbands[:, time >= 4.5], 0)
+    np.testing.assert_allclose(
+        subbands.sum(axis=0), waveform * taper, rtol=1e-11, atol=1e-12
+    )
+    phase = np.exp(-2j * np.pi * nodes[:, None] * time)
+    response = (phase @ subbands.T) / (phase @ (waveform * taper))[:, None]
+    np.testing.assert_allclose(response, np.eye(nodes.size), rtol=1e-10, atol=1e-10)
 
 
 def test_ramped_cosine_requires_a_complete_envelope_specification():
