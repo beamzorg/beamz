@@ -338,7 +338,6 @@ def trial(args, resolution, mode="throughput", backend=None):
         XLA_PYTHON_CLIENT_MEM_FRACTION=".95",
         BEAMZ_DISABLE_JAX_PERSISTENT_CACHE="1",
         BEAMZ_RASTER_CACHE="0",
-        BEAMZ_CUDA_CPML_PSI_PRECISION="fp32",
         MPLBACKEND="Agg",
         NUMPY_MADVISE_HUGEPAGE="0",
         OPENBLAS_NUM_THREADS="4",

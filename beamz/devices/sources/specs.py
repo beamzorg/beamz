@@ -81,8 +81,11 @@ class ModeSource:
 
     The zero extent in ``size`` selects the injection axis. ``direction`` is
     ``"+"`` or ``"-"`` along that axis.
-    Temporal behavior belongs exclusively to ``source_time``; sampled drives
-    use :class:`~beamz.SampledSignal`.
+    Temporal behavior comes from ``source_time``. For a broadband launch,
+    ``band_taper=(start, end)`` applies a raised-cosine taper in seconds to
+    the emitted waveform in 2D or each synthesized subband in 3D. The source
+    is quiet after ``end``. Use it after the pulse and check spectra over the
+    requested band.
 
     ``power`` sets watts in the source plane's discrete Poynting quadrature.
     In 3D, source calibration and ``ModeMonitorData.power`` both include normal
@@ -97,6 +100,9 @@ class ModeSource:
     direction: SourceDirection
     mode_spec: ModeSpec = field(default_factory=ModeSpec)
     power: float = 1.0
+    band_taper: tuple[float, float] | None = field(
+        default=None, metadata={"beamz_checkpoint_legacy_default": True}
+    )
 
     def __post_init__(self) -> None:
         center = finite_tuple(self.center, name="ModeSource center")
@@ -123,6 +129,15 @@ class ModeSource:
         if not isinstance(mode_spec, ModeSpec):
             raise TypeError("ModeSource mode_spec must be a ModeSpec.")
         object.__setattr__(self, "mode_spec", mode_spec)
+        if self.band_taper is not None:
+            taper = finite_tuple(self.band_taper, name="ModeSource band taper")
+            if len(taper) != 2 or not taper[0] < taper[1]:
+                raise ValueError("ModeSource band_taper requires start < end.")
+            if (mode_spec.num_freqs or 1) <= 1:
+                raise ValueError(
+                    "ModeSource band_taper requires multiple mode frequencies."
+                )
+            object.__setattr__(self, "band_taper", taper)
         object.__setattr__(self, "power", power)
         plane_axis_and_spans(self)
 
@@ -202,7 +217,10 @@ class ModeSource:
         )
 
     def source_spectrum(self, freqs, *, normalize: bool = True) -> np.ndarray | None:
-        """Return the complex temporal spectrum at frequencies in hertz."""
+        """Return the nominal source-time spectrum at frequencies in hertz.
+
+        Normalization of a tapered launch uses the simulation's sampling clock.
+        """
         frequency = np.asarray(freqs, dtype=float)
         if normalize and hasattr(self.source_time, "dft_normalization_spectrum"):
             spectrum = self.source_time.dft_normalization_spectrum(frequency)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal
 
@@ -9,6 +9,8 @@ import numpy as np
 import numpy.typing as npt
 
 from beamz._cache_tokens import HashToken, dataclass_cache_spec
+from beamz._plane_array import material_planes, mean_diagonal, plane_owner
+from beamz._region_array import broadcast_base, tiles
 from beamz.design.grid import RectilinearGrid
 from beamz.devices._immutable import readonly_array
 from beamz.lattice import component_shapes, normalize_polarization_2d
@@ -31,6 +33,93 @@ def _support_diagonal(values, axis: int) -> np.ndarray:
     if tensor.ndim < 2 or tensor.shape[0] not in (1, 3, 6):
         raise ValueError(f"Yee tensor has invalid compact shape {tensor.shape}.")
     return tensor[0 if tensor.shape[0] == 1 else axis]
+
+
+def _allclose_bounded(
+    values: Any = "", target: Any = "", *, rtol: float = 1e-5, atol: float = 1e-8
+) -> bool:
+    array = np.asarray(values)
+    if not array.size:
+        return True
+    source_planes = material_planes(array, unique=True)
+    if source_planes is not None and np.ndim(target) == 0:
+        return all(
+            np.allclose(plane, target, rtol=rtol, atol=atol) for plane in source_planes
+        )
+    array, reference = np.broadcast_arrays(array, np.asarray(target))
+    # An axis repeated in both operands contributes a single comparison.
+    compact = tuple(
+        slice(0, 1) if left == right == 0 else slice(None)
+        for left, right in zip(array.strides, reference.strides, strict=True)
+    )
+    array, reference = array[compact], reference[compact]
+    chunks = np.nditer(
+        (array, reference),
+        flags=["external_loop", "buffered"],
+        op_flags=[["readonly"], ["readonly"]],
+        buffersize=262144,
+        order="K",
+    )
+    return all(
+        np.allclose(chunk, expected, rtol=rtol, atol=atol) for chunk, expected in chunks
+    )
+
+
+def _validate_permeability(values, *, tensor=False) -> None:
+    array = np.asarray(values)
+    if tensor:
+        if not _allclose_bounded(_tensor_off_diagonal(array), 0, rtol=0, atol=1e-10):
+            raise ValueError(
+                "FDTD supports diagonal permeability; off-diagonal magnetic coupling is unsupported."
+            )
+        array = _tensor_diagonal(array)
+    physical = material_planes(array, unique=True)
+    checks = (broadcast_base(array),) if physical is None else physical
+    if any(
+        not np.all(np.isfinite(check[part]) & (check[part] > 0))
+        for check in checks
+        for part in tiles(check.shape, check.dtype)
+    ):
+        raise ValueError("MaterialGrid permeability must be finite and positive.")
+
+
+def _material_snapshot(value, *, owned=False) -> np.ndarray:
+    """Own an exact snapshot, storing large bitwise-constant arrays once."""
+    array = np.asarray(value)
+    if plane_owner(array) is not None:
+        return array
+    base = broadcast_base(array)
+    if base.size < array.size:
+        # Copy the independent values just as for dense input. Keep the logical
+        # shape of layered/constant media without expanding references into voxels.
+        return np.broadcast_to(_material_snapshot(base, owned=owned), array.shape)
+    if array.nbytes >= 1 << 20 and array.dtype.kind in "biufc" and array.size:
+        scalar = np.array(array.flat[0], dtype=array.dtype)
+        itemsize = array.dtype.itemsize
+        bit_type = np.dtype(f"u{itemsize}" if itemsize <= 8 else f"V{itemsize}")
+        bits = scalar.reshape(1).view(bit_type)[0]
+        chunks = np.nditer(
+            array,
+            flags=["external_loop", "buffered"],
+            op_flags=["readonly"],
+            buffersize=262144,
+            order="K",
+        )
+        if all(
+            np.all(np.ascontiguousarray(chunk).view(bit_type) == bits)
+            for chunk in chunks
+        ):
+            scalar.setflags(write=False)
+            return np.broadcast_to(scalar, array.shape)
+    if owned:
+        root = array
+        while isinstance(root.base, np.ndarray):
+            root = root.base
+        # Reusing a sliced diagonal must not retain discarded tensor components.
+        if root.nbytes == array.nbytes:
+            array.setflags(write=False)
+            return array
+    return readonly_array(array)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -89,12 +178,10 @@ class MaterialGrid:
     grid: RectilinearGrid | None = None
     dispersion: tuple = ()
     dispersion_interfaces: tuple = ()
+    _owned_raster_arrays: InitVar[bool] = False
     _cache_spec: HashToken = field(default=None, init=False, repr=False)
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "permittivity", readonly_array(self.permittivity))
-        object.__setattr__(self, "conductivity", readonly_array(self.conductivity))
-        object.__setattr__(self, "permeability", readonly_array(self.permeability))
+    def __post_init__(self, _owned_raster_arrays: bool) -> None:
         resolution = float(self.resolution)
         if not np.isfinite(resolution) or resolution <= 0.0:
             raise ValueError("MaterialGrid resolution must be finite and positive.")
@@ -112,15 +199,18 @@ class MaterialGrid:
             raise ValueError("MaterialGrid polarization applies only to 2D grids.")
         object.__setattr__(self, "polarization", polarization)
         for name in ("permittivity", "conductivity", "permeability"):
-            values = np.asarray(getattr(self, name))
+            values = _material_snapshot(getattr(self, name), owned=_owned_raster_arrays)
+            object.__setattr__(self, name, values)
             actual = values.shape
+            if name == "permeability":
+                _validate_permeability(values)
             if actual == ():
                 continue
             if actual != shape:
                 raise ValueError(f"{name} has shape {actual}, expected {shape}.")
         for name in ("yee_materials", "tensors", "yee_tensors"):
             values = {
-                str(key): readonly_array(value)
+                str(key): _material_snapshot(value, owned=_owned_raster_arrays)
                 for key, value in dict(getattr(self, name)).items()
             }
             object.__setattr__(self, name, MappingProxyType(values))
@@ -197,6 +287,8 @@ class MaterialGrid:
             )
         if self.yee_materials:
             for name, values in self.yee_materials.items():
+                if name.startswith("mu_h"):
+                    _validate_permeability(values)
                 expected = shapes[allowed_yee[name]]
                 if np.asarray(values).shape != expected:
                     raise ValueError(
@@ -230,7 +322,7 @@ class MaterialGrid:
                 if (
                     values.ndim
                     and values.size > 1
-                    and not np.all(values == values.flat[0])
+                    and not _allclose_bounded(values, values.flat[0], rtol=0, atol=0)
                 ):
                     required.update(support_names)
             missing = required - set(self.yee_materials)
@@ -254,6 +346,8 @@ class MaterialGrid:
                 or shape[1:] != self.shape
             ):
                 raise ValueError(f"{name} tensor has invalid compact shape {shape}.")
+            if name == "mu":
+                _validate_permeability(values, tensor=True)
         unknown_yee_tensors = set(self.yee_tensors) - {
             "eps_x",
             "eps_y",
@@ -327,6 +421,7 @@ class MaterialGrid:
         dimensions: Literal[2, 3] | None = None,
         polarization: Literal["tm", "te"] = "tm",
         resolution: float | None = None,
+        _owned_raster_arrays: bool = False,
     ) -> MaterialGrid:
         """Convert a uniform raster result into the current 2D or 3D solver grid.
 
@@ -466,21 +561,39 @@ class MaterialGrid:
                 "Full-tensor permittivity currently requires zero conductivity."
             )
         mu_diagonal = _tensor_diagonal(mu_tensor)
-        if not (
-            np.allclose(mu_diagonal, 1.0, rtol=1e-10, atol=1e-12)
-            and np.allclose(
-                _tensor_off_diagonal(mu_tensor), 0.0, rtol=1e-10, atol=1e-12
+        if any(
+            not _allclose_bounded(_tensor_off_diagonal(v), 0, rtol=0, atol=1e-10)
+            for v in (
+                mu_tensor,
+                *(
+                    np.asarray(support_tensors[source])
+                    for target, source, _axis in component_specs
+                    if target.startswith("mu_h")
+                ),
             )
         ):
             raise ValueError(
-                "BeamZ's current FDTD update supports only unit permeability. "
-                "The tensor raster remains available for standalone use."
+                "FDTD supports diagonal permeability; off-diagonal magnetic coupling is unsupported."
             )
         epsilon_diagonal = _tensor_diagonal(epsilon_tensor)
         conductivity_diagonal = _tensor_diagonal(conductivity_tensor)
-        epsilon = np.mean(epsilon_diagonal, axis=0)
-        conductivity = np.mean(conductivity_diagonal, axis=0)
-        permeability = np.mean(mu_diagonal, axis=0)
+
+        def cell_mean(diagonal):
+            if plane_owner(diagonal) is not None:
+                shared = mean_diagonal(diagonal)
+                if shared is not None:
+                    return shared
+            # Preserve the three-term reduction on every physical sample.
+            spatial = tuple(
+                slice(0, 1) if stride == 0 else slice(None)
+                for stride in diagonal.strides[1:]
+            )
+            mean = np.mean(diagonal[(slice(None), *spatial)], axis=0)
+            return np.broadcast_to(mean, diagonal.shape[1:])
+
+        epsilon = cell_mean(epsilon_diagonal)
+        conductivity = cell_mean(conductivity_diagonal)
+        permeability = cell_mean(mu_diagonal)
         if dimensions == 2:
             if epsilon.shape[0] != 1:
                 raise ValueError("A 2D MaterialGrid requires exactly one z cell.")
@@ -518,6 +631,7 @@ class MaterialGrid:
             polarization if dimensions == 2 else None,
             yee_tensors=yee_tensors,
             grid=grid,
+            _owned_raster_arrays=_owned_raster_arrays,
         )
 
     def field_arrays(self) -> tuple[npt.ArrayLike, npt.ArrayLike, npt.ArrayLike]:
@@ -547,13 +661,13 @@ class MaterialGrid:
             or self.uses_full_permittivity
         ):
             return True
-        for name in ("epsilon", "conductivity"):
+        for name in ("epsilon", "mu", "conductivity"):
             if name not in self.tensors:
                 continue
             diagonal = _tensor_diagonal(self.tensors[name])
             if not (
-                np.allclose(diagonal[0], diagonal[1], rtol=1e-10, atol=1e-12)
-                and np.allclose(diagonal[0], diagonal[2], rtol=1e-10, atol=1e-12)
+                _allclose_bounded(diagonal[0], diagonal[1], rtol=1e-10, atol=1e-12)
+                and _allclose_bounded(diagonal[0], diagonal[2], rtol=1e-10, atol=1e-12)
             ):
                 return True
         return False
@@ -573,10 +687,18 @@ class MaterialGrid:
             object.__setattr__(self, "_cache_spec", dataclass_cache_spec(self))
         return self._cache_spec
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, MaterialGrid):
             return NotImplemented
-        return self is other or self.canonical_spec() == other.canonical_spec()
+        if self is other:
+            return True
+        if (self.shape, self.smoothing, self.polarization) != (
+            other.shape,
+            other.smoothing,
+            other.polarization,
+        ):
+            return False
+        return self.canonical_spec() == other.canonical_spec()
 
     def __hash__(self):
         # Equal snapshots necessarily share these metadata. Hash collisions compare

@@ -23,14 +23,18 @@ from beamz.lattice import (
 )
 from beamz.simulation import kernels
 from beamz.simulation._cuda_abi import (
-    CUDA_BF16_PSI,
     CUDA_CPML_PAIR,
     CUDA_FIELD_PAD32,
     CUDA_FIELD_PAD64,
     CUDA_FIELD_PAD_Y8,
     CUDA_TEMPORAL_PAIR,
 )
+from beamz.simulation.backend import (
+    cuda_storage_axes_from_env,
+    resolve_backend,
+)
 from beamz.simulation.execute import (
+    CUDA_GRAPH_MAX_STEPS,
     compiled_source_batches,
     forward_step,
     initial_program_state,
@@ -38,9 +42,46 @@ from beamz.simulation.execute import (
 from beamz.simulation.model import CompiledProgram, SimulationState, UpdateCoefficients
 
 
-def _checkpoint_interval(value, num_steps):
+def _resolve_differentiable_backend(backend):
+    if backend != "auto":
+        return resolve_backend(backend)
+    if (
+        jax.config.read("jax_enable_x64")
+        or jax.default_backend() != "gpu"
+        or getattr(jax.config.values["jax_default_device"], "platform", "gpu") != "gpu"
+    ):
+        return "jax"
+    resolved = resolve_backend(backend)
+    if resolved != "jax" and cuda_storage_axes_from_env() != (0, 1, 2):
+        return "jax"
+    return resolved
+
+
+def _checkpoint_interval(value, program):
+    num_steps = program.config.num_steps
     if value is None:
-        return max(1, math.isqrt(num_steps))
+        if program.config.backend == "jax":
+            return max(1, math.isqrt(num_steps))
+        # The material VJP replays H and electric CPML history. A boundary
+        # checkpoint keeps both field phases and both sets of CPML memories.
+        fields = program.grid
+        h_values = sum(math.prod(getattr(fields, f"H{axis}").shape) for axis in "xyz")
+        e_values = sum(math.prod(getattr(fields, f"E{axis}").shape) for axis in "xyz")
+        h_cpml = sum(
+            math.prod(term.slab.shape) for term in program.boundary.cpml.h_terms
+        )
+        e_cpml = sum(
+            math.prod(term.slab.shape) for term in program.boundary.cpml.e_terms
+        )
+        boundary_values = h_values + e_values + h_cpml + e_cpml
+        replay_values = h_values + e_cpml
+        return min(
+            range(1, min(num_steps, CUDA_GRAPH_MAX_STEPS) + 1),
+            key=lambda interval: (
+                ((num_steps + interval - 1) // interval) * boundary_values
+                + interval * replay_values
+            ),
+        )
     if isinstance(value, bool):
         raise ValueError("checkpoint_interval must be an integer >= 0 or None")
     try:
@@ -55,7 +96,8 @@ def _checkpoint_interval(value, num_steps):
 def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=None):
     """Return ``run(state, coefficients, source_amplitudes=None)`` for ``jax.grad``.
 
-    ``None`` selects approximately sqrt(T) steps per checkpoint. Zero disables
+    ``None`` balances the saved boundaries and replay tape for native CUDA,
+    or selects approximately sqrt(T) steps for JAX. Zero disables
     rematerialization for small reference problems. Every chunk follows the same
     discrete transition as ordinary execution, including sources and monitors.
     CUDA uses float32 native timestep graphs where source/monitor plans permit,
@@ -69,11 +111,9 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
         raise ValueError(
             "Differentiable execution currently requires an unsharded grid"
         )
-    if cfg.backend != "jax" and cfg.cuda_flags & CUDA_BF16_PSI:
-        raise ValueError("CUDA autodiff requires BEAMZ_CUDA_CPML_PSI_PRECISION=fp32")
     if cfg.num_steps < 1:
         raise ValueError("Differentiable execution requires at least one timestep")
-    interval = _checkpoint_interval(checkpoint_interval, cfg.num_steps)
+    interval = _checkpoint_interval(checkpoint_interval, program)
     if program.dispersion is not None and (
         program.dispersion.regions or program.dispersion.interfaces
     ):
@@ -146,7 +186,7 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
 
     def run(state, coefficients, source_amplitudes=None):
         if cfg.backend != "jax":
-            from beamz.simulation.cuda.material_blocks import (
+            from beamz.simulation.cuda.storage.material_blocks import (
                 differentiable_coefficients,
             )
 

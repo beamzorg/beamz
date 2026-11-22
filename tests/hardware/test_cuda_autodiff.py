@@ -35,7 +35,8 @@ def assert_close(actual, expected):
 def test_cuda_material_and_initial_state_vjps_match_jax(cpml, mixed, metric_kind):
     sim, epsilon = make_simulation(cpml=cpml, mixed=mixed, metric_kind=metric_kind)
     reference = sim.differentiable(backend="jax", checkpoint_interval=0)
-    native = sim.differentiable(backend="cuda", checkpoint_interval=3)
+    native = sim.differentiable(checkpoint_interval=3)
+    assert native.program.config.backend == "cuda_streamed"
     state = seeded_state(reference)
     before = jax.tree.map(lambda v: np.array(v, copy=True), state)
 
@@ -228,11 +229,71 @@ def test_cuda_material_gradient_matches_finite_difference():
     np.testing.assert_allclose(jnp.vdot(gradient, direction), fd, rtol=0.02, atol=2e-6)
 
 
-def test_cuda_autodiff_rejects_bf16_cpml(monkeypatch):
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "bf16")
-    sim, _ = make_simulation(cpml=True)
-    with pytest.raises(ValueError, match="fp32"):
-        sim.differentiable(backend="cuda")
+def test_cuda_trainable_cpml12_checkpoints_match_live_jax_objective():
+    """Exercise dense traced coefficients, disjoint replay banks and DFT windows."""
+    import beamz as bz
+    from beamz.design import MaterialGrid
+    from beamz.simulation.backend import _load_extension
+    from beamz.simulation.differentiation import DifferentiableSimulation
+
+    if not getattr(_load_extension(), "compiled_adjoint_chunk", False):
+        pytest.skip("Native checkpoint transpose component required")
+
+    shape, dx, dt = (26, 28, 30), 80e-9, 1e-16
+    rng = np.random.default_rng(53)
+    epsilon = (1.5 + rng.uniform(0, 0.5, shape)).astype(np.float32)
+    grid = MaterialGrid(epsilon, np.float32(0), np.float32(1), dx, shape)
+    simulation = bz.Simulation(
+        material_grid=grid,
+        time=np.arange(13, dtype=np.float64) * dt,
+        boundaries=[bz.PML(thickness=12 * dx, formulation="cpml")],
+        sources=[
+            bz.CustomSource(
+                component="Ez",
+                timing="e",
+                index=(slice(12, 14), slice(12, 15), slice(13, 15)),
+                coeff=np.full((2, 3, 2), 0.0625, np.float32),
+                waveform=np.sin(np.arange(13, dtype=np.float32) * 0.6),
+                target_shape=(26, 29, 31),
+            )
+        ],
+        monitors=[
+            bz.FieldMonitor(
+                center=(16 * dx, 14 * dx, 13 * dx),
+                size=(0.0, 3 * dx, 2 * dx),
+                fields=("Ez", "Hy"),
+                freqs=(1.8e14, 2.1e14, 2.8e14),
+                name="field",
+            )
+        ],
+    )
+
+    outcomes = []
+    for backend, interval in (("jax", 0), ("cuda", 5)):
+        program = simulation.compile(num_steps=12, backend=backend)
+        monitor = replace(
+            program.monitors[0],
+            dft_t_start=3 * dt,
+            dft_t_end=11 * dt,
+            dft_window_code=1,
+            dft_record_interval=2,
+        )
+        program = replace(program, monitors=(monitor,))
+        solver = DifferentiableSimulation(program, checkpoint_interval=interval)
+        state = seeded_state(solver)._replace(
+            t=jnp.float32(dt), current_step=jnp.int32(1)
+        )
+
+        def objective(permittivity, state=state, solver=solver):
+            result = solver(permittivity, state=state)
+            return jnp.sum(jnp.abs(solver.monitor_fields(result, "field")) ** 2)
+
+        outcomes.append(jax.value_and_grad(objective)(jnp.asarray(epsilon)))
+
+    actual, expected = outcomes[1], outcomes[0]
+    assert float(expected[0]) > 0 and float(jnp.linalg.norm(expected[1])) > 0
+    assert_close(actual[0], expected[0])
+    assert_close(actual[1], expected[1])
 
 
 @pytest.mark.parametrize("phase", ["h", "e"])

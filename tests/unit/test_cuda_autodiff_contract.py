@@ -91,7 +91,9 @@ def native_model(monkeypatch):
     )
     batches = {"empty": (None, ()), "source": (group, ())}
     context = Context(
-        SimpleNamespace(backend="cuda_streamed"), batches, jnp.float32(0.1)
+        SimpleNamespace(backend="cuda_streamed", cuda_program_target=None),
+        batches,
+        jnp.float32(0.1),
     )
     monitor = SimpleNamespace(
         recorder_index=-1,
@@ -102,6 +104,9 @@ def native_model(monkeypatch):
         dft_point_count=1,
     )
     program = SimpleNamespace(sources=(), monitors=(monitor,))
+    # The toy phase model stands in for the existing scalar FFI ABI. The
+    # native batched implementation is exercised by the CUDA hardware suite.
+    monkeypatch.setattr(diff, "_load_extension", SimpleNamespace)
     monkeypatch.setattr(diff, "compiled_source_batches", lambda _sources: batches)
     monkeypatch.setattr(diff, "pack_dft_monitors", lambda _monitors: ("packed",))
     monkeypatch.setattr(diff, "update_monitors", _observe)

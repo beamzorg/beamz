@@ -1,5 +1,8 @@
 """Deterministic two-dimensional full-solver topology fixture."""
 
+from dataclasses import fields
+from unittest.mock import patch
+
 import numpy as np
 
 from beamz import (
@@ -13,8 +16,26 @@ from beamz import (
     ModeSpec,
     Rectangle,
     Simulation,
+    _cache_tokens,
 )
-from beamz.optimization import ModePower, TopologyProblem, TopologySpec
+from beamz.optimization import InverseDesign, ModePower, TopologyProblem, TopologySpec
+
+
+def legacy_checkpoint_fingerprint(fingerprint):
+    """Hash the suite's fixtures using the dataclass fields of the old release."""
+    removed = {ModeSource: "band_taper", InverseDesign: "backend"}
+
+    def old_fields(value, *, legacy_defaults=False):
+        return tuple(
+            (item.name, _cache_tokens.cache_token(getattr(value, item.name)))
+            for item in fields(value)
+            if not item.name.startswith("_")
+            and item.metadata.get("beamz_cache", True)
+            and item.name != removed.get(type(value))
+        )
+
+    with patch.object(_cache_tokens, "dataclass_cache_spec", old_fields):
+        return fingerprint()
 
 
 def make_problem(

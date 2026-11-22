@@ -57,6 +57,7 @@ def _layout_pdk():
     return gf.Pdk(
         name="beamz_passive_soi_benchmark",
         layers=PassiveSoiLayers,
+        cells={"bend_s": gf.components.bend_s},
         cross_sections={
             "strip": partial(
                 gf.cross_section.cross_section,

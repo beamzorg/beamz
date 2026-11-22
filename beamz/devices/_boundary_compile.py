@@ -12,7 +12,14 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from beamz._region_array import SeparableMask, tiles, uniform_value
+from beamz._plane_array import mapped_planes, plane_dictionary
+from beamz._region_array import (
+    RegionArray,
+    SeparableMask,
+    broadcast_base,
+    tiles,
+    uniform_value,
+)
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
 from beamz.design.discretization import MaterialGrid
 from beamz.devices.boundaries import (
@@ -113,9 +120,15 @@ class _BoundaryGrid:
             if not region_setup:
                 return jnp.asarray(value)
             source = np.asarray(value)
-            return np.asarray(source, dtype=jax.dtypes.canonicalize_dtype(source.dtype))
+            dtype = jax.dtypes.canonicalize_dtype(source.dtype)
+            if dtype == source.dtype:
+                return source
+            base = np.asarray(broadcast_base(source), dtype=dtype)
+            return np.broadcast_to(base, source.shape)
 
-        self.permittivity = array(material_grid.permittivity)
+        self.permittivity = (np if region_setup else jnp).broadcast_to(
+            array(material_grid.permittivity), material_grid.shape
+        )
         self.conductivity = array(material_grid.conductivity, constant=True)
         self.permeability = array(material_grid.permeability, constant=True)
         self.polarization_2d = material_grid.polarization or "tm"
@@ -158,15 +171,7 @@ def compile_metallic_masks(
     polarization_2d: str = "tm",
     region_setup=False,
 ) -> dict[str, jnp.ndarray | SeparableMask]:
-    """Compile boundary specifications into component-aligned PEC masks."""
-    masks = (
-        {}
-        if region_setup
-        else {
-            name: np.zeros(tuple(component_shapes[name]), dtype=bool)
-            for name in _COMPONENTS
-        }
-    )
+    """Compile PEC walls as component-aligned axis profiles without volume masks."""
     is_3d = len(material_shape) == 3
     metallic_edges = resolve_metallic_edges(boundaries, is_3d)
     wall_specs = (
@@ -195,23 +200,15 @@ def compile_metallic_masks(
             }
         )
     )
-    if region_setup:
-        profiles = {
-            name: [np.zeros(n, bool) for n in component_shapes[name]]
-            for name in _COMPONENTS
-        }
-        for edge in metallic_edges:
-            axis, index, components = wall_specs[edge]
-            for component in components:
-                profiles[component][axis][index] = True
-        return {name: SeparableMask(values) for name, values in profiles.items()}
+    profiles = {
+        name: [np.zeros(n, bool) for n in component_shapes[name]]
+        for name in _COMPONENTS
+    }
     for edge in metallic_edges:
         axis, index, components = wall_specs[edge]
-        selection: list[slice | int] = [slice(None)] * len(material_shape)
-        selection[axis] = index
         for component in components:
-            masks[component][tuple(selection)] = True
-    return {name: jnp.asarray(mask) for name, mask in masks.items()}
+            profiles[component][axis][index] = True
+    return {name: SeparableMask(values) for name, values in profiles.items()}
 
 
 def _merge_profiles(lhs, rhs, *, key: str | None = None):
@@ -391,12 +388,48 @@ class _AbsorberCompiler:
             for name in ("permittivity", "conductivity", "permeability")
         } | yee_materials
         for name, source in materials.items():
-            source = np.asarray(source)
+            if not isinstance(source, RegionArray):
+                source = np.asarray(source)
+            dictionary = plane_dictionary(source) if host else None
+            if dictionary is not None:
+                bank, ids = dictionary
+                ids = ids.copy()
+                rows = []
+                changed = False
+                for plane in bank:
+                    row = plane
+                    for _edge, axis, side, count in counts:
+                        if axis and 0 < count < source.shape[axis]:
+                            dest, ref = _edge_regions(row.shape, axis - 1, side, count)
+                            if not np.array_equal(
+                                row[dest], np.broadcast_to(row[ref], row[dest].shape)
+                            ):
+                                if row is plane:
+                                    row = plane.copy()
+                                row[dest] = row[ref]
+                                changed = True
+                    rows.append(row)
+                for _edge, axis, side, count in counts:
+                    if axis == 0 and 0 < count < ids.size:
+                        dest, ref = _edge_regions(ids.shape, 0, side, count)
+                        ids[dest] = ids[ref]
+                if changed or not np.array_equal(ids, dictionary[1]):
+                    value = mapped_planes(rows, ids[None, :])[0]
+                    if name in yee_materials:
+                        yee_materials[name] = value
+                    else:
+                        setattr(fields, name, value)
+                continue
             if source.ndim == 0 or (
                 host and not _extrusion_changes_material(source, counts)
             ):
                 continue
-            material = np.array(source, copy=True)
+            if host and name in yee_materials:
+                yee_materials[name] = _extruded_yee_material(source, counts)
+                continue
+            # CPML extrusion maps each axis independently. An axis that repeats
+            # a single sample still repeats that sample after its boundary copy.
+            material = np.array(broadcast_base(source) if host else source, copy=True)
             for _edge, axis, side, count in counts:
                 if count <= 0 or count >= material.shape[axis]:
                     continue
@@ -404,7 +437,11 @@ class _AbsorberCompiler:
                     material.shape, axis, side, count
                 )
                 material[destination] = material[reference]
-            value = material if host else jnp.asarray(material, dtype=source.dtype)
+            value = (
+                np.broadcast_to(material, source.shape)
+                if host
+                else jnp.asarray(material, dtype=source.dtype)
+            )
             if name in yee_materials:
                 yee_materials[name] = value
             else:
@@ -759,17 +796,50 @@ def compile_absorber_regions(
 
 def _extrusion_changes_material(material, edge_counts):
     """Check exact CPML extension without a full-volume copy or slab scratch."""
+    if isinstance(material, np.ndarray):
+        material = broadcast_base(material)
     for _edge, axis, side, count in edge_counts:
         if count <= 0 or count >= material.shape[axis]:
             continue
         slab, reference = _edge_regions(material.shape, axis, side, count)
-        values = material[slab]
-        ref = np.broadcast_to(material[reference], values.shape)
-        for tile in tiles(values.shape, values.dtype):
-            a, b = values[tile], ref[tile]
+        shape = list(material.shape)
+        shape[axis] = count
+        for tile in tiles(shape, material.dtype):
+            start = slab[axis].start
+            k = tile[axis]
+            values = (
+                *tile[:axis],
+                slice(start + k.start, start + k.stop),
+                *tile[axis + 1 :],
+            )
+            ref = (*tile[:axis], reference[axis], *tile[axis + 1 :])
+            a = material[values]
+            b = np.broadcast_to(material[ref], a.shape)
             if not np.array_equal(a, b) and not np.array_equal(a, b, equal_nan=True):
                 return True
     return False
+
+
+def _extruded_yee_material(material, edge_counts):
+    """Apply CPML copies as coordinate maps over the original Yee storage."""
+    coordinates = tuple(np.arange(n) for n in material.shape)
+    for _, axis, side, count in edge_counts:
+        if 0 < count < material.shape[axis]:
+            slab, reference = _edge_regions(material.shape, axis, side, count)
+            indices = coordinates[axis]
+            indices[slab[axis]] = indices[reference[axis]]
+
+    def read(region):
+        indices = tuple(
+            values[key] for key, values in zip(region, coordinates, strict=True)
+        )
+        # Maps are monotone and each increment is 0 or 1. Interior tiles can
+        # keep their strided views into the raster without a gather.
+        if all(v.size and v[-1] - v[0] + 1 == v.size for v in indices):
+            return material[tuple(slice(v[0], v[-1] + 1) for v in indices)]
+        return material[np.ix_(*indices)]
+
+    return RegionArray(material.shape, material.dtype, read)
 
 
 def lower_boundaries(

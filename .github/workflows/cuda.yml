@@ -47,7 +47,8 @@ jobs:
   component:
     name: Build private CUDA 12 component
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The full architecture build can exceed 30 minutes on hosted runners.
+    timeout-minutes: 90
     container: nvidia/cuda:12.4.1-devel-ubuntu22.04
     steps:
       - name: Install host build tools

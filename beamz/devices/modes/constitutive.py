@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from beamz._region_array import any_nonzero
+
 
 def require_uniform_normal_spacing(grid, axis):
     """A Fourier port needs a translation-invariant local longitudinal stencil."""
@@ -63,7 +65,7 @@ def crop_tensor_support(tensors, *, origin, shape):
 
 def has_cross_terms(tensors):
     return any(
-        np.asarray(values).shape[0] == 6 and np.any(np.asarray(values)[3:] != 0)
+        np.asarray(values).shape[0] == 6 and any_nonzero(np.asarray(values)[3:])
         for values in (tensors or {}).values()
     )
 

@@ -7,6 +7,13 @@ import pytest
 
 import beamz as bz
 from beamz.design import MaterialGrid
+from beamz.simulation import backend
+
+
+def test_differentiable_auto_uses_jax_without_cuda(monkeypatch):
+    sim, _ = make_simulation()
+    monkeypatch.setattr(backend, "_gpu_devices", tuple)
+    assert sim.differentiable().program.config.backend == "jax"
 
 
 def _with_conductivity(sim, sigma):
@@ -36,7 +43,7 @@ def test_conductivity_binding_matches_ordinary_materials(
     for sigma in (120.0, 240.0):
         ordinary = _with_conductivity(sim, sigma)
         program = ordinary.compile(backend="jax")
-        reference_coefficients = ordinary.differentiable().coefficients()
+        reference_coefficients = ordinary.differentiable(backend="jax").coefficients()
         expected = ordinary.advance(state=state, backend="jax", performance=False).state
         # Yee tuples are total electric losses, so include the ordinary sponge.
         values = (
@@ -58,8 +65,12 @@ def test_conductivity_binding_matches_ordinary_materials(
                     )
             actual = solver(conductivity=conductivity, state=state)
             for name in ("ex", "ey", "ez", "hx", "hy", "hz"):
+                field = np.asarray(getattr(expected, name))
+                # Allow FP32 roundoff near cancellation when CUDA is selected.
+                scale = np.max(np.abs(field), initial=0)
+                atol = max(2e-8, 4 * np.finfo(field.dtype).eps * scale)
                 np.testing.assert_allclose(
-                    getattr(actual, name), getattr(expected, name), rtol=2e-5, atol=2e-8
+                    getattr(actual, name), field, rtol=2e-5, atol=atol
                 )
 
 

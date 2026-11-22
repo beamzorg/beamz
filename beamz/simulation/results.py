@@ -20,6 +20,7 @@ from beamz.lattice import canonical_component_2d
 
 from .model import CompiledGrid, SimulationState
 from .observe import (
+    _OwnedFields,
     monitor_dft_component,
     monitor_dft_flux,
     monitor_flux,
@@ -258,40 +259,36 @@ class MaterialRegion:
 
 def _snapshot_material_region(runtime_fields, crop, origin):
     """Keep the coefficients used by the source's 3D mode solve, including halos."""
-    permittivity = np.asarray(runtime_fields.permittivity)
-    permeability = np.asarray(runtime_fields.permeability)
+    permittivity = runtime_fields.permittivity
+    permeability = runtime_fields.permeability
     material_grid = runtime_fields.material_grid
     tensors = {}
     yee = {}
+    component_crop = tuple(
+        slice(index.start, None if index.stop is None else index.stop + 1)
+        for index in crop
+    )
     if permittivity.ndim in (2, 3):
         tensors = {
-            name: np.asarray(values)[(slice(None), *crop)]
+            name: np.asarray(values[(slice(None), *crop)])
             for name, values in material_grid.tensors.items()
             if name in {"epsilon", "mu"}
         }
         if material_grid.uses_direct_yee_materials:
             # Node-aligned components have one more sample than the voxel grid.
             # Keep that upper sample so local mode crops retain their Yee support.
-            component_crop = tuple(
-                slice(index.start, None if index.stop is None else index.stop + 1)
-                for index in crop
-            )
             yee = {
-                name: np.asarray(values)[component_crop]
+                name: np.asarray(values[component_crop])
                 for name, values in material_grid.yee_materials.items()
                 if name in {"eps_x", "eps_y", "eps_z", "mu_hx", "mu_hy", "mu_hz"}
             }
-    component_crop = tuple(
-        slice(index.start, None if index.stop is None else index.stop + 1)
-        for index in crop
-    )
     support_tensors = {
-        name: np.asarray(values)[(slice(None), *component_crop)]
+        name: np.asarray(values[(slice(None), *component_crop)])
         for name, values in material_grid.yee_tensors.items()
     }
     return MaterialRegion(
         permittivity[crop],
-        permeability if permeability.ndim == 0 else permeability[crop],
+        np.asarray(permeability) if np.ndim(permeability) == 0 else permeability[crop],
         tuple(origin),
         permittivity.shape,
         material_tensors=tensors,
@@ -300,12 +297,14 @@ def _snapshot_material_region(runtime_fields, crop, origin):
     )
 
 
-def material_region_for_monitor(simulation, monitor: _Monitor, *, runtime_fields):
+def material_region_for_monitor(
+    simulation, monitor: _Monitor, *, runtime_fields, cache=None
+):
     """Return a compact material neighborhood around a DFT monitor plane."""
     if monitor.freqs.size == 0:
         return None
     axis = monitor.plane_normal
-    permittivity = np.asarray(runtime_fields.permittivity)
+    permittivity = runtime_fields.permittivity
     full_shape = tuple(int(value) for value in permittivity.shape)
 
     grid = runtime_fields.geometry
@@ -374,7 +373,13 @@ def material_region_for_monitor(simulation, monitor: _Monitor, *, runtime_fields
     crop[dim] = slice(start, stop)
     origin = [0] * permittivity.ndim
     origin[dim] = start
-    return _snapshot_material_region(runtime_fields, tuple(crop), origin)
+    key = dim, start, stop
+    if cache is not None and key in cache:
+        return cache[key]
+    region = _snapshot_material_region(runtime_fields, tuple(crop), origin)
+    if cache is not None:
+        cache[key] = region
+    return region
 
 
 @dataclass(frozen=True, slots=True)
@@ -589,7 +594,7 @@ class SimulationMetadata:
         fields = runtime_fields
         design = simulation.design
         offset = simulation.coordinate_offset
-        grid_shape = tuple(int(v) for v in np.asarray(fields.permittivity).shape)
+        grid_shape = tuple(int(v) for v in fields.permittivity.shape)
         components = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
         component_shapes = {}
         for name in components:
@@ -742,8 +747,10 @@ class MonitorResults:
             self.dft_fields, Mapping
         ):
             raise TypeError("MonitorResults field collections must be mappings.")
-        object.__setattr__(self, "fields", immutable_snapshot(self.fields))
-        object.__setattr__(self, "dft_fields", immutable_snapshot(self.dft_fields))
+        if not isinstance(self.fields, _OwnedFields):
+            object.__setattr__(self, "fields", immutable_snapshot(self.fields))
+        if not isinstance(self.dft_fields, _OwnedFields):
+            object.__setattr__(self, "dft_fields", immutable_snapshot(self.dft_fields))
         for name in (
             "power_history",
             "power_timestamps",
@@ -772,8 +779,18 @@ class MonitorResults:
             if self._raw_power_spectrum is None
             else self._raw_power_spectrum
         )
-        object.__setattr__(self, "_raw_dft_fields", immutable_snapshot(raw_fields))
-        object.__setattr__(self, "_raw_power_spectrum", _array_snapshot(raw_power))
+        if raw_fields is not self.dft_fields and not isinstance(
+            raw_fields, _OwnedFields
+        ):
+            raw_fields = immutable_snapshot(raw_fields)
+        object.__setattr__(self, "_raw_dft_fields", raw_fields)
+        object.__setattr__(
+            self,
+            "_raw_power_spectrum",
+            raw_power
+            if raw_power is self.power_spectrum
+            else _array_snapshot(raw_power),
+        )
 
     def get_dft_frequencies(self):
         """Return frequencies associated with frequency-domain acquisitions.
@@ -897,6 +914,8 @@ class MonitorResults:
         spec: CompiledMonitorSpec,
         state: _MonitorBuffers,
         config: _RunConfigLike,
+        *,
+        owned_recordings: bool = False,
     ) -> "MonitorResults":
         """Detach one monitor's immutable data from packed runtime state.
 
@@ -931,25 +950,25 @@ class MonitorResults:
             fields = {
                 component: np.asarray(
                     state.recorded_fields[buffer_index][:recorder_count]
-                ).copy()
+                )
                 for component, buffer_index in zip(
                     spec.components, spec.field_buffer_indices, strict=True
                 )
             }
             return cls(
                 monitor=monitor,
-                fields=fields,
+                fields=_OwnedFields(fields) if owned_recordings else fields,
                 power_history=np.empty(0, dtype=float),
                 power_timestamps=np.empty(0, dtype=float),
                 power_spectrum=np.empty(0, dtype=np.complex64),
                 field_times=np.asarray(
                     state.recorded_times[spec.recorder_index][:recorder_count],
                     dtype=float,
-                ).copy(),
+                ),
                 field_steps=np.asarray(
                     state.recorded_steps[spec.recorder_index][:recorder_count],
                     dtype=int,
-                ).copy(),
+                ),
                 sample_region=spec.sample_region,
             )
         dft_fields: dict[str, np.ndarray] = {}
@@ -957,21 +976,25 @@ class MonitorResults:
             from beamz.lattice import public_component_2d
 
             value_offset = int(spec.dft_value_offset)
-            value_count = 6 * fc * pc
+            components = spec.dft_packed_components
+            if components is None:
+                components = tuple(range(6))
+            value_count = len(components) * fc * pc
             packed_re = np.asarray(
                 state.dft_vec_re[value_offset : value_offset + value_count],
-                dtype=np.float64,
-            ).reshape(6, fc, pc)
+            ).reshape(len(components), fc, pc)
             packed_im = np.asarray(
                 state.dft_vec_im[value_offset : value_offset + value_count],
-                dtype=np.float64,
-            ).reshape(6, fc, pc)
+            ).reshape(len(components), fc, pc)
             comp_mask_arr = np.asarray(spec.dft_component_mask, dtype=np.float32)
-            for comp_i, comp_name in enumerate(("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")):
+            component_names = ("Ex", "Ey", "Ez", "Hx", "Hy", "Hz")
+            for slot, comp_i in enumerate(components):
                 if comp_mask_arr[comp_i] <= 0.0:
                     continue
-                re = packed_re[comp_i]
-                im = packed_im[comp_i]
+                comp_name = component_names[comp_i]
+                values = np.empty((fc, pc), dtype=np.complex128)
+                values.real = packed_re[slot]
+                values.imag = packed_im[slot]
                 if not bool(config.is_3d) and comp_name in (
                     {"Ez", "Hx", "Hy"}
                     if config.polarization_2d == "tm"
@@ -980,9 +1003,11 @@ class MonitorResults:
                     public_name, sign = public_component_2d(
                         comp_name, config.plane_2d, config.polarization_2d
                     )
-                    dft_fields[public_name] = sign * (re + 1j * im)
+                    if sign == -1:
+                        values *= -1
+                    dft_fields[public_name] = values
                 else:
-                    dft_fields[comp_name] = re + 1j * im
+                    dft_fields[comp_name] = values
         power_spectrum = (
             np.asarray(state.freq_flux_re[i, :fc], dtype=np.float32)
             + 1j * np.asarray(state.freq_flux_im[i, :fc], dtype=np.float32)
@@ -998,19 +1023,17 @@ class MonitorResults:
         return cls(
             monitor=monitor,
             fields={},
-            power_history=np.asarray(state.powers[i, :count], dtype=float).copy(),
-            power_timestamps=np.asarray(
-                state.timestamps[i, :count], dtype=float
-            ).copy(),
-            power_spectrum=np.asarray(power_spectrum, dtype=np.complex64).copy(),
-            dft_fields=dft_fields,
-            dft_frequencies=dft_frequencies.copy(),
+            power_history=np.asarray(state.powers[i, :count], dtype=float),
+            power_timestamps=np.asarray(state.timestamps[i, :count], dtype=float),
+            power_spectrum=np.asarray(power_spectrum, dtype=np.complex64),
+            dft_fields=_OwnedFields(dft_fields),
+            dft_frequencies=dft_frequencies,
             dft_weight_sum=np.asarray(
                 state.dft_weight_sum[
                     spec.dft_weight_offset : spec.dft_weight_offset + fc
                 ],
                 dtype=np.float64,
-            ).copy(),
+            ),
             dft_base_dt=float(config.dt),
             dft_amplitude_scale=1.0
             if np.iscomplexobj(getattr(state, "ex", 0.0))
@@ -1083,6 +1106,24 @@ class SimulationResults:
     )
     termination: RunTermination | None = None
     performance: SimulationPerformance | None = None
+
+    _cuda_plan: Mapping[str, Any] = field(
+        default_factory=lambda: MappingProxyType({}),
+        init=False,
+        repr=False,
+        compare=False,
+    )
+
+    @property
+    def cuda_plan(self) -> Mapping[str, Any]:
+        """Describe the frozen CUDA schedule, memory budget and selection reason.
+
+        Returns
+        -------
+        Mapping[str, Any]
+            Read-only plan diagnostics; empty for non-CUDA runs.
+        """
+        return self._cuda_plan
 
     def __post_init__(self):
         if not isinstance(self.metadata, SimulationMetadata):
@@ -1301,8 +1342,12 @@ class SimulationResults:
         -----
         Renormalization always derives from retained raw acquisitions, so repeatedly
         switching source indices does not compound scaling or lose information.
+        The result remains raw if any acquired spectrum has no usable normalization
+        from the selected source.
         """
-        return renormalize_result(self, source)
+        result = renormalize_result(self, source)
+        object.__setattr__(result, "_cuda_plan", self._cuda_plan)
+        return result
 
     def to_xarray(self):
         """Convert stored acquisitions to labeled xarray data.
@@ -1476,15 +1521,13 @@ class SimulationResults:
                     simulation.time[: int(completed_steps)], dtype=float
                 ),
             )
-        monitor_results_dict = {
-            name: replace(
-                result,
-                material_region=material_region_for_monitor(
-                    simulation, result.monitor, runtime_fields=runtime_fields
-                ),
+        regions = {}
+        for name, result in monitor_results_dict.items():
+            region = material_region_for_monitor(
+                simulation, result.monitor, runtime_fields=runtime_fields, cache=regions
             )
-            for name, result in monitor_results_dict.items()
-        }
+            if region is not result.material_region:
+                monitor_results_dict[name] = replace(result, material_region=region)
         result = cls(
             metadata=metadata,
             monitors=monitor_results_dict,

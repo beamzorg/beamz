@@ -140,9 +140,25 @@ def _resample_complex_matrix(freq_src, values_src, freq_dst):
         freq_src, freq_dst, rtol=1e-9, atol=0.0
     ):
         return src
+
+    # Wavelength sweeps commonly record bins in descending frequency order.
+    # Gather exact subsets without interpolating or copying the entire field.
+    order = np.argsort(freq_src, kind="stable")
+    ordered_freqs = freq_src[order]
+    if ordered_freqs.size:
+        exact = np.clip(
+            np.searchsorted(ordered_freqs, freq_dst, side="right") - 1,
+            0,
+            ordered_freqs.size - 1,
+        )
+        if np.array_equal(ordered_freqs[exact], freq_dst):
+            return src[order[exact]]
+    ordered_values = src[order]
     out = np.empty((len(freq_dst), src.shape[1]), dtype=np.complex128)
     for col in range(src.shape[1]):
-        out[:, col] = np.interp(freq_dst, freq_src, src[:, col], left=0.0, right=0.0)
+        out[:, col] = np.interp(
+            freq_dst, ordered_freqs, ordered_values[:, col], left=0.0, right=0.0
+        )
     return out
 
 
@@ -206,6 +222,7 @@ def _extract_port_waves_dft(
 
     dft_cache = {}
     projection_cache = {}
+    grouped_waves = {}
     waves = {}
 
     def _matching_3d_group_specs(spec, monitor_name):
@@ -226,16 +243,6 @@ def _extract_port_waves_dft(
             return (spec,)
         return tuple(sorted(group, key=lambda item: (int(item.mode_index), item.name)))
 
-    def _build_3d_group_projection(spec, monitor, f_mode):
-        data = inputs[monitor.name]
-        return _mp._build_port_projection(
-            data,
-            spec,
-            monitor,
-            f_mode,
-            projection_cache,
-        )
-
     def _project_3d_group_at_monitor(
         spec,
         monitor,
@@ -244,19 +251,22 @@ def _extract_port_waves_dft(
         f_mode,
     ):
         group_specs = _matching_3d_group_specs(spec, monitor.name)
+        names = tuple(item.name for item in group_specs)
+        key = (names, idx)
+        if key not in grouped_waves:
+            grouped_waves[key] = _project_3d_group(
+                group_specs, monitor, idx, frequency, f_mode
+            )
+        return grouped_waves[key][spec.name]
+
+    def _project_3d_group(group_specs, monitor, idx, frequency, f_mode):
+        data = inputs[monitor.name]
+        cache = {} if strategy == "per_frequency" else projection_cache
         projections = [
-            _build_3d_group_projection(group_spec, monitor, f_mode)
+            _mp._build_port_projection(data, group_spec, monitor, f_mode, cache)
             for group_spec in group_specs
         ]
-        try:
-            group_index = next(
-                index
-                for index, group_spec in enumerate(group_specs)
-                if group_spec.name == spec.name
-            )
-        except StopIteration:
-            group_index = 0
-        proj = projections[group_index]
+        proj = projections[0]
         proj_components = tuple(
             proj.get("components", (proj["e_component"], proj["h_component"]))
         )
@@ -270,7 +280,7 @@ def _extract_port_waves_dft(
             for comp in proj_components
         }
         field_components = _colocate_field_components_to_projection_3d(
-            inputs[monitor.name],
+            data,
             monitor,
             raw_field_components,
             proj,
@@ -289,13 +299,18 @@ def _extract_port_waves_dft(
             value for value in [float(group_cond), *cond_values] if np.isfinite(value)
         ]
         cond = max(finite_conds) if finite_conds else np.nan
-        return (
-            coeffs[group_index],
-            residual,
-            cond,
-            float(proj.get("mode_neff", np.nan)),
-            projection_diag,
-        )
+        return {
+            group_spec.name: (
+                coeff,
+                residual,
+                cond,
+                float(item.get("mode_neff", np.nan)),
+                projection_diag,
+            )
+            for group_spec, coeff, item in zip(
+                group_specs, coeffs, projections, strict=True
+            )
+        }
 
     def _project_monitor(spec, monitor, parts):
         components = (
@@ -332,14 +347,6 @@ def _extract_port_waves_dft(
         }
         for idx, frequency in enumerate(freqs):
             f_mode = float(frequency if strategy == "per_frequency" else single_freq)
-            proj = _mp._build_port_projection(
-                inputs[monitor.name],
-                spec,
-                monitor,
-                f_mode,
-                projection_cache,
-            )
-
             if context.is_3d:
                 coeff, residual, cond, neff, diag = _project_3d_group_at_monitor(
                     spec,
@@ -369,6 +376,9 @@ def _extract_port_waves_dft(
                 )
                 continue
 
+            proj = _mp._build_port_projection(
+                inputs[monitor.name], spec, monitor, f_mode, projection_cache
+            )
             proj_components = tuple(
                 proj.get("components", (proj["e_component"], proj["h_component"]))
             )

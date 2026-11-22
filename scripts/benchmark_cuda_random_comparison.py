@@ -46,7 +46,7 @@ def write_json(path, value):
 
 def source_hash(root):
     digest = hashlib.sha256()
-    paths = sorted([*root.glob("beamz/**/*.py"), *root.glob("cuda/src/*")])
+    paths = sorted([*root.glob("beamz/**/*.py"), *root.glob("cuda/src/**/*.*")])
     for path in paths:
         if path.is_file():
             digest.update(str(path.relative_to(root)).encode())

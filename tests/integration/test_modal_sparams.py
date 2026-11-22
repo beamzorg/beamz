@@ -23,6 +23,19 @@ from beamz.simulation.results import (
 )
 
 
+def test_resample_modal_fields_from_wavelength_ordered_bins():
+    frequencies = np.array([3.0, 2.0, 1.0])
+    fields = frequencies[:, None] * np.array([2 + 3j, -1 + 0.5j])
+    np.testing.assert_array_equal(
+        sp._resample_complex_matrix(frequencies, fields, [1.0, 3.0]),
+        fields[[2, 0]],
+    )
+    np.testing.assert_allclose(
+        sp._resample_complex_matrix(frequencies, fields, [2.5, 3.5]),
+        [0.5 * (fields[0] + fields[1]), np.zeros(2)],
+    )
+
+
 def _simulation(*, width=2.0, height=2.0, depth=0.0, monitors=(), sources=()):
     return Simulation(
         design=Design(

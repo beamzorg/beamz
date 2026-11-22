@@ -99,6 +99,7 @@ class CompiledScene:
         options: RasterOptions | None = None,
         cache_directory: str | Path | None = None,
         _staircase_materials: tuple[int, ...] | None = None,
+        _for_solver: bool = False,
     ) -> RasterResult:
         if not isinstance(grid, Grid):
             raise TypeError("grid must be a Grid.")
@@ -110,7 +111,14 @@ class CompiledScene:
             if _staircase_materials is None
             else _staircase_materials
         )
-        cache_path = self._cache_path(grid, options, cache_directory, metals)
+        components = options.components
+        if _for_solver and options.smoothing == "farjadpour_diagonal":
+            # The physical solver consumes one diagonal per Yee support and all
+            # cell-centered tensor components. The standalone raster retains both.
+            components = "solver_diagonal_" + components
+        cache_path = self._cache_path(
+            grid, options, cache_directory, metals, components
+        )
         if cache_path is not None and cache_path.exists():
             try:
                 return RasterResult._from_cache(
@@ -126,7 +134,7 @@ class CompiledScene:
             tuple(edges.tolist() for edges in grid.edges),
             options.quality,
             options.smoothing,
-            options.components,
+            components,
             metals,
             tuple(axis in options.periodic_axes for axis in "xyz"),
         )
@@ -152,6 +160,7 @@ class CompiledScene:
         options: RasterOptions,
         directory: str | Path | None,
         metals: tuple[int, ...],
+        components: str,
     ) -> Path | None:
         if directory is None:
             return None
@@ -166,7 +175,7 @@ class CompiledScene:
                     "engine": _ENGINE_VERSION,
                     "quality": options.quality,
                     "smoothing": options.smoothing,
-                    "components": options.components,
+                    "components": components,
                     "metal_smoothing": options.metal_smoothing,
                     "reference_frequency": options.reference_frequency,
                     "staircase_materials": metals,
@@ -191,10 +200,12 @@ def rasterize(
     options: RasterOptions | None = None,
     cache_directory: str | Path | None = None,
     _staircase_materials: tuple[int, ...] | None = None,
+    _for_solver: bool = False,
 ) -> RasterResult:
     return compile_scene(scene).rasterize(
         grid,
         options=options,
         cache_directory=cache_directory,
         _staircase_materials=_staircase_materials,
+        _for_solver=_for_solver,
     )

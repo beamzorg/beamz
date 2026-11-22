@@ -143,26 +143,19 @@ def test_cuda_program_boundary_code_requires_matching_h_and_e_cpml_slabs():
     assert attributes["boundary_code"] == np.int32(1)
 
 
-def test_cuda_cpml_bf16_state_is_explicit_and_preserves_continuation(monkeypatch):
-    monkeypatch.delenv("BEAMZ_CUDA_CPML_PSI_PRECISION", raising=False)
-    assert not backend_runtime.cuda_flags_from_env() & backend_runtime.CUDA_BF16_PSI
+def test_cuda_cpml_continuation_upcasts_legacy_auxiliary_state():
     program, state, _context = _program_and_state(cpml=True)
     cuda_program = replace(
         program, config=replace(program.config, backend="cuda_streamed")
     )
     seeded = state._replace(
-        cpml_psi_h_terms=tuple(value + 0.125 for value in state.cpml_psi_h_terms),
-        cpml_psi_e_terms=tuple(value - 0.25 for value in state.cpml_psi_e_terms),
-    )
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "bf16")
-    cuda_program = replace(
-        cuda_program,
-        config=replace(
-            cuda_program.config,
-            cuda_flags=backend_runtime.cuda_flags_from_env(),
+        cpml_psi_h_terms=tuple(
+            (value + 0.125).astype(jnp.bfloat16) for value in state.cpml_psi_h_terms
+        ),
+        cpml_psi_e_terms=tuple(
+            (value - 0.25).astype(jnp.bfloat16) for value in state.cpml_psi_e_terms
         ),
     )
-
     converted = initial_program_state(
         cuda_program,
         t=float(cuda_program.config.dt),
@@ -171,21 +164,14 @@ def test_cuda_cpml_bf16_state_is_explicit_and_preserves_continuation(monkeypatch
         monitor_steps=3,
     )
 
-    assert all(value.dtype == jnp.bfloat16 for value in converted.cpml_psi_h_terms)
-    assert all(value.dtype == jnp.bfloat16 for value in converted.cpml_psi_e_terms)
+    assert all(value.dtype == jnp.float32 for value in converted.cpml_psi_h_terms)
+    assert all(value.dtype == jnp.float32 for value in converted.cpml_psi_e_terms)
     np.testing.assert_allclose(
         np.asarray(converted.cpml_psi_h_terms[0], dtype=np.float32), 0.125
     )
     np.testing.assert_allclose(
         np.asarray(converted.cpml_psi_e_terms[0], dtype=np.float32), -0.25
     )
-
-
-def test_cuda_policy_rejects_unknown_psi_precision(monkeypatch):
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "fp8")
-
-    with np.testing.assert_raises_regex(ValueError, "must be 'fp32' or 'bf16'"):
-        backend_runtime.cuda_flags_from_env()
 
 
 def test_cuda_ffi_phase_packs_cpml_and_aliases_state(monkeypatch):
@@ -724,6 +710,44 @@ def test_cuda_program_graph_packs_monitor_batch_and_aliases_accumulators(monkeyp
     assert attributes["program_layout"] == np.int32(abi.PROGRAM_LAYOUT_MONITOR_IN_PLACE)
     assert attributes["coincident_source_group_mask"] == np.int32(1)
     np.testing.assert_array_equal(next_state.dft_vec_re, state.dft_vec_re)
+
+
+def test_native_gathers_pack_active_monitor_rows_in_canonical_order():
+    program, _, _ = _program_and_state(cpml=True, monitor=True)
+
+    def monitor(points, components):
+        index = np.arange(2 * points, dtype=np.int32).reshape(points, 2)
+        weights = np.full(index.shape, 0.5, np.float32)
+        return replace(
+            program.monitors[0],
+            dft_point_count=points,
+            dft_component_mask=np.isin(np.arange(6), components),
+            dft_flat_idx=(index,) * 6,
+            dft_weights=(weights,) * 6,
+        )
+
+    specs = (monitor(15, (2,)), monitor(3, (0, 1, 4, 5)))
+    indices, weights, *_ = cuda_runtime.pack_dft_monitors(specs, host=True, ragged=True)
+    dense_indices, dense_weights, *_ = cuda_runtime.pack_dft_monitors(specs, host=True)
+    rows = indices.ravel()[: 6 * len(specs)].reshape(-1, 6)
+    assert indices.ndim == 2 and indices.nbytes * 2 < dense_indices.nbytes
+    next_row = rows.size // indices.shape[1]
+    for i, spec in enumerate(specs):
+        for component, offset in enumerate(rows[i]):
+            if spec.dft_component_mask[component] == 0:
+                assert offset == -1
+                continue
+            assert offset == next_row
+            next_row += spec.dft_point_count
+            np.testing.assert_array_equal(
+                indices[offset:next_row],
+                dense_indices[i, component, : spec.dft_point_count],
+            )
+            np.testing.assert_array_equal(
+                weights[offset:next_row],
+                dense_weights[i, component, : spec.dft_point_count],
+            )
+    assert next_row == indices.shape[0]
 
 
 def test_cuda_program_graph_uses_temporal_cpml_field_banks(monkeypatch):

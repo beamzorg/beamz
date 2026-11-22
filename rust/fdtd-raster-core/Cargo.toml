@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 blake3.workspace = true
+bytemuck = "1"
 geo.workspace = true
 parry3d-f64.workspace = true
 rayon.workspace = true

@@ -10,7 +10,9 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 import numpy as np
+from numpy.typing import DTypeLike
 
+from beamz._plane_array import physical_crop
 from beamz.design.grid import RectilinearGrid
 from beamz.devices._immutable import readonly_array
 from beamz.devices.modes.discrete import ComponentIndex
@@ -108,6 +110,7 @@ def build_incident_3d_phasor_state(
     t_h,
     masked: bool,
     max_shift: int,
+    dtype: DTypeLike = np.complex128,
 ) -> dict[str, np.ndarray]:
     """Construct a complex carrier phasor for a local 3D incident field."""
     axis = field_profile.axis
@@ -118,7 +121,7 @@ def build_incident_3d_phasor_state(
     direction_sign = float(field_profile.direction_sign)
     max_shift = int(max(1, max_shift))
 
-    field_arrays = _field_arrays_like(fields, dtype=np.complex128)
+    field_arrays = _field_arrays_like(fields, dtype=dtype)
     field_shapes = {name: arr.shape for name, arr in field_arrays.items()}
 
     for comp_name, profile in field_profile.components.items():
@@ -166,6 +169,7 @@ def deembed_3d_phasor_profiles(
     resolution: float,
     t_e,
     t_h,
+    residuals=(),
 ) -> dict[str, np.ndarray]:
     """Return local source-plane phasors in the source profile gauge."""
     axis = field_profile.axis
@@ -177,15 +181,35 @@ def deembed_3d_phasor_profiles(
         idx = field_profile.indices.get(component)
         if idx is None or component not in state:
             continue
-        values = np.asarray(state[component], dtype=np.complex128)
+        axis_pos = _AXIS_POS_3D[axis]
         axis_idx = _axis_index(idx, axis)
+        if axis_idx is None:
+            raise ValueError("3D source profiles require a single Yee plane")
+        plane = np.take(state[component], axis_idx, axis=axis_pos).astype(
+            np.complex128, copy=False
+        )
+        transverse = tuple(item for i, item in enumerate(idx) if i != axis_pos)
+        # Only the profiled plane enters the launch-power quadrature.
+        for residual in residuals:
+            if residual.component != component:
+                continue
+            start, stop, _ = residual.index[axis_pos].indices(
+                state[component].shape[axis_pos]
+            )
+            if start <= axis_idx < stop:
+                region = tuple(
+                    item for i, item in enumerate(residual.index) if i != axis_pos
+                )
+                plane[region] += np.take(
+                    residual.residual, axis_idx - start, axis=axis_pos
+                )
         coord = _component_axis_coordinate(
             fields, component, axis, axis_idx, resolution
         )
         base_time = float(t_e if component.startswith("E") else t_h)
         delay = _phase_delay(omega, k_num, coord - ref_coord)
         phase = omega * (base_time - delay)
-        out[component] = values[idx] * np.exp(-1j * phase)
+        out[component] = plane[transverse] * np.exp(-1j * phase)
     return out
 
 
@@ -277,10 +301,13 @@ def crop_local_residual(
     mask = np.abs(values) > float(atol)
     if not np.any(mask):
         return None
-    coords = np.argwhere(mask)
-    lo = coords.min(axis=0)
-    hi = coords.max(axis=0) + 1
-    local_crop = tuple(slice(int(a), int(b)) for a, b in zip(lo, hi, strict=True))
+    local_crop = []
+    for axis in range(mask.ndim):
+        occupied = np.flatnonzero(
+            mask.any(axis=tuple(d for d in range(mask.ndim) if d != axis))
+        )
+        local_crop.append(slice(int(occupied[0]), int(occupied[-1]) + 1))
+    local_crop = tuple(local_crop)
     global_crop = tuple(
         slice(
             int(parent.start or 0) + int(child.start or 0),
@@ -381,7 +408,8 @@ def local_3d_phasor_context(
     max_shift: int,
 ):
     geometry = getattr(fields, "geometry", None)
-    rectilinear = geometry is not None and geometry.metric_kind != "isotropic_uniform"
+    if geometry is not None and geometry.metric_kind == "isotropic_uniform":
+        geometry = None
     axis = field_profile.axis
     axis_pos = _AXIS_POS_3D[axis]
     field_shapes = {
@@ -395,6 +423,10 @@ def local_3d_phasor_context(
     grid_shape = tuple(
         max(shape[d] for shape in field_shapes.values()) for d in range(3)
     )
+    if geometry is not None:
+        # Component slices add the node endpoints required by each staggering.
+        # The metric crop itself needs exactly one edge more than its cells.
+        grid_shape = tuple(reversed(geometry.shape))
     lows = [int(v) for v in grid_shape]
     highs = [0, 0, 0]
     found = False
@@ -452,7 +484,7 @@ def local_3d_phasor_context(
         return None
 
     local_geometry = None
-    if rectilinear:
+    if geometry is not None:
         # Give the window the parent's own edges (absolute coordinates, so phase
         # references need no offset) and keep the parent's metric class. The window
         # carries a halo where the incident state vanishes, so the window-edge
@@ -478,13 +510,17 @@ def local_3d_phasor_context(
         local_shape = tuple(int(s.stop or 0) - int(s.start or 0) for s in slices)
         if np.ndim(value) == 0:
             arr = np.asarray(value)
-            return np.full(local_shape, arr.item(), dtype=arr.dtype)
-        return np.asarray(value[slices])
+            return np.broadcast_to(arr, local_shape)
+        return np.asarray(physical_crop(value[slices]))
 
     for component, slices in component_slices.items():
         field = getattr(fields, component)
         shape = tuple(int(s.stop or 0) - int(s.start or 0) for s in slices)
-        setattr(local_fields, component, np.zeros(shape, dtype=field.dtype))
+        setattr(
+            local_fields,
+            component,
+            np.broadcast_to(np.zeros((), dtype=field.dtype), shape),
+        )
 
     for component, attr_prefix in (
         ("Ex", "x"),
@@ -525,16 +561,18 @@ def local_3d_phasor_context(
         tensors = getattr(material_grid, "yee_tensors", {})
     tensor_crop = tuple(slice(int(lo), int(hi) + 1) for lo, hi in cell_bounds)
     local_fields.yee_tensors = {
-        name: np.asarray(values)[
-            (
-                slice(None),
-                *(
-                    tensor_crop
-                    if name == "eps_node"
-                    else component_slices["E" + name[-1]]
-                ),
-            )
-        ]
+        name: np.asarray(
+            values[
+                (
+                    slice(None),
+                    *(
+                        tensor_crop
+                        if name == "eps_node"
+                        else component_slices["E" + name[-1]]
+                    ),
+                )
+            ]
+        )
         for name, values in tensors.items()
     }
 
@@ -759,177 +797,79 @@ def advance_incident_e_3d(
     return dict(zip(_E_COMPONENTS_3D, map(np.asarray, updated), strict=True))
 
 
-def _compute_3d_h_phasor_residuals_dense(
+def compute_discrete_3d_phasor_residuals(
     field_profile: FieldProfile3D,
     fields,
     *,
     resolution: float,
     max_shift: int,
     dt: float,
-    component_indices: dict[str, tuple[slice, slice, slice]] | None = None,
+    magnetic: bool = True,
+    electric: bool = True,
+    masked_state: dict[str, np.ndarray] | None = None,
 ) -> tuple[ModeSource3DResidual, ...]:
-    full_prev = build_incident_3d_phasor_state(
-        field_profile,
-        fields,
-        resolution=resolution,
-        t_e=0.0,
-        t_h=-0.5 * float(dt),
-        masked=False,
-        max_shift=max_shift,
-    )
-    masked_prev = build_incident_3d_phasor_state(
-        field_profile,
-        fields,
-        resolution=resolution,
-        t_e=0.0,
-        t_h=-0.5 * float(dt),
-        masked=True,
-        max_shift=max_shift,
-    )
-    h_full_next = advance_incident_h_3d(fields, full_prev, dt, resolution=resolution)
-    h_target_next = mask_incident_3d_state_to_launched_side(
-        field_profile,
-        h_full_next,
-        resolution=resolution,
-    )
-    h_mask_next = advance_incident_h_3d(fields, masked_prev, dt, resolution=resolution)
-    delta = {
-        component: h_target_next[component] - h_mask_next[component]
-        for component in _H_COMPONENTS_3D
-    }
-    return dense_3d_delta_residuals(
-        delta,
-        timing="h",
-        component_indices=component_indices,
-    )
-
-
-def compute_discrete_3d_h_phasor_residuals(
-    field_profile: FieldProfile3D,
-    fields,
-    *,
-    resolution: float,
-    max_shift: int,
-    dt: float,
-) -> tuple[ModeSource3DResidual, ...]:
-    """Complex carrier H residuals for the launched-side TF/SF update."""
+    """Compute launched-side residuals, sharing the incident H half-step."""
     context = local_3d_phasor_context(
-        field_profile,
-        fields,
-        resolution=resolution,
-        max_shift=max_shift,
+        field_profile, fields, resolution=resolution, max_shift=max_shift
     )
-    if context is None:
-        return _compute_3d_h_phasor_residuals_dense(
+    component_indices = None
+    if context is not None:
+        field_profile, fields, component_indices = context
+
+    def incident(masked):
+        return build_incident_3d_phasor_state(
             field_profile,
             fields,
             resolution=resolution,
+            t_e=0.0,
+            dtype=jax.dtypes.canonicalize_dtype(np.complex128),
+            t_h=-0.5 * dt,
+            masked=masked,
             max_shift=max_shift,
-            dt=dt,
         )
-    local_profile, local_fields, component_slices = context
-    return _compute_3d_h_phasor_residuals_dense(
-        local_profile,
-        local_fields,
-        resolution=resolution,
-        max_shift=max_shift,
-        dt=dt,
-        component_indices=component_slices,
-    )
 
-
-def _compute_3d_e_phasor_residuals_dense(
-    field_profile: FieldProfile3D,
-    fields,
-    *,
-    resolution: float,
-    max_shift: int,
-    dt: float,
-    component_indices: dict[str, tuple[slice, slice, slice]] | None = None,
-) -> tuple[ModeSource3DResidual, ...]:
-    full_prev = build_incident_3d_phasor_state(
-        field_profile,
-        fields,
-        resolution=resolution,
-        t_e=0.0,
-        t_h=-0.5 * float(dt),
-        masked=False,
-        max_shift=max_shift,
-    )
-    masked_prev = build_incident_3d_phasor_state(
-        field_profile,
-        fields,
-        resolution=resolution,
-        t_e=0.0,
-        t_h=-0.5 * float(dt),
-        masked=True,
-        max_shift=max_shift,
-    )
-    h_full_next = advance_incident_h_3d(fields, full_prev, dt, resolution=resolution)
-    h_target_next = mask_incident_3d_state_to_launched_side(
-        field_profile,
-        h_full_next,
-        resolution=resolution,
-    )
-    e_full_next = advance_incident_e_3d(
-        fields,
-        full_prev,
-        h_full_next,
-        float(dt),
-        resolution=resolution,
-    )
-    e_target_next = mask_incident_3d_state_to_launched_side(
-        field_profile,
-        e_full_next,
-        resolution=resolution,
-    )
-    e_mask_next = advance_incident_e_3d(
-        fields,
-        masked_prev,
-        h_target_next,
-        float(dt),
-        resolution=resolution,
-    )
-    delta = {
-        component: e_target_next[component] - e_mask_next[component]
-        for component in _E_COMPONENTS_3D
-    }
-    return dense_3d_delta_residuals(
-        delta,
-        timing="e",
-        component_indices=component_indices,
-    )
-
-
-def compute_discrete_3d_e_phasor_residuals(
-    field_profile: FieldProfile3D,
-    fields,
-    *,
-    resolution: float,
-    max_shift: int,
-    dt: float,
-) -> tuple[ModeSource3DResidual, ...]:
-    """Complex carrier E residuals for the launched-side TF/SF update."""
-    context = local_3d_phasor_context(
-        field_profile,
-        fields,
-        resolution=resolution,
-        max_shift=max_shift,
-    )
-    if context is None:
-        return _compute_3d_e_phasor_residuals_dense(
-            field_profile,
-            fields,
-            resolution=resolution,
-            max_shift=max_shift,
-            dt=dt,
+    def launched(state):
+        return mask_incident_3d_state_to_launched_side(
+            field_profile, state, resolution=resolution
         )
-    local_profile, local_fields, component_slices = context
-    return _compute_3d_e_phasor_residuals_dense(
-        local_profile,
-        local_fields,
-        resolution=resolution,
-        max_shift=max_shift,
-        dt=dt,
-        component_indices=component_slices,
-    )
+
+    def residuals(target, current, timing):
+        if masked_state is not None:
+            masked_state.update(current)
+        return dense_3d_delta_residuals(
+            {c: target[c] - current[c] for c in target},
+            timing=timing,
+            component_indices=component_indices,
+        )
+
+    # Complete the unrestricted solve before constructing the masked state.
+    # Only the projected H and E half-steps cross that lifetime boundary.
+    full = incident(False)
+    h_full = advance_incident_h_3d(fields, full, dt, resolution=resolution)
+    if electric:
+        for component in _H_COMPONENTS_3D:
+            del full[component]
+        e_target = launched(
+            advance_incident_e_3d(fields, full, h_full, dt, resolution=resolution)
+        )
+    del full
+    h_target = launched(h_full)
+    del h_full
+
+    masked = incident(True)
+    result = ()
+    if magnetic:
+        result = residuals(
+            h_target,
+            advance_incident_h_3d(fields, masked, dt, resolution=resolution),
+            "h",
+        )
+    if electric:
+        for component in _H_COMPONENTS_3D:
+            del masked[component]
+        result += residuals(
+            e_target,
+            advance_incident_e_3d(fields, masked, h_target, dt, resolution=resolution),
+            "e",
+        )
+    return result
