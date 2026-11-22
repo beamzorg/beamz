@@ -26,7 +26,7 @@
 - **GPU-accelerated**, achieving high **GCUPS performance**.
 - **Multi-GPU** runs, handling **large-scale simulations** with _billions of cells_.
 - CPU-capable for **fast prototyping**, even on your laptop.
-- Optional [native CUDA backend](cuda/README.md) with temporal blocking and multi-GPU sharding.
+- Dedicated CUDA backend for acceleration beyond default JAX.
 - **CPML**, absorbing layers and PEC boundaries.
 - **Unidirectional mode sources** (single freq. and broadband, Huygens fields + TFSF, TE/TM).
 - **3D Gaussian sources**, e.g. for grating coupler simulations.
