@@ -8,10 +8,31 @@ from __future__ import annotations
 
 import math
 import os
+from dataclasses import fields
+from typing import Any
 
 import jax
 
 from beamz.simulation import _cuda_abi as abi
+
+
+def _rotated_block_workspace_bytes(program) -> int:
+    """Budget dense coefficient expansion and index scratch for rotated headers.
+
+    Constant-block headers encode canonical flat order. Rotation currently
+    restores dense float32 source coefficients; the original tiny codebooks
+    cannot stand in for the size of these runtime arrays.
+    """
+    if program.config.cuda_storage_axes == (0, 1, 2):
+        return 0
+    return 2 * sum(
+        math.prod(program.boundary.logical_component_shapes["E" + c]) * 4
+        for c in "xyz"
+        if (
+            getattr(program.coefficients, "e_source_" + c).ndim == 2
+            and str(getattr(program.coefficients, "e_source_" + c).dtype) == "int32"
+        )
+    )
 
 
 def cuda_memory_policy_from_env() -> str:
@@ -59,8 +80,16 @@ def cuda_workspace_estimate(
         # dependency arrays. Retained caller state is accounted for below.
         workspace = state + fields
         if mstep_plan is not None:
+            from .cuda.runtime.capabilities import mstep_allocation_contract
+
             summary = mstep_plan.summary()
-            workspace += summary["scratch_bytes"] + summary["plan_bytes"]
+            _, placeholder_cells = mstep_allocation_contract(0)
+            scratch_bytes = (
+                6 * placeholder_cells * 4
+                if placeholder_cells
+                else summary["scratch_bytes"]
+            )
+            workspace += scratch_bytes + summary["plan_bytes"]
         workspace += sum(
             int(m.freq_count) * int(m.dft_point_count) * 6 * 2 * 4
             for m in program.monitors
@@ -102,9 +131,60 @@ def cuda_workspace_estimate(
             // count
         )
         workspace += 2 * state + materials
+        workspace += _rotated_block_workspace_bytes(program)
     if not donate_state:
         workspace += state
     return workspace
+
+
+def _cuda_working_set(
+    program: Any = "",
+    *,
+    donate_state: bool = False,
+    low_memory: bool | str = "",
+    enforce: bool = False,
+) -> int:
+    budget = getattr(program.config, "_cuda_memory_budget_bytes", 0)
+    if not budget or program.config.backend == "jax":
+        return 0
+    if isinstance(low_memory, str):
+        low_memory = program.config.cuda_memory_policy != "speed"
+    from .observe import empty_monitor_values
+
+    plans = (
+        *program.sources,
+        *program.monitors,
+        *program.boundary.cpml.h_terms,
+        *program.boundary.cpml.e_terms,
+    )
+    values = jax.tree_util.tree_leaves(
+        (
+            program.coefficients,
+            tuple(tuple(getattr(v, f.name) for f in fields(v)) for v in plans),
+        )
+    )
+    unique = {id(v): v for v in values if hasattr(v, "dtype") and hasattr(v, "size")}
+    static = sum(int(v.size) * int(v.dtype.itemsize) for v in unique.values())
+    monitors = jax.eval_shape(
+        lambda: empty_monitor_values(program, num_steps=program.config.num_steps)
+    )
+    output = sum(
+        math.prod(v.shape) * int(v.dtype.itemsize)
+        for v in jax.tree_util.tree_leaves(monitors)
+    )
+    required = (
+        static
+        + output * (1 if donate_state else 2)
+        + cuda_workspace_estimate(
+            program, donate_state=donate_state, low_memory=bool(low_memory)
+        )
+        + (512 << 20)
+    )
+    if enforce and required > budget:
+        raise MemoryError(
+            f"CUDA estimated per-run storage {required} including reserve exceeds declared budget {budget}"
+        )
+    return required
 
 
 def cuda_capacity_schedule(program, *, donate_state: bool) -> bool:
@@ -113,7 +193,14 @@ def cuda_capacity_schedule(program, *, donate_state: bool) -> bool:
         return False
     policy = program.config.cuda_memory_policy
     if policy != "auto":
+        _cuda_working_set(
+            program,
+            donate_state=donate_state,
+            low_memory=policy == "capacity",
+            enforce=True,
+        )
         return policy == "capacity"
+    _cuda_working_set(program, donate_state=donate_state, low_memory=True, enforce=True)
     available = cuda_available_bytes(program)
     # CPU contract tests and older backends may not expose allocator statistics.
     # Explicit capacity mode is available without querying or initializing a GPU.
@@ -136,6 +223,11 @@ def cuda_available_bytes(program) -> int | None:
         stats = device.memory_stats()
         if stats and "bytes_limit" in stats and "bytes_in_use" in stats:
             budgets.append(int(stats["bytes_limit"]) - int(stats["bytes_in_use"]))
+    budget = getattr(program.config, "_cuda_memory_budget_bytes", 0)
+    if budget:
+        workspace = cuda_workspace_estimate(program, donate_state=False)
+        static_and_reserve = _cuda_working_set(program, donate_state=False) - workspace
+        budgets.append(max(0, budget - static_and_reserve))
     return min(budgets) if budgets else None
 
 

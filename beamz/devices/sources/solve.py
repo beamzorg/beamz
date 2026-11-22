@@ -6,6 +6,7 @@ from typing import Literal, cast
 
 import numpy as np
 
+from beamz._region_array import any_nonzero
 from beamz.devices.modes.line import (
     cell_permeability,
     prepare_mode_line,
@@ -148,7 +149,7 @@ class ModePlaneContext:
 def mode_plane_context(*, simulation, plane) -> ModePlaneContext:
     grid = _simulation_grid_view(simulation)
     conductivity = getattr(grid, "conductivity", None)
-    if conductivity is not None and np.any(np.asarray(conductivity) != 0.0):
+    if conductivity is not None and any_nonzero(conductivity):
         raise ValueError(
             "Mode solving does not yet support conductive material profiles; "
             "the solved mode would not match lossy FDTD propagation."
@@ -176,7 +177,7 @@ def mode_plane_context(*, simulation, plane) -> ModePlaneContext:
                 )
             )
         )
-    eps_profile_full = np.take(eps, grid_index, axis=axis_index)
+    eps_profile_full = np.moveaxis(eps, axis_index, 0)[grid_index]
     profile_axes = tuple(index for index in range(eps.ndim) if index != axis_index)
     storage_axis = {0: "z", 1: "y", 2: "x"}
     transverse_axes = tuple(storage_axis[int(index)] for index in profile_axes)
@@ -218,11 +219,9 @@ def mode_plane_context(*, simulation, plane) -> ModePlaneContext:
         ):
             raise ValueError(f"{name} tensor has invalid compact shape {tensor.shape}")
         return {
-            component: np.take(
-                tensor[0 if tensor.shape[0] == 1 else index],
-                grid_index,
-                axis=axis_index,
-            )
+            component: np.moveaxis(
+                tensor[0 if tensor.shape[0] == 1 else index], axis_index, 0
+            )[grid_index]
             for index, component in enumerate(("xx", "yy", "zz"))
         }
 
@@ -286,7 +285,7 @@ def solve_mode_plane(
         geometry = getattr(grid_view, "grid", None)
         if geometry is not None:
             geometry = geometry.translated(tuple(-v for v in geometry.origin))
-        if np.any(np.asarray(grid_view.conductivity) != 0):
+        if any_nonzero(grid_view.conductivity):
             raise ValueError("2D mode previews require lossless materials")
         polarization = spec.polarization or getattr(grid_view, "polarization", None)
         if polarization is None:

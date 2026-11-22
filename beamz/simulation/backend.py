@@ -12,21 +12,16 @@ import jax
 
 from beamz.simulation._cuda_abi import (
     CUDA_ABI_VERSION,
-    CUDA_ADJOINT_TARGET,
-    CUDA_BF16_PSI,
     CUDA_CPML_PAIR,
     CUDA_DEFAULT_FLAGS,
     CUDA_FIELD_PAD32,
     CUDA_FIELD_PAD64,
     CUDA_FIELD_PAD_Y8,
     CUDA_GRAPH_CACHE,
-    CUDA_MATERIAL_ADJOINT_TARGET,
     CUDA_SHELL32X4,
     CUDA_SHELL32X8,
-    CUDA_STREAMED_TARGET,
     CUDA_STREAMED_TARGETS,
     CUDA_TEMPORAL_PAIR,
-    CUDA_TENSOR_MEDIA_TARGET,
 )
 
 ExecutionBackend = Literal[
@@ -60,11 +55,6 @@ def cuda_flags_from_env() -> int:
     flags = CUDA_DEFAULT_FLAGS
     if _env_enabled("BEAMZ_CUDA_DISABLE_GRAPH_CACHE", default=False):
         flags &= ~CUDA_GRAPH_CACHE
-    precision = os.environ.get("BEAMZ_CUDA_CPML_PSI_PRECISION", "fp32").lower()
-    if precision in {"bf16", "bfloat16"}:
-        flags |= CUDA_BF16_PSI
-    elif precision not in {"fp32", "float32", ""}:
-        raise ValueError("BEAMZ_CUDA_CPML_PSI_PRECISION must be 'fp32' or 'bf16'")
     padding = os.environ.get("BEAMZ_CUDA_FIELD_PADDING", "none").lower()
     layouts = {
         "none": 0,
@@ -88,7 +78,7 @@ def cuda_flags_from_env() -> int:
     if shell_tile not in shell_tiles:
         raise ValueError("BEAMZ_CUDA_CPML_SHELL_TILE must be 64x4, 32x8, or 32x4")
     flags |= shell_tiles[shell_tile]
-    from .cuda.mstep_config import variant_flags_from_env
+    from .cuda.mstep.mstep_config import variant_flags_from_env
 
     flags |= variant_flags_from_env()
     return flags
@@ -103,6 +93,34 @@ def cuda_storage_axes_from_env(*, sharded: bool = False) -> tuple[int, int, int]
     if value not in orders:
         raise ValueError("BEAMZ_CUDA_STORAGE_AXES must be 012, 120, or 201")
     return orders[value]
+
+
+def _cuda_legacy_schedule_options() -> tuple[tuple[str, str], ...]:
+    """Snapshot explicit compatibility schedules, including their default tiles."""
+    return tuple(
+        (name, value)
+        for name in (
+            "BEAMZ_CUDA_CPML_CORE_FUSION",
+            "BEAMZ_CUDA_CPML_PAIR_TILE",
+            "BEAMZ_CUDA_CPML_SHELL_TILE",
+            "BEAMZ_CUDA_CPML_SPATIAL",
+            "BEAMZ_CUDA_CPML_TEMPORAL",
+            "BEAMZ_CUDA_CPML_TILE",
+            "BEAMZ_CUDA_MSTEP_SEGMENT",
+            "BEAMZ_CUDA_MSTEP_TILE",
+            "BEAMZ_CUDA_PAIR_TILE",
+            "BEAMZ_CUDA_TEMPORAL_STEPS",
+        )
+        if (value := os.environ.get(name))
+    )
+
+
+def _has_cuda_legacy_options(*, native_flags: int = 0) -> bool:
+    changed_flags = (cuda_flags_from_env() ^ CUDA_DEFAULT_FLAGS) & ~native_flags
+    axes = cuda_storage_axes_from_env()
+    return (
+        changed_flags != 0 or axes != (0, 1, 2) or bool(_cuda_legacy_schedule_options())
+    )
 
 
 def cuda_graph_cache_capacity_from_env() -> int:
@@ -209,7 +227,7 @@ def _compute_capability(device) -> int:
     return int(capability)
 
 
-def _validated_registrations(extension: ModuleType) -> dict[str, object]:
+def _require_cuda_abi(extension: ModuleType) -> None:
     abi_version = getattr(extension, "__abi_version__", None)
     if abi_version != CUDA_ABI_VERSION:
         raise CudaBackendUnavailable(
@@ -217,6 +235,10 @@ def _validated_registrations(extension: ModuleType) -> dict[str, object]:
             f"runtime requires v{CUDA_ABI_VERSION}, extension provides "
             f"{abi_version!r}"
         )
+
+
+def _validated_registrations(extension: ModuleType) -> dict[str, object]:
+    _require_cuda_abi(extension)
     registrations = extension.registrations()
     if not isinstance(registrations, dict) or not registrations:
         raise CudaBackendUnavailable("beamz._cuda exposes no FFI registrations")
@@ -227,9 +249,11 @@ def _validated_registrations(extension: ModuleType) -> dict[str, object]:
             "beamz._cuda is missing required streamed FFI targets: "
             + ", ".join(missing)
         )
-    from ._cuda_abi import CUDA_MSTEP_TARGET
+    from ._cuda_abi import CUDA_MSTEP_FULL_INTERMEDIATES_TARGET, CUDA_MSTEP_TARGET
 
-    known = CUDA_STREAMED_TARGETS | ({CUDA_MSTEP_TARGET} & targets)
+    known = CUDA_STREAMED_TARGETS | (
+        {CUDA_MSTEP_TARGET, CUDA_MSTEP_FULL_INTERMEDIATES_TARGET} & targets
+    )
     return {name: registrations[name] for name in sorted(known)}
 
 
@@ -240,43 +264,16 @@ def register_cuda_ffi_targets(module: ModuleType | None = None) -> tuple[str, ..
     if _REGISTERED_MODULE is extension:
         return tuple(sorted(_validated_registrations(extension)))
     registrations = _validated_registrations(extension)
-    # Older JAXLIB releases lack this optional enum. Keep its lookup inside
-    # CUDA registration so portable imports do not require CUDA-era APIs.
-    from jaxlib import xla_client
-
-    target_traits = getattr(xla_client, "CustomCallTargetTraits", None)
-    supports_registration_traits = target_traits is not None
+    # Capture-compatible handlers declare the trait in their native FFI metadata.
+    # A PJRT plugin can initialize later and reject Python-side traits after
+    # registration has already returned, leaving all subsequent targets unbound.
     for name, capsule in registrations.items():
-        options = {"platform": "CUDA", "api_version": 1}
-        if target_traits is not None and supports_registration_traits:
-            options["traits"] = (
-                target_traits.COMMAND_BUFFER_COMPATIBLE
-                if str(name)
-                in {
-                    CUDA_STREAMED_TARGET,
-                    CUDA_ADJOINT_TARGET,
-                    CUDA_MATERIAL_ADJOINT_TARGET,
-                    CUDA_TENSOR_MEDIA_TARGET,
-                }
-                else target_traits.DEFAULT
-            )
-        try:
-            jax.ffi.register_ffi_target(str(name), capsule, **options)
-        except RuntimeError as error:
-            if "plugin does not support custom call traits" not in str(error):
-                raise
-            # Older CUDA PJRT plugins require traits in the native FFI metadata
-            # rather than the Python registration API. Both declare the same
-            # capture contract; retain compatibility without hiding other errors.
-            supports_registration_traits = False
-            jax.ffi.register_ffi_target(
-                str(name), capsule, platform="CUDA", api_version=1
-            )
+        jax.ffi.register_ffi_target(name, capsule, platform="CUDA", api_version=1)
     _REGISTERED_MODULE = extension
     return tuple(sorted(str(name) for name in registrations))
 
 
-def cuda_backend_status(*, register: bool = True) -> CudaBackendStatus:
+def _ffi_status(*, register: bool = True) -> CudaBackendStatus:
     devices = _gpu_devices()
     device_names = tuple(
         str(getattr(device, "device_kind", device)) for device in devices
@@ -300,7 +297,7 @@ def cuda_backend_status(*, register: bool = True) -> CudaBackendStatus:
             if register
             else tuple(sorted(registrations))
         )
-    except (ImportError, AttributeError, CudaBackendUnavailable) as exc:
+    except (ImportError, OSError, AttributeError, CudaBackendUnavailable) as exc:
         return CudaBackendStatus(
             False,
             None,
@@ -321,12 +318,36 @@ def cuda_backend_status(*, register: bool = True) -> CudaBackendStatus:
     )
 
 
+def cuda_backend_status(*, register: bool = True) -> CudaBackendStatus:
+    """Report the coherent CUDA component independently of JAX GPU availability."""
+    try:
+        extension = _load_extension()
+        if getattr(extension, "coherent_backend_version", 0):
+            device = extension.device_info()
+            targets = (
+                register_cuda_ffi_targets(extension)
+                if register
+                else tuple(sorted(_validated_registrations(extension)))
+            )
+            return CudaBackendStatus(
+                True,
+                str(extension.__version__),
+                CUDA_ABI_VERSION,
+                targets,
+                (str(device["name"]),),
+                (10 * int(device["major"]) + int(device["minor"]),),
+            )
+    except (ImportError, OSError, RuntimeError, AttributeError):
+        pass
+    return _ffi_status(register=register)
+
+
 def resolve_backend(backend: str | None) -> ResolvedBackend:
     """Resolve public backend policy without silently weakening explicit requests."""
     requested = normalize_backend(backend)
     if requested == "jax":
         return "jax"
-    status = cuda_backend_status()
+    status = _ffi_status()
     if requested == "auto" and not status.available:
         return "jax"
     if not status.available:

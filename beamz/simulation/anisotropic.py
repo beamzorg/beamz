@@ -1233,7 +1233,10 @@ def compile_anisotropic(grid, dt, periodic_axes=frozenset()) -> AnisotropicPlan 
     """Build static tensor-permeability and tensor-pole plans for a compiled grid."""
 
     material_grid = grid.material_grid
-    if not material_grid.uses_magnetic_tensors and not material_grid.tensor_dispersion:
+    if (
+        not material_grid.requires_magnetic_tensor_update
+        and not material_grid.tensor_dispersion
+    ):
         return None
     periodic = _seam_phases(grid, periodic_axes)
     _warn_on_absorber_overlap(grid)
@@ -1296,6 +1299,9 @@ def validate_mode_ports(material_grid, sources, monitors) -> None:
     reciprocal tensors, and media needing the full static-tensor update
     (non-symmetric tensors, off-diagonal or magnetic conductivity).
     """
+    if not sources and not monitors:
+        return
+
     from beamz.design.material_views import foldable
 
     # Only 2D TM line ports see in-plane (xy) magnetic coupling.

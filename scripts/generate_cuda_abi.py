@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "cuda" / "abi_layout.json"
 PYTHON_OUTPUT = ROOT / "beamz" / "simulation" / "_cuda_abi.py"
-CPP_OUTPUT = ROOT / "cuda" / "src" / "abi_layout.h"
+CPP_OUTPUT = ROOT / "cuda" / "src" / "common" / "abi_layout.h"
 
 
 def _pascal_case(value: str) -> str:

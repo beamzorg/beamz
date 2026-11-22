@@ -140,6 +140,7 @@ def test_simulation_conversion_keeps_nonunit_permeability_tensors():
     assert grid.uses_magnetic_tensors
     assert set(grid.magnetic_tensors) == {"mu_hx", "mu_hy", "mu_hz", "mu_cell"}
     np.testing.assert_allclose(np.asarray(grid.magnetic_tensors["mu_cell"])[:3], 2.0)
+    np.testing.assert_array_equal(grid.permeability, 2.0)
 
 
 @pytest.mark.parametrize(

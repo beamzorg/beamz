@@ -213,7 +213,7 @@ def test_mstep_small_domain_and_bounded_long_run():
     )
 
 
-def test_mstep_reports_a_real_core_and_rejects_recorders():
+def test_mstep_reports_a_real_core_and_matches_ordinary_recorder_samples():
     sim = _simulation()
     program = sim.compile(backend="cuda_mstep", num_steps=2)
     from beamz.simulation.execute import compiled_source_batches
@@ -233,17 +233,21 @@ def test_mstep_reports_a_real_core_and_rejects_recorders():
         for c in ("Hx", "Hy", "Hz", "Ex", "Ey", "Ez")
     )
     assert build_mstep_plan(shapes, program.boundary.cpml, groups).core_cells > 0
-    recorder = bz.FieldRecorder(center=(1e-6, 1e-6, 1e-6), size=(0, 0, 0))
-    unsupported = bz.Simulation(
+    recorder = bz.FieldRecorder(center=(1e-6, 1e-6, 1e-6), size=(0, 0, 0), interval=1)
+    recorded = bz.Simulation(
         material_grid=sim._material_grid(progress=False),
         monitors=[recorder],
         boundaries=sim.boundaries,
         time=sim.time,
     )
-    from beamz.simulation.backend import CudaBackendUnavailable
-
-    with pytest.raises(CudaBackendUnavailable, match="recorders"):
-        unsupported.advance(num_steps=2, backend="cuda_mstep")
+    state = _seed(recorded.compile(backend="jax", num_steps=19))
+    expected = recorded.advance(
+        state=state, num_steps=19, backend="cuda_streamed"
+    ).state
+    actual = recorded.advance(state=state, num_steps=19, backend="cuda_mstep").state
+    assert int(actual.recorded_counts[0]) == 19
+    assert np.any(np.asarray(actual.recorded_fields[0]))
+    _compare(expected, actual)
 
 
 def test_mstep_without_cpml_sources_or_monitors():
@@ -253,22 +257,6 @@ def test_mstep_without_cpml_sources_or_monitors():
     )
     state = _seed(bare.compile(backend="jax", num_steps=5))
     _compare(_run(bare, state, "cuda", 5), _run(bare, state, "cuda_mstep", 5))
-
-
-def test_mstep_bf16_recurrence_matches_cuda(monkeypatch):
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "bf16")
-    sim = _simulation()
-    program = sim.compile(backend="cuda_mstep", num_steps=5)
-    state = _seed(program)
-    state = state._replace(
-        cpml_psi_h_terms=tuple(
-            a.astype(jax.numpy.bfloat16) for a in state.cpml_psi_h_terms
-        ),
-        cpml_psi_e_terms=tuple(
-            a.astype(jax.numpy.bfloat16) for a in state.cpml_psi_e_terms
-        ),
-    )
-    _compare(_run(sim, state, "cuda", 5), _run(sim, state, "cuda_mstep", 5))
 
 
 def test_mstep_mode_source_and_windowed_interval_dft():
@@ -468,36 +456,38 @@ def test_unified_cuda_schedule_matches_compatibility_alias():
     "variant_flags", [0, abi.CUDA_MSTEP_TILE8X16 | abi.CUDA_MSTEP_SEGMENT32]
 )
 def test_automatic_schedule_dispatch_preserves_chunk_clocks(monkeypatch, variant_flags):
-    """Exercise automatic dispatch on a small core; model admission is tested on host."""
-    from beamz.simulation.compile import clear_program_cache
-    from beamz.simulation.cuda import schedule
-    from beamz.simulation.execute import clear_execution_cache
-
-    # Each mocked policy is a different frozen decision for an equivalent case.
-    clear_program_cache()
-    clear_execution_cache()
-
-    monkeypatch.setattr(schedule, "cuda_device_kind", lambda: "NVIDIA GeForce RTX 3090")
-    monkeypatch.setattr(
-        schedule,
-        "automatic_candidate",
-        lambda program, geometry, **kw: (
-            True,
-            "parity probe",
-            {
-                **geometry.summary(),
-                "mstep_cuda_flags": abi.CUDA_GRAPH_CACHE | variant_flags,
-            },
-        ),
-    )
+    """Interop auto stays streamed; explicit legacy variants retain odd-clock parity."""
+    monkeypatch.setenv("BEAMZ_CUDA_MSTEP_TILE", "8x16" if variant_flags else "16x32")
+    monkeypatch.setenv("BEAMZ_CUDA_MSTEP_SEGMENT", "32" if variant_flags else "whole")
     sim = _simulation(steps=257)
     state = _seed(sim.compile(backend="jax", num_steps=257))
     program = sim.compile(backend="cuda", schedule="auto", num_steps=257)
-    report = program.cuda_schedule_report()
+    assert program.cuda_schedule_report()["selected"] == "streamed"
+    forced = sim.compile(backend="cuda_mstep", num_steps=257)
+    report = forced.cuda_schedule_report()
     assert report["selected"] == "mstep"
     assert report["tile"] == ((8, 16) if variant_flags else (16, 32))
     assert report["column_segment"] == (32 if variant_flags else 0)
+    reference = _run(sim, state, "cuda_streamed", 257)
+    first = sim.advance(
+        state=state, num_steps=129, backend="cuda", schedule="auto", performance=False
+    )
     actual = sim.advance(
-        state=state, num_steps=257, backend="cuda", schedule="auto", performance=False
-    ).state
-    _compare(_run(sim, state, "cuda_streamed", 257), actual, 3e-5)
+        state=first.state,
+        num_steps=128,
+        backend="cuda",
+        schedule="auto",
+        performance=False,
+    )
+    for result in (first, actual):
+        assert result.results.cuda_plan["binding"] == "ffi"
+        assert result.results.cuda_plan["schedule"] == "streamed"
+    assert actual.results.cuda_plan["initial_step"] == 129
+    assert actual.results.cuda_plan["final_step"] == 257
+    _compare(reference, actual.state, 3e-5)
+    explicit = sim.advance(
+        state=state, num_steps=257, backend="cuda_mstep", performance=False
+    )
+    assert explicit.results.cuda_plan["binding"] == "ffi"
+    assert explicit.results.cuda_plan["schedule"] == "mstep"
+    _compare(reference, explicit.state, 3e-5)

@@ -352,52 +352,90 @@ def _component_plane_plan_3d(
     source0 = np.asarray(component_coords[axis0])[: lengths[axis0]]
     source1 = np.asarray(component_coords[axis1])[: lengths[axis1]]
     source_normal = np.asarray(component_coords[normal_axis])[: lengths[normal_axis]]
-    grid0, grid1 = np.meshgrid(*coordinates, indexing="ij")
-    target0, target1 = grid0.reshape(-1), grid1.reshape(-1)
-    target_normal = np.full_like(target0, float(plane_position))
+    # A sample plane is a Cartesian product. Interpolate each axis once, then
+    # form only the corner channels needed by the native and JAX gather ABI.
+    coords0, coords1 = (np.asarray(values).reshape(-1) for values in coordinates)
     plans = (
-        linear_interpolation_plan(source0, target0),
-        linear_interpolation_plan(source1, target1),
-        linear_interpolation_plan(source_normal, target_normal),
-    )
-    corner_bits = np.asarray(
-        [(a, b, c) for a in (0, 1) for b in (0, 1) for c in (0, 1)],
-        dtype=np.int32,
-    )
-    indices = []
-    weights = []
-    for dimension, (low, high, weight_low, weight_high) in enumerate(plans):
-        bit = corner_bits[:, dimension][None, :]
-        indices.append(np.where(bit == 0, low[:, None], high[:, None]))
-        weights.append(np.where(bit == 0, weight_low[:, None], weight_high[:, None]))
-    index_map = {
-        axis0: indices[0],
-        axis1: indices[1],
-        normal_axis: indices[2],
-    }
-    flat_indices = np.asarray(
-        np.ravel_multi_index(
-            (index_map["z"], index_map["y"], index_map["x"]),
-            dims=field_shape,
+        linear_interpolation_plan(source0, coords0),
+        linear_interpolation_plan(source1, coords1),
+        linear_interpolation_plan(
+            source_normal, np.full(1, plane_position, dtype=coords0.dtype)
         ),
-        dtype=np.int64 if math.prod(field_shape) > np.iinfo(np.int32).max else np.int32,
     )
-    combined_weights = np.prod(np.stack(weights), axis=0).astype(np.float32)
-    nonzero = np.abs(combined_weights) > 4.0 * np.finfo(np.float32).eps
-    combined_weights = np.where(nonzero, combined_weights, 0.0)
-    row_sum = np.sum(combined_weights, axis=1, keepdims=True)
-    combined_weights = np.divide(
-        combined_weights,
-        row_sum,
-        out=np.zeros_like(combined_weights),
-        where=np.abs(row_sum) > 0.0,
+    shape = (coords0.size, coords1.size)
+    size = math.prod(shape)
+    dtype = np.int64 if math.prod(field_shape) > np.iinfo(np.int32).max else np.int32
+    if not size:
+        return np.empty((0, 8), dtype), np.empty((0, 8), np.float32)
+    strides: dict[str, int] = dict(
+        zip(
+            ("z", "y", "x"),
+            (field_shape[1] * field_shape[2], field_shape[2], 1),
+            strict=True,
+        )
     )
-    compact_width = int(np.max(np.sum(nonzero, axis=1), initial=0))
-    if 0 < compact_width < combined_weights.shape[1]:
-        order = np.argsort(~nonzero, axis=1, kind="stable")[:, :compact_width]
-        flat_indices = np.take_along_axis(flat_indices, order, axis=1)
-        combined_weights = np.take_along_axis(combined_weights, order, axis=1)
-    return flat_indices, combined_weights
+    offsets = [
+        [index.astype(dtype, copy=False) * strides[axis] for index in plan[:2]]
+        for plan, axis in zip(plans, (axis0, axis1, normal_axis), strict=True)
+    ]
+    weights = [plan[2:] for plan in plans]
+    threshold = 4.0 * np.finfo(np.float32).eps
+    corners = [(i, j, k) for i in (0, 1) for j in (0, 1) for k in (0, 1)]
+    # A batch bounds temporary memory independently of the plane area.
+    columns_per_batch = min(shape[1], 16384)
+    rows_per_batch = 16384 // columns_per_batch
+
+    def batches():
+        for row in range(0, shape[0], rows_per_batch):
+            for column in range(0, shape[1], columns_per_batch):
+                yield (
+                    slice(row, row + rows_per_batch),
+                    slice(column, column + columns_per_batch),
+                )
+
+    def corner_weights(rows, columns):
+        return np.stack(
+            [
+                weights[0][i][rows, None] * weights[1][j][columns] * weights[2][k][0]
+                for i, j, k in corners
+            ],
+            axis=-1,
+        )
+
+    # Exact upper bound on surviving lanes includes every Cartesian combination.
+    # Nonfinite input takes the full eight-lane path through the same comparisons.
+    upper = [[np.max(np.abs(v)) for v in pair] for pair in weights]
+    limit = sum(
+        not (upper[0][i] * upper[1][j] * upper[2][k] <= threshold)
+        for i, j, k in corners
+    )
+    width = 0
+    for rows, columns in batches():
+        valid = np.abs(corner_weights(rows, columns)) > threshold
+        width = max(width, int(valid.sum(axis=-1).max()))
+        if width == limit:
+            break
+    width = width or 8
+    indices = np.empty((*shape, width), dtype)
+    combined = np.empty((*shape, width), np.float32)
+    for rows, columns in batches():
+        values = corner_weights(rows, columns)
+        valid = np.abs(values) > threshold
+        values[~valid] = 0
+        total = values.sum(axis=-1, keepdims=True)
+        np.divide(values, total, out=values, where=total != 0)
+        block = indices[rows, columns] if width == 8 else np.empty(values.shape, dtype)
+        for lane, (i, j, k) in enumerate(corners):
+            block[..., lane] = (
+                offsets[0][i][rows, None] + offsets[1][j][columns] + offsets[2][k][0]
+            )
+        if width == 8:
+            combined[rows, columns] = values
+        else:
+            order = np.argsort(~valid, axis=-1, kind="stable")[..., :width]
+            combined[rows, columns] = np.take_along_axis(values, order, axis=-1)
+            indices[rows, columns] = np.take_along_axis(block, order, axis=-1)
+    return indices.reshape(size, width), combined.reshape(size, width)
 
 
 @dataclass(frozen=True, slots=True)
@@ -424,7 +462,7 @@ class YeePlaneQuadrature:
                 * self.plans[name][1],
                 axis=-1,
             )
-            for name in _FIELD_COMPONENTS
+            for name in self.plans
         )
 
 
@@ -459,13 +497,14 @@ def compile_yee_plane_quadrature_3d(
     grid_shape: tuple[int, int, int],
     component_shapes: Mapping[str, tuple[int, int, int]],
     grid=None,
+    components: tuple[str, ...] = _FIELD_COMPONENTS,
 ) -> YeePlaneQuadrature:
     """Compile the canonical plane colocation used by monitors and sources."""
     normal_axis = str(normal_axis).lower()
     coordinates = yee_plane_coordinates_3d(center, size, normal_axis, region, grid=grid)
     plane_position = float(tuple(center)[{"x": 0, "y": 1, "z": 2}[normal_axis]])
     plans = {}
-    for component in _FIELD_COMPONENTS:
+    for component in components:
         shape = component_shapes[component]
         plans[component] = _component_plane_plan_3d(
             component,

@@ -235,7 +235,6 @@ def test_cpml_shell_tiles_rotated_sources(
     monkeypatch.setenv("BEAMZ_CUDA_CPML_CORE_FUSION", fusion)
     monkeypatch.setenv("BEAMZ_CUDA_CPML_TILE", "auto")
     monkeypatch.setenv("BEAMZ_CUDA_CPML_SHELL_TILE", shell_tile)
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "fp32")
     simulation = build_simulation(
         Namespace(
             shape=(37, 49, 65),
@@ -418,10 +417,6 @@ def _assert_state_close(reference, actual, *, dynamic_atol_scale=1e-6):
     for expected, observed in zip(reference_leaves, actual_leaves, strict=True):
         expected = np.asarray(expected)
         observed = np.asarray(observed)
-        if expected.dtype.name == "bfloat16":
-            # ml_dtypes BF16 is not classified as np.inexact by NumPy.
-            expected = expected.astype(np.float32)
-            observed = observed.astype(np.float32)
         if np.issubdtype(expected.dtype, np.inexact):
             # CPML memories span roughly five orders of magnitude. Near-zero
             # elements can differ by a few float32 ULPs even when the complete
@@ -753,31 +748,6 @@ def test_streamed_cuda_overlapping_h_sources_cross_cpml_core_boundary(
     _assert_state_close(reference, actual)
 
 
-def test_bf16_cpml_program_matches_jax_application_state(monkeypatch):
-    simulation, seeded = _simulation_and_seed(
-        cpml=True,
-        source=True,
-        monitor=True,
-        heterogeneous=False,
-        timesteps=24,
-    )
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "bf16")
-    reference = simulation.advance(
-        state=_copy_state(seeded), num_steps=24, backend="jax"
-    ).state
-    actual = simulation.advance(
-        state=_copy_state(seeded), num_steps=24, backend="cuda_streamed"
-    ).state
-
-    assert all(str(value.dtype) == "bfloat16" for value in actual.cpml_psi_h_terms)
-    assert all(str(value.dtype) == "bfloat16" for value in actual.cpml_psi_e_terms)
-    # BF16 is confined to CPML recurrence storage. The complete application
-    # state—including FP32 fields, source evolution, and DFT accumulators—must
-    # remain within a 2% per-leaf dynamic-range envelope of the JAX reference.
-    # The worst leaf in this seeded 24-step case is 1.61% from the FP32 result.
-    _assert_state_close(reference, actual, dynamic_atol_scale=2e-2)
-
-
 @pytest.mark.parametrize("cpml", [False, True], ids=["pec_graph", "cpml_graph"])
 def test_streamed_cuda_owns_source_free_constraints(cpml):
     simulation, state = _simulation_and_seed(
@@ -1032,12 +1002,11 @@ def test_temporal_pair_dft_windows_and_intervals(
         ((49, 61, 37), "64x8", "binary"),
     ],
 )
-@pytest.mark.parametrize("precision", ["fp32", "bf16"])
 @pytest.mark.parametrize(
     "cpml_tile", ["16x8x16", "16x8x4", "oriented", "spatial", "spatial_single"]
 )
 def test_temporally_blocked_cpml_seeded_state(
-    steps, shape, padding, material, cpml_tile, precision, monkeypatch
+    steps, shape, padding, material, cpml_tile, monkeypatch
 ):
     """Frozen-psi halos, staggered edges, bank parity and continued runs."""
     from argparse import Namespace
@@ -1046,8 +1015,6 @@ def test_temporally_blocked_cpml_seeded_state(
 
     spatial = cpml_tile.startswith("spatial")
     depth = "1" if cpml_tile == "spatial_single" else "2"
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", precision)
-    tolerance = 2e-2 if precision == "bf16" else 3e-6
     monkeypatch.setenv(
         "BEAMZ_CUDA_CPML_PAIR_TILE", "oriented" if spatial else cpml_tile
     )
@@ -1090,13 +1057,13 @@ def test_temporally_blocked_cpml_seeded_state(
         state=_copy_state(state), num_steps=steps, backend="cuda_streamed"
     ).state
     assert all(
-        str(p.dtype) == ("bfloat16" if precision == "bf16" else "float32")
+        str(p.dtype) == "float32"
         for p in (*actual.cpml_psi_h_terms, *actual.cpml_psi_e_terms)
     )
-    _assert_state_close(expected, actual, dynamic_atol_scale=tolerance)
+    _assert_state_close(expected, actual, dynamic_atol_scale=3e-6)
     # CUDA schedules share explicit derivative rounding and multiply/FMA order.
     # Unlike the independent JAX comparison, schedule parity must be exact,
-    # including BF16 recurrence rounding and chronological monitor accumulation.
+    # including chronological monitor accumulation.
     monkeypatch.setenv("BEAMZ_CUDA_CPML_TEMPORAL", "0")
     monkeypatch.setenv("BEAMZ_CUDA_CPML_SPATIAL", "0")
     monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "1")
@@ -1119,7 +1086,7 @@ def test_temporally_blocked_cpml_seeded_state(
     actual = simulation.advance(
         state=actual, num_steps=35 - steps, backend="cuda_streamed"
     ).state
-    _assert_state_close(expected, actual, dynamic_atol_scale=tolerance)
+    _assert_state_close(expected, actual, dynamic_atol_scale=3e-6)
 
 
 @pytest.mark.parametrize("shell_tile", ["64x4", "32x8", "32x4"])
@@ -1134,7 +1101,6 @@ def test_narrow_cpml_queue_matches_fused_state(
 
     from scripts.benchmark_cuda_realistic import build_simulation
 
-    monkeypatch.setenv("BEAMZ_CUDA_CPML_PSI_PRECISION", "fp32")
     monkeypatch.setenv("BEAMZ_CUDA_FIELD_PADDING", "none")
     monkeypatch.setenv("BEAMZ_CUDA_TEMPORAL_STEPS", "1")
     monkeypatch.setenv("BEAMZ_CUDA_CPML_TEMPORAL", "0")

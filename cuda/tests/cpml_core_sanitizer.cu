@@ -3,7 +3,6 @@
 // nvcc -std=c++17 -arch=sm_86 -Icuda/src cuda/tests/cpml_core_sanitizer.cu \
 //   cuda/src/update.cu -o cpml_core_sanitizer
 #include <cuda_runtime.h>
-#include <cuda_bf16.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -52,7 +51,7 @@ struct Buffers {
       result.row_stride = result.dims[2];
       result.plane_stride = result.dims[1] * result.dims[2];
     }
-    const size_t bytes=count*(type==kBeamzBF16?2:4);
+    const size_t bytes=count*sizeof(float);
     Check(cudaMalloc(&result.data, bytes));
     Check(cudaMemset(result.data, 0, bytes));
     allocations.push_back(result.data);
@@ -60,10 +59,6 @@ struct Buffers {
       std::vector<float> values(count, 0.01f);
       Check(cudaMemcpy(result.data, values.data(), count * 4,
                        cudaMemcpyHostToDevice));
-    }
-    if(type==kBeamzBF16) {
-      std::vector<__nv_bfloat16> values(count,__float2bfloat16_rn(.01f));
-      Check(cudaMemcpy(result.data,values.data(),bytes,cudaMemcpyHostToDevice));
     }
     return result;
   }
@@ -132,7 +127,6 @@ void Exercise(int nz, int ny, int nx, bool packed, bool padded) {
   }
   h.nterms = e.nterms = 6;
   constexpr int axes[] = {1,0,0,2,2,1};
-  for (const auto psi_type : {kBeamzF32,kBeamzBF16}) {
   for (auto *phase : {&h, &e}) {
     for (int t=0;t<6;++t) {
       const int axis=axes[t];
@@ -141,8 +135,8 @@ void Exercise(int nz, int ny, int nx, bool packed, bool padded) {
         phase->inputs[13+3*t+q]=buffers.Make({profile[0],profile[1],profile[2]});
       const auto &out=phase->outputs[t/2];
       int64_t psi[3]={out.dims[0],out.dims[1],out.dims[2]}; psi[axis]=24;
-      phase->inputs[31+t]=buffers.Make({psi[0],psi[1],psi[2]},psi_type);
-      phase->outputs[3+t]=buffers.Make({psi[0],psi[1],psi[2]},psi_type);
+      phase->inputs[31+t]=buffers.Make({psi[0],psi[1],psi[2]});
+      phase->outputs[3+t]=buffers.Make({psi[0],psi[1],psi[2]});
     }
   }
   for(int tile=0;tile<3;++tile) {
@@ -151,7 +145,6 @@ void Exercise(int nz, int ny, int nx, bool packed, bool padded) {
   }
   Check(BeamzEnqueueSpatialCpml(nullptr, h, e, sources, 0));
   Check(cudaDeviceSynchronize());
-  }
   Check(BeamzEnqueueCpmlPairBand(nullptr, h, e, sources, 0));
   Check(cudaDeviceSynchronize());
 }

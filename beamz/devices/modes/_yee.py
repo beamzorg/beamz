@@ -53,6 +53,7 @@ def refine_x_mode_at_fixed_beta(
     transverse_metrics=None,
     _correct_beta=True,
     _remaining_corrections=10,
+    _prior_factor=None,
 ):
     """Refine E at the selected beta, then reconstruct H from Faraday's law."""
     from scipy import sparse
@@ -81,8 +82,6 @@ def refine_x_mode_at_fixed_beta(
     )
     ex_n, ey_n, _ez_n = (out[name].size for name in _E_COMPONENTS)
     hx_n, hy_n, _hz_n = (out[name].size for name in _H_COMPONENTS)
-    operator = curl_h @ sparse.diags(1.0 / mu) @ curl_e
-    mass = sparse.diags(eps)
     omega_d = (
         float(omega)
         if dt is None
@@ -90,15 +89,39 @@ def refine_x_mode_at_fixed_beta(
     )
     target = (omega_d / _C0) ** 2
     seed = np.concatenate([out[name].reshape(-1) for name in ("Ex", "Ey", "Ez")])
-    count = min(4, operator.shape[0] - 2)
-    values, vectors = _converged_shift_invert_eigenpairs(
-        spla,
-        operator,
-        mass,
-        target=target,
-        seed=seed,
-        count=count,
-    )
+    if _prior_factor is None:
+        _prior_factor = {}
+    eig = None
+    # The reduced transverse system must itself reach the factorization
+    # size where a second solve can reuse its numerical factor.
+    if seed.size - ex_n >= 16384:
+        eig = _transverse_eigenpairs(
+            sparse,
+            spla,
+            curl_h,
+            curl_e,
+            eps,
+            mu,
+            delta,
+            seed,
+            target,
+            (nz, ny),
+            _prior_factor,
+        )
+    if eig is None:
+        operator = curl_h @ sparse.diags(1.0 / mu) @ curl_e
+        eig = _converged_shift_invert_eigenpairs(
+            spla,
+            operator,
+            sparse.diags(eps),
+            target=target,
+            seed=seed,
+            count=min(4, seed.size - 2),
+            longitudinal_size=ex_n,
+            transverse_shape=(nz, ny),
+            prior_factor=_prior_factor,
+        )
+    values, vectors = eig
     # Generalized eigenvectors have arbitrary scales. Track both E and H:
     # a nearby electric-overlap candidate can belong to a different magnetic branch.
     magnetic_candidates = 1j * (curl_e @ vectors) / (_MU0 * omega_d * mu[:, None])
@@ -110,6 +133,13 @@ def refine_x_mode_at_fixed_beta(
         np.linalg.norm(magnetic_candidates, axis=0), np.finfo(float).tiny
     )
     selected = int(np.argmax(overlaps))
+    if _prior_factor:
+        # Closely spaced polarizations must be reconsidered together after beta moves.
+        gaps = np.abs(np.delete(values, selected) - values[selected])
+        if not gaps.size or gaps.min() <= max(
+            1e-6 * target, 16 * abs(values[selected] - target)
+        ):
+            _prior_factor.clear()
     electric = np.asarray(vectors[:, selected], dtype=np.complex128)
     phase = np.vdot(seed, electric)
     if abs(phase) > 1e-30:
@@ -129,10 +159,10 @@ def refine_x_mode_at_fixed_beta(
         hz.reshape(nz, ny - 1),
     )
     residual = np.linalg.norm(
-        operator @ electric - values[selected] * (mass @ electric)
+        curl_h @ ((curl_e @ electric) / mu) - values[selected] * (eps * electric)
     )
     residual /= max(
-        np.linalg.norm(values[selected] * (mass @ electric)), np.finfo(float).eps
+        np.linalg.norm(values[selected] * (eps * electric)), np.finfo(float).eps
     )
     eigenvalue = float(np.real(values[selected]))
     frequency_ratio = float(np.sqrt(max(eigenvalue / target, 0.0)))
@@ -144,15 +174,10 @@ def refine_x_mode_at_fixed_beta(
         q_probe = 0.98 * q_axis
         delta_probe = -1j * sign * q_probe
         delta_change = delta_probe - delta
-        operator_probe = (
-            (curl_h + delta_change * curl_h_beta)
-            @ sparse.diags(1.0 / mu)
-            @ (curl_e + delta_change * curl_e_beta)
-        )
-        denominator = np.vdot(electric, mass @ electric)
-        eigenvalue_probe = float(
-            np.real(np.vdot(electric, operator_probe @ electric) / denominator)
-        )
+        probe_h = (curl_e @ electric + delta_change * (curl_e_beta @ electric)) / mu
+        probe_e = curl_h @ probe_h + delta_change * (curl_h_beta @ probe_h)
+        denominator = np.vdot(electric, eps * electric)
+        eigenvalue_probe = float(np.real(np.vdot(electric, probe_e) / denominator))
         slope = (eigenvalue_probe - eigenvalue) / (q_probe**2 - q_axis**2)
         if not np.isfinite(slope) or abs(slope) <= np.finfo(float).eps:
             slope = 0.5
@@ -174,6 +199,7 @@ def refine_x_mode_at_fixed_beta(
                     transverse_metrics=transverse_metrics,
                     _correct_beta=_remaining_corrections > 1,
                     _remaining_corrections=_remaining_corrections - 1,
+                    _prior_factor=_prior_factor,
                 )
             )
             return (
@@ -186,6 +212,116 @@ def refine_x_mode_at_fixed_beta(
     return out, float(residual), frequency_ratio, float(k_num), frequency_ratio
 
 
+def _transverse_eigenpairs(
+    sparse,
+    spla,
+    curl_h,
+    curl_e,
+    eps,
+    mu,
+    delta,
+    seed,
+    target,
+    shape,
+    prior_factor,
+):
+    """Eliminate longitudinal E using the exact Yee divergence of epsilon E."""
+    nz, ny = shape
+    ex, hx, hy = nz * ny, (nz - 1) * (ny - 1), (nz - 1) * ny
+    if (
+        np.any(eps.imag)
+        or np.any(mu.imag)
+        or np.any(eps.real <= 0)
+        or np.any(mu.real <= 0)
+    ):
+        return None
+    transverse = seed[ex:]
+    phase = np.exp(-1j * np.angle(transverse[np.argmax(np.abs(transverse))]))
+    transverse = transverse * phase
+    imaginary = np.hypot(
+        np.linalg.norm(transverse.imag), np.linalg.norm((seed[:ex] * phase).real)
+    )
+    if imaginary > 1e-12 * np.linalg.norm(seed):
+        return None
+    # The x row of curl(H) contains [-Dz, Dy]. Divergence of this curl
+    # vanishes, giving delta*eps_x*Ex = -Dy(eps_y*Ey) - Dz(eps_z*Ez).
+    divergence = sparse.hstack(
+        (curl_h[:ex, hx + hy :], -curl_h[:ex, hx : hx + hy]), format="csc"
+    )
+    if abs(delta) <= np.sqrt(np.finfo(float).eps) * np.max(
+        np.abs(divergence.data), initial=1
+    ):
+        return None
+    lift = (
+        divergence.multiply(eps[ex:])
+        .multiply((-1 / (delta * eps[:ex]))[:, None])
+        .tocsc()
+    )
+    ampere = curl_h[ex:, :].multiply(1 / mu).tocsc()
+    operator = ampere @ curl_e[:, ex:] + (ampere @ curl_e[:, :ex]) @ lift
+    if np.any(operator.data.imag):
+        return None
+    operator = operator.real.tocsc()
+    operator.eliminate_zeros()
+    mass = sparse.diags(eps[ex:].real, format="csc")
+    try:
+        values, vectors = _converged_shift_invert_eigenpairs(
+            spla,
+            operator,
+            mass,
+            target=target,
+            seed=transverse.real,
+            count=min(4, operator.shape[0] - 2),
+            transverse_shape=shape,
+            prior_factor=prior_factor,
+        )
+    except RuntimeError:
+        prior_factor.clear()
+        return None
+    full = np.vstack((lift @ vectors, vectors))
+    full /= np.linalg.norm(full, axis=0)
+    rhs = eps[:, None] * full * values
+    residual = np.linalg.norm(curl_h @ ((curl_e @ full) / mu[:, None]) - rhs, axis=0)
+    # A tracked vector has already met the strict reduced residual. Check its
+    # reconstructed Maxwell residual separately before accepting that shortcut.
+    tolerance = 1e-10 if len(values) == 1 else 1e-6
+    if np.any(~np.isfinite(residual)) or np.any(
+        residual > tolerance * np.linalg.norm(rhs, axis=0)
+    ):
+        prior_factor.clear()
+        return None
+    return values, full
+
+
+def _track_corrected_mode(operator, mass, target, seed, factor):
+    """Refine the same polarization after a small change of propagation constant."""
+    seed_norm = np.linalg.norm(seed)
+    if not np.isfinite(seed_norm) or not seed_norm:
+        return None
+    reference = seed / seed_norm
+    vector = reference
+    for _ in range(5):
+        applied = operator @ vector
+        weighted = mass @ vector
+        value = np.vdot(vector, applied) / np.vdot(vector, weighted)
+        residual = applied - value * weighted
+        relative = np.linalg.norm(residual) / np.linalg.norm(value * weighted)
+        if (
+            not np.isfinite(relative)
+            or relative > 1e-3
+            or abs(np.vdot(reference, vector)) < 0.99999
+        ):
+            break
+        if relative < 2e-12 and abs(value / target - 1) < 1e-6:
+            return value, vector
+        # Project out the resonant component of the preceding shift-invert
+        # factor. Only the small transverse change in polarization remains.
+        direction = factor @ residual
+        vector = vector - (direction - vector * np.vdot(vector, direction))
+        vector /= np.linalg.norm(vector)
+    return None
+
+
 def _converged_shift_invert_eigenpairs(
     spla,
     operator,
@@ -194,6 +330,9 @@ def _converged_shift_invert_eigenpairs(
     target,
     seed,
     count,
+    longitudinal_size=0,
+    transverse_shape=None,
+    prior_factor=None,
 ):
     """Return numerically valid eigenpairs near ``target``.
 
@@ -203,6 +342,50 @@ def _converged_shift_invert_eigenpairs(
     physical modes; independently checking the residual prevents a false mode
     from reaching the refinement validator.
     """
+    # At real beta the lossless Yee operator couples Ex to Ey/Ez through an
+    # imaginary derivative. Rotating Ex by i makes this sparse problem real,
+    # even on a nonuniform grid. Keep complex arithmetic for lossy material
+    # or a seed whose polarization requires independent real and imaginary parts.
+    phases = None
+    if longitudinal_size and not np.any(mass.data.imag):
+        phase = np.ones(seed.size, dtype=complex)
+        phase[:longitudinal_size] = 1j
+        seed_in_basis = phase.conj() * seed
+        peak = seed_in_basis[np.argmax(np.abs(seed_in_basis))]
+        seed_in_basis *= np.exp(-1j * np.angle(peak))
+        if np.linalg.norm(seed_in_basis.imag) <= 1e-12 * np.linalg.norm(seed_in_basis):
+            rotated = operator.tocoo(copy=True)
+            rotated.data *= phase[rotated.row].conj() * phase[rotated.col]
+            if not np.any(rotated.data.imag):
+                operator = rotated.real.tocsc()
+                mass = mass.real
+                seed = seed_in_basis.real
+                phases = phase
+    real = np.isrealobj(operator.data) and np.isrealobj(seed)
+    if prior_factor and prior_factor["OPinv"].shape != operator.shape:
+        prior_factor.clear()
+    if prior_factor and real:
+        tracked = _track_corrected_mode(
+            operator, mass, target, seed, prior_factor["OPinv"]
+        )
+        if tracked is not None:
+            value, vector = tracked
+            return np.array([value]), (
+                phases * vector if phases is not None else vector
+            )[:, None]
+    if prior_factor:
+        prior_factor.clear()
+    inverse = {}
+    if real and transverse_shape:
+        from ._ordering import shift_inverse
+
+        nz, ny = transverse_shape
+        components = ((nz, ny - 1), (nz - 1, ny))
+        if longitudinal_size:
+            components = ((nz, ny), *components)
+        inverse = shift_inverse(spla, operator, target, components, mass)
+    if prior_factor is not None:
+        prior_factor.update(inverse)
     attempts = (count, min(8, operator.shape[0] - 2))
     for candidate_count in dict.fromkeys(attempts):
         eigenpairs = spla.eigs(
@@ -211,6 +394,7 @@ def _converged_shift_invert_eigenpairs(
             k=candidate_count,
             sigma=target,
             v0=seed,
+            **inverse,
             tol=1e-9,  # pyright: ignore[reportArgumentType] -- SciPy infers int from its untyped default.
         )
         values, vectors = cast(tuple[np.ndarray, np.ndarray], eigenpairs)
@@ -224,7 +408,10 @@ def _converged_shift_invert_eigenpairs(
             if np.isfinite(relative_residual) and relative_residual <= 1e-6:
                 valid.append(index)
         if valid:
-            return values[valid], vectors[:, valid]
+            selected = vectors[:, valid]
+            if phases is not None:
+                selected = phases[:, None] * selected
+            return values[valid], selected
     raise RuntimeError(
         "fixed-beta mode refinement did not produce a converged eigenpair"
     )
@@ -583,7 +770,7 @@ def _relative_pair_residual(left, right):
 
 
 def _material(values, index, shape):
-    arr = np.asarray(values, dtype=np.complex128)
+    arr = np.asarray(values)
     profile = arr[index] if arr.ndim == 3 else arr
     profile = np.asarray(profile, dtype=np.complex128).squeeze()
     if profile.shape != shape:

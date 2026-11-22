@@ -5,6 +5,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from tests.cuda_source_layout import CUDA_INCLUDE_FLAGS
+
 
 def test_sharded_launch_covers_elongated_supports(tmp_path):
     compiler = os.environ.get("CXX") or shutil.which("clang++") or shutil.which("g++")
@@ -16,7 +18,7 @@ def test_sharded_launch_covers_elongated_supports(tmp_path):
             compiler,
             "-std=c++17",
             "-O1",
-            f"-I{root / 'cuda/src'}",
+            *CUDA_INCLUDE_FLAGS,
             str(root / "tests/unit/cuda_sharded_schedule.cc"),
             "-o",
             str(executable),

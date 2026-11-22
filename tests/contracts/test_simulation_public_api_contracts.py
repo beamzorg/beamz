@@ -220,8 +220,61 @@ def test_reused_material_snapshot_does_not_need_content_fingerprints(monkeypatch
         assert np.shape(value) != (8, 9), "unchanged owned material must not be scanned"
         return original(value)
 
+    grid = design.MaterialGrid(np.ones((8, 9)), 0.0, 1.0, 1e-7, (8, 9))
+    sim = simulation.Simulation(material_grid=grid, time=np.arange(3) * 1e-17)
+    first = sim.compile(backend="jax")
+    monkeypatch.setattr(_cache_tokens, "array_cache_token", token)
+    assert sim.compile(backend="jax") is first
+
+
+@pytest.mark.parametrize("warm_shape", [(5, 6), (8, 10)])
+def test_unrelated_prepared_material_does_not_fingerprint_a_new_shape(
+    monkeypatch: pytest.MonkeyPatch, warm_shape: tuple[int, int]
+) -> None:
+    import importlib
+
+    from beamz import _cache_tokens
+
+    compiler = importlib.import_module("beamz.simulation.compile")
+    monkeypatch.setattr(compiler, "_PROGRAM_CACHE", OrderedDict())
+    warm = design.MaterialGrid(np.ones(warm_shape), 0.0, 1.0, 1e-7, warm_shape)
+    simulation.Simulation(material_grid=warm, time=np.arange(3) * 1e-17).compile(
+        backend="jax"
+    )
+    original = _cache_tokens.array_cache_token
+
+    def token(value):
+        assert np.shape(value) != (8, 9), (
+            "unrelated cache entries must not scan material"
+        )
+        return original(value)
+
     monkeypatch.setattr(_cache_tokens, "array_cache_token", token)
     grid = design.MaterialGrid(np.ones((8, 9)), 0.0, 1.0, 1e-7, (8, 9))
     sim = simulation.Simulation(material_grid=grid, time=np.arange(3) * 1e-17)
     first = sim.compile(backend="jax")
     assert sim.compile(backend="jax") is first
+    assert grid._cache_spec is None
+
+
+def test_matching_material_metadata_keeps_content_dedup_and_distinction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib
+
+    compiler = importlib.import_module("beamz.simulation.compile")
+    monkeypatch.setattr(compiler, "_PROGRAM_CACHE", OrderedDict())
+    grids = tuple(
+        design.MaterialGrid(np.full((8, 9), value), 0.0, 1.0, 1e-7, (8, 9))
+        for value in (1.0, 2.0, 1.0)
+    )
+    programs = tuple(
+        simulation.Simulation(material_grid=grid, time=np.arange(3) * 1e-17).compile(
+            backend="jax"
+        )
+        for grid in grids
+    )
+    assert grids[0] == grids[2] and grids[0] != grids[1]
+    assert hash(grids[0]) == hash(grids[1]) == hash(grids[2])
+    assert programs[0] is programs[2]
+    assert programs[0] is not programs[1]

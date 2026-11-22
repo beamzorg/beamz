@@ -144,3 +144,16 @@ tree_unflatten
 
 # Region rasterization is opt-in from examples and external benchmark scripts.
 rasterize_regions
+
+# Public diagnostics and CUDA plan fields exported through dataclasses.asdict.
+cuda_backend_status
+_.binding
+_.state_ownership
+_.physics_sha256
+_.estimated_ordinary_s
+_.estimated_first_solve_s
+
+# Native resource planner keywords and reported plan fields.
+_.minimum_overlap
+_.macro_level_stride
+_.observation_slots

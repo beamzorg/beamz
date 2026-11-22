@@ -80,6 +80,7 @@ def test_mode_source_defaults_to_one_watt_launch_power():
     )
 
     assert source.power == 1.0
+    assert source.band_taper is None
     assert tuple(field.name for field in fields(bz.ModeSource)) == (
         "center",
         "size",
@@ -87,6 +88,7 @@ def test_mode_source_defaults_to_one_watt_launch_power():
         "direction",
         "mode_spec",
         "power",
+        "band_taper",
     )
 
 
@@ -906,3 +908,40 @@ def test_result_normalization_reuses_waveforms_only_within_one_result(monkeypatc
     assert len(calls) == 2, "Normalization must not retain caches across results"
     np.testing.assert_array_equal(repeated["first"].flux, results["first"].flux)
     np.testing.assert_array_equal(repeated["second"].flux, results["second"].flux)
+
+
+def test_result_keeps_raw_spectra_when_a_monitor_has_no_source_reference():
+    dt = 1e-15
+    source = bz.GaussianSource(position=(1.0, 1.0, 1.0), width=0.5, signal=[1.0, 1.0])
+    monitors = [
+        bz.FluxMonitor(
+            center=(2.0, 2.0, 2.0), size=(0.0, 2.0, 2.0), freqs=[freq], name=name
+        )
+        for name, freq in (("active", 0.25 / dt), ("null", 0.5 / dt))
+    ]
+    simulation = bz.Simulation(
+        size=(4.0, 4.0, 4.0),
+        resolution=1.0,
+        time=np.array([0.0, dt]),
+        sources=[source],
+        monitors=monitors,
+    )
+    monitor_results = {
+        monitor.name: bz.MonitorResults(
+            monitor=monitor,
+            fields={},
+            power_history=np.empty(0),
+            power_timestamps=np.empty(0),
+            power_spectrum=np.array([3.0]),
+            dft_frequencies=np.asarray(monitor.freqs),
+        )
+        for monitor in monitors
+    }
+    result = bz.SimulationResults.from_run(
+        simulation,
+        runtime_fields=simulation.compile(backend="jax").grid,
+        monitor_results=monitor_results,
+    )
+    assert result.normalization_source is None
+    for monitor in monitors:
+        np.testing.assert_array_equal(result[monitor.name].flux, [3.0])

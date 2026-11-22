@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 from typing import Any, cast
 
 import jax
@@ -18,6 +20,27 @@ from beamz.devices.monitors.monitors import _line_integral_scale_2d, _line_norma
 from beamz.devices.sources.specs import GaussianBeamSource, GaussianSource, ModeSource
 from beamz.lattice import sampling_coordinates, yee_flux
 from beamz.simulation.model import SimulationState
+
+
+class _OwnedFields(Mapping[str, np.ndarray]):
+    """Read-only result views whose storage is privately owned by the result."""
+
+    def __init__(self, values):
+        self._values = MappingProxyType(
+            {
+                name: np.asarray(memoryview(value).toreadonly())
+                for name, value in values.items()
+            }
+        )
+
+    def __getitem__(self, name):
+        return self._values[name]
+
+    def __iter__(self):
+        return iter(self._values)
+
+    def __len__(self):
+        return len(self._values)
 
 
 @dataclass(frozen=True)
@@ -85,7 +108,7 @@ def _source_launch_power_ratio(source, freqs, *, fields=None, dt=None):
     return np.where(valid, power, 1.0)
 
 
-def _signal_dft_spectrum(signal, sample_times, freqs):
+def _signal_dft_spectrum(signal, sample_times, freqs, *, quadrature=None):
     from beamz.devices.sources.time import _discrete_spectrum
 
     freqs = np.asarray(freqs, dtype=float).reshape(-1)
@@ -95,43 +118,60 @@ def _signal_dft_spectrum(signal, sample_times, freqs):
     if freqs.size == 0 or n == 0:
         return None
     times, signal = times[:n], signal[:n]
-    spectrum = (2.0 / float(n)) * _discrete_spectrum(signal, times, freqs)
+    if quadrature is None:
+        spectrum = (2.0 / n) * _discrete_spectrum(signal, times, freqs)
+    else:
+        # BeamZ monitors use the positive-exponent DFT. The injected forward
+        # phasor in that convention has temporal drive I - iQ.
+        drive = signal - 1j * np.asarray(quadrature, dtype=float).reshape(-1)[:n]
+        spectrum = _discrete_spectrum(drive, times, freqs) / n
     return spectrum if np.any(np.abs(spectrum) > 1e-12) else None
 
 
-def _sampled_source_spectrum(source, freqs, *, time):
+def _sampled_source_spectrum(source, freqs, *, time, dt=None, is_3d=True):
     time = np.asarray(time, dtype=float).reshape(-1)
     if time.size == 0:
         return None
-    dt = float(np.median(np.diff(time))) if time.size > 1 else 0.0
+    taper = source.band_taper if isinstance(source, ModeSource) else None
+    if taper is not None:
+        from beamz.devices.sources.time import sample_tapered_mode_waveform
+
+        if dt is None:
+            dt = float(np.median(np.diff(time))) if time.size > 1 else 0.0
+        times, signal, quadrature = sample_tapered_mode_waveform(
+            source.source_time,
+            taper,
+            t0=time[0],
+            dt=dt,
+            num_steps=time.size,
+            half_step=not is_3d,
+        )
+        return _signal_dft_spectrum(signal, times, freqs, quadrature=quadrature)
+    sampled_dt = float(np.median(np.diff(time))) if time.size > 1 else 0.0
     if isinstance(source, GaussianSource):
         signal = np.asarray(source.signal, dtype=float).reshape(-1)
         sample_times = time[: signal.size]
-    elif isinstance(source, (ModeSource, GaussianBeamSource)) and dt > 0.0:
-        from beamz.devices.sources.time import sample_source_waveforms
-
-        signal, _ = sample_source_waveforms(
-            source.source_time,
-            t0=float(time[0]),
-            dt=dt,
-            num_steps=time.size,
-            total_steps=time.size,
-        )
-        signal = np.asarray(signal, dtype=float).reshape(-1)
+    elif isinstance(source, (ModeSource, GaussianBeamSource)) and sampled_dt > 0.0:
+        times = float(time[0]) + np.arange(time.size, dtype=np.float64) * sampled_dt
+        signal, _ = source.source_time.sample(times)
+        sample_dtype = np.float64 if jax.config.read("jax_enable_x64") else np.float32
+        signal = np.asarray(signal, dtype=sample_dtype).reshape(-1)
         sample_times = time[: signal.size]
     else:
         return None
     return _signal_dft_spectrum(signal, sample_times, freqs)
 
 
-def source_normalization(sources, freqs, *, time=None, fields=None, dt=None):
+def source_normalization(
+    sources, freqs, *, time=None, fields=None, dt=None, is_3d=True
+):
     """Interpret source configuration as a frequency-domain normalization."""
     return _source_normalization(
-        sources, freqs, time=time, fields=fields, dt=dt, spectra={}
+        sources, freqs, time=time, fields=fields, dt=dt, is_3d=is_3d, spectra={}
     )
 
 
-def _source_normalization(sources, freqs, *, time, fields, dt, spectra):
+def _source_normalization(sources, freqs, *, time, fields, dt, is_3d, spectra):
     freqs = np.asarray(freqs, dtype=float).reshape(-1)
     if freqs.size == 0:
         return None
@@ -139,12 +179,14 @@ def _source_normalization(sources, freqs, *, time, fields, dt, spectra):
         key = (id(source), tuple(freqs))
         if key not in spectra:
             spectrum = (
-                _sampled_source_spectrum(source, freqs, time=time)
+                _sampled_source_spectrum(source, freqs, time=time, dt=dt, is_3d=is_3d)
                 if time is not None
                 else None
             )
-            if spectrum is None and isinstance(
-                source, (ModeSource, GaussianBeamSource)
+            if spectrum is None and (
+                isinstance(source, GaussianBeamSource)
+                or isinstance(source, ModeSource)
+                and source.band_taper is None
             ):
                 spectrum = source.source_spectrum(freqs, normalize=True)
             spectra[key] = spectrum
@@ -257,6 +299,7 @@ def normalization_from_result(results, result, *, source=None, spectra=None):
         time=results.metadata.time,
         fields=materials,
         dt=results.metadata.dt,
+        is_3d=results.metadata.is_3d,
         spectra={} if spectra is None else spectra,
     )
 
@@ -293,37 +336,61 @@ def renormalize_result(result, source: int | None):
             )
 
     raw_monitors = {
-        name: replace(
-            monitor,
-            dft_fields=monitor._raw_dft_fields or {},
-            power_spectrum=monitor._raw_power_spectrum,
+        name: (
+            replace(
+                monitor,
+                dft_fields=monitor._raw_dft_fields or {},
+                power_spectrum=monitor._raw_power_spectrum,
+            )
+            if (
+                monitor.dft_fields is not monitor._raw_dft_fields
+                or monitor.power_spectrum is not monitor._raw_power_spectrum
+            )
+            else monitor
         )
         for name, monitor in result.monitors.items()
     }
-    raw_result = replace(result, monitors=raw_monitors, normalization_source=None)
+    raw_result = (
+        result
+        if result.normalization_source is None
+        and all(
+            monitor is result.monitors[name] for name, monitor in raw_monitors.items()
+        )
+        else replace(result, monitors=raw_monitors, normalization_source=None)
+    )
     if source is None:
         return raw_result
 
-    normalized = {}
+    calibrations = {}
     # Waveforms share one acquisition window; spatial launch calibration remains
     # monitor-specific. Keep this reuse local to one normalization operation.
     spectra = {}
     for name, monitor in raw_monitors.items():
+        if not (monitor.dft_fields or monitor.power_spectrum.size):
+            continue
         normalization = normalization_from_result(
             raw_result, monitor, source=source, spectra=spectra
         )
         if normalization is None:
-            normalized[name] = monitor
-            continue
+            return raw_result
+        calibrations[name] = normalization
+
+    if not calibrations:
+        return raw_result
+    normalized = dict(raw_monitors)
+    for name, normalization in calibrations.items():
+        monitor = raw_monitors[name]
         field_scale = np.asarray(
             normalization.field_amplitude_norm, dtype=np.complex128
         )
         normalized[name] = replace(
             monitor,
-            dft_fields={
-                component: _scale_frequency_axis(values, field_scale)
-                for component, values in monitor.dft_fields.items()
-            },
+            dft_fields=_OwnedFields(
+                {
+                    component: _scale_frequency_axis(values, field_scale)
+                    for component, values in monitor.dft_fields.items()
+                }
+            ),
             power_spectrum=_scale_frequency_axis(
                 monitor.power_spectrum, normalization.power_norm
             ),
@@ -428,7 +495,12 @@ def monitor_frequency_size(specs: tuple[CompiledMonitorSpec, ...]) -> int:
 
 def monitor_dft_value_size(specs: tuple[CompiledMonitorSpec, ...]) -> int:
     """Return the exact number of real values in one vector-DFT arena."""
-    return sum(6 * int(spec.freq_count) * int(spec.dft_point_count) for spec in specs)
+    return sum(
+        (6 if spec.dft_packed_components is None else len(spec.dft_packed_components))
+        * int(spec.freq_count)
+        * int(spec.dft_point_count)
+        for spec in specs
+    )
 
 
 def monitor_dft_weight_size(specs: tuple[CompiledMonitorSpec, ...]) -> int:
@@ -454,7 +526,13 @@ MONITOR_FIELDS = (
 )
 
 
-def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any]:
+def empty_monitor_values(
+    program,
+    num_steps: int | None = None,
+    *,
+    host_recorders: bool = False,
+    virtual_dft: bool = False,
+) -> dict[str, Any]:
     # 1. Resolve monitor specs and accumulator precision; a no-monitor program receives
     # concrete empty arrays of the same ranks as an enabled state.
     specs = program.monitors
@@ -493,20 +571,28 @@ def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any
     recorder_steps = max(
         1, int(program.config.num_steps if num_steps is None else num_steps)
     )
+    recorder_zeros = np.zeros if host_recorders else jnp.zeros
+
+    def dft_zeros(count):
+        if virtual_dft:
+            return np.broadcast_to(np.asarray(0, dtype=dft_dtype), (count,))
+        return jnp.zeros((count,), dtype=dft_dtype)
+
     # 3. Initialize scalar phase recurrence at 1+0i and every accumulated quantity at zero.
+    xp = np if virtual_dft else jnp
     values = (
-        jnp.zeros((n, max_records), dtype=jnp.float32),
-        jnp.zeros((n, max_records), dtype=jnp.float32),
-        jnp.zeros((n,), dtype=jnp.int32),
-        jnp.zeros((n, max_freq), dtype=jnp.float32),
-        jnp.zeros((n, max_freq), dtype=jnp.float32),
-        jnp.ones((n, max_freq), dtype=jnp.float32),
-        jnp.zeros((n, max_freq), dtype=jnp.float32),
-        jnp.zeros((dft_value_count,), dtype=dft_dtype),
-        jnp.zeros((dft_value_count,), dtype=dft_dtype),
-        jnp.zeros((dft_weight_count,), dtype=dft_dtype),
+        xp.zeros((n, max_records), dtype=np.float32),
+        xp.zeros((n, max_records), dtype=np.float32),
+        xp.zeros((n,), dtype=np.int32),
+        xp.zeros((n, max_freq), dtype=np.float32),
+        xp.zeros((n, max_freq), dtype=np.float32),
+        xp.ones((n, max_freq), dtype=np.float32),
+        xp.zeros((n, max_freq), dtype=np.float32),
+        dft_zeros(dft_value_count),
+        dft_zeros(dft_value_count),
+        dft_zeros(dft_weight_count),
         tuple(
-            jnp.zeros(
+            recorder_zeros(
                 (
                     int(np.ceil(recorder_steps / spec.record_interval)),
                     *shape,
@@ -517,20 +603,20 @@ def empty_monitor_values(program, num_steps: int | None = None) -> dict[str, Any
             for shape in spec.field_shapes
         ),
         tuple(
-            jnp.zeros(
+            recorder_zeros(
                 (int(np.ceil(recorder_steps / spec.record_interval)),),
                 dtype=jnp.int32,
             )
             for spec in recorder_specs
         ),
         tuple(
-            jnp.zeros(
+            recorder_zeros(
                 (int(np.ceil(recorder_steps / spec.record_interval)),),
                 dtype=jnp.float32,
             )
             for spec in recorder_specs
         ),
-        tuple(jnp.zeros((), dtype=jnp.int32) for _ in recorder_specs),
+        tuple(recorder_zeros((), dtype=jnp.int32) for _ in recorder_specs),
     )
     return dict(zip(MONITOR_FIELDS, values, strict=True))
 

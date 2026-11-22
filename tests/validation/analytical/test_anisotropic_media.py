@@ -333,7 +333,6 @@ def _forward_packet_speed(permeability, polarization):
         boundaries=[bz.Periodic(axes=("x", "y"))],
         raster_options=RasterOptions(smoothing="volume"),
     )
-    assert simulation.compile(backend="jax").dispersion.anisotropic.magnetic is not None
     name = "ez" if polarization == "tm" else "hz"
     state = simulation.initial_state()
     field = getattr(state, name)
@@ -381,7 +380,7 @@ def test_static_permeability_enforces_material_cfl(permeability, polarization):
         steps=201,
         boundaries=[bz.Periodic(axes=("x", "y"))],
     )
-    with pytest.raises(ValueError, match="Static tensor media.*CFL"):
+    with pytest.raises(ValueError, match="CFL (stability )?bound"):
         _program(medium, polarization, dt=0.5 * spacing / LIGHT_SPEED, **options)
     simulation, _, _ = _program(
         medium, polarization, dt=0.2 * spacing / LIGHT_SPEED, **options

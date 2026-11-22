@@ -9,6 +9,7 @@ from typing import Literal, cast, overload
 
 import numpy as np
 
+from beamz._plane_array import physical_crop
 from beamz.constitutive import expand_packed
 from beamz.design.grid import RectilinearGrid
 from beamz.devices._placement import (
@@ -458,7 +459,7 @@ def _local_mode_plane_spec(
     local_plane_index = int(plane_index) - int(normal_origin)
     local_offset_index = int(offset_index) - int(normal_origin)
 
-    eps_local = np.asarray(eps_profile)[tuple(crop_slices)]
+    eps_local = physical_crop(np.asarray(eps_profile)[tuple(crop_slices)])
     local_grid_shape = (
         int(local_counts["z"]),
         int(local_counts["y"]),
@@ -569,7 +570,7 @@ def _solve_mode_plane_3d(
     """Solve one finite 3D mode plane and return globally indexed fields."""
     axis_index = _AXIS_POS_3D[axis]
     profile_index = int(plane_index) - int(material_origin_zyx[axis_index])
-    eps_profile = np.take(permittivity, profile_index, axis=axis_index)
+    eps_profile = np.moveaxis(permittivity, axis_index, 0)[profile_index]
     local_plane = _local_mode_plane_spec(
         eps_profile,
         axis=axis,
@@ -840,11 +841,9 @@ def _local_diagonal_materials(
                 f"{property_name} tensor must have compact shape (1|3|6, z, y, x)"
             )
         return {
-            component: np.take(
-                tensor[0 if tensor.shape[0] == 1 else index],
-                profile_index,
-                axis=normal_axis,
-            )[crop]
+            component: np.moveaxis(
+                tensor[0 if tensor.shape[0] == 1 else index], normal_axis, 0
+            )[profile_index][crop]
             for index, component in enumerate(("xx", "yy", "zz"))
         }
 

@@ -246,6 +246,7 @@ version = "0.6.2"
 dependencies = [
  "approx",
  "blake3",
+ "bytemuck",
  "geo",
  "parry3d-f64",
  "proptest",
@@ -261,6 +262,7 @@ name = "fdtd-raster-py"
 version = "0.6.2"
 dependencies = [
  "fdtd-raster-core",
+ "libc",
  "numpy",
  "pyo3",
  "serde",

@@ -16,8 +16,9 @@ from tests.unit.test_cuda_runtime_contract import _program_and_state
 
 @pytest.mark.parametrize("cpml,monitor", [(False, False), (True, False), (True, True)])
 @pytest.mark.parametrize("steps,bound_buffers", [(2, False), (4, True), (5, False)])
+@pytest.mark.parametrize("full_intermediates", [False, True])
 def test_mstep_native_workspace_aliases_clocks_and_output_banks(
-    monkeypatch, cpml, monitor, steps, bound_buffers
+    monkeypatch, cpml, monitor, steps, bound_buffers, full_intermediates
 ):
     program, state, context = _program_and_state(
         cpml=cpml, monitor=monitor, shape=(17, 41, 57)
@@ -31,16 +32,28 @@ def test_mstep_native_workspace_aliases_clocks_and_output_banks(
     state_count = 18 if cpml else 6
     monitor_start = state_count + 12
     captured = []
+    from beamz.simulation import backend
 
-    def ffi(target, metadata, **options):
-        assert target == abi.CUDA_MSTEP_TARGET
+    target = (
+        abi.CUDA_MSTEP_FULL_INTERMEDIATES_TARGET
+        if full_intermediates
+        else abi.CUDA_MSTEP_TARGET
+    )
+    scratch_cells = 128 if full_intermediates else plan.scratch_cells
+    monkeypatch.setattr(backend, "_load_extension", lambda: object())
+    monkeypatch.setattr(
+        backend, "_validated_registrations", lambda _: {target: object()}
+    )
+
+    def ffi(actual_target, metadata, **options):
+        assert actual_target == target
         assert options["vmap_method"] == "sequential"
         aliases = options["input_output_aliases"]
         assert sorted(aliases.values()) == list(range(len(metadata)))
         assert len(metadata) == monitor_start + 6
         for index, field in enumerate(fields):
             assert metadata[state_count + index].shape == field.shape
-            assert metadata[state_count + 6 + index].shape == (plan.scratch_cells,)
+            assert metadata[state_count + 6 + index].shape == (scratch_cells,)
 
         def call(*arguments, **attributes):
             captured.append(attributes)
@@ -62,7 +75,7 @@ def test_mstep_native_workspace_aliases_clocks_and_output_banks(
             for input_index, output_index in aliases.items():
                 value = arguments[input_index]
                 if state_count + 6 <= output_index < monitor_start:
-                    np.testing.assert_array_equal(value, np.zeros(plan.scratch_cells))
+                    np.testing.assert_array_equal(value, np.zeros(scratch_cells))
                 outputs[output_index] = jnp.full_like(value, output_index + 1)
             return tuple(outputs)
 
