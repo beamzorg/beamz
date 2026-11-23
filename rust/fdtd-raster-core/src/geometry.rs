@@ -219,9 +219,332 @@ pub struct Polygon2 {
     pub exterior: Vec<[f64; 2]>,
     #[serde(default)]
     pub holes: Vec<Vec<[f64; 2]>>,
+    #[serde(skip)]
+    pub(crate) cache: PolygonCache,
+}
+
+/// Bounds and, for polygons with many edges, a uniform bin index of edges,
+/// built on first use. Queries visit candidate edges in ring order, so every
+/// indexed scan visits the edges the full scan would act on, in its order.
+#[derive(Clone, Default)]
+pub struct PolygonCache(std::sync::OnceLock<std::sync::Arc<PolygonIndex>>);
+
+impl PartialEq for PolygonCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for PolygonCache {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PolygonCache")
+    }
+}
+
+/// Polygons with fewer edges keep the plain scans.
+const EDGE_INDEX_MIN_EDGES: usize = 64;
+
+pub struct PolygonIndex {
+    bounds: [[f64; 2]; 2],
+    edges: Option<EdgeBins>,
+}
+
+struct EdgeBins {
+    origin: [f64; 2],
+    scale: [f64; 2],
+    bins: [usize; 2],
+    starts: Vec<u32>,
+    ids: Vec<u32>,
+    /// First global edge ID of each ring (exterior first), then the total.
+    ring_starts: Vec<usize>,
+    /// +1 where a ring has the orientation its role expects (exterior
+    /// counter-clockwise, holes clockwise), else -1.
+    orientation: Vec<f64>,
+}
+
+impl EdgeBins {
+    fn bin(&self, axis: usize, value: f64) -> usize {
+        let index = ((value - self.origin[axis]) * self.scale[axis]).floor();
+        if index.is_nan() || index <= 0.0 {
+            0
+        } else {
+            (index as usize).min(self.bins[axis] - 1)
+        }
+    }
+
+    fn slice(&self, x: usize, y: usize) -> &[u32] {
+        let bin = y * self.bins[0] + x;
+        &self.ids[self.starts[bin] as usize..self.starts[bin + 1] as usize]
+    }
+
+    /// Visit, in ascending order and once each, the IDs of the edges whose
+    /// bins meet the closed box, until ``visit`` returns true.
+    fn any(&self, min: [f64; 2], max: [f64; 2], mut visit: impl FnMut(u32) -> bool) -> bool {
+        let (x0, x1) = (self.bin(0, min[0]), self.bin(0, max[0]));
+        let (y0, y1) = (self.bin(1, min[1]), self.bin(1, max[1]));
+        if x0 == x1 && y0 == y1 {
+            // A bin lists its edges in ascending order.
+            return self.slice(x0, y0).iter().any(|&id| visit(id));
+        }
+        self.query(min, max).into_iter().any(visit)
+    }
+
+    /// Sorted, distinct IDs of the edges whose bins meet the closed box.
+    fn query(&self, min: [f64; 2], max: [f64; 2]) -> Vec<u32> {
+        let (x0, x1) = (self.bin(0, min[0]), self.bin(0, max[0]));
+        let (y0, y1) = (self.bin(1, min[1]), self.bin(1, max[1]));
+        let mut ids = Vec::new();
+        for y in y0..=y1 {
+            let row = y * self.bins[0];
+            let (start, end) = (
+                self.starts[row + x0] as usize,
+                self.starts[row + x1 + 1] as usize,
+            );
+            ids.extend_from_slice(&self.ids[start..end]);
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
+    fn ring_of(&self, id: usize) -> usize {
+        self.ring_starts.partition_point(|&start| start <= id) - 1
+    }
 }
 
 impl Polygon2 {
+    fn ring(&self, index: usize) -> &[[f64; 2]] {
+        if index == 0 {
+            &self.exterior
+        } else {
+            &self.holes[index - 1]
+        }
+    }
+
+    fn edge(&self, bins: &EdgeBins, id: u32) -> (usize, [f64; 2], [f64; 2]) {
+        let id = id as usize;
+        let ring = bins.ring_of(id);
+        let points = self.ring(ring);
+        let index = id - bins.ring_starts[ring];
+        (ring, points[index], points[(index + 1) % points.len()])
+    }
+
+    fn index(&self) -> &PolygonIndex {
+        self.cache
+            .0
+            .get_or_init(|| std::sync::Arc::new(self.build_index()))
+    }
+
+    fn build_index(&self) -> PolygonIndex {
+        let mut min = [f64::INFINITY; 2];
+        let mut max = [f64::NEG_INFINITY; 2];
+        for point in &self.exterior {
+            for axis in 0..2 {
+                min[axis] = min[axis].min(point[axis]);
+                max[axis] = max[axis].max(point[axis]);
+            }
+        }
+        let bounds = [min, max];
+        let rings = 1 + self.holes.len();
+        let mut ring_starts = Vec::with_capacity(rings + 1);
+        ring_starts.push(0);
+        for ring in 0..rings {
+            ring_starts.push(ring_starts[ring] + self.ring(ring).len());
+        }
+        let count = ring_starts[rings];
+        let extent = [max[0] - min[0], max[1] - min[1]];
+        if count < EDGE_INDEX_MIN_EDGES || !(extent[0] > 0.0 && extent[1] > 0.0) {
+            return PolygonIndex {
+                bounds,
+                edges: None,
+            };
+        }
+        // About two bins per edge, of similar aspect: measured fastest on a
+        // 22k-edge polygon.
+        let target = count as f64 * 2.0;
+        let nx = ((target * extent[0] / extent[1]).sqrt().ceil() as usize).clamp(1, 2048);
+        let ny = ((target / nx as f64).ceil() as usize).clamp(1, 2048);
+        let mut bins = EdgeBins {
+            origin: min,
+            scale: [nx as f64 / extent[0], ny as f64 / extent[1]],
+            bins: [nx, ny],
+            starts: vec![0; nx * ny + 1],
+            ids: Vec::new(),
+            ring_starts,
+            orientation: (0..rings)
+                .map(|ring| {
+                    if (signed_area(self.ring(ring)) > 0.0) == (ring == 0) {
+                        1.0
+                    } else {
+                        -1.0
+                    }
+                })
+                .collect(),
+        };
+        let mut ranges = Vec::with_capacity(count);
+        for ring in 0..rings {
+            let points = self.ring(ring);
+            for index in 0..points.len() {
+                let a = points[index];
+                let b = points[(index + 1) % points.len()];
+                let range = [
+                    bins.bin(0, a[0].min(b[0])),
+                    bins.bin(0, a[0].max(b[0])),
+                    bins.bin(1, a[1].min(b[1])),
+                    bins.bin(1, a[1].max(b[1])),
+                ];
+                for y in range[2]..=range[3] {
+                    for x in range[0]..=range[1] {
+                        bins.starts[y * nx + x + 1] += 1;
+                    }
+                }
+                ranges.push(range);
+            }
+        }
+        for bin in 0..nx * ny {
+            bins.starts[bin + 1] += bins.starts[bin];
+        }
+        let mut cursor = bins.starts.clone();
+        bins.ids = vec![0; bins.starts[nx * ny] as usize];
+        for (id, range) in ranges.iter().enumerate() {
+            for y in range[2]..=range[3] {
+                for x in range[0]..=range[1] {
+                    let slot = &mut cursor[y * nx + x];
+                    bins.ids[*slot as usize] = id as u32;
+                    *slot += 1;
+                }
+            }
+        }
+        PolygonIndex {
+            bounds,
+            edges: Some(bins),
+        }
+    }
+
+    /// Visit, in ring order, each edge whose bounding box may meet the closed
+    /// box, as (ring, start, end), until ``visit`` returns true.
+    pub(crate) fn for_each_edge_near(
+        &self,
+        min: [f64; 2],
+        max: [f64; 2],
+        mut visit: impl FnMut(usize, [f64; 2], [f64; 2]) -> bool,
+    ) -> bool {
+        if let Some(bins) = &self.index().edges {
+            return bins.any(min, max, |id| {
+                let (ring, a, b) = self.edge(bins, id);
+                visit(ring, a, b)
+            });
+        }
+        (0..1 + self.holes.len()).any(|ring| {
+            let points = self.ring(ring);
+            (0..points.len())
+                .any(|index| visit(ring, points[index], points[(index + 1) % points.len()]))
+        })
+    }
+
+    /// Exact area of the polygon inside ``rect`` from the edges near it: the
+    /// boundary integral of (x - x_min) dy over the polygon's edges inside the
+    /// open rectangle, plus the rectangle's right side where the polygon lies
+    /// just inside it. The other sides add nothing to that integral.
+    fn local_intersection_area(&self, bins: &EdgeBins, rect: &Aabb) -> f64 {
+        let ([x0, y0], [x1, y1]) = ([rect.min[0], rect.min[1]], [rect.max[0], rect.max[1]]);
+        let mut integral = 0.0;
+        bins.any([x0, y0], [x1, y1], |id| {
+            let (ring, a, b) = self.edge(bins, id);
+            if a[0].max(b[0]) <= x0
+                || a[0].min(b[0]) >= x1
+                || a[1].max(b[1]) <= y0
+                || a[1].min(b[1]) >= y1
+            {
+                return false;
+            }
+            let delta = [b[0] - a[0], b[1] - a[1]];
+            let (mut low, mut high) = (0.0_f64, 1.0_f64);
+            for (p, q) in [
+                (-delta[0], a[0] - x0),
+                (delta[0], x1 - a[0]),
+                (-delta[1], a[1] - y0),
+                (delta[1], y1 - a[1]),
+            ] {
+                if p == 0.0 {
+                    continue;
+                }
+                let t = q / p;
+                if p < 0.0 {
+                    low = low.max(t);
+                } else {
+                    high = high.min(t);
+                }
+            }
+            if high > low {
+                let start = [a[0] + low * delta[0] - x0, a[1] + low * delta[1]];
+                let end = [a[0] + high * delta[0] - x0, a[1] + high * delta[1]];
+                integral +=
+                    bins.orientation[ring] * (end[1] - start[1]) * 0.5 * (start[0] + end[0]);
+            }
+            false
+        });
+        // Heights where the vertical line just left of x1 crosses the boundary.
+        // A whole line crosses the boundary an even number of times, so the
+        // parity at y0 follows from the crossings on either side of it; scan
+        // whichever end of the bin column is shorter. An edge spans several
+        // bins of the column; count it once, in the first bin scanned. One
+        // extra bin covers a crossing rounded just past the end of its edge.
+        let column = bins.bin(0, x1);
+        let (low_row, high_row) = (bins.bin(1, y0), bins.bin(1, y1));
+        let upward = low_row + high_row < bins.bins[1];
+        let rows = if upward {
+            0..(high_row + 2).min(bins.bins[1])
+        } else {
+            low_row.saturating_sub(1)..bins.bins[1]
+        };
+        let start = rows.start;
+        let (mut crossings, mut outside_parity) = (Vec::new(), false);
+        for row in rows {
+            for &id in bins.slice(column, row) {
+                let (_, a, b) = self.edge(bins, id);
+                if !(a[0].min(b[0]) < x1 && x1 <= a[0].max(b[0]))
+                    || bins.bin(1, a[1].min(b[1])).max(start) != row
+                {
+                    continue;
+                }
+                let y = if a[0] == x1 {
+                    a[1]
+                } else if b[0] == x1 {
+                    b[1]
+                } else {
+                    a[1] + (x1 - a[0]) * (b[1] - a[1]) / (b[0] - a[0])
+                };
+                if y > y0 && y < y1 {
+                    crossings.push(y);
+                } else if (y <= y0) == upward {
+                    outside_parity = !outside_parity;
+                }
+            }
+        }
+        crossings.sort_unstable_by(f64::total_cmp);
+        // Crossings above y1 (scanning down) pair with those inside the
+        // rectangle: those below y0 number as many, modulo two, as the rest.
+        let mut inside = if upward {
+            outside_parity
+        } else {
+            outside_parity != (crossings.len() % 2 == 1)
+        };
+        let mut from = y0;
+        let mut length = 0.0;
+        for &y in &crossings {
+            if inside {
+                length += y - from;
+            }
+            inside = !inside;
+            from = y;
+        }
+        if inside {
+            length += y1 - from;
+        }
+        (integral + (x1 - x0) * length).clamp(0.0, (x1 - x0) * (y1 - y0))
+    }
+
     pub fn new(exterior: Vec<[f64; 2]>, holes: Vec<Vec<[f64; 2]>>) -> Result<Self> {
         let exterior = normalize_ring(exterior, true, "exterior")?;
         let mut normalized_holes = Vec::with_capacity(holes.len());
@@ -231,6 +554,7 @@ impl Polygon2 {
         let result = Self {
             exterior,
             holes: normalized_holes,
+            cache: PolygonCache::default(),
         };
         if result.holes.iter().any(|hole| {
             let point = hole[0];
@@ -261,20 +585,55 @@ impl Polygon2 {
     }
 
     pub fn bounds(&self) -> [[f64; 2]; 2] {
-        let mut min = [f64::INFINITY; 2];
-        let mut max = [f64::NEG_INFINITY; 2];
-        for point in &self.exterior {
-            for axis in 0..2 {
-                min[axis] = min[axis].min(point[axis]);
-                max[axis] = max[axis].max(point[axis]);
-            }
-        }
-        [min, max]
+        self.index().bounds
     }
 
     pub fn contains_half_open(&self, point: [f64; 2]) -> bool {
-        point_in_ring(point, &self.exterior)
-            && !self.holes.iter().any(|hole| point_in_ring(point, hole))
+        let Some(bins) = &self.index().edges else {
+            return point_in_ring(point, &self.exterior)
+                && !self.holes.iter().any(|hole| point_in_ring(point, hole));
+        };
+        // point_in_ring's rightward ray toggles on edges spanning the point's
+        // y with their crossing to its right. A whole line crosses each closed
+        // ring an even number of times, so the crossings at or left of the
+        // point have the same parities; scan whichever side of the bin row is
+        // shorter. An edge spans several bins of the row; count it once, in
+        // the first bin scanned. One extra bin covers a crossing rounded just
+        // past the end of its edge. Exterior and holes keep separate parities.
+        let (mut exterior, mut holes) = (false, Vec::new());
+        let row = bins.bin(1, point[1]);
+        let column = bins.bin(0, point[0]);
+        let right = 2 * column >= bins.bins[0];
+        let columns = if right {
+            column.saturating_sub(1)..bins.bins[0]
+        } else {
+            0..(column + 2).min(bins.bins[0])
+        };
+        let start = columns.start;
+        for scanned in columns {
+            for &id in bins.slice(scanned, row) {
+                let (ring, a, b) = self.edge(bins, id);
+                if (a[1] > point[1]) == (b[1] > point[1])
+                    || bins.bin(0, a[0].min(b[0])).max(start) != scanned
+                {
+                    continue;
+                }
+                let x = a[0] + (point[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]);
+                if (point[0] < x) == right {
+                    if ring == 0 {
+                        exterior = !exterior;
+                    } else {
+                        holes.push(ring);
+                    }
+                }
+            }
+        }
+        if !exterior {
+            return false;
+        }
+        holes.sort_unstable();
+        // Inside a hole when its ring was crossed an odd number of times.
+        !holes.chunk_by(|a, b| a == b).any(|run| run.len() % 2 == 1)
     }
 
     pub fn intersection_area(&self, rect: &Aabb) -> f64 {
@@ -308,13 +667,11 @@ impl Polygon2 {
         {
             return self.area();
         }
-        let crosses_boundary = std::iter::once(&self.exterior)
-            .chain(self.holes.iter())
-            .any(|ring| {
-                (0..ring.len()).any(|i| {
-                    clipped_segment_length(ring[i], ring[(i + 1) % ring.len()], rect).is_some()
-                })
-            });
+        let crosses_boundary = self.for_each_edge_near(
+            [rect.min[0], rect.min[1]],
+            [rect.max[0], rect.max[1]],
+            |_, a, b| clipped_segment_length(a, b, rect).is_some(),
+        );
         if !crosses_boundary {
             let center = rect.center();
             return if self.contains_half_open([center[0], center[1]]) {
@@ -322,6 +679,9 @@ impl Polygon2 {
             } else {
                 0.0
             };
+        }
+        if let Some(bins) = &self.index().edges {
+            return self.local_intersection_area(bins, rect);
         }
         let polygon = self.to_geo();
         let clip = Rect::new(
@@ -364,22 +724,20 @@ impl Polygon2 {
     }
 
     fn boundary_may_intersect_rect(&self, rect: &Aabb, padding: f64) -> bool {
-        std::iter::once(&self.exterior)
-            .chain(self.holes.iter())
-            .any(|ring| {
-                (0..ring.len()).any(|index| {
-                    let a = ring[index];
-                    let b = ring[(index + 1) % ring.len()];
-                    let min_x = a[0].min(b[0]) - padding;
-                    let max_x = a[0].max(b[0]) + padding;
-                    let min_y = a[1].min(b[1]) - padding;
-                    let max_y = a[1].max(b[1]) + padding;
-                    max_x > rect.min[0]
-                        && min_x < rect.max[0]
-                        && max_y > rect.min[1]
-                        && min_y < rect.max[1]
-                })
-            })
+        self.for_each_edge_near(
+            [rect.min[0] - padding, rect.min[1] - padding],
+            [rect.max[0] + padding, rect.max[1] + padding],
+            |_, a, b| {
+                let min_x = a[0].min(b[0]) - padding;
+                let max_x = a[0].max(b[0]) + padding;
+                let min_y = a[1].min(b[1]) - padding;
+                let max_y = a[1].max(b[1]) + padding;
+                max_x > rect.min[0]
+                    && min_x < rect.max[0]
+                    && max_y > rect.min[1]
+                    && min_y < rect.max[1]
+            },
+        )
     }
 
     pub(crate) fn to_geo(&self) -> GeoPolygon<f64> {
@@ -726,12 +1084,10 @@ impl Geometry {
                         }
                     }
                 }
-                for ring in
-                    std::iter::once(&extrusion.polygon.exterior).chain(&extrusion.polygon.holes)
-                {
-                    for index in 0..ring.len() {
-                        let a = ring[index];
-                        let b = ring[(index + 1) % ring.len()];
+                extrusion.polygon.for_each_edge_near(
+                    [volume.min[0], volume.min[1]],
+                    [volume.max[0], volume.max[1]],
+                    |_, a, b| {
                         if clipped_segment_length(a, b, volume).is_some() {
                             patches.push(PlanarPatch {
                                 point: [a[0], a[1], volume.min[2]],
@@ -743,8 +1099,9 @@ impl Geometry {
                                 ],
                             });
                         }
-                    }
-                }
+                        false
+                    },
+                );
             }
             Self::TriangleMesh(mesh) => return Some(mesh.planar_patches(volume)),
             // Curved or tapered geometry retains the adaptive path. Its
@@ -917,17 +1274,17 @@ pub(crate) fn add_extrusion_side_evidence(
             volume.max[2],
         ],
     };
-    for ring in std::iter::once(&polygon.exterior).chain(polygon.holes.iter()) {
-        for index in 0..ring.len() {
-            let a = ring[index];
-            let b = ring[(index + 1) % ring.len()];
+    polygon.for_each_edge_near(
+        [rect.min[0], rect.min[1]],
+        [rect.max[0], rect.max[1]],
+        |_, a, b| {
             let edge = [b[0] - a[0], b[1] - a[1]];
-            let Some(clipped_length) = clipped_segment_length(a, b, &rect) else {
-                continue;
-            };
-            evidence.add(sidewall_normal(edge, slope), clipped_length * z_overlap);
-        }
-    }
+            if let Some(clipped_length) = clipped_segment_length(a, b, &rect) {
+                evidence.add(sidewall_normal(edge, slope), clipped_length * z_overlap);
+            }
+            false
+        },
+    );
 }
 
 pub(crate) fn strictly_inside(value: f64, minimum: f64, maximum: f64) -> bool {
@@ -1179,6 +1536,134 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
+
+    /// A sawtooth-topped slab with square and triangular holes: enough edges
+    /// for the edge index, with vertices on the sample lattice below.
+    fn indexed_polygon() -> Polygon2 {
+        let teeth = 40;
+        let mut exterior = vec![[0.0, 0.0], [teeth as f64, 0.0]];
+        for tooth in (0..teeth).rev() {
+            let x = tooth as f64;
+            exterior.push([x + 1.0, 1.0]);
+            exterior.push([x + 0.5, 1.0 + 0.25 * (1 + tooth % 3) as f64]);
+        }
+        exterior.push([0.0, 1.0]);
+        let mut holes = Vec::new();
+        for index in 0..teeth / 2 {
+            let x = 2.0 * index as f64;
+            holes.push(vec![
+                [x + 0.25, 0.25],
+                [x + 0.25, 0.5],
+                [x + 0.75, 0.5],
+                [x + 0.75, 0.25],
+            ]);
+            holes.push(vec![[x + 1.25, 0.25], [x + 1.5, 0.75], [x + 1.75, 0.25]]);
+        }
+        let polygon = Polygon2::new(exterior, holes).unwrap();
+        assert!(polygon.index().edges.is_some());
+        polygon
+    }
+
+    fn reference_area(ring: &[[f64; 2]], rect: &Aabb) -> f64 {
+        // Sutherland-Hodgman against the rectangle, then the shoelace formula.
+        let mut points = ring.to_vec();
+        for (axis, value, keep_above) in [
+            (0, rect.min[0], true),
+            (0, rect.max[0], false),
+            (1, rect.min[1], true),
+            (1, rect.max[1], false),
+        ] {
+            let inside =
+                |point: &[f64; 2]| (point[axis] >= value) == keep_above || point[axis] == value;
+            let mut clipped = Vec::new();
+            for index in 0..points.len() {
+                let (a, b) = (points[index], points[(index + 1) % points.len()]);
+                if inside(&a) {
+                    clipped.push(a);
+                }
+                if inside(&a) != inside(&b) {
+                    let t = (value - a[axis]) / (b[axis] - a[axis]);
+                    let mut point = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+                    point[axis] = value;
+                    clipped.push(point);
+                }
+            }
+            points = clipped;
+            if points.is_empty() {
+                return 0.0;
+            }
+        }
+        signed_area(&points).abs()
+    }
+
+    #[test]
+    fn indexed_containment_matches_the_full_scan_on_and_off_edges() {
+        let polygon = indexed_polygon();
+        for i in -4..=168 {
+            for j in -4..=72 {
+                // Quarter steps land on vertices, edges and hole sides.
+                let point = [i as f64 * 0.25, j as f64 * 0.025];
+                let expected = point_in_ring(point, &polygon.exterior)
+                    && !polygon.holes.iter().any(|hole| point_in_ring(point, hole));
+                assert_eq!(polygon.contains_half_open(point), expected, "{point:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn indexed_area_matches_clipping_and_edge_queries_match_the_full_scan() {
+        let polygon = indexed_polygon();
+        let rings: Vec<&Vec<[f64; 2]>> = std::iter::once(&polygon.exterior)
+            .chain(&polygon.holes)
+            .collect();
+        for i in -2..=82 {
+            for j in -2..=34 {
+                for size in [0.05, 0.25, 0.5, 3.0] {
+                    // Cells on the lattice and offset from it.
+                    for offset in [0.0, 0.0137] {
+                        let min = [i as f64 * 0.5 + offset, j as f64 * 0.05 - offset];
+                        let rect = Aabb {
+                            min: [min[0], min[1], 0.0],
+                            max: [min[0] + size, min[1] + size, 1.0],
+                        };
+                        let expected = reference_area(&polygon.exterior, &rect)
+                            - polygon
+                                .holes
+                                .iter()
+                                .map(|hole| reference_area(hole, &rect))
+                                .sum::<f64>();
+                        assert_abs_diff_eq!(
+                            polygon.intersection_area(&rect),
+                            expected,
+                            epsilon = 1e-12
+                        );
+
+                        let mut scanned = Vec::new();
+                        for (ring, points) in rings.iter().enumerate() {
+                            for index in 0..points.len() {
+                                let (a, b) = (points[index], points[(index + 1) % points.len()]);
+                                if clipped_segment_length(a, b, &rect).is_some() {
+                                    scanned.push((ring, a, b));
+                                }
+                            }
+                        }
+                        let mut indexed = Vec::new();
+                        polygon.for_each_edge_near(
+                            min,
+                            [rect.max[0], rect.max[1]],
+                            |ring, a, b| {
+                                if clipped_segment_length(a, b, &rect).is_some() {
+                                    indexed.push((ring, a, b));
+                                }
+                                false
+                            },
+                        );
+                        assert_eq!(indexed, scanned, "{rect:?}");
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn coplanarity_is_exact_even_for_nearby_interfaces() {
