@@ -1278,3 +1278,24 @@ def test_native_zero_lattice_is_host_metadata_until_state_allocation():
         value = getattr(state, name)
         assert isinstance(value, jax.Array)
         np.testing.assert_array_equal(value, 0)
+
+
+@pytest.mark.hardware
+@pytest.mark.parametrize(
+    ("mesh", "angle_deg"),
+    [
+        ("graded", 0.0),
+        ("graded", 14.5),
+        ("auto", 14.5),
+        ("axis_uniform", 14.5),
+    ],
+)
+def test_native_cuda_gaussian_beam_flux_on_rectilinear_grid(mesh, angle_deg):
+    from tests.integration.test_gaussian_beam_source import _empty_space_gaussian_flux
+
+    settings = dict(mesh=mesh, angle_theta=np.deg2rad(angle_deg), angle_phi=0.7)
+    reference = _empty_space_gaussian_flux(backend="jax", **settings)
+    native = _empty_space_gaussian_flux(backend="cuda", **settings)
+    assert reference[0] == pytest.approx(1.0, rel=0.15)
+    assert 0 <= reference[1] < 0.05 * reference[0]
+    np.testing.assert_allclose(native, reference, atol=5e-5, rtol=5e-5)

@@ -1,4 +1,3 @@
-from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -19,6 +18,7 @@ from beamz import (
     Simulation,
     um,
 )
+from beamz.design import MaterialGrid
 from beamz.devices.sources.compiler import (
     compile_source_specs,
     field_profile_phasor_residuals,
@@ -255,7 +255,8 @@ def test_gaussian_beam_source_has_low_source_plane_residual_error():
         )
 
 
-def test_planar_phasor_residuals_support_rectilinear_metrics_and_padding():
+@pytest.mark.parametrize("direction", ["+x", "-x", "+y", "-y", "+z", "-z"])
+def test_planar_phasor_residuals_support_rectilinear_metrics_and_padding(direction):
     resolution = 0.25 * um
     material = np.ones((9, 10, 11), dtype=np.float64)
     fields = compiled_grid(
@@ -280,15 +281,20 @@ def test_planar_phasor_residuals_support_rectilinear_metrics_and_padding():
         center=(1.25 * um, 1.2 * um, 1.0 * um),
         size=(1.2 * um, 1.1 * um),
         source_time=_pulse(1.55 * um),
-        direction="+x",
+        direction=direction,
         angle_theta=0.05,
         angle_phi=0.1,
         pol_angle=0.2,
         waist_radius=0.4 * um,
     )
-    profile = replace(
-        gaussian_beam_field_profile(source, fields, resolution=resolution),
-        grid=grid,
+    profile = gaussian_beam_field_profile(
+        source, fields, resolution=resolution, grid=grid
+    )
+    axis = direction[1]
+    axis_slot = "zyx".index(axis)
+    component = "Ey" if axis == "x" else "Ex"
+    assert profile.indices[component][axis_slot] == np.argmin(
+        abs(grid.axis_edges(axis) - source.center["xyz".index(axis)])
     )
     dt = 0.1 * um / (LIGHT_SPEED * np.sqrt(3.0))
 
@@ -304,14 +310,17 @@ def test_planar_phasor_residuals_support_rectilinear_metrics_and_padding():
     assert {residual.timing for residual in residuals} == {"e", "h"}
     assert all(np.all(np.isfinite(residual.residual)) for residual in residuals)
 
-    padded_shape = (fields.Ex.shape[0], fields.Ex.shape[1], grid.shape[0] + 2)
+    padded_shape = list(fields.Ex.shape)
+    padded_shape[axis_slot] += 2
     padded_mask = launched_side_component_mask_3d(
         profile,
         "Ex",
-        padded_shape,
+        tuple(padded_shape),
         resolution=resolution,
     )
-    assert padded_mask.shape == (1, 1, padded_shape[2])
+    expected_shape = [1, 1, 1]
+    expected_shape[axis_slot] = padded_shape[axis_slot]
+    assert padded_mask.shape == tuple(expected_shape)
 
 
 def test_gaussian_beam_source_compiled_engine_support():
@@ -351,7 +360,12 @@ def test_gaussian_beam_source_compiled_engine_support():
 
 
 def _empty_space_gaussian_flux(
-    *, steps_per_wavelength=8, angle_theta=0.0, angle_phi=0.0
+    *,
+    steps_per_wavelength=8,
+    angle_theta=0.0,
+    angle_phi=0.0,
+    mesh="uniform",
+    backend="jax",
 ):
     wavelength = 1.55 * um
     freq0 = LIGHT_SPEED / wavelength
@@ -384,23 +398,63 @@ def _empty_space_gaussian_flux(
             ),
         ],
     )
-    design = Design(
-        width=7.0 * um,
-        height=7.0 * um,
-        depth=6.0 * um,
-        material=Material(permittivity=1.0),
-    )
+    spacing = wavelength / steps_per_wavelength
+    if mesh in ("graded", "axis_uniform"):
+
+        def edges(length, displacement):
+            u = np.linspace(0, 1, int(np.ceil(length / spacing)) + 1)
+            return length * u + displacement * np.sin(2 * np.pi * u)
+
+        strength = float(mesh == "graded")
+        grid = RectilinearGrid(
+            edges(7 * um, strength * 0.21 * um),
+            edges(7 * um, strength * 0.15 * um),
+            edges(6 * um, strength * 0.11 * um),
+        )
+        model = dict(
+            material_grid=MaterialGrid(
+                permittivity=np.ones(grid.shape_zyx, dtype=np.float32),
+                conductivity=0.0,
+                permeability=1.0,
+                resolution=grid.minimum_spacing,
+                shape=grid.shape_zyx,
+                grid=grid,
+            ),
+        )
+    else:
+        model = dict(
+            design=Design(
+                width=7.0 * um,
+                height=7.0 * um,
+                depth=6.0 * um,
+                material=Material(permittivity=1.0),
+            ),
+            grid_spec=(
+                GridSpec.auto(
+                    wavelength=wavelength,
+                    courant=0.48,
+                    snapping_points=((3.1 * um, 3.7 * um, 2.61 * um),),
+                )
+                if mesh == "auto"
+                else GridSpec.uniform(spacing, courant=0.48)
+            ),
+        )
     sim = Simulation(
-        design=design,
+        **model,
         sources=[source],
         monitors=monitors,
         boundaries=[PML(thickness=0.6 * um)],
-        grid_spec=GridSpec.uniform(wavelength / steps_per_wavelength, courant=0.48),
         run_time=260e-15,
     )
 
-    results = sim.run(progress=False)
+    if mesh != "uniform":
+        assert sim.grid.metric_kind == (
+            "axis_uniform" if mesh == "axis_uniform" else "rectilinear"
+        )
+    results = sim.run(backend=backend, progress=False, performance=False)
     assert results is not None
+    if backend == "cuda":
+        assert results.cuda_plan["binding"] == "native", results.cuda_plan
     forward_result = results.monitors["forward"]
     backward_result = results.monitors["backward"]
     assert forward_result is not None
@@ -423,6 +477,39 @@ def test_gaussian_beam_source_is_forward_directional(empty_space_gaussian_flux):
     assert forward > 0.0
     assert backward >= 0.0
     assert backward / forward < 0.05
+
+
+@pytest.mark.parametrize("angle_deg", [0.0, 14.5, 25.0])
+def test_gaussian_beam_is_forward_directional_on_graded_grid(angle_deg):
+    forward, backward = _empty_space_gaussian_flux(
+        mesh="graded",
+        angle_theta=np.deg2rad(angle_deg),
+        angle_phi=0.7,
+    )
+
+    assert forward == pytest.approx(1.0, rel=0.15)
+    assert backward >= 0.0
+    assert backward / forward < 0.05
+
+
+def test_gaussian_beam_uses_the_realized_automatic_grid():
+    source = GaussianBeamSource(
+        center=(1.2 * um, 1.2 * um, 1.95 * um),
+        size=(1.4 * um, 1.4 * um),
+        source_time=_pulse(1.55 * um),
+        direction="-z",
+    )
+    design = Design(width=2.4 * um, height=2.4 * um, depth=2.8 * um)
+    grid_spec = GridSpec.auto(
+        wavelength=1.55 * um,
+        snapping_points=((1.07 * um, 0.92 * um, 1.43 * um),),
+    )
+    sim = Simulation(
+        design=design, grid_spec=grid_spec, sources=[source], run_time=4e-15
+    )
+    assert sim.grid == grid_spec.realize(design)
+    assert sim.grid.metric_kind == "rectilinear"
+    assert sim.compile(backend="jax").sources
 
 
 def test_grating_angle_gaussian_beam_source_is_forward_directional():
