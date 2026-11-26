@@ -51,7 +51,7 @@ fn write_spatial_ownership_diagnostics() {
             let ownership = Some(&resolved);
             let mut candidates = index.query(&volume);
             candidates.retain(|i| scene.objects[*i].geometry.bounds().intersects(&volume));
-            let mixture = integrate_mixture(scene, &volume, &candidates, &options, ownership);
+            let mixture = integrate_mixture(scene, &volume, &candidates, &options, ownership, None);
             let fractions = mixture.fractions.unwrap_or_else(|| {
                 let mut values = vec![0.0; scene.materials.len()];
                 values[mixture.uniform_owner.unwrap()] = 1.0;

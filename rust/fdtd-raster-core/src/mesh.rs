@@ -115,33 +115,22 @@ impl TriangleMesh {
         if !self.bounds.contains_half_open(point) {
             return false;
         }
-        // A nearly axis-aligned ray keeps BVH traversal narrow while the two
-        // irrational perturbations avoid systematic vertex/edge coincidences.
-        let direction = normalize([1.0, 1.234_567_89e-7, 9.876_543_21e-8]);
-        let mesh_scale = (0..3)
-            .map(|axis| (self.bounds.max[axis] - self.bounds.min[axis]).powi(2))
-            .sum::<f64>()
-            .sqrt();
-        let minimum_distance = 256.0 * f64::EPSILON * mesh_scale;
-        let mut hits = 0usize;
         let acceleration = self.acceleration();
-        for index in acceleration.ray_candidates(point, direction) {
-            let triangle = &self.triangles[index];
-            let a = self.vertices[triangle[0] as usize];
-            let b = self.vertices[triangle[1] as usize];
-            let c = self.vertices[triangle[2] as usize];
-            if ray_triangle_distance(point, direction, a, b, c, minimum_distance).is_some() {
-                hits += 1;
-            }
-        }
-        hits % 2 == 1
+        acceleration
+            .occupancy
+            .state_at(point)
+            .unwrap_or_else(|| acceleration.ray_parity(&self.vertices, &self.triangles, point))
     }
 
     pub fn surface_may_intersect(&self, volume: &Aabb) -> bool {
         if !self.bounds.intersects(volume) {
             return false;
         }
-        self.acceleration().aabb_candidates(volume).any(|index| {
+        let acceleration = self.acceleration();
+        if acceleration.occupancy.clear_around(volume) {
+            return false;
+        }
+        acceleration.aabb_candidates(volume).any(|index| {
             let triangle = &self.triangles[index];
             let a = self.vertices[triangle[0] as usize];
             let b = self.vertices[triangle[1] as usize];
@@ -256,6 +245,7 @@ impl TriangleMesh {
 struct MeshBvh {
     nodes: Vec<BvhNode>,
     single_component: bool,
+    occupancy: Occupancy,
 }
 
 #[derive(Debug)]
@@ -275,10 +265,28 @@ impl MeshBvh {
         let mut result = Self {
             nodes: Vec::new(),
             single_component: triangle_components(triangles) == 1,
+            occupancy: Occupancy::default(),
         };
         let mut indices: Vec<usize> = (0..triangles.len()).collect();
         result.build_node(vertices, triangles, &mut indices);
+        result.occupancy = Occupancy::build(&result, vertices, triangles);
         result
+    }
+
+    /// Parity of a ray cast from `point`: whether it lies inside the closed surface.
+    fn ray_parity(&self, vertices: &[Vec3], triangles: &[[u32; 3]], point: Vec3) -> bool {
+        // A nearly axis-aligned ray keeps BVH traversal narrow while the two
+        // irrational perturbations avoid systematic vertex/edge coincidences.
+        let direction = normalize([1.0, 1.234_567_89e-7, 9.876_543_21e-8]);
+        let minimum_distance = 256.0 * f64::EPSILON * diagonal(&self.nodes[0].bounds);
+        let hits = self
+            .ray_candidates(point, direction)
+            .filter(|&index| {
+                let [a, b, c] = triangles[index].map(|vertex| vertices[vertex as usize]);
+                ray_triangle_distance(point, direction, a, b, c, minimum_distance).is_some()
+            })
+            .count();
+        hits % 2 == 1
     }
 
     fn build_node(
@@ -329,46 +337,162 @@ impl MeshBvh {
     }
 
     fn aabb_candidates<'a>(&'a self, query: &'a Aabb) -> impl Iterator<Item = usize> + 'a {
-        let mut result = Vec::new();
-        let mut stack = vec![0usize];
-        while let Some(index) = stack.pop() {
-            let node = &self.nodes[index];
-            // BVH bounds can be flat (e.g. a leaf containing only a mesh cap).
-            // Use closed intersection here; callers decide whether touching
-            // a support boundary contributes area, flux, or neither.
-            if (0..3).any(|axis| {
-                node.bounds.max[axis] < query.min[axis] || node.bounds.min[axis] > query.max[axis]
-            }) {
-                continue;
-            }
-            match &node.kind {
-                BvhKind::Leaf(indices) => result.extend(indices),
-                BvhKind::Branch(left, right) => {
-                    stack.push(*left);
-                    stack.push(*right);
-                }
-            }
-        }
-        result.into_iter()
+        // BVH bounds can be flat (e.g. a leaf containing only a mesh cap).
+        // Use closed intersection here; callers decide whether touching
+        // a support boundary contributes area, flux, or neither.
+        self.candidates(move |bounds| {
+            (0..3).all(|axis| {
+                bounds.max[axis] >= query.min[axis] && bounds.min[axis] <= query.max[axis]
+            })
+        })
     }
 
-    fn ray_candidates(&self, origin: Vec3, direction: Vec3) -> Vec<usize> {
-        let mut result = Vec::new();
-        let mut stack = vec![0usize];
-        while let Some(index) = stack.pop() {
-            let node = &self.nodes[index];
-            if !ray_intersects_aabb(origin, direction, &node.bounds) {
+    fn ray_candidates(&self, origin: Vec3, direction: Vec3) -> impl Iterator<Item = usize> + '_ {
+        self.candidates(move |bounds| ray_intersects_aabb(origin, direction, bounds))
+    }
+
+    /// Leaf triangles of the nodes `visit` accepts, depth first, without allocating.
+    fn candidates<F: Fn(&Aabb) -> bool>(&self, visit: F) -> Candidates<'_, F> {
+        Candidates {
+            nodes: &self.nodes,
+            stack: [0; BVH_STACK],
+            depth: 1,
+            leaf: [].iter(),
+            visit,
+        }
+    }
+}
+
+/// Inside/outside state of a coarse grid of bins over the mesh bounds. A bin
+/// that no triangle touches lies entirely inside or outside the surface, so
+/// point and surface queries within it need no ray cast or triangle test;
+/// bins the surface touches are `None` and keep the exact queries.
+#[derive(Debug, Default)]
+struct Occupancy {
+    bounds: Option<Aabb>,
+    shape: [usize; 3],
+    states: Vec<Option<bool>>,
+}
+
+impl Occupancy {
+    /// Target bin count; bins are roughly cubes, at most 128 per axis.
+    const BINS: usize = 32_768;
+
+    fn build(bvh: &MeshBvh, vertices: &[Vec3], triangles: &[[u32; 3]]) -> Self {
+        let bounds = bvh.nodes[0].bounds;
+        let extent: Vec3 = std::array::from_fn(|axis| bounds.max[axis] - bounds.min[axis]);
+        let side = (extent.iter().product::<f64>() / Self::BINS as f64).cbrt();
+        if side.is_nan() || side <= 0.0 {
+            return Self::default();
+        }
+        let shape = extent.map(|length| ((length / side).ceil() as usize).clamp(1, 128));
+        let mut occupancy = Self {
+            bounds: Some(bounds),
+            shape,
+            states: Vec::new(),
+        };
+        // Enlarge each bin slightly so roundoff in the separating-axis test
+        // cannot mark a bin clear when a triangle touches its boundary.
+        let margin = 1024.0 * f64::EPSILON * diagonal(&bounds);
+        occupancy.states = (0..shape.iter().product())
+            .map(|flat| {
+                let bin = occupancy.bin_bounds(flat);
+                let touched = Aabb {
+                    min: bin.min.map(|value| value - margin),
+                    max: bin.max.map(|value| value + margin),
+                };
+                let clear = bvh.aabb_candidates(&touched).all(|index| {
+                    let [a, b, c] = triangles[index].map(|vertex| vertices[vertex as usize]);
+                    !triangle_box_intersects(a, b, c, &touched)
+                });
+                clear.then(|| bvh.ray_parity(vertices, triangles, bin.center()))
+            })
+            .collect();
+        occupancy
+    }
+
+    fn bin_bounds(&self, flat: usize) -> Aabb {
+        let bounds = self.bounds.expect("bins exist only with bounds");
+        let index = [
+            flat % self.shape[0],
+            flat / self.shape[0] % self.shape[1],
+            flat / (self.shape[0] * self.shape[1]),
+        ];
+        let edge = |axis: usize, i: usize| {
+            bounds.min[axis]
+                + (bounds.max[axis] - bounds.min[axis]) * i as f64 / self.shape[axis] as f64
+        };
+        Aabb {
+            min: std::array::from_fn(|axis| edge(axis, index[axis])),
+            max: std::array::from_fn(|axis| edge(axis, index[axis] + 1)),
+        }
+    }
+
+    /// The bin whose closed bounds contain `point`, if there is one.
+    fn bin_of(&self, point: Vec3) -> Option<usize> {
+        let bounds = self.bounds?;
+        let index: [usize; 3] = std::array::from_fn(|axis| {
+            let fraction = (point[axis] - bounds.min[axis]) / (bounds.max[axis] - bounds.min[axis]);
+            ((fraction * self.shape[axis] as f64).floor().max(0.0) as usize)
+                .min(self.shape[axis] - 1)
+        });
+        let flat = index[0] + self.shape[0] * (index[1] + self.shape[1] * index[2]);
+        let bin = self.bin_bounds(flat);
+        (0..3)
+            .all(|axis| bin.min[axis] <= point[axis] && point[axis] <= bin.max[axis])
+            .then_some(flat)
+    }
+
+    fn state_at(&self, point: Vec3) -> Option<bool> {
+        self.states[self.bin_of(point)?]
+    }
+
+    /// Whether `volume` lies within one bin that no triangle touches.
+    fn clear_around(&self, volume: &Aabb) -> bool {
+        match (self.bin_of(volume.min), self.bin_of(volume.max)) {
+            (Some(low), Some(high)) => low == high && self.states[low].is_some(),
+            _ => false,
+        }
+    }
+}
+
+/// Median splits halve every branch, so a stack this deep covers any mesh
+/// with fewer than 2^60 triangles.
+const BVH_STACK: usize = 64;
+
+struct Candidates<'a, F> {
+    nodes: &'a [BvhNode],
+    stack: [usize; BVH_STACK],
+    depth: usize,
+    leaf: std::slice::Iter<'a, usize>,
+    visit: F,
+}
+
+impl<F: Fn(&Aabb) -> bool> Iterator for Candidates<'_, F> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        loop {
+            if let Some(&index) = self.leaf.next() {
+                return Some(index);
+            }
+            if self.depth == 0 {
+                return None;
+            }
+            self.depth -= 1;
+            let node = &self.nodes[self.stack[self.depth]];
+            if !(self.visit)(&node.bounds) {
                 continue;
             }
             match &node.kind {
-                BvhKind::Leaf(indices) => result.extend(indices),
+                BvhKind::Leaf(indices) => self.leaf = indices.iter(),
                 BvhKind::Branch(left, right) => {
-                    stack.push(*left);
-                    stack.push(*right);
+                    self.stack[self.depth] = *left;
+                    self.stack[self.depth + 1] = *right;
+                    self.depth += 2;
                 }
             }
         }
-        result
     }
 }
 
@@ -636,6 +760,13 @@ fn union_bounds(left: Aabb, right: Aabb) -> Aabb {
             left.max[2].max(right.max[2]),
         ],
     }
+}
+
+fn diagonal(bounds: &Aabb) -> f64 {
+    (0..3)
+        .map(|axis| (bounds.max[axis] - bounds.min[axis]).powi(2))
+        .sum::<f64>()
+        .sqrt()
 }
 
 fn triangle_box_intersects(a: Vec3, b: Vec3, c: Vec3, bounds: &Aabb) -> bool {
