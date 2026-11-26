@@ -751,7 +751,9 @@ def _check_magnetic_cfl(request: Any = "") -> None:
         )
         for a in h_axes
     )
-    if mu >= 1:
+    if mu >= 1 and not (
+        request.run.backend == "jax" and materials.uses_magnetic_tensors
+    ):
         return
     epsilon = min(
         _minimum_material(
@@ -1158,6 +1160,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             )
         e_permittivity_x = e_permittivity_y = e_permittivity_z = empty3
     empty_inverse = jnp.zeros((0,), dtype=jnp.float32)
+    electric_inverse = None
     if request.materials.uses_full_permittivity:
         lossy = any(
             np.any(np.asarray(value) != 0.0)
@@ -1192,6 +1195,8 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             electric_losses(fields, components, dt) if lossy else {},
             "Node",
         )
+        if support_tensors is request.materials.yee_tensors:
+            electric_inverse = diagonal, cross
         e_inverse_diagonal_x, e_inverse_diagonal_y, e_inverse_diagonal_z = (
             jnp.asarray(diagonal["E" + axis])
             if "E" + axis in diagonal
@@ -1328,7 +1333,11 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     from beamz.simulation.dispersion import compile_dispersion
 
     dispersion = compile_dispersion(
-        logical_grid, dt, boundary_data.periodic_axes, complex_fields=any(vector)
+        logical_grid,
+        dt,
+        boundary_data.periodic_axes,
+        complex_fields=any(vector),
+        electric_inverse=electric_inverse,
     )
     program = CompiledProgram(
         grid=logical_grid,

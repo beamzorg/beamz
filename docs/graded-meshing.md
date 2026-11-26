@@ -187,13 +187,14 @@ single attractive mesh plot is not a convergence study.
 
 ## Current boundary
 
-`GaussianSource`, `CustomSource`, `ModeSource`, and field, flux, and mode
-monitors work on graded grids. Mode solving, source launch, monitor colocation,
-and modal projection consume the realized transverse coordinates and local
-integration weights. A Gaussian beam still selects an isotropic uniform grid
-at the same material-wavelength target because that operator requires constant
-spacing. The core FDTD propagation, rasterizer, CPML, and CFL calculation all
-consume rectilinear metrics directly.
+`GaussianSource`, `GaussianBeamSource`, `CustomSource`, `ModeSource`, and
+field, flux, and mode monitors work on graded grids. Mode solving, source
+launch, monitor colocation, and modal projection consume the realized
+transverse coordinates and local integration weights. Gaussian beams
+sample the physical Yee coordinates,
+normalize power with physical cell areas, and compile a local source-plane
+residual for JAX and native CUDA. The core FDTD propagation, rasterizer,
+CPML, and CFL calculation all consume rectilinear metrics directly.
 
 ## References
 

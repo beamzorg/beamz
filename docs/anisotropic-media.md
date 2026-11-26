@@ -292,8 +292,9 @@ sources.
 Static `eps_inf` tensors use BeamZ's full-tensor electric update. The other
 terms run as exact corrections around the standard kernels:
 
-- **Permeability.** The H kernel advances in vacuum. Inside a cropped box around
-  the magnetic media, the increment is then mapped through `mu^-1`.
+- **Permeability.** Diagonal permeability enters the standard Yee H coefficients.
+  For off-diagonal permeability, the H kernel advances in vacuum and the
+  increment is mapped through `mu^-1` inside a cropped box around the medium.
 - **Tensor poles.** A normalized polarization `p = P / eps0` follows an explicit
   central-difference recurrence driven by the previous field. The field is then
   corrected by `-eps_inf^-1 (p_new - p_old)`. Magnetic poles mirror this on H.
@@ -476,6 +477,10 @@ layer into every grey `m_0`/`m_2` boundary; nested channels do not have to.
   CUDA gradients through these media. Gyrotropic poles, Bloch (complex) fields,
   and boxes spanning a periodic seam keep their corrections in JAX inside the
   streamed run.
+- For diagonal permeability and lossless full-tensor permittivity, compatible
+  native CUDA builds support `backend="cuda", schedule="mstep"`. Full-tensor
+  runs use four-step blocks followed by ordinary steps for the tail. The
+  native auto scheduler selects ordinary steps for full tensors.
 - Tensor-media executables compile without XLA command buffers, because XLA
   0.9 crashes replaying CUDA graphs of some of these programs.
 - Off-diagonal `eps_inf` needs `RasterOptions(smoothing="farjadpour_full")`.

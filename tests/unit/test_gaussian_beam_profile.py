@@ -2,8 +2,10 @@ import numpy as np
 import pytest
 
 from beamz.const import EPS_0, MU_0
+from beamz.design.grid import RectilinearGrid
 from beamz.devices.sources.compiler import GaussianBeamProfile
 from beamz.devices.sources.specs import FieldProfile3D
+from beamz.lattice import component_coordinates_rectilinear
 
 
 def test_gaussian_beam_profile_has_transverse_gaussian_envelope():
@@ -270,3 +272,62 @@ def test_waist_distance_matches_paraxial_radius_and_curvature():
         waist_distance * (1.0 + (rayleigh / waist_distance) ** 2)
     )
     assert gouy == pytest.approx(np.arctan2(waist_distance, rayleigh))
+
+
+@pytest.mark.parametrize("direction", ("+x", "-x", "+y", "-y", "+z", "-z"))
+@pytest.mark.parametrize("theta", (0.0, 0.37))
+@pytest.mark.parametrize("waist_distance", (-0.8, 0.0, 0.8))
+def test_gaussian_phasor_matches_dense_formula_on_graded_grid(
+    direction, theta, waist_distance
+):
+    grid = RectilinearGrid(
+        np.linspace(0, 1, 19) ** 1.2 * 6,
+        np.linspace(0, 1, 23) ** 1.4 * 7,
+        np.linspace(0, 1, 17) ** 1.6 * 8,
+    )
+    beam = GaussianBeamProfile(
+        center=(3.1, 3.3, 4.2),
+        size=(5.0, 4.0),
+        direction=direction,
+        angle_theta=theta,
+        angle_phi=0.59,
+        pol_angle=0.81,
+        waist_radius=1.1,
+        waist_distance=waist_distance,
+        wavelength=3.2,
+        background_index=1.4,
+    )
+    profile = beam.field_profile(resolution=0.3, grid_shape=grid.shape_zyx, grid=grid)
+    normal = "xyz".index(beam.axis)
+    k_hat = beam.propagation_unit_vector()
+    k_tangent = beam.propagation_vector()
+    k_tangent[normal] = 0.0
+    radius, curvature, gouy = beam._beam_radius_curvature_gouy()
+    amplitude = beam._power_amplitude_scale(
+        0.3,
+        beam._transverse_slices(0.3, grid.shape_zyx, grid=grid),
+        k_normal_abs=abs(k_hat[normal]),
+        grid=grid,
+    )
+    electric = beam.electric_unit_vector()
+    magnetic = beam.background_index / np.sqrt(MU_0 / EPS_0) * np.cross(k_hat, electric)
+    for component, values in profile.components.items():
+        index = profile.indices[component]
+        coords = component_coordinates_rectilinear(component, grid)
+        z, y, x = np.meshgrid(
+            *(coords[axis][item] for axis, item in zip("zyx", index, strict=True)),
+            indexing="ij",
+        )
+        displacement = np.stack((x, y, z), axis=-1) - beam.center
+        rho2 = np.sum(np.cross(displacement, k_hat) ** 2, axis=-1)
+        phase = (
+            -(displacement @ k_tangent)
+            - beam.medium_wavenumber * rho2 / (2 * curvature)
+            + gouy
+        )
+        vector = electric if component.startswith("E") else magnetic
+        factor = vector["xyz".index(component[1].lower())]
+        expected = amplitude * factor * np.exp(-rho2 / radius**2 + 1j * phase)
+        np.testing.assert_allclose(
+            values, expected.squeeze(axis=2 - normal), rtol=2e-13, atol=2e-14
+        )

@@ -3,7 +3,7 @@
 Both features run as exact corrections around the unchanged vacuum-permeability
 H kernel and the existing (diagonal or full-tensor) E kernel:
 
-* Static permeability. The kernel advances ``H' = H - dt/mu0 * curl E`` (with
+* Off-diagonal permeability. The kernel advances ``H' = H - dt/mu0 * curl E`` (with
   CPML stretching inside ``curl``). The physical update is the same increment
   mapped through the inverse permeability, ``H = H_old + mu^-1 (H' - H_old)``.
 * Tensor poles. Each pole carries a symmetric tensor strength ``W``, so a
@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
+from functools import cache
 
 import jax
 import jax.numpy as jnp
@@ -611,8 +612,9 @@ def electric_losses(grid, components, dt) -> dict:
 
 def _crop_or_fill(value, part, shape) -> np.ndarray:
     """Crop a support array to a box component, or fill it with a scalar."""
-    value = np.asarray(value, dtype=np.float64)
-    return value[part] if value.ndim else np.full(shape, float(value))
+    if np.ndim(value) == 0:
+        return np.full(shape, float(value))
+    return np.asarray(value[part], dtype=np.float64)
 
 
 def _crop_inverse(diagonal, cross, box: YeeBox) -> InverseOperator:
@@ -626,27 +628,6 @@ def _crop_inverse(diagonal, cross, box: YeeBox) -> InverseOperator:
     return InverseOperator(cropped, jnp.asarray(cross, dtype=jnp.float32))
 
 
-def _electric_inverse(grid, box: YeeBox, dt) -> InverseOperator:
-    material_grid = grid.material_grid
-    losses = electric_losses(grid, box.components, dt)
-    if material_grid.uses_full_permittivity:
-        support = {
-            c: material_grid.yee_tensors["eps_" + c[-1].lower()] for c in box.components
-        }
-        diagonal, cross = lossy_tensor_inverse(
-            support, material_grid.yee_tensors["eps_node"], losses, "Node"
-        )
-        return _crop_inverse(diagonal, cross, box)
-    diagonal = []
-    for component, part, shape in zip(
-        box.components, box.slices, box.shapes, strict=True
-    ):
-        eps = _crop_or_fill(getattr(grid, "eps_" + component[-1].lower()), part, shape)
-        loss = _crop_or_fill(losses[component], part, shape)
-        diagonal.append(jnp.asarray(1.0 / (eps + loss), dtype=jnp.float32))
-    return InverseOperator(tuple(diagonal), None)
-
-
 def magnetic_losses(grid, components, dt) -> dict:
     """Semi-implicit magnetic (sponge) loss ``sigma_m dt / (2 mu0)`` at H supports."""
     return {
@@ -657,34 +638,22 @@ def magnetic_losses(grid, components, dt) -> dict:
     }
 
 
-def _magnetic_inverse(grid, box: YeeBox, dt) -> InverseOperator:
-    tensors = grid.material_grid.magnetic_tensors
-    losses = magnetic_losses(grid, box.components, dt)
-    if not tensors:
-        return InverseOperator(
-            tuple(
-                jnp.asarray(
-                    1.0 / (1.0 + _crop_or_fill(losses[c], part, shape)),
-                    dtype=jnp.float32,
-                )
-                for c, part, shape in zip(
-                    box.components, box.slices, box.shapes, strict=True
-                )
-            ),
-            None,
+def _diagonal_inverse(grid, box, dt):
+    electric = box.family == "E"
+    field_prefix = "eps_" if electric else "mu_h"
+    loss_prefix = "sig_" if electric else "sigma_m_h"
+    loss_scale = dt / (2.0 * (EPS_0 if electric else MU_0))
+    diagonal = []
+    for component, part, shape in zip(
+        box.components, box.slices, box.shapes, strict=True
+    ):
+        axis = component[-1].lower()
+        base = _crop_or_fill(getattr(grid, field_prefix + axis), part, shape)
+        loss = _crop_or_fill(getattr(grid, loss_prefix + axis), part, shape)
+        diagonal.append(
+            jnp.asarray(1.0 / (base + loss_scale * loss), dtype=jnp.float32)
         )
-    support = {c: tensors["mu_h" + c[-1].lower()] for c in box.components}
-    diagonal, cross = lossy_tensor_inverse(support, tensors["mu_cell"], losses, "Cell")
-    return _crop_inverse(diagonal, cross, box)
-
-
-def _family_inverse(grid, box: YeeBox, dt) -> InverseOperator:
-    media = static_media(grid, box.family)
-    if media:
-        return coupled_operators(grid, box, dt, media)[0]
-    if box.family == "E":
-        return _electric_inverse(grid, box, dt)
-    return _magnetic_inverse(grid, box, dt)
+    return InverseOperator(tuple(diagonal), None)
 
 
 def static_media(grid, family: str) -> list:
@@ -929,7 +898,7 @@ def _cropped_losses(losses, box: YeeBox):
     )
 
 
-def _compile_magnetic(grid, periodic_axes, dt) -> MagneticPlan | None:
+def _compile_magnetic(grid, periodic_axes, dt, inverse_for_box) -> MagneticPlan | None:
     tensors = grid.material_grid.magnetic_tensors
     media = static_media(grid, "H")
     if not tensors and not media:
@@ -961,7 +930,7 @@ def _compile_magnetic(grid, periodic_axes, dt) -> MagneticPlan | None:
     if media:
         inverse, damping = coupled_operators(grid, box, dt, media)
         return StaticTensorPlan(box, inverse, loss, damping)
-    return StaticTensorPlan(box, _magnetic_inverse(grid, box, dt), loss)
+    return StaticTensorPlan(box, inverse_for_box(box), loss)
 
 
 def _compile_electric(grid, periodic_axes, dt) -> StaticTensorPlan | None:
@@ -1023,7 +992,9 @@ def max_stable_timestep(medium, family, spacings, polarization=None) -> float:
     return pole_stability.max_stable_timestep(medium, family, spacings, polarization)
 
 
-def _compile_regions(medium, fraction, family, grid, dt, periodic_axes) -> list:
+def _compile_regions(
+    medium, fraction, family, grid, dt, periodic_axes, inverse_for_box
+) -> list:
     from beamz.design.anisotropic import GyrotropicPole
     from beamz.simulation import pole_stability
 
@@ -1034,11 +1005,17 @@ def _compile_regions(medium, fraction, family, grid, dt, periodic_axes) -> list:
     pole_stability.check_stability(medium, family, dt, grid)
     tensor = [p for p in poles if not isinstance(p, GyrotropicPole)]
     gyrotropic = [p for p in poles if isinstance(p, GyrotropicPole)]
+    box = _make_box(
+        family,
+        _active_components(family, grid),
+        _cell_bounds(fraction > 1e-7, periodic_axes),
+        grid,
+        periodic_axes,
+    )
+    inverse = inverse_for_box(box)
     regions = []
     if tensor:
-        region = _compile_tensor_region(
-            tensor, fraction, family, grid, dt, periodic_axes
-        )
+        region = _compile_tensor_region(tensor, fraction, box, dt, inverse)
         if any(getattr(p, "has_edot", False) for p in tensor):
             from beamz.simulation.ccpr import compile_ccpr_region
 
@@ -1048,31 +1025,22 @@ def _compile_regions(medium, fraction, family, grid, dt, periodic_axes) -> list:
         regions.append(region)
     if gyrotropic:
         regions.append(
-            _compile_gyrotropic_region(
-                gyrotropic, fraction, family, grid, dt, periodic_axes
-            )
+            _compile_gyrotropic_region(gyrotropic, fraction, box, dt, inverse)
         )
     return regions
 
 
-def _compile_gyrotropic_region(poles, fraction, family, grid, dt, periodic_axes):
+def _compile_gyrotropic_region(poles, fraction, box, dt, inverse):
     from beamz.design.anisotropic import _cross_matrix
 
-    components = _active_components(family, grid)
-    if len(grid.material_grid.shape) == 2 and any(
+    components = box.components
+    if fraction.ndim == 2 and any(
         abs(p.gyration[0]) > 0 or abs(p.gyration[1]) > 0 for p in poles
     ):
         raise ValueError(
             "2D simulations support gyration along z only (in-plane fields "
             "precess about the out-of-plane axis)."
         )
-    box = _make_box(
-        family,
-        components,
-        _cell_bounds(fraction > 1e-7, periodic_axes),
-        grid,
-        periodic_axes,
-    )
     cropped = jnp.asarray(fraction[box.cell_slices], dtype=jnp.float32)
     weights = tuple(
         _collocate(cropped, "Cell", c, shape, box.widths, _material_seams(box))
@@ -1100,7 +1068,7 @@ def _compile_gyrotropic_region(poles, fraction, family, grid, dt, periodic_axes)
         jnp.asarray([0.5 * p.damping * dt for p in poles], dtype=jnp.float32),
         weights,
         iterations,
-        _family_inverse(grid, box, dt),
+        inverse,
     )
 
 
@@ -1149,10 +1117,9 @@ def tensor_pole_weights(fraction, drive, box: YeeBox):
     return tuple(diagonal), offdiagonal
 
 
-def _compile_tensor_region(poles, fraction, family, grid, dt, periodic_axes):
-    cell_shape = tuple(grid.material_grid.shape)
+def _compile_tensor_region(poles, fraction, box, dt, inverse):
     weights = np.stack([np.asarray(p.weight) for p in poles])  # (poles, 6)
-    if len(cell_shape) == 2 and np.any(weights[:, 4:] != 0.0):
+    if fraction.ndim == 2 and np.any(weights[:, 4:] != 0.0):
         raise ValueError(
             "2D simulations require tensor poles without xz or yz coupling; "
             "use a 3D simulation for out-of-plane coupling."
@@ -1162,15 +1129,7 @@ def _compile_tensor_region(poles, fraction, family, grid, dt, periodic_axes):
     # they are ~1e-31 and ~1e31, and reverse-mode cotangents multiplied by the
     # tiny factor first would underflow float32.
     drive = weights * c3[:, None]
-    components = _active_components(family, grid)
-    box = _make_box(
-        family,
-        components,
-        _cell_bounds(fraction > 1e-7, periodic_axes),
-        grid,
-        periodic_axes,
-    )
-    reshape = (-1,) + (1,) * len(cell_shape)
+    reshape = (-1,) + (1,) * fraction.ndim
     cropped = jnp.asarray(fraction[box.cell_slices], dtype=jnp.float32)
     diagonal, offdiagonal = tensor_pole_weights(cropped, drive, box)
     return TensorPolarizationRegion(
@@ -1179,7 +1138,7 @@ def _compile_tensor_region(poles, fraction, family, grid, dt, periodic_axes):
         jnp.asarray(c2.reshape(reshape), dtype=jnp.float32),
         diagonal,
         offdiagonal,
-        _family_inverse(grid, box, dt),
+        inverse,
     )
 
 
@@ -1229,27 +1188,65 @@ def _seam_phases(grid, periodic_axes) -> dict:
     return out
 
 
-def compile_anisotropic(grid, dt, periodic_axes=frozenset()) -> AnisotropicPlan | None:
+def compile_anisotropic(
+    grid, dt, periodic_axes=frozenset(), *, electric_inverse=None
+) -> AnisotropicPlan | None:
     """Build static tensor-permeability and tensor-pole plans for a compiled grid."""
 
     material_grid = grid.material_grid
-    if (
-        not material_grid.requires_magnetic_tensor_update
-        and not material_grid.tensor_dispersion
-    ):
+    magnetic_update = material_grid.requires_magnetic_tensor_update
+    if not magnetic_update and not material_grid.tensor_dispersion:
         return None
     periodic = _seam_phases(grid, periodic_axes)
     _warn_on_absorber_overlap(grid)
+
+    @cache
+    def full_inverse(family):
+        components = _active_components(family, grid)
+        if family == "E" and material_grid.uses_full_permittivity:
+            if electric_inverse is not None:
+                return electric_inverse
+            tensors = material_grid.yee_tensors
+            return lossy_tensor_inverse(
+                {c: tensors["eps_" + c[-1].lower()] for c in components},
+                tensors["eps_node"],
+                electric_losses(grid, components, dt),
+                "Node",
+            )
+        if family == "H" and magnetic_update:
+            tensors = material_grid.magnetic_tensors
+            return lossy_tensor_inverse(
+                {c: tensors["mu_h" + c[-1].lower()] for c in components},
+                tensors["mu_cell"],
+                magnetic_losses(grid, components, dt),
+                "Cell",
+            )
+        return None
+
+    def inverse_for_box(box):
+        media = static_media(grid, box.family)
+        if media:
+            return coupled_operators(grid, box, dt, media)[0]
+        inverse = full_inverse(box.family)
+        if inverse is not None:
+            diagonal, cross = inverse
+            return _crop_inverse(diagonal, cross, box)
+        return _diagonal_inverse(grid, box, dt)
+
     electric, magnetic = [], []
     for medium, fraction in material_grid.tensor_dispersion:
         for family, bucket in (("E", electric), ("H", magnetic)):
             bucket.extend(
-                _compile_regions(medium, fraction, family, grid, dt, periodic)
+                _compile_regions(
+                    medium, fraction, family, grid, dt, periodic, inverse_for_box
+                )
             )
     _reject_ccpr_static_overlap(grid, electric, "E")
     _reject_ccpr_static_overlap(grid, magnetic, "H")
     return AnisotropicPlan(
-        _compile_magnetic(grid, periodic, dt),
+        _compile_magnetic(grid, periodic, dt, inverse_for_box)
+        if magnetic_update
+        else None,
         tuple(electric),
         tuple(magnetic),
         _compile_electric(grid, periodic_axes, dt),

@@ -26,9 +26,8 @@ from beamz.design.grid import RectilinearGrid
 from beamz.design.grid_spec import (
     GridSpec,
     _realize_uniform_grid,
-    _validate_grid_budget,
 )
-from beamz.design.materials import Material, MaterialProtocol
+from beamz.design.materials import Material
 from beamz.design.structures import Box
 from beamz.devices.boundaries import (
     normalize_boundaries,
@@ -42,11 +41,7 @@ from beamz.devices.monitors.monitors import (
     ModeMonitor,
     _Monitor,
 )
-from beamz.devices.sources import (
-    CANONICAL_SOURCE_TYPES,
-    GaussianBeamSource,
-    PlaneWaveSource,
-)
+from beamz.devices.sources import CANONICAL_SOURCE_TYPES
 from beamz.lattice import (
     grid_vector_to_physical_2d,
     in_plane_vector_2d,
@@ -149,44 +144,6 @@ def _shift_device_to_domain(device, offset, *, plane_2d):
     return device.shifted(offset)
 
 
-def _material_index(material) -> float:
-    # Use the largest real permittivity to obtain a conservative index for grid resolution.
-    if not isinstance(material, MaterialProtocol):
-        raise TypeError("Simulation materials must satisfy MaterialProtocol.")
-    eps = material.max_permittivity
-    if eps is None:
-        raise ValueError(
-            "GridSpec.auto requires materials with finite max_permittivity."
-        )
-    return float(np.sqrt(max(float(np.max(np.real(np.asarray(eps)))), 1.0)))
-
-
-def _max_index_for_specs(background, structures) -> float:
-    # Include background and every structure so automatic meshing resolves the worst case.
-    materials = [s.material for s in structures or ()]
-    return max(_material_index(m) for m in (background, *materials) if m is not None)
-
-
-def _resolve_grid_resolution(grid_spec, background, structures) -> float:
-    if grid_spec.resolution is not None:
-        resolution = grid_spec._target_spacing()
-    else:
-        resolution = grid_spec._target_spacing(
-            max_index=_max_index_for_specs(background, structures)
-        )
-    return positive_float(resolution, name="Simulation resolution")
-
-
-def _devices_require_uniform_grid(sources, monitors) -> bool:
-    """Return whether current device operators require isotropic spacing."""
-    del monitors
-    return any(
-        isinstance(source, GaussianBeamSource)
-        and not isinstance(source, PlaneWaveSource)
-        for source in sources or ()
-    )
-
-
 def _normalize_plane_2d(plane) -> str:
     if not isinstance(plane, str):
         raise TypeError("plane_2d must be 'xy', 'yz', or 'xz'.")
@@ -219,29 +176,17 @@ def _resolve_design_time_and_grid(
     resolution,
     time,
     run_time,
-    require_uniform_grid=False,
 ):
-    # Compute and cache the authoritative setup value so later stages do not repeat expensive work.
-    use_realized_grid = bool(
-        grid_spec is not None and grid_spec.is_automatic and not require_uniform_grid
-    )
-    if use_realized_grid:
-        assert grid_spec is not None
-        grid = grid_spec.realize(design)
-        resolution = grid.minimum_spacing
+    # Compute and cache the authoritative setup value.
+    use_realized_grid = grid_spec is not None and grid_spec.is_automatic
+    if grid_spec is None:
+        grid = _realize_uniform_grid(design, resolution)
     else:
-        if grid_spec is not None:
-            resolution = _resolve_grid_resolution(
-                grid_spec, design.background, list(design.structures)
-            )
-        grid = (
-            grid_spec.realize(design)
-            if grid_spec is not None and not grid_spec.is_automatic
-            else _realize_uniform_grid(design, resolution, spec=grid_spec)
+        grid = grid_spec.realize(design)
+        resolution = (
+            grid.minimum_spacing if use_realized_grid else grid_spec._target_spacing()
         )
     dims = 3 if _design_is_3d(design) else 2
-    if grid_spec is not None:
-        grid = _validate_grid_budget(grid, grid_spec, dimensions=dims)
     time = _time_from_run_time(time, run_time, grid_spec, grid, dims)
     return resolution, grid, time, use_realized_grid
 
@@ -270,7 +215,7 @@ def _shift_grid_spec_to_domain(grid_spec, offset):
     )
 
 
-def _prepare_design(design, *, domain, size, background, grid_spec, resolution, time, run_time, require_uniform_grid, plane_2d):  # fmt: skip
+def _prepare_design(design, *, domain, size, background, grid_spec, resolution, time, run_time, plane_2d):  # fmt: skip
     # 1. Resolve the optional domain/size alias. An already domain-based design can keep its coordinates and only needs grid/time normalization.
     sim_size = _normalize_domain(domain, size)
     if design is not None and not isinstance(design, Design):
@@ -282,7 +227,6 @@ def _prepare_design(design, *, domain, size, background, grid_spec, resolution, 
             resolution=resolution,
             time=time,
             run_time=run_time,
-            require_uniform_grid=require_uniform_grid,
         )
         return design, resolution, grid, time, (0.0, 0.0, 0.0), use_realized_grid
     if design is not None and not design._centered_coordinates:
@@ -292,7 +236,6 @@ def _prepare_design(design, *, domain, size, background, grid_spec, resolution, 
             resolution=resolution,
             time=time,
             run_time=run_time,
-            require_uniform_grid=require_uniform_grid,
         )
         return design, resolution, grid, time, (0.0, 0.0, 0.0), use_realized_grid
     # 2. A centered-coordinate design or explicit size must be converted into Beamz's
@@ -322,7 +265,6 @@ def _prepare_design(design, *, domain, size, background, grid_spec, resolution, 
         resolution=resolution,
         time=time,
         run_time=run_time,
-        require_uniform_grid=require_uniform_grid,
     )
     public_offset = (
         offset if new_design.is_3d else grid_vector_to_physical_2d(offset, plane_2d)
@@ -784,7 +726,6 @@ class Simulation:
                 plane_2d=plane_2d,
             )
             raster_options = None
-        require_uniform_grid = _devices_require_uniform_grid(sources, monitors)
         # 1. Normalize alternative domain, grid, and time forms into one concrete design;
         # this also returns any coordinate translation introduced by size-based domains.
         if material_grid is None:
@@ -798,7 +739,6 @@ class Simulation:
                     resolution=resolution,
                     time=time,
                     run_time=run_time,
-                    require_uniform_grid=require_uniform_grid,
                     plane_2d=plane_2d,
                 )
             )

@@ -195,6 +195,7 @@ fn from_geo(polygon: &GeoPolygon<f64>) -> Polygon2 {
     Polygon2 {
         exterior: ring(polygon.exterior()),
         holes: polygon.interiors().iter().map(ring).collect(),
+        cache: Default::default(),
     }
 }
 

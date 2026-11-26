@@ -65,10 +65,8 @@ def _allclose_bounded(
     )
 
 
-def _validate_permeability(values, *, tensor=False) -> None:
+def _validate_permeability(values) -> None:
     array = np.asarray(values)
-    if tensor:
-        array = _tensor_diagonal(array)
     physical = material_planes(array, unique=True)
     checks = (broadcast_base(array),) if physical is None else physical
     if any(
@@ -353,7 +351,7 @@ class MaterialGrid:
             ):
                 raise ValueError(f"{name} tensor has invalid compact shape {shape}.")
             if name == "mu":
-                _validate_permeability(values, tensor=True)
+                _validate_permeability(_tensor_diagonal(values))
         unknown_yee_tensors = set(self.yee_tensors) - {
             "eps_x",
             "eps_y",
@@ -383,6 +381,17 @@ class MaterialGrid:
         self._validate_tensor_dispersion()
 
     def _validate_magnetic_tensors(self, shapes):
+        cell_tensor = self.tensors.get("mu")
+        if (
+            not self.magnetic_tensors
+            and cell_tensor is not None
+            and not _allclose_bounded(
+                _tensor_off_diagonal(cell_tensor), 0, rtol=0, atol=1e-10
+            )
+        ):
+            raise ValueError(
+                "Off-diagonal magnetic coupling requires magnetic_tensors."
+            )
         expected_shapes = {
             "mu_hx": shapes["Hx"],
             "mu_hy": shapes["Hy"],
@@ -403,6 +412,13 @@ class MaterialGrid:
                 raise ValueError(
                     f"{name} tensor has shape {actual}, expected compact "
                     f"(1|3|6, {', '.join(map(str, expected))})."
+                )
+            _validate_permeability(_tensor_diagonal(values))
+            if len(self.shape) == 2 and not _allclose_bounded(
+                _tensor_off_diagonal(values)[1:], 0, rtol=0, atol=1e-10
+            ):
+                raise ValueError(
+                    "A 2D simulation requires permeability without xz or yz coupling."
                 )
 
     def _validate_tensor_dispersion(self):
@@ -615,26 +631,16 @@ class MaterialGrid:
         mu_diagonal = _tensor_diagonal(mu_tensor)
         magnetic_tensors = {}
         mu_supports = {
-            name: np.asarray(support_tensors[name])
-            for name in ("mu_hx", "mu_hy", "mu_hz")
-            if name in support_tensors
+            target: np.asarray(support_tensors[source])
+            for target, source, _axis in component_specs
+            if target.startswith("mu_h")
         }
         unit_mu = all(
             _allclose_bounded(_tensor_diagonal(values), 1.0, rtol=1e-10, atol=1e-12)
-            and _allclose_bounded(
-                _tensor_off_diagonal(values), 0.0, rtol=1e-10, atol=1e-12
-            )
+            and _allclose_bounded(_tensor_off_diagonal(values), 0.0, rtol=0, atol=1e-12)
             for values in (mu_tensor, *mu_supports.values())
         )
         if not unit_mu:
-            if (
-                dimensions == 2
-                and mu_tensor.shape[0] == 6
-                and np.any(np.abs(mu_tensor[[4, 5]]) > 1e-10)
-            ):
-                raise ValueError(
-                    "A 2D simulation requires permeability without xz or yz coupling."
-                )
             magnetic_tensors = {**mu_supports, "mu_cell": mu_tensor}
         epsilon_diagonal = _tensor_diagonal(epsilon_tensor)
         conductivity_diagonal = _tensor_diagonal(conductivity_tensor)
@@ -756,9 +762,14 @@ class MaterialGrid:
     @property
     def requires_magnetic_tensor_update(self) -> bool:
         """Return whether the diagonal Yee coefficients cannot handle the update."""
+        for medium, _ in self.tensor_dispersion:
+            permeability = medium.permeability_matrix
+            if np.any(permeability != permeability.T) or np.any(
+                medium.magnetic_conductivity_matrix
+            ):
+                return True
         return self.uses_magnetic_tensors and (
-            bool(self.tensor_dispersion)
-            or not (self.magnetic_tensors.keys() - {"mu_cell"})
+            not (self.magnetic_tensors.keys() - {"mu_cell"})
             <= self.yee_materials.keys()
             or any(
                 not _allclose_bounded(
