@@ -317,7 +317,26 @@ def test_tensor_port_with_varying_normal_spacing_is_rejected():
         )
 
 
-@pytest.mark.parametrize("unsupported", ["periodic", "bloch", "sharding", "cuda_mstep"])
+@pytest.mark.parametrize("boundary", ["periodic", "bloch"])
+def test_rectilinear_tensor_propagation_lowers_periodic_seams_on_jax(boundary):
+    import beamz as bz
+    from tests.validation.analytical.test_rectilinear_tensor_modes import (
+        rectilinear_guide,
+    )
+
+    material, dt, _ = rectilinear_guide()
+    sim = bz.Simulation(
+        material_grid=material,
+        boundaries=[{"periodic": bz.Periodic, "bloch": bz.Bloch}[boundary](axes="y")],
+        time=np.arange(3) * dt,
+        setup_device="cpu",
+    )
+    program = sim.compile(backend="jax")
+    assert program.coefficients.e_inverse_offdiagonal.size
+    assert program.boundary.periodic_axes
+
+
+@pytest.mark.parametrize("unsupported", ["sharding", "cuda_mstep"])
 def test_rectilinear_tensor_propagation_rejects_unimplemented_lowerings(unsupported):
     import beamz as bz
     from tests.validation.analytical.test_rectilinear_tensor_modes import (

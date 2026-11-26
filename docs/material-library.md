@@ -33,6 +33,10 @@ They bundle neither the publication nor a transcribed measured-data table. Their
 Apache-2.0 label covers the implementation and calculated samples, not the
 publication. The three filters are hypothetical materials, not measured products.
 
+Anisotropic crystals (sapphire, lithium niobate, hBN, alpha-MoO3) live in
+`beamz.material_library.anisotropic_library` as `AnisotropicMedium` tensors; see
+[Anisotropic, Hyperbolic, and Gyrotropic Media](anisotropic-media.md).
+
 ## Inspect data and fit quality
 
 ```python

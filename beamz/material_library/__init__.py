@@ -1,7 +1,10 @@
 """Bundled dispersive media, indexed by material and named fit variant.
 
 Example: ``material_library["SiO2"]["Malitson1965"]`` is a BeamZ PoleResidue.
-Data and license notices ship with BeamZ; no external solver is required.
+``anisotropic_library["LiNbO3"]["Zelmon1997"]`` is an ``AnisotropicMedium`` in
+its crystal frame (uniaxial optic axis on z); rotate it into a device frame
+with ``.rotated(...)``. Data and license notices ship with BeamZ; no external
+solver is required.
 """
 
 from __future__ import annotations
@@ -16,7 +19,9 @@ from types import MappingProxyType
 import numpy as np
 from numpy.typing import NDArray
 
+from beamz.design.anisotropic import AnisotropicMedium
 from beamz.design.dispersion import PoleResidue
+from beamz.design.materials import Material
 
 
 @dataclass(frozen=True)
@@ -27,7 +32,7 @@ class MaterialVariant:
     ``nk_data`` contains source samples or synthetic design targets.
     """
 
-    medium: PoleResidue
+    medium: Material
     description: str
     source: str
     license: str
@@ -63,18 +68,22 @@ class MaterialItem:
             raise ValueError(f"Unknown default variant: {self.default!r}")
         object.__setattr__(self, "variants", MappingProxyType(dict(self.variants)))
 
-    def __getitem__(self, variant: str) -> PoleResidue:
+    def __getitem__(self, variant: str) -> Material:
         return self.variants[variant].medium
 
     @property
-    def medium(self) -> PoleResidue:
+    def medium(self) -> Material:
         """Default fit, usable directly in BeamZ structures and simulations."""
         return self[self.default]
 
 
-def _load_library() -> Mapping[str, MaterialItem]:
+def _source_text(value) -> str:
+    return "; ".join(value) if isinstance(value, list) else value
+
+
+def _load_library(filename: str = "catalog.json") -> Mapping[str, MaterialItem]:
     catalog = json.loads(
-        files(__name__).joinpath("data").joinpath("catalog.json").read_text()
+        files(__name__).joinpath("data").joinpath(filename).read_text()
     )
     return MappingProxyType(
         {
@@ -83,9 +92,13 @@ def _load_library() -> Mapping[str, MaterialItem]:
                 default=item["default"],
                 variants={
                     name: MaterialVariant(
-                        medium=PoleResidue.from_spec(variant["medium"]),
+                        medium=(
+                            AnisotropicMedium.from_spec(variant["anisotropic_medium"])
+                            if "anisotropic_medium" in variant
+                            else PoleResidue.from_spec(variant["medium"])
+                        ),
                         description=variant["description"],
-                        source=variant["source"],
+                        source=_source_text(variant["source"]),
                         license=variant["license"],
                         _nk_file=variant.get("nk_file"),
                         fit=MappingProxyType(variant.get("fit", {})),
@@ -101,5 +114,11 @@ def _load_library() -> Mapping[str, MaterialItem]:
 
 
 material_library = _load_library()
+anisotropic_library = _load_library("anisotropic_catalog.json")
 
-__all__ = ["MaterialItem", "MaterialVariant", "material_library"]
+__all__ = [
+    "MaterialItem",
+    "MaterialVariant",
+    "anisotropic_library",
+    "material_library",
+]

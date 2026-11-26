@@ -126,3 +126,59 @@ def rasterize_dispersion(
                 supports[component] = weight * (1 - normal_weights[component])
         regions.append((medium, supports))
     return tuple(regions), tuple(interfaces)
+
+
+def rasterize_tensor_dispersion(
+    scene,
+    grid,
+    *,
+    kind,
+    polarization,
+    quality,
+    resolution,
+    cache_directory,
+    periodic_axes=(),
+):
+    """Return ``(medium, cell_fraction)`` for every dispersive tensor medium.
+
+    Painter order is preserved by rasterizing one indicator scene per medium;
+    the volume-smoothed indicator is the medium's fraction of each cell.
+    """
+    from beamz.design.anisotropic import AnisotropicMedium
+
+    entries = []
+    for index, medium in enumerate(scene.materials):
+        if not isinstance(medium, AnisotropicMedium) or not medium.is_dispersive:
+            continue
+        indicators = tuple(
+            Material(1.0, conductivity=float(i == index))
+            for i in range(len(scene.materials))
+        )
+        result = rasterize(
+            replace(scene, materials=indicators),
+            grid,
+            options=RasterOptions(
+                quality=quality,
+                smoothing="volume",
+                periodic_axes=periodic_axes,
+                components="all" if kind == "3d" else f"two_dimensional_{polarization}",
+            ),
+            cache_directory=cache_directory,
+        )
+        indicator_grid = MaterialGrid.from_raster_result(
+            result,
+            dimensions=3 if kind == "3d" else 2,
+            polarization=polarization,
+            resolution=resolution,
+        )
+        fraction = np.clip(np.asarray(indicator_grid.conductivity, dtype=float), 0, 1)
+        entries.append((medium, fraction))
+    return tuple(entries)
+
+
+def has_tensor_dispersion(scene) -> bool:
+    from beamz.design.anisotropic import AnisotropicMedium
+
+    return any(
+        isinstance(m, AnisotropicMedium) and m.is_dispersive for m in scene.materials
+    )

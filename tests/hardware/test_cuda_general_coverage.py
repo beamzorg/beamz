@@ -1060,7 +1060,9 @@ def test_raster_diagonal_magnetic_tensor_preserves_component_coefficients(
 
 
 @pytest.mark.parametrize("location", ["cell", "yee"])
-def test_off_diagonal_magnetic_coupling_is_explicitly_rejected(location: str) -> None:
+def test_cuda_rejects_off_diagonal_magnetic_coupling(location: str) -> None:
+    from beamz.simulation.backend import CudaBackendUnavailable
+
     grid = RectilinearGrid.from_spacing((30, 31, 32), 20e-9)
     raster = rasterize(
         Scene(
@@ -1077,15 +1079,19 @@ def test_off_diagonal_magnetic_coupling_is_explicitly_rejected(location: str) ->
     else:
         tensors["mu"] = tensors["mu"].copy()
         tensors["mu"][3:] = 0
-    # A deserialized result must reject coupling even if only one representation carries it.
+    # CUDA must reject coupling even if only one representation carries it.
     result = SimpleNamespace(
         tensors=tensors,
         yee_tensors=supports,
         grid_edges=raster.grid_edges,
         smoothing=raster.smoothing,
     )
-    with pytest.raises(ValueError, match="off-diagonal magnetic"):
-        MaterialGrid.from_raster_result(result, dimensions=3)
+    simulation = bz.Simulation(
+        material_grid=MaterialGrid.from_raster_result(result, dimensions=3),
+        time=np.arange(4) * 1e-17,
+    )
+    with pytest.raises(CudaBackendUnavailable, match="Off-diagonal magnetic"):
+        simulation.compile(backend="cuda")
 
 
 @pytest.mark.parametrize("location", ["direct_yee", "raster_yee", "raster_cell"])

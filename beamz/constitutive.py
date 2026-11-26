@@ -39,6 +39,16 @@ def electric_tensor_coefficients(tensors):
     return diagonal, cross
 
 
+def expand_packed(values) -> np.ndarray:
+    """Expand compact ``(1|3|6, ...)`` symmetric tensors to six components."""
+
+    values = np.asarray(values, dtype=np.float64)
+    if values.shape[0] == 6:
+        return values
+    diagonal = np.broadcast_to(values, (3, *values.shape[1:]))
+    return np.concatenate((diagonal, np.zeros((3, *values.shape[1:]))), axis=0)
+
+
 def fit_array_to_shape(arr, target_shape, *, pad_value=0.0):
     """Crop or high-pad a JAX array to one static component shape."""
     arr = jnp.asarray(arr)
@@ -64,29 +74,46 @@ def fit_array_to_shape(arr, target_shape, *, pad_value=0.0):
     )
 
 
+def periodic_seams(periodic_axes, periodic_phases, ndim: int) -> tuple:
+    """``(public axis, phase)`` seams from storage-axis periodic metadata."""
+    axes = ("z", "y", "x")[-ndim:]
+    return tuple(
+        (axes[int(a)], periodic_phases[int(a)] if periodic_phases else 1.0)
+        for a in sorted(periodic_axes)
+    )
+
+
+def _support_offsets(support: str) -> dict[str, float]:
+    """Yee offsets of a field component, a primal node, or a cell center."""
+    if support == "Node":
+        return {"z": 0.0, "y": 0.0, "x": 0.0}
+    if support == "Cell":
+        return {"z": 0.5, "y": 0.5, "x": 0.5}
+    return component_axis_offsets_3d(support)
+
+
 def collocate_yee_component(
-    value, source: str, target: str, target_shape, *, cell_widths=None
+    value, source: str, target: str, target_shape, *, cell_widths=None, seams=()
 ):
-    """Average electric/node supports with reciprocal control-volume weights.
+    """Average Yee, node, or cell supports with reciprocal control-volume weights.
 
     ``cell_widths`` is an optional (x, y, z) tuple of primal widths. Center-to-node
     averaging is the volume-weighted adjoint of node-to-center averaging. This
     preserves constants and symmetry of the coupled constitutive operator in
     the Yee volume inner product, including on graded meshes.
+
+    ``seams`` lists ``(axis, phase)`` pairs for periodic/Bloch axes the arrays
+    span completely (``axis`` is a public name ``"x"|"y"|"z"``). There the end
+    node averages across the seam, ``(c[-1] / phase, c[0])``, and its duplicate
+    is ``phase`` times the first node, matching the stored Bloch supports. On
+    other axes the end node copies its single neighbor.
     """
 
     out = jnp.asarray(value)
+    seam_phase = dict(seams)
     axes = ("z", "y", "x")[-out.ndim :]
-    source_offsets = (
-        {"z": 0.0, "y": 0.0, "x": 0.0}
-        if source == "Node"
-        else component_axis_offsets_3d(source)
-    )
-    target_offsets = (
-        {"z": 0.0, "y": 0.0, "x": 0.0}
-        if target == "Node"
-        else component_axis_offsets_3d(target)
-    )
+    source_offsets = _support_offsets(source)
+    target_offsets = _support_offsets(target)
     for axis_index, axis in enumerate(axes):
         source_offset = source_offsets[axis]
         target_offset = target_offsets[axis]
@@ -118,6 +145,15 @@ def collocate_yee_component(
                 shape[axis_index] = widths.size - 1
                 weight = (widths[:-1] / (widths[:-1] + widths[1:])).reshape(shape)
                 middle = weight * out[tuple(low)] + (1.0 - weight) * out[tuple(high)]
+            if axis in seam_phase:
+                phase = seam_phase[axis]
+                if widths is None or jnp.ndim(widths) == 0 or jnp.size(widths) == 0:
+                    edge = 0.5 * (last / phase + first)
+                else:
+                    edge = (widths[-1] * last / phase + widths[0] * first) / (
+                        widths[-1] + widths[0]
+                    )
+                first, last = edge, phase * edge
             out = jnp.concatenate((first, middle, last), axis=axis_index)
         else:  # pragma: no cover - canonical Yee offsets are binary
             raise ValueError("Unsupported Yee colocation offset.")
@@ -133,6 +169,7 @@ def advance_e_tensor_dense(
     dt,
     *,
     cell_widths=None,
+    seams=(),
 ):
     """Apply the lossless dense Yee tensor update shared by sources and propagation."""
     scale = jnp.asarray(dt, dtype=fields[0].dtype) / jnp.asarray(
@@ -141,7 +178,7 @@ def advance_e_tensor_dense(
     node_shape = inverse_offdiagonal.shape[:-1]
     centered_curls = tuple(
         collocate_yee_component(
-            curl, source, "Node", node_shape, cell_widths=cell_widths
+            curl, source, "Node", node_shape, cell_widths=cell_widths, seams=seams
         )
         for curl, source in zip(curls, components, strict=True)
     )
@@ -157,7 +194,12 @@ def advance_e_tensor_dense(
             pair = (min(row, column), max(row, column))
             centered = inverse_offdiagonal[..., cross_component[pair]] * centered_curl
             coupled = coupled + collocate_yee_component(
-                centered, "Node", target, field.shape, cell_widths=cell_widths
+                centered,
+                "Node",
+                target,
+                field.shape,
+                cell_widths=cell_widths,
+                seams=seams,
             )
         updated.append(field + scale * coupled)
     return tuple(updated)

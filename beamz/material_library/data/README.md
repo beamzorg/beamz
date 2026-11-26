@@ -1,6 +1,6 @@
 # Bundled optical data
 
-The four `.yml` files are unmodified snapshots of the public-domain
+The `.yml` files are unmodified snapshots of the public-domain
 [refractiveindex.info database](https://github.com/polyanskiy/refractiveindex.info-database)
 at revision `c5c2f188e848453def5970e347399d653df2ffc2`, distributed under
 CC0 1.0 (see `LICENSE-CC0-1.0.txt`). The catalog records each source URL,
@@ -52,3 +52,20 @@ The generator, synthetic targets, synthetic fits and independently implemented
 Lorentz models use the project's Apache-2.0 license. The four source YAML files
 retain CC0. Glass uses the bundled CC0 Malitson source; no archival glass table
 or fit derived from one is included.
+
+
+## Anisotropic crystals
+
+`anisotropic_catalog.json` feeds `beamz.material_library.anisotropic_library`
+and is rebuilt by `python scripts/build_anisotropic_library.py`. It holds four
+crystals:
+
+- **Sapphire and lithium niobate** are exact conversions of the bundled CC0
+  Sellmeier pages (`Al2O3-Malitson-{o,e}.yml`, `LiNbO3-Zelmon-{o,e}.yml`) into
+  lossless tensor Lorentz poles, with the optic axis on z.
+- **hBN** (Caldwell et al., Nat. Commun. 5, 5221, 2014) and **alpha-MoO3**
+  (Alvarez-Perez et al., Adv. Mater. 32, 1908176, 2020) are independent
+  implementations of the published phonon models; no data tables are bundled.
+  Their Apache-2.0 label covers the implementation, not the publications.
+  Caldwell's supplementary table prints its axis labels swapped relative to its
+  main text; the physical assignment is used.

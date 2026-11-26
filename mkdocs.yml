@@ -10,6 +10,7 @@ theme:
 nav:
   - Getting Started: getting-started.md
   - Material Library: material-library.md
+  - Anisotropic, Hyperbolic, and Gyrotropic Media: anisotropic-media.md
   - Bloch Boundaries and Meta-atoms: bloch-boundaries.md
   - GDSFactory Components: gdsfactory.md
   - Migrating to v0.5: migrating-to-v0.5.md

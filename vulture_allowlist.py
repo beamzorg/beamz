@@ -117,6 +117,7 @@ _.to_spec
 _.from_spec
 _.lorentz
 _.drude
+_.magnetized_plasma
 # singledispatch invokes this registered source compiler.
 _lower_plane_wave_source
 
