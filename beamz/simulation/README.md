@@ -231,6 +231,26 @@ It returns a JAX-native `SimulationState` with differentiable monitor accumulato
 `solver.monitor_fields(state, name)` and `solver.monitor_flux(state, name)` for
 frequency-domain objectives. The [optimization guide](../optimization/README.md)
 covers checkpointing, native CUDA reverse mode, and parameter restrictions.
+
+For a fixed-clock material objective whose reverse sweep exceeds GPU memory,
+use the host checkpoint driver:
+
+```python
+solver = simulation.differentiable(backend="cuda")
+evaluate = solver.host_checkpointed_value_and_grad(
+    material_map, objective, segment_steps=256
+)
+value, gradient = evaluate(parameters)
+```
+
+The material map returns the permittivity argument accepted by the solver.
+The objective consumes the final state. The host driver keeps group boundaries
+in RAM, then replays each group to reconstruct shorter boundaries during the
+backward sweep. The CUDA kernels still perform forward and reverse segments.
+Use a smaller segment size to trade additional host transfers and replay for
+lower peak device memory. Call the returned function from Python, outside
+JAX transformations.
+
 ## Broadband dispersive materials
 
 `bz.PoleResidue(epsilon_inf, poles, frequency_range=(fmin, fmax))` describes

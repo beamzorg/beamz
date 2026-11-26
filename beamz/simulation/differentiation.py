@@ -438,6 +438,35 @@ class DifferentiableSimulation:
                 return spec
         raise ValueError(f"Unknown monitor {monitor!r}")
 
+    def host_checkpointed_value_and_grad(
+        self,
+        material_map,
+        objective,
+        *,
+        segment_steps=256,
+        segments_per_group=None,
+        has_aux=False,
+    ):
+        """Build a material value-and-gradient call using host RAM for checkpoints.
+
+        The material map takes parameters and returns the permittivity argument of
+        the differentiable solver. The objective takes the final simulation state
+        and returns a scalar or a (loss, auxiliary) pair when has_aux is enabled.
+        The returned callable takes parameters and an optional fixed initial_state.
+
+        The driver runs outside JAX transformations. It differentiates the full
+        discrete trajectory while keeping both group and replay checkpoints in
+        host RAM. Sources, the clock, and the initial state are fixed. Smaller
+        segment_steps reduce device memory at the cost of more transfers and
+        host checkpoints. The default group size balances the two sets of host
+        checkpoints.
+        """
+        from beamz.simulation.host_checkpoint import build_host_value_and_grad
+
+        return build_host_value_and_grad(
+            self, material_map, objective, segment_steps, segments_per_group, has_aux
+        )
+
     def monitor_fields(self, state, monitor=0):
         """Return normalized complex DFT fields with shape (6, frequencies, points).
 
