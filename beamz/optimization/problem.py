@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
-
 import jax
 import jax.numpy as jnp
 import numpy as np
 from jax.core import Tracer
 
-from beamz._cache_tokens import cache_token
 from beamz.const import LIGHT_SPEED
 from beamz.design.materials import Material
 from beamz.devices.monitors import FieldMonitor, ModeMonitor
@@ -18,6 +15,10 @@ from beamz.simulation.differentiable import (
     TOPOLOGY_NUMERICS_VERSION,
     topology_coefficients,
     topology_material_grid,
+)
+from beamz.simulation.differentiation import (
+    _checkpoint_interval,
+    build_differentiable_scan,
 )
 from beamz.simulation.execute import (
     _compiled_source_launch_powers,
@@ -31,17 +32,16 @@ from ._validation import check_density, step_count
 from .autodiff import transform_density
 from .objectives import ModePower, WeightedObjective
 from .polygonize import density_to_polygons
-from .result import TopologyResult, load_result
+from .result import TopologyResult, _checkpoint_fingerprint, load_result
 from .topology import TopologySpec, TopologyState, _readonly_array
 
 
 class TopologyProblem:
     """Optimize a topology region against a scalar modal objective.
 
-    Both backends support uniform 2D xy or 3D grids, scalar lossless dielectrics,
-    a fixed mode or Gaussian-beam source, and spectral monitors. The default uses
-    the exact JAX derivative with chunk checkpointing, including CPML and DFT recurrences. Geometry,
-    port modes, boundaries, timestep, and run length stay fixed across iterations.
+    Supports uniform grids, scalar lossless dielectrics, a fixed mode or
+    Gaussian-beam source, and spectral monitors. Geometry, port modes,
+    boundaries, timestep, and run length stay fixed across iterations.
 
     Parameters
     ----------
@@ -54,8 +54,10 @@ class TopologyProblem:
         rewarding transmission and penalizing reflection/unwanted-port power.
         SoftMinModePower targets the weakest selected frequencies instead.
     checkpoint_interval : int, default=32
-        Timestep chunk length for reverse-mode rematerialization. ``None`` retains
-        ordinary reverse-mode history and is intended for small reference tests.
+        Timestep chunk length for reverse-mode rematerialization. With ``None``,
+        JAX retains ordinary history and CUDA balances saved boundary and replay storage.
+    backend : {"jax", "cuda"}, default="jax"
+        Execution backend. CUDA supports exact checkpointed autodiff on 3D grids.
     gradient_backend : {"autodiff", "adjoint"}, default="autodiff"
         Exact checkpointed differentiation through FDTD, or a spectral Maxwell
         adjoint after a pulsed FDTD forward run. The latter runs adjoint FDTD
@@ -72,6 +74,7 @@ class TopologyProblem:
         objective: ModePower | WeightedObjective | None = None,
         *,
         checkpoint_interval: int | None = 32,
+        backend="jax",
         gradient_backend="autodiff",
         adjoint_decay_tolerance=1e-4,
         adjoint_source_grouping="frequency",
@@ -79,6 +82,10 @@ class TopologyProblem:
     ):
         if gradient_backend not in ("autodiff", "adjoint"):
             raise ValueError("gradient_backend must be 'autodiff' or 'adjoint'.")
+        if backend not in ("jax", "cuda"):
+            raise ValueError("backend must be 'jax' or 'cuda'.")
+        if backend == "cuda" and gradient_backend == "adjoint":
+            raise ValueError("The spectral Maxwell adjoint requires backend='jax'.")
         if (
             isinstance(adjoint_decay_tolerance, bool)
             or not isinstance(adjoint_decay_tolerance, (int, float))
@@ -92,6 +99,7 @@ class TopologyProblem:
             raise ValueError("adjoint_source_grouping must be frequency or auto.")
         self.adjoint_source_grouping = adjoint_source_grouping
         self.gradient_backend = gradient_backend
+        self.backend = backend
         self.adjoint_decay_tolerance = float(adjoint_decay_tolerance)
         self.simulation = simulation
         self.topology = topology
@@ -109,8 +117,12 @@ class TopologyProblem:
             if objective is not None
             else tuple((name, None) for name in output_monitor_names or ())
         )
-        self.checkpoint_interval = checkpoint_interval
-        self.program = simulation.compile(backend="jax")
+        self.program = simulation.compile(backend=backend)
+        self.checkpoint_interval = (
+            _checkpoint_interval(checkpoint_interval, self.program)
+            if backend == "cuda"
+            else checkpoint_interval
+        )
         self._validate()
         self._mask = jnp.asarray(topology.region_mask)
         self._base_eps = jnp.asarray(self.program.grid.material_grid.permittivity)
@@ -137,7 +149,8 @@ class TopologyProblem:
             term.bind_spectrum(empty_results, self.program, cache)
             for term in (() if objective is None else objective.terms)
         ]
-        scan = build_scan(self.program, checkpoint_interval=checkpoint_interval)
+        build = build_differentiable_scan if backend == "cuda" else build_scan
+        scan = build(self.program, checkpoint_interval=self.checkpoint_interval)
 
         def simulate(density, beta):
             eps = self._permittivity(density, beta)
@@ -165,18 +178,22 @@ class TopologyProblem:
                 self, reduce_objective, decay_tolerance=self.adjoint_decay_tolerance
             )
             self._value_and_grad = self._spectral_adjoint.value_and_grad
-        token = cache_token(
+        self.fingerprint = self._fingerprint()
+
+    def _fingerprint(self, *, legacy_defaults=False):
+        return _checkpoint_fingerprint(
             (
                 TOPOLOGY_NUMERICS_VERSION,
-                simulation,
-                topology,
-                objective or self.frequency_requests,
-                gradient_backend,
+                self.simulation,
+                self.topology,
+                self.objective or self.frequency_requests,
+                self.gradient_backend,
                 self.adjoint_decay_tolerance,
-                adjoint_source_grouping,
-            )
+                self.adjoint_source_grouping,
+            ),
+            self.simulation,
+            legacy_defaults=legacy_defaults,
         )
-        self.fingerprint = hashlib.sha256(repr(token).encode()).hexdigest()
 
     def simulation_data(self, density, *, beta=1.0, monitor_names=None):
         """Run and return differentiable ``data[name].amps.sel(...).values``.
@@ -198,9 +215,10 @@ class TopologyProblem:
         if not names or len(set(names)) != len(names):
             raise ValueError("monitor_names must be nonempty and unique.")
         if names not in self._modal_data_bindings:
-            self._modal_data_bindings[names] = bind_modal_data(
-                self._binding_results, self.program, names
-            )
+            with jax.ensure_compile_time_eval():
+                self._modal_data_bindings[names] = bind_modal_data(
+                    self._binding_results, self.program, names
+                )
         values = jnp.asarray(density, dtype=jnp.float32)
         if values.shape != self.topology.region_mask.shape:
             raise ValueError("Density must match the topology mask shape.")
@@ -575,6 +593,11 @@ class TopologyProblem:
             fingerprint=self.fingerprint,
             optimizer=self.topology._optimizer(),
             shape=self.topology.region_mask.shape,
+            legacy_fingerprint=(
+                (lambda: self._fingerprint(legacy_defaults=True))
+                if self.backend == "jax"
+                else None
+            ),
         )
 
     def material_simulation(self, density, *, beta=1.0):

@@ -159,9 +159,9 @@ def test_canonical_texy_pec_masks_cover_tangential_electric_samples():
     masks = compile_metallic_masks(
         component_shapes(shape, "te"), shape, (), polarization_2d="te"
     )
-    assert bool(jnp.all(masks["Ex"][[0, -1], :]))
-    assert bool(jnp.all(masks["Ey"][:, [0, -1]]))
-    assert not bool(jnp.any(masks["Hz"]))
+    assert np.all(masks["Ex"][[0, -1], :])
+    assert np.all(masks["Ey"][:, [0, -1]])
+    assert not np.any(np.asarray(masks["Hz"]))
 
 
 def test_te_vacuum_packet_has_analytical_wave_speed():

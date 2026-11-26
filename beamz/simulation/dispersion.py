@@ -60,7 +60,9 @@ def periodic_support_average(value, cell_shape, periodic_axes, geometry=None):
     return value
 
 
-def compile_dispersion(grid, dt, periodic_axes=frozenset(), *, complex_fields=False):
+def compile_dispersion(
+    grid, dt, periodic_axes=frozenset(), *, complex_fields=False, tensor_media=True
+):
     regions = []
     alpha = {}
     for medium, supports in grid.material_grid.dispersion:
@@ -134,7 +136,7 @@ def compile_dispersion(grid, dt, periodic_axes=frozenset(), *, complex_fields=Fa
         tuple(coefficients),
         interfaces,
         complex_fields,
-        compile_anisotropic(grid, dt, periodic_axes),
+        compile_anisotropic(grid, dt, periodic_axes) if tensor_media else None,
     )
 
 

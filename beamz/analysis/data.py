@@ -139,6 +139,8 @@ def analysis_inputs(value) -> Mapping[str, AnalysisData]:
 
 def analysis_data(value, name: str | None = None) -> AnalysisData:
     """Return one named contract, or the sole available contract."""
+    if name is not None and isinstance(value, SimulationResults) and value.monitors:
+        return _lower_monitor(value.metadata, value.monitors[str(name)])
     inputs = analysis_inputs(value)
     if name is not None:
         return inputs[str(name)]

@@ -7,6 +7,27 @@
 
 int main() {
   using namespace beamz::cuda::sharded;
+  // Sources, device snapshots and direct halos must see the same compact row
+  // layout. Each coordinate maps to one physical float, including row tails.
+  std::vector<float> packed(3 * 4 * 67, -1);
+  BeamzBuffer rows{packed.data(), 3, kBeamzF32, {3, 4, 67, 0}, 64, 4 * 64, nullptr, -1};
+  for (int z = 0; z < 3; ++z)
+    for (int y = 0; y < 4; ++y)
+      for (int x = 0; x < 67; ++x) {
+        const int p[] = {z, y, x}, logical = (z * 4 + y) * 67 + x;
+        const int physical = BeamzPhysicalIndex(rows, logical);
+        assert(physical == FieldOffset(rows, p));
+        assert(packed.at(physical) == -1);
+        packed[physical] = float(logical);
+      }
+  for (int axis = 0; axis < 3; ++axis) {
+    const int local[] = {1, 2, 65};
+    rows.rank = 4;
+    rows.dims[3] = rows.dims[axis] - 1;
+    int p[] = {local[0], local[1], local[2]};
+    p[axis] = int(rows.dims[3]);
+    assert(HaloValue(rows, local, axis) == float((p[0] * 4 + p[1]) * 67 + p[2]));
+  }
   BeamzLaunch launch{};
   int32_t geometry[21]{};
   launch.shard_geometry.data = geometry;

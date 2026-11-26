@@ -44,6 +44,7 @@ class RunSpec:
     cuda_memory_policy: str = "auto"
     cuda_schedule: str = "streamed"
     cuda_expected_runs: int = 1
+    _cuda_memory_budget_bytes: int = field(default=0, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +74,7 @@ class SimulationRequest:
         hash=False,
         repr=False,
     )
+    _native_preparation: bool = field(default=False, kw_only=True)
 
     def __post_init__(self) -> None:
         # Snapshot the only request member that may arrive as a mutable backend object.
@@ -85,7 +87,7 @@ class SimulationRequest:
 # one explicit state value below.
 
 
-@dataclass(frozen=True, slots=True, eq=False)
+@dataclass(frozen=True, slots=True, eq=False, weakref_slot=True)
 class CompiledGrid:
     """One lowered Yee lattice with materials, masks, and absorber profiles."""
 
@@ -134,6 +136,9 @@ class CompiledGrid:
 
 
 def _copy_initial_field(value):
+    # A compiled zero lattice is metadata, not a second resident field bank.
+    if isinstance(value, np.ndarray) and value.size and not any(value.strides):
+        return jnp.full(value.shape, value.flat[0], dtype=value.dtype)
     # Commit placement before copying: jnp.array(..., device=source.sharding)
     # can execute the copy on the default accelerator before moving it back.
     placement = getattr(value, "sharding", None)
@@ -351,9 +356,9 @@ class CpmlTerm:
     component: str
     axis: int
     sign: float
-    a: jnp.ndarray
-    b: jnp.ndarray
-    inv_kappa: jnp.ndarray
+    a: jax.Array | np.ndarray
+    b: jax.Array | np.ndarray
+    inv_kappa: jax.Array | np.ndarray
     slab: CpmlPackedSlabSpec
 
 
@@ -514,6 +519,8 @@ class RunConfig:
     cuda_memory_policy: str = "auto"
     cuda_schedule: str = "streamed"
     cuda_expected_runs: int = 1
+    _cuda_memory_budget_bytes: int = field(default=0, kw_only=True)
+    cuda_program_target: str | None = None
 
 
 @dataclass(frozen=True, slots=True, eq=False)

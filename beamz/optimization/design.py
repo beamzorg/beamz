@@ -26,13 +26,16 @@ class InverseDesign(Specification):
     adjoint_source_grouping: str = field(
         default="frequency", metadata={"beamz_cache": False}
     )
+    backend: str = field(
+        default="jax", metadata={"beamz_checkpoint_legacy_default": True}
+    )
     _problem: TopologyProblem = field(init=False, repr=False, compare=False)
     _slices: tuple = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         sim, region = self.simulation, self.design_region
         center = np.asarray(region.center) + np.asarray(sim.coordinate_offset)
-        shape = sim.compile(backend="jax").grid.material_grid.shape
+        shape = sim._material_grid().shape
         ndim = len(shape)
         if region.parameterization == "volumetric" and ndim != 3:
             raise ValueError("Volumetric design regions require a 3D simulation.")
@@ -87,6 +90,7 @@ class InverseDesign(Specification):
             sim,
             topology,
             output_monitor_names=names,
+            backend=self.backend,
             gradient_backend=self.gradient_backend,
             adjoint_decay_tolerance=self.adjoint_decay_tolerance,
             checkpoint_interval=self.checkpoint_interval,

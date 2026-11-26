@@ -41,8 +41,9 @@ plots, open [`cuda_autodiff_waveguide_bend.ipynb`](../../examples/notebooks/cuda
   kernels for the existing single-GPU, float32 3D physics. Both lossy materials
   and mixed absorbing/PEC faces are supported. The CUDA component must be
   rebuilt for ABI 28.
-- `checkpoint_interval=None` selects approximately sqrt(T) steps per chunk;
-  a positive integer controls the memory/recomputation tradeoff. Zero retains
+- `checkpoint_interval=None` balances saved field/CPML boundaries against
+  replay storage on CUDA and selects approximately sqrt(T) steps on JAX.
+  A positive integer sets chunk length explicitly. Zero retains
   the trajectory for small reference problems. Chunk recomputation works with
   conductive materials and CPML; no time-reversible assumption is needed.
 - `solver(epsilon, conductivity=sigma, state=initial_state,
@@ -105,14 +106,18 @@ continues to provide ordinary decoded analysis results; use the differentiable
 state and helpers within a gradient objective.
 
 CUDA provides first-order reverse mode; forward-mode JVPs and higher derivatives
-of native FFI calls are not implemented. BF16 absorber state, sharded execution,
-and coupled full-tensor constitutive updates are outside the native autodiff
+of native FFI calls are not implemented. Sharded execution and coupled full-tensor constitutive updates are outside the native autodiff
 path. For JAX tensor optimization or independent magnetic losses, use
 `solver.run_coefficients(state, coefficients, source_amplitudes=None)` with
 dynamic `UpdateCoefficients`. Checkpointing stores full chunk-boundary states, so
 large field-recorder histories still consume their configured storage.
 
 ## Recommended workflow
+
+For exact 3D checkpointed gradients, pass `backend="cuda"` with
+`gradient_backend="autodiff"` to either `TopologyProblem` or `InverseDesign`.
+The same modal objectives and `AdamOptimizer` work with that selection. The
+spectral Maxwell adjoint continues to use the JAX execution backend.
 
 Given an ordinary `simulation` with a fixed mode or Gaussian-beam source and monitors:
 
@@ -210,6 +215,12 @@ searches additional eigenmode candidates before applying TE/TM preference,
 including for a one-mode monitor request. Earlier one-candidate requests could
 select the same physical mode for both polarizations. Frequency-aligned reference
 normalization corrections are also included in this fingerprint.
+
+Schema 2 checkpoints from before the CUDA backend and source taper options can
+resume with the matching JAX and untapered source configuration. Loading
+validates the legacy fingerprint and the next save writes the current one.
+Checkpoints created with the earlier 2D taper behavior use a different
+excitation and require a fresh run.
 
 See the [mode-converter notebook](../../examples/notebooks/topology_mode_converter.ipynb)
 and [scheduled WDM notebook](../../examples/notebooks/topology_wdm_4channel.ipynb)

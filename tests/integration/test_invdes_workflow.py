@@ -1,6 +1,7 @@
 """Modal post-processing, gradient selection, and optimizer lifecycle."""
 
 import json
+from dataclasses import replace
 
 import jax
 import jax.numpy as jnp
@@ -8,7 +9,7 @@ import numpy as np
 import pytest
 
 import beamz.optimization as bi
-from tests.topology_case import make_problem
+from tests.topology_case import legacy_checkpoint_fingerprint, make_problem
 
 pytestmark = pytest.mark.optimization
 
@@ -101,6 +102,11 @@ def test_optimizer_history_resume_and_checkpoint_identity(
     )
     full = optimizer.run(transmission, steps=3)
     partial = optimizer.run(transmission, steps=1, checkpoint=path)
+    legacy = legacy_checkpoint_fingerprint(lambda: optimizer._fingerprint(transmission))
+    assert legacy != partial.fingerprint
+    replace(partial, fingerprint=legacy).save(path)
+    with pytest.raises(ValueError, match="different design"):
+        optimizer.updated_copy(learning_rate=0.03).load_result(path, transmission)
     seen = []
 
     def callback(result):

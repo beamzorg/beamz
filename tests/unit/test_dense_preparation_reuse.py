@@ -82,3 +82,62 @@ def test_changed_physics_does_not_reuse_material_preparation(changed):
     other = updated.compile(num_steps=9, backend="jax")
     assert other.coefficients is not original.coefficients
     assert other.grid is not original.grid
+
+
+def test_direct_yee_permittivity_does_not_build_discarded_voxel_interpolants(
+    monkeypatch,
+):
+    import beamz.lattice as lattice
+    from beamz.lattice import component_shapes
+
+    shape = (8, 10, 12)
+    supports = component_shapes(shape)
+    direct = {"eps_" + a: np.full(supports["E" + a], 2.25, np.float32) for a in "xyz"}
+    grid = MaterialGrid(
+        np.ones(shape),
+        0.0,
+        1.0,
+        1e-7,
+        shape,
+        yee_materials=direct,
+        smoothing="farjadpour_diagonal",
+    )
+
+    def discarded(*args, **kwargs):
+        pytest.fail("Already-sampled Yee permittivity must not be reinterpolated")
+
+    monkeypatch.setattr(
+        lattice, "sample_voxel_grid_at_e_component_3d_centered", discarded
+    )
+    import beamz as bz
+
+    program = bz.Simulation(material_grid=grid, time=np.arange(3) * 1e-17).compile(
+        backend="jax"
+    )
+    for a in "xyz":
+        np.testing.assert_array_equal(
+            getattr(program.grid, "eps_" + a), direct["eps_" + a]
+        )
+
+
+@pytest.mark.parametrize("value,dtype", [(0.0, np.float32), (2 + 3j, np.complex64)])
+def test_initial_broadcast_fields_allocate_on_device_without_host_materialization(
+    monkeypatch, value, dtype
+):
+    import jax.numpy as jnp
+
+    from beamz.simulation.model import _copy_initial_field
+
+    lattice = np.broadcast_to(np.asarray(value, dtype=dtype), (5, 7, 9))
+    original = jnp.array
+
+    def array(data, *args, **kwargs):
+        assert data is not lattice, "Do not materialize a full host field to transfer"
+        return original(data, *args, **kwargs)
+
+    monkeypatch.setattr(jnp, "array", array)
+    first, second = _copy_initial_field(lattice), _copy_initial_field(lattice)
+    np.testing.assert_array_equal(first, np.full(lattice.shape, value, dtype=dtype))
+    first = first.at[0, 0, 0].set(9)
+    np.testing.assert_array_equal(second, lattice)
+    assert np.asarray(first)[0, 0, 0] == 9

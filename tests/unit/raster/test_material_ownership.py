@@ -308,3 +308,38 @@ def test_rectangular_polygon_clipping_preserves_box_mirror_symmetry():
         np.testing.assert_array_equal(
             value, np.broadcast_to(value[..., :1], value.shape)
         )
+
+
+def test_projected_solver_raster_keeps_every_component_and_separate_cache(tmp_path):
+    from beamz.design.discretization import MaterialGrid
+
+    grid = raster.Grid.uniform((0, 0, 0), (1, 1, 1), (40, 40, 45))
+    scene = raster.Scene(
+        MATERIALS,
+        (raster.Object(raster.Box((0.3, 0.4, 0.95), (0.8, 0.7, 1.0)), 1),),
+    )
+    full = raster.rasterize(scene, grid, cache_directory=tmp_path)
+    projected = raster.rasterize(
+        scene, grid, cache_directory=tmp_path, _for_solver=True
+    )
+    assert not full.cache_hit and not projected.cache_hit
+    assert len(list(tmp_path.glob("*.npz"))) == 2
+    for name in ("epsilon_ex", "epsilon_ey", "epsilon_ez"):
+        assert projected.yee_tensors[name].shape[0] == 1
+    assert projected.yee_tensors["mu_hx"].strides == (0, 0, 0, 0)
+    expected = MaterialGrid.from_raster_result(full)
+    for item in (
+        projected,
+        raster.rasterize(scene, grid, cache_directory=tmp_path, _for_solver=True),
+    ):
+        actual = MaterialGrid.from_raster_result(item)
+        for name in ("yee_materials", "tensors", "yee_tensors"):
+            assert getattr(actual, name).keys() == getattr(expected, name).keys()
+            for field, value in getattr(actual, name).items():
+                np.testing.assert_array_equal(
+                    value.view("u4"), getattr(expected, name)[field].view("u4")
+                )
+        for name in ("permittivity", "permeability", "conductivity"):
+            np.testing.assert_array_equal(
+                getattr(actual, name).view("u4"), getattr(expected, name).view("u4")
+            )

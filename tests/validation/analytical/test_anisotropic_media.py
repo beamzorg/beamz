@@ -381,7 +381,9 @@ def test_static_permeability_enforces_material_cfl(permeability, polarization):
         steps=201,
         boundaries=[bz.Periodic(axes=("x", "y"))],
     )
-    with pytest.raises(ValueError, match="Static tensor media.*CFL"):
+    with pytest.raises(
+        ValueError, match="(?:Static tensor media|Magnetic material).*CFL"
+    ):
         _program(medium, polarization, dt=0.5 * spacing / LIGHT_SPEED, **options)
     simulation, _, _ = _program(
         medium, polarization, dt=0.2 * spacing / LIGHT_SPEED, **options

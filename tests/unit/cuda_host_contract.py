@@ -11,6 +11,8 @@ from pathlib import Path
 
 import jax
 
+from tests.cuda_source_layout import CUDA_INCLUDE_FLAGS
+
 _LIBRARIES = []
 
 
@@ -40,8 +42,8 @@ def register_host_sharded_ffi():
                 *sanitizer_flags,
                 "-DBEAMZ_CUDA_CPU_CONTRACT",
                 f"-I{jax.ffi.include_dir()}",
-                f"-I{root / 'cuda/src'}",
-                str(root / "cuda/src/ffi_handler.cc"),
+                *CUDA_INCLUDE_FLAGS,
+                str(root / "cuda/src/bindings/ffi_handler.cc"),
                 str(root / "tests/unit/cuda_sharded_host.cc"),
                 "-o",
                 str(library),

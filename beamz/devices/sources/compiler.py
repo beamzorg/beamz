@@ -11,9 +11,11 @@ import jax.numpy as jnp
 import numpy as np
 
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
+from beamz.design.grid import RectilinearGrid
 from beamz.lattice import (
     canonical_component_2d,
     component_axis_offsets_3d,
+    component_coordinates_rectilinear,
     component_material_at,
     component_shape_3d,
     public_component_2d,
@@ -25,10 +27,7 @@ from .mode_launch import (
     ModeLaunchPlan,
     plan_mode_source_launch,
 )
-from .planar_tfsf import (
-    compute_discrete_3d_e_phasor_residuals,
-    compute_discrete_3d_h_phasor_residuals,
-)
+from .planar_tfsf import compute_discrete_3d_phasor_residuals
 from .specs import (
     CustomSource,
     FieldAxis3D,
@@ -41,8 +40,10 @@ from .specs import (
 )
 from .time import (
     analytic_subband_waveforms,
+    band_taper_weights,
     interpolate_time_signal,
     sample_source_waveforms,
+    sample_tapered_mode_waveform,
     sample_waveform,
 )
 
@@ -504,7 +505,7 @@ def _lower_plane_wave_source(source: PlaneWaveSource, ctx: SourceLoweringContext
         return plan
     grid = ctx.grid
     assert grid is not None  # The rectilinear operator requires grid metrics.
-    if np.asarray(ctx.fields.permittivity).ndim != 3:
+    if ctx.fields.permittivity.ndim != 3:
         raise ValueError("Rectilinear PlaneWaveSource requires a 3D grid.")
     axis, sign = _parse_direction(source.direction)
     axis_id = _AXES.index(axis)
@@ -591,14 +592,12 @@ def _lower_gaussian_beam_source(
     source: GaussianBeamSource,
     ctx: SourceLoweringContext,
 ) -> CompiledInjectionPlan:
-    if _source_requires_rectilinear_operator(ctx):
-        raise NotImplementedError(
-            "GaussianBeamSource on a rectilinear grid requires a metric-aware "
-            "phasor-residual operator; use GaussianSource or a uniform grid."
-        )
+    grid = ctx.grid if _source_requires_rectilinear_operator(ctx) else None
     waveform = _sample_temporal_waveform(source.source_time, ctx)
     return _field_profile_injection_plan(
-        gaussian_beam_field_profile(source, ctx.fields, resolution=ctx.resolution),
+        gaussian_beam_field_profile(
+            source, ctx.fields, resolution=ctx.resolution, grid=grid
+        ),
         waveform,
         ctx,
         max_shift=source.max_shift,
@@ -611,7 +610,7 @@ def _lower_gaussian_source(
     source: GaussianSource,
     ctx: SourceLoweringContext,
 ) -> CompiledInjectionPlan:
-    is_3d = np.asarray(ctx.fields.permittivity).ndim == 3
+    is_3d = ctx.fields.permittivity.ndim == 3
     is_te = not is_3d and ctx.domain is not None and ctx.domain.polarization_2d == "te"
     component = "Hz" if is_te else "Ez"
     target = getattr(ctx.fields, component)
@@ -656,10 +655,7 @@ def _lower_mode_source(
     source: ModeSource,
     ctx: SourceLoweringContext,
 ) -> CompiledInjectionPlan:
-    if (
-        np.asarray(ctx.fields.permittivity).ndim == 3
-        and source.profile_frequencies().size > 1
-    ):
+    if ctx.fields.permittivity.ndim == 3 and source.profile_frequencies().size > 1:
         return _lower_broadband_mode_source(source, ctx)
 
     from beamz.design.material_views import fields_at_frequency
@@ -679,6 +675,7 @@ def _lower_mode_source(
         ctx,
         offset_half_step=not is_3d,
         include_quadrature=True,
+        taper=source.band_taper,
     )
     return _mode_launch_injection_plan(launch_plan, waveform, ctx)
 
@@ -695,17 +692,26 @@ def _sample_temporal_waveform(
     *,
     offset_half_step: bool = False,
     include_quadrature: bool = True,
+    taper=None,
 ) -> TemporalWaveform:
-    values, quadrature = sample_source_waveforms(
-        signal,
-        t0=ctx.t0,
-        dt=ctx.dt,
-        num_steps=ctx.num_steps,
-        total_steps=ctx.total_steps,
-        offset_fn=(lambda t, dt: t + 0.5 * dt)
-        if offset_half_step
-        else (lambda t, dt: t),
-    )
+    if taper is None:
+        values, quadrature = sample_source_waveforms(
+            signal,
+            t0=ctx.t0,
+            dt=ctx.dt,
+            num_steps=ctx.num_steps,
+            total_steps=ctx.total_steps,
+            offset_fn=(lambda t, dt: t + 0.5 * dt) if offset_half_step else None,
+        )
+    else:
+        _, values, quadrature = sample_tapered_mode_waveform(
+            signal,
+            taper,
+            t0=ctx.t0,
+            dt=ctx.dt,
+            num_steps=ctx.total_steps,
+            half_step=offset_half_step,
+        )
     return TemporalWaveform(
         values=jnp.asarray(values, dtype=jnp.float32),
         quadrature=(
@@ -725,10 +731,15 @@ def _lower_broadband_mode_source(
     analytic = np.asarray(sampled.values, dtype=np.float64) + 1j * np.asarray(
         sampled.quadrature, dtype=np.float64
     )
+    taper = None
+    if src.band_taper is not None:
+        times = ctx.t0 + np.arange(analytic.size, dtype=np.float64) * ctx.dt
+        taper = band_taper_weights(times, src.band_taper)
     nodes, subbands = analytic_subband_waveforms(
         analytic,
         dt=ctx.dt,
         profile_frequencies=src.profile_frequencies(),
+        taper=taper,
     )
     plans = []
     for freq in nodes:
@@ -736,6 +747,7 @@ def _lower_broadband_mode_source(
         profile_src = src.updated_copy(
             source_time=profile_source_time,
             mode_spec=replace(src.mode_spec, num_freqs=1),
+            band_taper=None,
         )
         plan = plan_mode_source_launch(
             profile_src,
@@ -933,7 +945,7 @@ def gaussian_spatial_profile(
 def _source_requires_rectilinear_operator(ctx: SourceLoweringContext) -> bool:
     if ctx.grid is None:
         return False
-    is_3d = np.asarray(ctx.fields.permittivity).ndim == 3
+    is_3d = ctx.fields.permittivity.ndim == 3
     axes = ("x", "y", "z") if is_3d else ("x", "y")
     return ctx.grid.metric_kind_for(axes) != "isotropic_uniform"
 
@@ -984,9 +996,11 @@ def gaussian_beam_waist_radius(source) -> float:
     return 0.25 * float(np.min(values))
 
 
-def gaussian_beam_field_profile(source, fields, *, resolution: float) -> FieldProfile3D:
-    permittivity = np.asarray(fields.permittivity)
-    if permittivity.ndim != 3:
+def gaussian_beam_field_profile(
+    source, fields, *, resolution: float, grid: RectilinearGrid | None = None
+) -> FieldProfile3D:
+    shape = fields.permittivity.shape
+    if len(shape) != 3:
         raise ValueError("GaussianBeamSource currently supports 3D simulations only.")
     return GaussianBeamProfile(
         center=source.center,
@@ -1002,7 +1016,8 @@ def gaussian_beam_field_profile(source, fields, *, resolution: float) -> FieldPr
         power=source.power,
     ).field_profile(
         resolution=float(resolution),
-        grid_shape=tuple(map(int, permittivity.shape)),
+        grid_shape=tuple(map(int, shape)),
+        grid=grid,
     )
 
 
@@ -1142,6 +1157,7 @@ class GaussianBeamProfile:
         *,
         resolution: float,
         grid_shape: tuple[int, ...],
+        grid: RectilinearGrid | None = None,
     ) -> FieldProfile3D:
         """Sample the Gaussian beam on a Yee source plane."""
         resolution = float(resolution)
@@ -1152,13 +1168,15 @@ class GaussianBeamProfile:
         grid_shape = (int(grid_shape[0]), int(grid_shape[1]), int(grid_shape[2]))
         if any(v <= 1 for v in grid_shape):
             raise ValueError("grid_shape dimensions must be greater than one.")
+        if grid is not None and grid.shape_zyx != grid_shape:
+            raise ValueError("Gaussian beam grid and field shape must match.")
 
         axis = self.axis
         direction_sign = self.direction_sign
         center_xyz: dict[FieldAxis3D, float] = dict(
             zip(_AXES, _as_xyz(self.center, name="center"), strict=True)
         )
-        transverse_slices = self._transverse_slices(resolution, grid_shape)
+        transverse_slices = self._transverse_slices(resolution, grid_shape, grid=grid)
         phase_ref_coord = float(center_xyz[axis])
         phase_plane_coord = float(center_xyz[axis])
         k_vector = self.propagation_vector()
@@ -1172,6 +1190,7 @@ class GaussianBeamProfile:
         amplitude = self._power_amplitude_scale(
             resolution,
             transverse_slices,
+            grid=grid,
             k_normal_abs=abs(
                 float(np.dot(self.propagation_unit_vector(), _unit_vector(axis)))
             ),
@@ -1185,24 +1204,23 @@ class GaussianBeamProfile:
                 resolution=resolution,
                 grid_shape=grid_shape,
                 transverse_slices=transverse_slices,
+                grid=grid,
             )
             coords = self._component_coordinate_arrays(
                 component,
                 index,
                 resolution=resolution,
+                grid=grid,
             )
-            scalar = amplitude * self._scalar_profile(
+            scalar = self._scalar_profile(
                 coords,
                 center_xyz=center_xyz,
-                phase_ref_coord=phase_ref_coord,
                 k_vector=k_vector,
-                k_axis=k_axis,
             )
             vector = e_hat if component.startswith("E") else h_hat
             component_axis = cast(FieldAxis3D, component[1].lower())
-            components[component] = (
-                scalar * float(vector[_AXES.index(component_axis)])
-            ).astype(np.complex128, copy=False)
+            scalar *= amplitude * float(vector[_AXES.index(component_axis)])
+            components[component] = scalar
             indices[component] = index
 
         return FieldProfile3D(
@@ -1214,6 +1232,7 @@ class GaussianBeamProfile:
             k_axis=k_axis,
             phase_ref_coord=phase_ref_coord,
             phase_plane_coord=phase_plane_coord,
+            grid=grid,
         )
 
     def _transverse_extents(self) -> tuple[float, float]:
@@ -1236,6 +1255,8 @@ class GaussianBeamProfile:
         self,
         resolution: float,
         grid_shape: tuple[int, int, int],
+        *,
+        grid: RectilinearGrid | None = None,
     ) -> dict[FieldAxis3D, slice]:
         center_xyz: dict[FieldAxis3D, float] = dict(
             zip(_AXES, _as_xyz(self.center, name="center"), strict=True)
@@ -1245,8 +1266,14 @@ class GaussianBeamProfile:
         dims = {"z": grid_shape[0], "y": grid_shape[1], "x": grid_shape[2]}
         for axis_name, extent in zip(_TRANSVERSE_AXES[self.axis], extents, strict=True):
             center = float(center_xyz[axis_name])
-            start = int(np.floor((center - 0.5 * extent) / resolution))
-            stop = int(np.ceil((center + 0.5 * extent) / resolution))
+            lower, upper = center - 0.5 * extent, center + 0.5 * extent
+            if grid is None:
+                start = int(np.floor(lower / resolution))
+                stop = int(np.ceil(upper / resolution))
+            else:
+                edges = grid.axis_edges(axis_name)
+                start = int(np.searchsorted(edges, lower, side="right")) - 1
+                stop = int(np.searchsorted(edges, upper))
             start = max(0, min(start, int(dims[axis_name]) - 1))
             stop = max(start + 1, min(stop, int(dims[axis_name])))
             out[axis_name] = slice(start, stop)
@@ -1259,18 +1286,25 @@ class GaussianBeamProfile:
         resolution: float,
         grid_shape: tuple[int, int, int],
         transverse_slices: dict[FieldAxis3D, slice],
-    ) -> tuple[slice, slice, slice]:
+        grid: RectilinearGrid | None = None,
+    ) -> FieldIndex3D:
         center_xyz = dict(zip(_AXES, _as_xyz(self.center, name="center"), strict=True))
         offsets = component_axis_offsets_3d(component)
         field_shape = _component_field_shape(component, grid_shape)
         items: list[int | slice] = []
         for dim, axis_name in enumerate(_INDEX_AXES):
             if axis_name == self.axis:
-                raw = int(
-                    round(
-                        float(center_xyz[axis_name]) / resolution - offsets[axis_name]
+                if grid is None:
+                    raw = int(
+                        round(center_xyz[axis_name] / resolution - offsets[axis_name])
                     )
-                )
+                else:
+                    coords = (
+                        grid.centers(axis_name)
+                        if offsets[axis_name]
+                        else grid.axis_edges(axis_name)
+                    )
+                    raw = int(np.argmin(np.abs(coords - center_xyz[axis_name])))
                 items.append(max(0, min(raw, int(field_shape[dim]) - 1)))
                 continue
             source_slice = transverse_slices[axis_name]
@@ -1288,71 +1322,90 @@ class GaussianBeamProfile:
             ):
                 stop += 1
             items.append(slice(start, stop))
-        return tuple(items)  # type: ignore[return-value]
+        return (items[0], items[1], items[2])
 
     def _component_coordinate_arrays(
         self,
         component: str,
-        index: tuple[slice, slice, slice],
+        index: FieldIndex3D,
         *,
         resolution: float,
+        grid: RectilinearGrid | None = None,
     ) -> dict[FieldAxis3D, np.ndarray]:
         offsets = component_axis_offsets_3d(component)
-        axis_values: dict[FieldAxis3D, np.ndarray | float] = {}
+        axis_values: dict[FieldAxis3D, np.ndarray] = {}
         mesh_axes: list[FieldAxis3D] = []
         mesh_values: list[np.ndarray] = []
+        physical = (
+            component_coordinates_rectilinear(component, grid)
+            if grid is not None
+            else None
+        )
         for axis_name, item in zip(_INDEX_AXES, index, strict=True):
-            if isinstance(item, slice):
+            offset = offsets[axis_name]
+            if physical is not None:
+                values = physical[axis_name][item]
+            elif isinstance(item, slice):
                 values = (
-                    np.arange(
-                        int(item.start or 0), int(item.stop or 0), dtype=np.float64
-                    )
-                    + float(offsets[axis_name])
+                    np.arange(item.start, item.stop, dtype=np.float64) + offset
                 ) * resolution
-                axis_values[axis_name] = values
+            else:
+                values = (int(item) + offset) * resolution
+            coords = np.asarray(values)
+            axis_values[axis_name] = coords
+            if isinstance(item, slice):
                 mesh_axes.append(axis_name)
-                mesh_values.append(values)
-            else:
-                axis_values[axis_name] = (
-                    int(item) + float(offsets[axis_name])
-                ) * resolution
+                mesh_values.append(coords)
 
-        meshes = np.meshgrid(*mesh_values, indexing="ij")
-        coords: dict[FieldAxis3D, np.ndarray] = {}
-        shape = meshes[0].shape if meshes else ()
-        for axis_name, axis_value in axis_values.items():
-            if axis_name in mesh_axes:
-                coords[axis_name] = meshes[mesh_axes.index(axis_name)]
-            else:
-                coords[axis_name] = np.full(shape, float(axis_value), dtype=np.float64)
-        return coords
+        axis_values.update(
+            zip(
+                mesh_axes,
+                np.meshgrid(*mesh_values, indexing="ij", sparse=True),
+                strict=True,
+            )
+        )
+        return axis_values
 
     def _scalar_profile(
         self,
         coords: Mapping[FieldAxis3D, np.ndarray],
         *,
         center_xyz: Mapping[FieldAxis3D, float],
-        phase_ref_coord: float,
         k_vector: np.ndarray,
-        k_axis: float,
     ) -> np.ndarray:
-        r = np.stack(
-            [coords[axis] - float(center_xyz[axis]) for axis in _AXES],
-            axis=0,
+        # Keep coordinates as broadcastable 1D axes. Dense coordinate stacks
+        # and BLAS calls are unnecessary for these three-term projections.
+        r = [coords[axis] - float(center_xyz[axis]) for axis in _AXES]
+        first, second = (_AXES.index(axis) for axis in _TRANSVERSE_AXES[self.axis])
+        a, b = r[first], r[second]
+        radius, curvature, gouy = self._beam_radius_curvature_gouy()
+        radius2 = max(radius**2, 1e-300)
+        curvature_phase = (
+            -self.medium_wavenumber / (2.0 * curvature)
+            if np.isfinite(curvature)
+            else 0.0
         )
+        if self.angle_theta == 0.0:
+            # The transverse radius squared is a sum of two independent
+            # squares, so exponentiate only the two 1D sample axes.
+            coefficient = complex(-1.0 / radius2, curvature_phase)
+            return np.exp(coefficient * a**2 + 1j * gouy) * np.exp(coefficient * b**2)
+
         e_hat = self.electric_unit_vector()
         v_hat = self.magnetic_unit_vector()
-        u_coord = np.tensordot(e_hat, r, axes=(0, 0))
-        v_coord = np.tensordot(v_hat, r, axes=(0, 0))
+        u_coord = sum(weight * value for weight, value in zip(e_hat, r, strict=True))
+        v_coord = sum(weight * value for weight, value in zip(v_hat, r, strict=True))
         rho2 = u_coord**2 + v_coord**2
-        radius, curvature, gouy = self._beam_radius_curvature_gouy()
-        envelope = np.exp(-rho2 / max(radius**2, 1e-300))
-        phase = -np.tensordot(k_vector, r, axes=(0, 0))
-        phase += float(k_axis) * (coords[self.axis] - float(phase_ref_coord))
-        if np.isfinite(curvature):
-            phase += -self.medium_wavenumber * rho2 / (2.0 * curvature)
-        phase += gouy
-        return envelope * np.exp(1j * phase)
+        # Axial phase is applied later when the sampled profile is extended
+        # from its reference plane. A flat wavefront has separable phase.
+        phase_a = -k_vector[first] * a + gouy
+        phase_b = -k_vector[second] * b
+        if curvature_phase == 0.0:
+            phasor = np.exp(1j * phase_a) * np.exp(1j * phase_b)
+        else:
+            phasor = np.exp(1j * (phase_a + phase_b + curvature_phase * rho2))
+        phasor *= np.exp(-rho2 / radius2)
+        return phasor
 
     def _beam_radius_curvature_gouy(self) -> tuple[float, float, float]:
         waist = float(self.waist_radius)
@@ -1372,6 +1425,7 @@ class GaussianBeamProfile:
         transverse_slices: Mapping[FieldAxis3D, slice],
         *,
         k_normal_abs: float,
+        grid: RectilinearGrid | None = None,
     ) -> float:
         if float(self.power) == 0.0:
             return 0.0
@@ -1382,33 +1436,30 @@ class GaussianBeamProfile:
         coords = []
         for axis_name in t_axes:
             item = transverse_slices[axis_name]
-            coords.append(
-                (np.arange(int(item.start or 0), int(item.stop or 0)) + 0.5)
-                * resolution
-                - float(center_xyz[axis_name])
+            centers = (
+                (np.arange(item.start, item.stop) + 0.5) * resolution
+                if grid is None
+                else grid.centers(axis_name)[item]
             )
-        a, b = np.meshgrid(coords[0], coords[1], indexing="ij")
-        offsets = {
-            self.axis: np.zeros_like(a),
-            t_axes[0]: a,
-            t_axes[1]: b,
-        }
-        displacement = np.stack([offsets[axis] for axis in _AXES], axis=0)
+            coords.append(centers - center_xyz[axis_name])
+        a, b = coords[0][:, None], coords[1][None, :]
+        first, second = (_AXES.index(axis) for axis in t_axes)
         e_hat = self.electric_unit_vector()
         h_hat = self.magnetic_unit_vector()
-        u_coord = np.tensordot(e_hat, displacement, axes=(0, 0))
-        v_coord = np.tensordot(h_hat, displacement, axes=(0, 0))
+        u_coord = e_hat[first] * a + e_hat[second] * b
+        v_coord = h_hat[first] * a + h_hat[second] * b
         rho2 = u_coord**2 + v_coord**2
         radius, _curvature, _gouy = self._beam_radius_curvature_gouy()
         envelope2 = np.exp(-2.0 * rho2 / max(radius**2, 1e-300))
         eta = float(np.sqrt(MU_0 / EPS_0)) / float(self.background_index)
-        flux = (
-            0.5
-            * max(float(k_normal_abs), 1e-30)
-            / eta
-            * float(np.sum(envelope2))
-            * float(resolution) ** 2
-        )
+        flux_scale = 0.5 * max(float(k_normal_abs), 1e-30) / eta
+        if grid is None:
+            flux = flux_scale * float(np.sum(envelope2)) * resolution**2
+        else:
+            area = np.outer(
+                *(grid.cell_widths(axis)[transverse_slices[axis]] for axis in t_axes)
+            )
+            flux = flux_scale * float(np.sum(envelope2 * area))
         if (not np.isfinite(flux)) or flux <= 1e-300:
             return 0.0
         return float(np.sqrt(float(self.power) / flux))
@@ -1442,21 +1493,12 @@ def field_profile_phasor_residuals(
     resolution: float,
     max_shift: int = 1,
 ):
-    return (
-        *compute_discrete_3d_h_phasor_residuals(
-            profile,
-            fields,
-            resolution=float(resolution),
-            max_shift=int(max(1, max_shift)),
-            dt=float(dt),
-        ),
-        *compute_discrete_3d_e_phasor_residuals(
-            profile,
-            fields,
-            resolution=float(resolution),
-            max_shift=int(max(1, max_shift)),
-            dt=float(dt),
-        ),
+    return compute_discrete_3d_phasor_residuals(
+        profile,
+        fields,
+        resolution=float(resolution),
+        max_shift=max(1, int(max_shift)),
+        dt=float(dt),
     )
 
 

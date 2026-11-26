@@ -454,7 +454,9 @@ def mode_data(results, name):
         )
         for idx in range(num_modes)
     ]
-    waves = _sp._extract_port_waves_dft(results, ports=ports, frequencies=freqs)
+    waves = _sp._extract_port_waves_dft(
+        {monitor_name: data}, ports=ports, frequencies=freqs
+    )
     amps = np.zeros((freqs.size, 2, num_modes), dtype=np.complex128)
     for idx, port in enumerate(ports):
         wave = waves[port.name]

@@ -29,7 +29,6 @@ def main():
         p.error("Use a fresh output path")
     os.environ.update(
         BEAMZ_CUDA_AUTOTUNE="off",
-        BEAMZ_CUDA_CPML_PSI_PRECISION="fp32",
         BEAMZ_CUDA_TEMPORAL_STEPS="1",
         BEAMZ_CUDA_CPML_TEMPORAL="0",
         BEAMZ_CUDA_CPML_SPATIAL="0",

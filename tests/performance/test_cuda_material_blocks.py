@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from beamz.simulation.cuda.material_blocks import pack_material_blocks
 
 import beamz as bz
 from beamz.design.discretization import MaterialGrid
@@ -19,7 +20,6 @@ from beamz.design.raster import (
 )
 from beamz.simulation.backend import cuda_backend_status
 from beamz.simulation.compile import _pack_cuda_lossless_e_coefficients
-from beamz.simulation.cuda.material_blocks import pack_material_blocks
 from beamz.simulation.execute import (
     build_program_scan,
     build_step_context,

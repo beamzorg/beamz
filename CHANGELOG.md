@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added `progress_callback` to `Simulation.run` and `Simulation.advance`. It
+  receives a `RunProgress` after each completed chunk with the completed and
+  maximum timesteps, physical and wall time, and, under `AutoTermination`, the
+  field-decay, monitor-change and source residuals of that check. The callback is
+  independent of `progress`, so runs can be logged without terminal output. See
+  `examples/progress_logging.py`.
 - Added `AnisotropicMedium`, `TensorPole` and `GyrotropicPole`. They provide
   full symmetric permittivity and permeability tensors, tensor-valued
   Lorentz/Drude resonances (oriented poles via `rotated()`), and

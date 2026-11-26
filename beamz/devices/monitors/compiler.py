@@ -31,13 +31,16 @@ from beamz.lattice import (
 )
 
 
-def _sampling_indices(indices):
+def _sampling_indices(indices, *, host=False):
     # Keep wide 3D plan metadata on the host when JAX x64 is disabled. Runtime
     # samplers decode it to small per-axis coordinates before device placement.
-    if indices.dtype == np.int64:
+    if host or indices.dtype == np.int64:
         indices.setflags(write=False)
         return indices
     return jnp.asarray(indices)
+
+
+_Array = jnp.ndarray | np.ndarray
 
 
 def _empty_array() -> jnp.ndarray:
@@ -82,9 +85,9 @@ class CompiledMonitorSpec:
     accumulate_frequency: bool = False
     freq_record_interval: int = 1
     freq_count: int = 0
-    freq_hz: jnp.ndarray = field(default_factory=_empty_array)
-    freq_rot_re: jnp.ndarray = field(default_factory=_empty_array)
-    freq_rot_im: jnp.ndarray = field(default_factory=_empty_array)
+    freq_hz: _Array = field(default_factory=_empty_array)
+    freq_rot_re: _Array = field(default_factory=_empty_array)
+    freq_rot_im: _Array = field(default_factory=_empty_array)
     dft_enabled: bool = False
     dft_record_interval: int = 1
     dft_t_start: float = 0.0
@@ -94,21 +97,22 @@ class CompiledMonitorSpec:
     dft_length_unit: float = 1e-6
     dft_point_count: int = 0
     dft_value_offset: int = 0
+    dft_packed_components: tuple[int, ...] | None = None
     dft_weight_offset: int = 0
-    dft_component_mask: jnp.ndarray = field(default_factory=_empty_array)
-    sample_flat_idx: tuple[jnp.ndarray | np.ndarray, ...] = ()
-    sample_weights: tuple[jnp.ndarray, ...] = ()
-    dft_flat_idx: tuple[jnp.ndarray | np.ndarray, ...] = ()
-    dft_weights: tuple[jnp.ndarray, ...] = ()
-    integration_weights: jnp.ndarray = field(default_factory=_empty_array)
+    dft_component_mask: _Array = field(default_factory=_empty_array)
+    sample_flat_idx: tuple[_Array, ...] = ()
+    sample_weights: tuple[_Array, ...] = ()
+    dft_flat_idx: tuple[_Array, ...] = ()
+    dft_weights: tuple[_Array, ...] = ()
+    integration_weights: _Array = field(default_factory=_empty_array)
     recorder_index: int = -1
     components: tuple[str, ...] = ()
     canonical_components: tuple[str, ...] = ()
     component_signs: tuple[float, ...] = ()
     field_buffer_indices: tuple[int, ...] = ()
     field_shapes: tuple[tuple[int, ...], ...] = ()
-    field_interp_flat_idx: tuple[jnp.ndarray | np.ndarray, ...] = ()
-    field_interp_weights: tuple[jnp.ndarray, ...] = ()
+    field_interp_flat_idx: tuple[_Array, ...] = ()
+    field_interp_weights: tuple[_Array, ...] = ()
     sample_region: SnappedRegion | None = None
 
 
@@ -237,9 +241,14 @@ def _direct_sampling_plan(x, y, valid, shape):
     return jnp.asarray(flat), jnp.asarray(valid, dtype=jnp.float32)[:, None]
 
 
-def _inactive_sampling_plan(point_count: int):
+def _inactive_sampling_plan(point_count: int, *, host=False):
     """Represent an inactive canonical component without a runtime dimension branch."""
     shape = (int(point_count), 1)
+    if host:
+        return (
+            np.broadcast_to(np.int32(0), shape),
+            np.broadcast_to(np.float32(0), shape),
+        )
     return jnp.zeros(shape, dtype=jnp.int32), jnp.zeros(shape, dtype=jnp.float32)
 
 
@@ -252,6 +261,8 @@ def compile_monitor_specs(
     plane_2d: str = "xy",
     polarization_2d: str = "tm",
     grid=None,
+    *,
+    host=False,
 ) -> tuple[tuple[CompiledMonitorSpec, ...], int]:
     """Compile request monitor specs into packed monitor descriptors.
 
@@ -265,13 +276,20 @@ def compile_monitor_specs(
     if not monitors:
         return tuple(), 0
 
+    def static_array(value, dtype=None):
+        if not host:
+            return jnp.asarray(value, dtype=dtype)
+        array = np.asarray(value, dtype=dtype)
+        array.setflags(write=False)
+        return array
+
     specs: list[CompiledMonitorSpec] = []
     max_records = 0
     recorder_count = 0
     field_buffer_count = 0
     active_grid = grid if grid is not None else getattr(fields, "geometry", None)
-    is_3d_grid = np.asarray(fields.permittivity).ndim == 3
-    active_axes = ("x", "y", "z") if is_3d_grid else ("x", "y")
+    is_3d = fields.permittivity.ndim == 3
+    active_axes = ("x", "y", "z") if is_3d else ("x", "y")
     requires_metric_operator = active_grid is not None and (
         active_grid.metric_kind_for(active_axes) != "isotropic_uniform"
     )
@@ -282,7 +300,6 @@ def compile_monitor_specs(
     for mon_idx, monitor in enumerate(monitors):
         if not isinstance(monitor, _Monitor):
             raise TypeError(f"Unsupported monitor object {type(monitor).__name__!s}.")
-        is_3d = np.asarray(fields.permittivity).ndim == 3
         if (
             not is_3d
             and isinstance(monitor, ModeMonitor)
@@ -321,7 +338,7 @@ def compile_monitor_specs(
 
             shapes: list[tuple[int, ...]] = []
             interp_indices: list[jnp.ndarray | np.ndarray] = []
-            interp_weights: list[jnp.ndarray] = []
+            interp_weights: list[_Array] = []
             sample_region = None
             if monitor.region == "domain":
                 logical_shapes = getattr(fields, "_logical_component_shapes", {})
@@ -391,6 +408,7 @@ def compile_monitor_specs(
                     grid_shape=base_shape,
                     component_shapes=field_shapes,
                     grid=active_grid if use_geometry else None,
+                    components=tuple(canonical_components),
                 )
                 output_shape = tuple(
                     int(values.size) for values in quadrature.coordinates
@@ -398,8 +416,8 @@ def compile_monitor_specs(
                 for canonical in canonical_components:
                     flat_idx, weights = quadrature.plan(canonical)
                     shapes.append(output_shape)
-                    interp_indices.append(_sampling_indices(flat_idx))
-                    interp_weights.append(jnp.asarray(weights))
+                    interp_indices.append(_sampling_indices(flat_idx, host=host))
+                    interp_weights.append(static_array(weights))
             buffer_indices = tuple(
                 range(field_buffer_count, field_buffer_count + len(shapes))
             )
@@ -467,9 +485,9 @@ def compile_monitor_specs(
             accumulate_frequency=False,
             freq_record_interval=freq_interval,
             freq_count=int(freq_points.size),
-            freq_hz=jnp.asarray(freq_points, dtype=jnp.float32),
-            freq_rot_re=jnp.asarray(freq_rot_re),
-            freq_rot_im=jnp.asarray(freq_rot_im),
+            freq_hz=static_array(freq_points, dtype=np.float32),
+            freq_rot_re=static_array(freq_rot_re),
+            freq_rot_im=static_array(freq_rot_im),
             dft_enabled=True,
             dft_record_interval=freq_interval,
             dft_t_start=0.0,
@@ -477,7 +495,7 @@ def compile_monitor_specs(
             dft_window_code=0,
             dft_normalization_code=0,
             dft_length_unit=1e-6,
-            dft_component_mask=jnp.asarray(dft_component_mask),
+            dft_component_mask=static_array(dft_component_mask),
         )
 
         if not is_3d:
@@ -677,20 +695,25 @@ def compile_monitor_specs(
                 grid_shape=base_shape_3d,
                 component_shapes=shape_3d,
                 grid=active_grid if use_geometry else None,
+                components=tuple(
+                    name
+                    for name, enabled in zip(shape_3d, dft_component_mask, strict=True)
+                    if enabled > 0
+                ),
             )
             point_count = quadrature.point_count
-            sample_plans = []
+            inactive = _inactive_sampling_plan(point_count, host=host)
             dft_plans = []
-            for component_index, name in enumerate(shape_3d):
-                needs_dft = bool(dft_component_mask[component_index] > 0.0)
-                if needs_dft:
-                    flat_idx, weights = quadrature.plan(name)
-                    plan = (_sampling_indices(flat_idx), jnp.asarray(weights))
+            for name in shape_3d:
+                if gather := quadrature.plans.get(name):
+                    flat_idx, weights = gather
+                    plan = (
+                        _sampling_indices(flat_idx, host=host),
+                        static_array(weights),
+                    )
                 else:
-                    plan = _inactive_sampling_plan(point_count)
-                inactive = _inactive_sampling_plan(point_count)
-                sample_plans.append(inactive)
-                dft_plans.append(plan if needs_dft else inactive)
+                    plan = inactive
+                dft_plans.append(plan)
             specs.append(
                 CompiledMonitorSpec(
                     **common,
@@ -698,12 +721,12 @@ def compile_monitor_specs(
                     normal_axis=quadrature.normal_axis,
                     normal_sign=1.0,
                     dft_point_count=point_count,
-                    sample_flat_idx=tuple(plan[0] for plan in sample_plans),
-                    sample_weights=tuple(plan[1] for plan in sample_plans),
+                    sample_flat_idx=(inactive[0],) * 6,
+                    sample_weights=(inactive[1],) * 6,
                     dft_flat_idx=tuple(plan[0] for plan in dft_plans),
                     dft_weights=tuple(plan[1] for plan in dft_plans),
-                    integration_weights=jnp.asarray(
-                        quadrature.integration_weights, dtype=jnp.float32
+                    integration_weights=static_array(
+                        quadrature.integration_weights, dtype=np.float32
                     ),
                     sample_region=_compact_sample_region(region),
                 )

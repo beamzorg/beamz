@@ -6,8 +6,11 @@ import jax
 import numpy as np
 import pytest
 
+from beamz import SampledSignal
 from beamz.optimization import ModePower, TopologyProblem
-from tests.topology_case import make_problem
+from beamz.simulation.observe import normalization_from_result
+from tests.topology_3d_case import make_3d_design
+from tests.topology_case import legacy_checkpoint_fingerprint, make_problem
 
 pytestmark = pytest.mark.optimization
 
@@ -34,7 +37,12 @@ def test_optimization_resume_and_independent_export(problem, tmp_path):
     fresh_problem = TopologyProblem(
         problem.simulation, problem.topology, problem.objective
     )
-    loaded = fresh_problem.load(tmp_path / "state.npz")
+    legacy = legacy_checkpoint_fingerprint(problem._fingerprint)
+    assert legacy != fresh_problem.fingerprint
+    path = tmp_path / "legacy.npz"
+    replace(partial, fingerprint=legacy).save(path)
+    loaded = fresh_problem.load(path)
+    assert loaded.fingerprint == fresh_problem.fingerprint
     resumed = fresh_problem.run(6, resume=loaded)
     assert partial.completed_steps == loaded.completed_steps == 2
     np.testing.assert_array_equal(full.final_params, resumed.final_params)
@@ -69,6 +77,90 @@ def test_optimization_resume_and_independent_export(problem, tmp_path):
     # Fixed source/monitor cross-sections survive geometry export.
     np.testing.assert_array_equal(raster[:, :15], original[:, :15])
     np.testing.assert_array_equal(raster[:, 45:], original[:, 45:])
+
+
+@pytest.mark.parametrize("quadrature_only", [False, True])
+def test_2d_mode_taper_matches_emitted_waveform_and_normalization(
+    problem, quadrature_only
+):
+    simulation = problem.simulation
+    source = simulation.sources[0]
+    source = source.updated_copy(
+        mode_spec=replace(source.mode_spec, num_freqs=3), band_taper=(47e-15, 52e-15)
+    )
+    if quadrature_only:
+        _, q = source.source_time.sample(simulation.time)
+        source = source.updated_copy(
+            source_time=SampledSignal(
+                np.zeros_like(q),
+                dt=simulation.dt,
+                quadrature=q,
+                freq0=source.frequency,
+            )
+        )
+    simulation = simulation.updated_copy(sources=(source,))
+    times = simulation.time + 0.5 * simulation.dt
+    start, end = source.band_taper
+    fraction = np.clip((times - start) / (end - start), 0.0, 1.0)
+    weights = 0.5 * (1.0 + np.cos(np.pi * fraction))
+    signal, quadrature = source.source_time.sample(times)
+    expected = [(wave * weights).astype(np.float32) for wave in (signal, quadrature)]
+    half_step_samples = [
+        np.asarray(spec.waveform) for spec in simulation.compile(backend="jax").sources
+    ]
+    for waveform in half_step_samples:
+        np.testing.assert_array_equal(waveform[times >= end], 0)
+    for wave in expected:
+        if np.any(wave):
+            assert any(np.array_equal(wave, emitted) for emitted in half_step_samples)
+    assert np.any(expected[1][times < end])
+
+    result = simulation.run(backend="jax", performance=False)
+    monitor = result["output"]
+    normalization = normalization_from_result(result, monitor)
+    phase = np.exp(2j * np.pi * times * monitor.dft_frequencies[0])
+    drive = expected[0].astype(float) - 1j * expected[1].astype(float)
+    np.testing.assert_allclose(
+        normalization.waveform_spectrum, [np.mean(drive * phase)], rtol=1e-12
+    )
+    assert result.normalization_source == 0
+    raw = result.renormalize(None)["output"]
+    assert any(np.any(values) for values in raw.dft_fields.values())
+    for component, values in raw.dft_fields.items():
+        np.testing.assert_allclose(
+            monitor.dft_fields[component],
+            values / normalization.field_amplitude_norm[0],
+        )
+    if quadrature_only:
+        TopologyProblem(simulation, problem.topology, problem.objective)
+
+    silent = simulation.updated_copy(
+        sources=(source.updated_copy(band_taper=(-2e-15, -1e-15)),)
+    ).run(backend="jax", performance=False)
+    assert normalization_from_result(silent, silent["output"]) is None
+    assert silent.normalization_source is None
+    assert silent.renormalize(0).normalization_source is None
+
+
+def test_3d_tapered_mode_normalizes_a_single_step_prefix():
+    simulation = make_3d_design(run_time=100e-15).simulation
+    source = simulation.sources[0]
+    source = source.updated_copy(
+        mode_spec=replace(source.mode_spec, num_freqs=3),
+        source_time=replace(source.source_time, offset=0.0),
+        band_taper=(40e-15, 50e-15),
+    )
+    simulation = simulation.updated_copy(sources=(source,))
+    result = simulation.advance(num_steps=1, backend="jax", performance=False).results
+    monitor = result["output"]
+    np.testing.assert_array_equal(result.metadata.time, simulation.time[:1])
+    assert result.metadata.dt == simulation.dt
+    assert result.normalization_source == 0
+    normalization = normalization_from_result(result, monitor)
+    signal, quadrature = source.source_time.sample(simulation.time[:1])
+    np.testing.assert_allclose(
+        normalization.waveform_spectrum, signal - 1j * quadrature
+    )
 
 
 def test_checkpoint_rejects_different_problem_and_schedule(problem, tmp_path):
