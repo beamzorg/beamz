@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 #[path = "raster_planes.rs"]
@@ -197,6 +199,51 @@ struct ObjectIndex {
     bins: Vec<Vec<usize>>,
     object_bounds: Vec<Aabb>,
     resolved: Option<ResolvedExtrusions>,
+    local_resolutions: LocalResolutions,
+}
+
+/// Exact ownership of the supports whose candidates are all extrusions, when
+/// the whole scene cannot be resolved at once (for example because it also
+/// contains a curved object). The resolution depends only on the candidate
+/// set, and a scene has far fewer distinct candidate sets than supports, so
+/// each set is resolved once per rasterization and shared across threads.
+#[derive(Default)]
+struct LocalResolutions(RwLock<HashMap<Vec<usize>, Option<Arc<ResolvedExtrusions>>>>);
+
+impl LocalResolutions {
+    fn get_or_build(
+        &self,
+        scene: &Scene,
+        candidates: &[usize],
+        preserve: bool,
+    ) -> Option<Arc<ResolvedExtrusions>> {
+        if let Some(found) = self.0.read().unwrap().get(candidates) {
+            return found.clone();
+        }
+        let built = resolve_candidates(scene, candidates, preserve).map(Arc::new);
+        self.0
+            .write()
+            .unwrap()
+            .entry(candidates.to_vec())
+            .or_insert(built)
+            .clone()
+    }
+}
+
+fn resolve_candidates(
+    scene: &Scene,
+    candidates: &[usize],
+    preserve: bool,
+) -> Option<ResolvedExtrusions> {
+    let local = Scene {
+        materials: scene.materials.clone(),
+        background_material: scene.background_material,
+        objects: candidates
+            .iter()
+            .map(|&i| scene.objects[i].clone())
+            .collect(),
+    };
+    ResolvedExtrusions::build_with_identity(&local, preserve)
 }
 
 impl ObjectIndex {
@@ -223,6 +270,7 @@ impl ObjectIndex {
         let mut result = Self {
             domain,
             resolved: None,
+            local_resolutions: LocalResolutions::default(),
             dimensions,
             bins: vec![Vec::new(); dimensions.iter().product()],
             object_bounds: scene
@@ -1311,8 +1359,14 @@ fn integrate_support_mixture(
     let crosses =
         (0..3).any(|axis| options.periodic_axes[axis] && volume.min[axis] < edges[axis][0]);
     if !crosses {
-        let mixture =
-            integrate_mixture(scene, volume, candidates, options, index.resolved.as_ref());
+        let mixture = integrate_mixture(
+            scene,
+            volume,
+            candidates,
+            options,
+            index.resolved.as_ref(),
+            Some(&index.local_resolutions),
+        );
         return staircase_mixture(scene, candidates, point, options, mixture);
     }
     let mut pieces = vec![(*volume, [0.0; 3])];
@@ -1342,8 +1396,14 @@ fn integrate_support_mixture(
         let mut candidates = index.query(piece);
         candidates
             .retain(|&candidate| scene.objects[candidate].geometry.bounds().intersects(piece));
-        let mixture =
-            integrate_mixture(scene, piece, &candidates, options, index.resolved.as_ref());
+        let mixture = integrate_mixture(
+            scene,
+            piece,
+            &candidates,
+            options,
+            index.resolved.as_ref(),
+            Some(&index.local_resolutions),
+        );
         let weight = piece.volume() / volume.volume();
         if let Some(owner) = mixture.uniform_owner {
             fractions[owner] += weight;
@@ -1461,6 +1521,7 @@ fn integrate_mixture(
     candidates: &[usize],
     options: &IntegrationOptions,
     resolved: Option<&ResolvedExtrusions>,
+    local_resolutions: Option<&LocalResolutions>,
 ) -> Mixture {
     let mut candidate_tests = candidates.len() as u64;
     if candidates.is_empty() {
@@ -1486,7 +1547,7 @@ fn integrate_mixture(
             })
             .collect();
         if distinct.len() != candidates.len() {
-            return integrate_mixture(scene, volume, &distinct, options, None);
+            return integrate_mixture(scene, volume, &distinct, options, None, local_resolutions);
         }
         // An unrelated curved object elsewhere in the scene must not disable
         // exact ownership in supports containing only supported extrusions.
@@ -1496,20 +1557,21 @@ fn integrate_mixture(
                 crate::Geometry::Box { .. } | crate::Geometry::ExtrudedPolygon(_)
             )
         }) {
-            let local = Scene {
-                materials: scene.materials.clone(),
-                background_material: scene.background_material,
-                objects: candidates
-                    .iter()
-                    .map(|&i| scene.objects[i].clone())
-                    .collect(),
+            let preserve = !options.staircase_materials.is_empty();
+            let local = match local_resolutions {
+                Some(cache) => cache.get_or_build(scene, candidates, preserve),
+                None => resolve_candidates(scene, candidates, preserve).map(Arc::new),
             };
-            if let Some(local) = ResolvedExtrusions::build_with_identity(
-                &local,
-                !options.staircase_materials.is_empty(),
-            ) {
+            if let Some(local) = local {
                 let indices: Vec<usize> = (0..local.scene.objects.len()).collect();
-                return integrate_mixture(&local.scene, volume, &indices, options, Some(&local));
+                return integrate_mixture(
+                    &local.scene,
+                    volume,
+                    &indices,
+                    options,
+                    Some(&local),
+                    None,
+                );
             }
         }
     }
@@ -2350,6 +2412,7 @@ mod tests {
             &[0],
             &fast_options,
             None,
+            None,
         );
         // One candidate lookup, eight octants, one alias check, and the
         // nine-point depth-limit fallback. This deterministic work budget guards
@@ -2420,8 +2483,8 @@ mod tests {
         };
         let unit_scene = scene(1.0);
         let micro_scene = scene(1e-6);
-        let unit = integrate_mixture(&unit_scene, &volume, &[0], &options, None);
-        let micro = integrate_mixture(&micro_scene, &scaled, &[0], &options, None);
+        let unit = integrate_mixture(&unit_scene, &volume, &[0], &options, None, None);
+        let micro = integrate_mixture(&micro_scene, &scaled, &[0], &options, None, None);
         assert_abs_diff_eq!(unit.error, micro.error, epsilon = 1e-12);
         assert_abs_diff_eq!(
             unit.fractions.as_ref().unwrap()[1],
