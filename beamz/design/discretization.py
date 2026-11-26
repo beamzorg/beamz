@@ -769,7 +769,14 @@ class MaterialGrid:
             ):
                 return True
         return self.uses_magnetic_tensors and (
-            not (self.magnetic_tensors.keys() - {"mu_cell"})
+            # Magnetic CCPR uses the tensor plan to map the vacuum H increment
+            # through the static permeability before applying the pole correction.
+            any(
+                getattr(pole, "has_edot", False)
+                for medium, _ in self.tensor_dispersion
+                for pole in medium.magnetic_poles
+            )
+            or not (self.magnetic_tensors.keys() - {"mu_cell"})
             <= self.yee_materials.keys()
             or any(
                 not _allclose_bounded(
