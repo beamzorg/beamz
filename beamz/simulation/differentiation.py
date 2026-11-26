@@ -384,6 +384,12 @@ class DifferentiableSimulation:
                 sigma_m = sponge_sigma * grid.permeability * (MU_0 / EPS_0)
                 h_sigma = self._sample(sigma_m, ("Hx", "Hy", "Hz"))
         updates = {}
+        anisotropic = (
+            None if program.dispersion is None else program.dispersion.anisotropic
+        )
+        diagonal_mu = grid.material_grid.uses_magnetic_tensors and (
+            anisotropic is None or anisotropic.magnetic is None
+        )
         for axis, epsilon, sigma, magnetic_sigma, fixed_lossless in zip(
             "xyz", eps, sig, h_sigma, self._fixed_lossless_e, strict=True
         ):
@@ -399,8 +405,9 @@ class DifferentiableSimulation:
                 # Express that independence explicitly so AD does not retain
                 # old E fields to form a coefficient VJP that is later zeroed.
                 e_decay = jnp.float32(1.0)
+            mu = getattr(grid, f"mu_h{axis}") if diagonal_mu else 1.0
             h_decay, h_source = kernels.precompute_h_update_coefficients(
-                magnetic_sigma, dt
+                magnetic_sigma / mu, dt
             )
             updates.update(
                 {
@@ -409,7 +416,7 @@ class DifferentiableSimulation:
                     f"e_conductivity_{axis}": sigma,
                     f"e_permittivity_{axis}": epsilon,
                     f"h_decay_{axis}": h_decay,
-                    f"h_source_{axis}": h_source,
+                    f"h_source_{axis}": h_source / mu,
                     f"h_sigma_m_{axis}": magnetic_sigma,
                 }
             )

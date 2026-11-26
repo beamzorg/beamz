@@ -751,7 +751,9 @@ def _check_magnetic_cfl(request: Any = "") -> None:
         )
         for a in h_axes
     )
-    if mu >= 1:
+    if mu >= 1 and not (
+        request.run.backend == "jax" and materials.uses_magnetic_tensors
+    ):
         return
     epsilon = min(
         _minimum_material(
@@ -959,7 +961,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     empty3 = jnp.zeros((0, 0, 0), dtype=jnp.float32)
     # The tensor update maps the vacuum H increment through the inverse tensor.
     # Applying diagonal mu in the Yee kernel as well would scale the curl twice.
-    tensor_magnetic = tensor_media and request.materials.uses_magnetic_tensors
+    tensor_magnetic = tensor_media and request.materials._has_magnetic_coupling
     if use_3d_material_coefficients:
         if not tensor_magnetic and (
             request.run.backend in {"cuda_streamed", "cuda_mstep"}
@@ -1163,6 +1165,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             )
         e_permittivity_x = e_permittivity_y = e_permittivity_z = empty3
     empty_inverse = jnp.zeros((0,), dtype=jnp.float32)
+    electric_inverse = None
     if request.materials.uses_full_permittivity:
         lossy = any(
             np.any(np.asarray(value) != 0.0)
@@ -1186,6 +1189,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             electric_losses(fields, components, dt) if lossy else {},
             "Node",
         )
+        electric_inverse = diagonal, cross
         e_inverse_diagonal_x, e_inverse_diagonal_y, e_inverse_diagonal_z = (
             jnp.asarray(diagonal["E" + axis])
             if "E" + axis in diagonal
@@ -1327,6 +1331,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         boundary_data.periodic_axes,
         complex_fields=any(vector),
         tensor_media=tensor_media,
+        electric_inverse=electric_inverse,
     )
     program = CompiledProgram(
         grid=logical_grid,

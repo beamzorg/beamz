@@ -98,8 +98,9 @@ sources.
 Static `eps_inf` tensors use BeamZ's full-tensor electric update. The other
 terms run as exact corrections around the standard kernels:
 
-- **Permeability.** The H kernel advances in vacuum. Inside a cropped box around
-  the magnetic media, the increment is then mapped through `mu^-1`.
+- **Permeability.** Diagonal permeability enters the standard Yee H coefficients.
+  For off-diagonal permeability, the H kernel advances in vacuum and the
+  increment is mapped through `mu^-1` inside a cropped box around the medium.
 - **Tensor poles.** A normalized polarization `p = P / eps0` follows an explicit
   central-difference recurrence driven by the previous field. The field is then
   corrected by `-eps_inf^-1 (p_new - p_old)`. Magnetic poles mirror this on H.
@@ -158,14 +159,18 @@ advance.
   magnetic-pole permeability, or gyrotropic media.
 - **Gradients.** `Simulation.differentiable()` and `TopologyProblem` (default
   autodiff backend) differentiate through every correction on JAX. Design
-  regions must not overlap tensor-permeability or tensor-pole media, including
+  regions must not overlap off-diagonal permeability or tensor-pole media, including
   their two-cell halo. The spectral-adjoint backend is rejected.
 
 ## Requirements and limitations
 
-- These media run on the JAX backend, on CPU or GPU through a CUDA-enabled
-  jaxlib. Native CUDA (`cuda_streamed`, `cuda_mstep`) and sharded runs are
-  rejected.
+- Tensor and gyrotropic poles and off-diagonal permeability require single-device
+  JAX. Conductive or sponge loss with full-tensor permittivity also requires JAX.
+  JAX can run on a GPU with a CUDA-enabled jaxlib.
+- Native CUDA uses the standard Yee coefficients for diagonal permeability on
+  supported 3D grids. Lossless full-tensor permittivity can use explicit
+  `backend="cuda_streamed"` on supported 3D grids and boundaries. Native
+  `cuda_mstep` and native CUDA autodiff do not support full-tensor permittivity.
 - Off-diagonal `eps_inf` needs `RasterOptions(smoothing="farjadpour_full")`.
   Off-diagonal permeability or pole tensors also work with `"volume"`.
 - 2D simulations require tensors without `xz` or `yz` coupling, and gyration

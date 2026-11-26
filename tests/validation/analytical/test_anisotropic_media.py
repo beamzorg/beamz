@@ -333,7 +333,6 @@ def _forward_packet_speed(permeability, polarization):
         boundaries=[bz.Periodic(axes=("x", "y"))],
         raster_options=RasterOptions(smoothing="volume"),
     )
-    assert simulation.compile(backend="jax").dispersion.anisotropic.magnetic is not None
     name = "ez" if polarization == "tm" else "hz"
     state = simulation.initial_state()
     field = getattr(state, name)
