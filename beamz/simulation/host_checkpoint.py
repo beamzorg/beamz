@@ -6,6 +6,7 @@ from operator import index
 
 import jax
 import jax.numpy as jnp
+from jax.core import Tracer
 
 from beamz.simulation.differentiation import build_differentiable_scan
 
@@ -79,9 +80,7 @@ def build_host_value_and_grad(
     terminal = jax.jit(jax.value_and_grad(objective, has_aux=has_aux, allow_int=True))
 
     def value_and_grad(parameters, *, initial_state=None):
-        if any(
-            isinstance(leaf, jax.core.Tracer) for leaf in jax.tree.leaves(parameters)
-        ):
+        if any(isinstance(leaf, Tracer) for leaf in jax.tree.leaves(parameters)):
             raise TypeError("Host checkpointing must run outside JAX transformations.")
         state = solver.initial_state
         sharding = state.ex.sharding
