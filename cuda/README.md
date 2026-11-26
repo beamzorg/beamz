@@ -23,8 +23,9 @@ can return a detached checkpoint for resuming or branching a simulation.
 
 Set `BEAMZ_CUDA_MEMORY_BUDGET_BYTES` to constrain the native plan or
 `BEAMZ_CUDA_MEMORY_POLICY=capacity` to select the ordinary schedule. Use
-`backend="jax"` for 2D, periodic or Bloch, and dispersive simulations, and for
-full-tensor gradients.
+`backend="jax"` for 2D, periodic or Bloch, and for full-tensor gradients. Tensor permeability and tensor
+poles require `backend="jax"` or the streamed CUDA FFI path
+(`backend="cuda_streamed"`).
 
 ## Build from source
 
@@ -36,8 +37,9 @@ python -m pip wheel ./cuda --no-deps
 python -m pip install beamz_cuda_component-*.whl
 ```
 
-CUDA component ABI 31 stores CPML auxiliary fields in FP32. Rebuild and reinstall
-the optional component when updating from an earlier ABI.
+CUDA component ABI 32 includes the tensor-media FFI target and stores CPML
+auxiliary fields in FP32. Rebuild and reinstall the optional component when
+updating from an earlier ABI.
 
 For a direct CMake build, set the architecture for the target GPU and configure
 the toolkit, Python, and nanobind paths for your environment.

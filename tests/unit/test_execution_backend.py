@@ -356,6 +356,7 @@ def test_typed_ffi_registrations_use_cuda_api_v1(monkeypatch, include_mstep):
         "beamz_cuda_program",
         "beamz_cuda_sharded",
         "beamz_cuda_streamed",
+        "beamz_cuda_tensor_media",
     )
     assert {name for name, _, _ in registrations} == set(targets)
     # Plugins can replay this queue after registration returns. A nonzero

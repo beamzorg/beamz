@@ -17,7 +17,11 @@ _STORAGE_AXES = (0, 1, 2)
 
 def _validate(program: Any = "", ctx: Any = "", *, native_effects: bool = False) -> None:
     if (not native_effects and program.coefficients.e_inverse_offdiagonal.size or
-        program.dispersion is not None and (program.dispersion.regions or program.dispersion.interfaces)):
+        program.dispersion is not None and (
+            program.dispersion.regions
+            or program.dispersion.interfaces
+            or program.dispersion.anisotropic
+        )):
         raise _Unsupported("tensor/dispersive physics uses the CUDA interoperability binding")
     if any(getattr(program.grid, name.capitalize()).dtype != np.dtype("float32") for name in _FIELDS):
         raise _Unsupported("non-FP32 fields use the CUDA interoperability binding")

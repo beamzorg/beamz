@@ -7,8 +7,8 @@
 
 namespace beamz::cuda::abi {
 
-inline constexpr int32_t kAbiVersion = 31;
-inline constexpr char kComponentVersion[] = "0.31.0";
+inline constexpr int32_t kAbiVersion = 32;
+inline constexpr char kComponentVersion[] = "0.32.0";
 inline constexpr char kStreamedTarget[] = "beamz_cuda_streamed";
 inline constexpr char kShardedTarget[] = "beamz_cuda_sharded";
 inline constexpr char kProgramTarget[] = "beamz_cuda_program";
@@ -16,6 +16,7 @@ inline constexpr char kAdjointTarget[] = "beamz_cuda_adjoint";
 inline constexpr char kMaterialAdjointTarget[] = "beamz_cuda_material_adjoint";
 inline constexpr char kMstepTarget[] = "beamz_cuda_mstep";
 inline constexpr char kMstepFullIntermediatesTarget[] = "beamz_cuda_mstep_full_intermediates_v1";
+inline constexpr char kTensorMediaTarget[] = "beamz_cuda_tensor_media";
 
 inline constexpr int32_t kBeamzGraphCache = 1 << 7;
 inline constexpr int32_t kBeamzFieldPad32 = 1 << 13;

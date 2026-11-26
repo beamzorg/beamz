@@ -18,6 +18,7 @@ FORMAT = "beamz.simulation.results/1"
 
 def _classes():
     from beamz.design.grid import RectilinearGrid
+    from beamz.design.material_views import DispersionFolding
     from beamz.devices._placement import SnappedInterval, SnappedRegion
     from beamz.devices.modes.specs import ModeSpec
     from beamz.devices.monitors.monitors import FieldMonitor, FluxMonitor, ModeMonitor
@@ -62,6 +63,7 @@ def _classes():
         SampledSignal,
         FieldMetadata,
         MaterialRegion,
+        DispersionFolding,
         MonitorResults,
         RunTermination,
         SimulationMetadata,

@@ -13,6 +13,14 @@ H kernel and the existing (diagonal or full-tensor) E kernel:
   implicit local solve does not exist), and the field receives
   ``E -= eps_inf^-1 (p_new - p_old)``. Magnetic poles mirror this on H.
 
+* Full static tensors. Non-symmetric eps or mu, off-diagonal electric and any
+  magnetic conductivity use the semi-implicit (Cayley) update
+  ``(T + B) F_new = (T - B) F_old + inc`` with ``B = sigma dt / (2 eps0)`` (or
+  ``mu0``), i.e. ``F_new = F_old + (T + B)^-1 (inc - 2 B F_old)``, where
+  ``inc`` is the vacuum kernel's increment (CPML terms included; sources inject
+  afterwards). The E kernel sees vacuum coefficients inside that box (see
+  :func:`vacuum_coefficient_grid`); the H kernel is always vacuum.
+
 Every tensor operator keeps its diagonal on the component's own Yee support and
 its cross terms on the shared support — primal nodes for E, cell centers for H —
 reached with the reciprocal averaging of :func:`collocate_yee_component`. That
@@ -34,12 +42,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from beamz.const import EPS_0, LIGHT_SPEED, MU_0
+from beamz.const import EPS_0, MU_0
 from beamz.constitutive import (
     _support_offsets,
     collocate_yee_component,
     expand_packed,
-    inverse_permittivity_components,
+    lossy_tensor_inverse,
 )
 from beamz.design.material_views import port_cells
 from beamz.lattice import component_axis_offsets_3d
@@ -48,44 +56,6 @@ _HALO = 2
 _PAIR = {(0, 1): 0, (0, 2): 1, (1, 2): 2}
 _SHARED = {"E": "Node", "H": "Cell"}
 _PACKED_IDENTITY = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 0.0])
-
-
-def lossy_tensor_inverse(support, shared_tensor, losses, shared):
-    """Invert ``T + diag(loss)`` on Yee supports and on the shared cross support.
-
-    ``support`` maps each active component to its packed tensor field at that
-    component's sites; ``shared_tensor`` is the packed tensor at the shared
-    support (``"Node"`` for E, ``"Cell"`` for H). ``losses`` maps components to
-    the dimensionless semi-implicit loss ``sigma * dt / 2`` (normalized by the
-    vacuum constant) at their own sites, or a scalar. Each loss is collocated
-    to every support before it joins that support's diagonal, so diagonal and
-    cross terms always invert the same lossy tensor. Returns
-    ``({component: inverse diagonal}, inverse cross terms (..., 3))``.
-    """
-
-    def lossy(tensor, target):
-        out = expand_packed(tensor).copy()
-        shape = out.shape[1:]
-        for component, loss in losses.items():
-            loss = np.asarray(loss, dtype=np.float64)
-            if loss.ndim:
-                loss = np.asarray(
-                    collocate_yee_component(
-                        jnp.asarray(loss), component, target, shape
-                    ),
-                    dtype=np.float64,
-                )
-            out[_axis_index(component)] = out[_axis_index(component)] + loss
-        return out
-
-    diagonal = {
-        component: inverse_permittivity_components(lossy(tensor, component))[
-            ..., _axis_index(component)
-        ]
-        for component, tensor in support.items()
-    }
-    cross = inverse_permittivity_components(lossy(shared_tensor, shared))[..., 3:]
-    return diagonal, cross
 
 
 def _axis_index(component: str) -> int:
@@ -118,17 +88,35 @@ def _material_seams(box: YeeBox) -> tuple:
 
 @dataclass(frozen=True)
 class InverseOperator:
-    """Inverse constitutive tensor restricted to a box (diagonal + cross terms)."""
+    """Tensor operator restricted to a box (diagonal + cross terms).
+
+    ``offdiagonal`` holds the symmetric cross terms ``(xy, xz, yz)`` on the
+    shared support; ``skew`` the antisymmetric ones, so entry ``(r, c)`` is
+    ``offdiagonal + skew`` above the diagonal and ``offdiagonal - skew``
+    below it.
+    """
 
     diagonal: tuple
     offdiagonal: jax.Array | None
+    skew: jax.Array | None = None
 
 
 @dataclass(frozen=True)
-class MagneticPlan:
+class StaticTensorPlan:
+    """Static tensor update on one box: ``F + (T + B)^-1 (inc - 2 B F)``.
+
+    ``loss`` is the diagonal ``beta`` the vacuum kernel already applied (an H
+    sponge), used to recover its increment; ``damping`` is the full ``B`` when
+    it differs from that diagonal.
+    """
+
     box: YeeBox
     inverse: InverseOperator
     loss: tuple | None = None  # sponge beta = sigma_m dt / (2 mu0) per component
+    damping: InverseOperator | None = None
+
+
+MagneticPlan = StaticTensorPlan
 
 
 @dataclass(frozen=True)
@@ -148,12 +136,16 @@ class TensorPolarizationRegion:
         poles = int(np.shape(self.c1)[0])
         return tuple((poles, *shape) for shape in self.box.shapes for _ in range(2))
 
-    def advance(self, old, flat):
-        """Advance from the previous field; return (field-site delta p, new state)."""
-        fields = _crop(old, self.box)
+    def advance(self, fields, flat, extra=None):
+        """Advance from the previous box fields; return (site delta p, new state).
+
+        ``extra`` adds a per-component, per-pole drive (the explicit CCPR term).
+        """
         driven = apply_tensor_operator(
             fields, self.diagonal, self.offdiagonal, self.box
         )
+        if extra is not None:
+            driven = tuple(d + e for d, e in zip(driven, extra, strict=True))
         new_flat, delta = [], []
         for k, drive in enumerate(driven):
             current, previous = flat[2 * k], flat[2 * k + 1]
@@ -222,11 +214,10 @@ class GyrotropicRegion:
             )
         return out
 
-    def advance(self, old, flat):
+    def advance(self, fields, flat):
         count = len(self.box.components)
         p = [flat[2 * k] for k in range(count)]
         j = [flat[2 * k + 1] for k in range(count)]
-        fields = _crop(old, self.box)
         spatial = (None,) * len(self.box.shared_shape)
         strength = self.strength[(slice(None), *spatial)]
         resonance = self.resonance_squared[(slice(None), *spatial)]
@@ -258,6 +249,7 @@ class AnisotropicPlan:
     magnetic: MagneticPlan | None
     electric_regions: tuple[TensorPolarizationRegion, ...]
     magnetic_regions: tuple[TensorPolarizationRegion, ...]
+    electric: StaticTensorPlan | None = None  # full static eps / sigma tensors
 
     @property
     def regions(self) -> tuple[TensorPolarizationRegion, ...]:
@@ -280,36 +272,48 @@ def _collocate(value, source, target, shape, widths, seams=()):
     )
 
 
-def apply_tensor_operator(values, diagonal, offdiagonal, box: YeeBox):
+def apply_tensor_operator(values, diagonal, offdiagonal, box: YeeBox, skew=None):
     """Apply a packed symmetric tensor field to one vector on the Yee box.
 
     ``values`` holds one array per box component. ``diagonal`` and
     ``offdiagonal`` may carry a leading pole axis that broadcasts against them.
+    ``skew`` adds antisymmetric cross terms (see :class:`InverseOperator`).
     """
 
     out = [d * v for d, v in zip(diagonal, values, strict=True)]
-    if offdiagonal is None or len(box.components) < 2:
+    if (offdiagonal is None and skew is None) or len(box.components) < 2:
         return tuple(out)
     shared = tuple(
         _collocate(v, c, box.shared, box.shared_shape, box.widths, box.seams)
         for v, c in zip(values, box.components, strict=True)
     )
     axes = tuple(_axis_index(c) for c in box.components)
+
+    def entry(row, col):
+        pair = _PAIR[(min(axes[row], axes[col]), max(axes[row], axes[col]))]
+        value = 0.0 if offdiagonal is None else offdiagonal[..., pair]
+        if skew is not None:
+            sign = 1.0 if axes[row] < axes[col] else -1.0
+            value = value + sign * skew[..., pair]
+        return value
+
     for row, (component, shape) in enumerate(
         zip(box.components, box.shapes, strict=True)
     ):
         cross = sum(
-            offdiagonal[
-                ..., _PAIR[(min(axes[row], axes[col]), max(axes[row], axes[col]))]
-            ]
-            * shared[col]
-            for col in range(len(axes))
-            if col != row
+            entry(row, col) * shared[col] for col in range(len(axes)) if col != row
         )
         out[row] = out[row] + _collocate(
             cross, box.shared, component, shape, box.widths, box.seams
         )
     return tuple(out)
+
+
+def apply_operator(values, operator: InverseOperator, box: YeeBox):
+    """Apply an :class:`InverseOperator` (including skew terms) on the box."""
+    return apply_tensor_operator(
+        values, operator.diagonal, operator.offdiagonal, box, operator.skew
+    )
 
 
 def _crop(state, box: YeeBox):
@@ -328,24 +332,74 @@ def _scatter(state, box: YeeBox, values):
     }
 
 
-def _apply_regions(regions, old, state, flat):
+@dataclass(frozen=True)
+class BoxFields:
+    """Pre-update fields cropped to each correction box.
+
+    Taking these crops before the vacuum kernel lets an in-place (CUDA) update
+    reuse the field buffers instead of XLA copying whole arrays to keep the
+    previous fields alive.
+    """
+
+    regions: tuple  # per region: one cropped array per box component
+    magnetic: tuple | None = None  # static tensor-permeability box
+    electric: tuple | None = None  # static full-tensor permittivity box
+
+
+def snapshot_electric(state, plan: AnisotropicPlan) -> BoxFields:
+    return BoxFields(
+        tuple(_crop(state, r.box) for r in plan.electric_regions),
+        electric=None if plan.electric is None else _crop(state, plan.electric.box),
+    )
+
+
+def snapshot_magnetic(state, plan: AnisotropicPlan) -> BoxFields:
+    return BoxFields(
+        tuple(_crop(state, r.box) for r in plan.magnetic_regions),
+        None if plan.magnetic is None else _crop(state, plan.magnetic.box),
+    )
+
+
+def _use_native(native: bool, box: YeeBox, state) -> bool:
+    """Whether ``box`` runs on the streamed-CUDA tensor-media kernels."""
+    if not native:
+        return False
+    from beamz.simulation.cuda.tensor_media import supports
+
+    return supports(box, state.ex.dtype)
+
+
+def _apply_regions(regions, old_fields, state, flat, native=False):
     """Advance each region and subtract eps_inf^-1 (or mu_inf^-1) of its delta."""
     new_flat, index = [], 0
-    for region in regions:
+    for region, fields in zip(regions, old_fields, strict=True):
         count = len(region.state_shapes)
-        delta, advanced = region.advance(old, flat[index : index + count])
+        part = flat[index : index + count]
         index += count
-        correction = apply_tensor_operator(
-            delta, region.inverse.diagonal, region.inverse.offdiagonal, region.box
-        )
-        current = _crop(state, region.box)
-        state = state._replace(
-            **_scatter(
-                state,
-                region.box,
-                tuple(c - d for c, d in zip(current, correction, strict=True)),
+        if getattr(region, "edot_diagonal", None):
+            from beamz.simulation.ccpr import apply_ccpr_region
+
+            state, advanced = apply_ccpr_region(region, fields, part, state, native)
+        elif isinstance(region, TensorPolarizationRegion) and _use_native(
+            native, region.box, state
+        ):
+            from beamz.simulation.cuda import tensor_media
+
+            delta, advanced = tensor_media.advance_poles(region, fields, part)
+            state = tensor_media.apply_inverse(
+                state, region.box, region.inverse, delta, sign=-1.0
             )
-        )
+        else:
+            delta, advanced = region.advance(fields, part)
+            correction = apply_operator(delta, region.inverse, region.box)
+            current = _crop(state, region.box)
+            state = state._replace(
+                **_scatter(
+                    state,
+                    region.box,
+                    tuple(c - d for c, d in zip(current, correction, strict=True)),
+                )
+            )
         new_flat.extend(advanced)
     return state, tuple(new_flat)
 
@@ -354,48 +408,94 @@ def _state_count(regions) -> int:
     return sum(len(region.state_shapes) for region in regions)
 
 
-def update_magnetic(old, state, plan: AnisotropicPlan, tail):
-    """Apply tensor permeability and magnetic poles after the vacuum H kernel."""
+def _static_increment(plan: StaticTensorPlan, before, after):
+    """``inc - 2 B F_old`` from the box fields before and after the kernel."""
+    if plan.loss is None:
+        increment = tuple(a - b for a, b in zip(after, before, strict=True))
+    else:
+        # The lossy vacuum kernel gives F' = a F + b inc with
+        # a = (1 - beta) / (1 + beta) and b = 1 / (1 + beta), so
+        # inc = (F' - a F)(1 + beta).
+        increment = tuple(
+            (a - (1 - beta) / (1 + beta) * b) * (1 + beta)
+            for a, b, beta in zip(after, before, plan.loss, strict=True)
+        )
+    # B F_old: the full damping operator when present, else the diagonal loss.
+    if plan.damping is not None:
+        damped = apply_operator(before, plan.damping, plan.box)
+    elif plan.loss is not None:
+        damped = tuple(beta * b for b, beta in zip(before, plan.loss, strict=True))
+    else:
+        return increment
+    return tuple(i - 2 * d for i, d in zip(increment, damped, strict=True))
 
+
+def _apply_static(plan: StaticTensorPlan, before, state, native):
+    """Replace the box fields by ``F_old + (T + B)^-1 (inc - 2 B F_old)``."""
+    box = plan.box
+    increment = _static_increment(plan, before, _crop(state, box))
+    if _use_native(native, box, state):
+        from beamz.simulation.cuda.tensor_media import apply_inverse
+
+        return apply_inverse(state, box, plan.inverse, increment, base=before, sign=1.0)
+    mapped = apply_operator(increment, plan.inverse, box)
+    return state._replace(
+        **_scatter(
+            state, box, tuple(b + m for b, m in zip(before, mapped, strict=True))
+        )
+    )
+
+
+def update_magnetic(old, state, plan: AnisotropicPlan, tail, native=False):
+    """Apply tensor permeability and magnetic poles after the vacuum H kernel.
+
+    ``old`` is the pre-update state or its :func:`snapshot_magnetic`.
+    ``native`` selects the streamed-CUDA kernels where a box supports them.
+    """
+
+    if not isinstance(old, BoxFields):
+        old = snapshot_magnetic(old, plan)
     if plan.magnetic is not None:
-        box = plan.magnetic.box
-        before, after = _crop(old, box), _crop(state, box)
-        if plan.magnetic.loss is None:
-            increment = tuple(a - b for a, b in zip(after, before, strict=True))
-        else:
-            # The lossy vacuum kernel gives H' = a H - b curl with
-            # a = (1 - beta) / (1 + beta) and b = (dt / mu0) / (1 + beta). The
-            # semi-implicit tensor update is
-            # H + (mu + beta)^-1 [(H' - a H)(1 + beta) - 2 beta H].
-            increment = tuple(
-                (a - (1 - beta) / (1 + beta) * b) * (1 + beta) - 2 * beta * b
-                for a, b, beta in zip(after, before, plan.magnetic.loss, strict=True)
-            )
-        mapped = apply_tensor_operator(
-            increment,
-            plan.magnetic.inverse.diagonal,
-            plan.magnetic.inverse.offdiagonal,
-            box,
-        )
-        state = state._replace(
-            **_scatter(
-                state, box, tuple(b + m for b, m in zip(before, mapped, strict=True))
-            )
-        )
+        state = _apply_static(plan.magnetic, old.magnetic, state, native)
     if not plan.magnetic_regions:
         return state, tail
     split = _state_count(plan.electric_regions)
-    state, magnetic = _apply_regions(plan.magnetic_regions, old, state, tail[split:])
+    state, magnetic = _apply_regions(
+        plan.magnetic_regions, old.regions, state, tail[split:], native
+    )
     return state, tuple(tail[:split]) + magnetic
 
 
-def update_electric(old, state, plan: AnisotropicPlan, tail):
-    """Apply electric tensor poles after the E kernel and E-phase sources."""
+def update_static_electric(old, state, plan: AnisotropicPlan, native=False):
+    """Apply full static eps / sigma tensors right after the vacuum E kernel.
+
+    Like the permeability mapping, this runs before E-phase sources inject, so
+    sources see the same update as in any other medium. ``old`` is the
+    pre-update state or its :func:`snapshot_electric`.
+    """
+
+    if plan.electric is None:
+        return state
+    if not isinstance(old, BoxFields):
+        old = snapshot_electric(old, plan)
+    return _apply_static(plan.electric, old.electric, state, native)
+
+
+def update_electric(old, state, plan: AnisotropicPlan, tail, native=False):
+    """Apply electric tensor poles after the E kernel and E-phase sources.
+
+    ``old`` is the pre-update state or its :func:`snapshot_electric`.
+    ``native`` selects the streamed-CUDA kernels where a box supports them.
+    """
 
     if not plan.electric_regions:
         return state, tail
+    if not isinstance(old, BoxFields):
+        old = snapshot_electric(old, plan)
     split = _state_count(plan.electric_regions)
-    state, electric = _apply_regions(plan.electric_regions, old, state, tail[:split])
+    state, electric = _apply_regions(
+        plan.electric_regions, old.regions, state, tail[:split], native
+    )
     return state, electric + tuple(tail[split:])
 
 
@@ -556,6 +656,238 @@ def _diagonal_inverse(grid, box, dt):
     return InverseOperator(tuple(diagonal), None)
 
 
+def static_media(grid, family: str) -> list:
+    """``(medium, fraction)`` pairs whose static terms need the box update.
+
+    For E: non-symmetric permittivity or off-diagonal conductivity. For H:
+    non-symmetric permeability or any magnetic conductivity.
+    """
+    two_d = len(grid.material_grid.shape) == 2
+    out = []
+    for medium, fraction in grid.material_grid.tensor_dispersion:
+        tensor, loss = _static_extras(medium, family, 1.0)
+        coupling = np.abs(tensor) + np.abs(loss)
+        if not np.any(coupling != 0.0):
+            continue
+        if two_d and (np.any(coupling[2, :2] != 0.0) or np.any(coupling[:2, 2] != 0.0)):
+            raise ValueError(
+                "2D simulations require static tensors and conductivities "
+                "without xz or yz coupling; use a 3D simulation."
+            )
+        out.append((medium, np.asarray(fraction, dtype=np.float64)))
+    return out
+
+
+def _static_extras(medium, family: str, dt):
+    """Box-update terms beyond the raster: (T extra, B extra) as 3x3 matrices.
+
+    The raster already holds the symmetric tensor and the diagonal electric
+    conductivity; the box adds the antisymmetric tensor part, the off-diagonal
+    electric conductivity, and the whole magnetic conductivity.
+    """
+    from beamz.design.anisotropic import skew_matrix, skew_values
+
+    if family == "E":
+        tensor = skew_matrix(skew_values(medium.permittivity_matrix))
+        sigma = medium.conductivity_matrix
+        loss = (sigma - np.diag(np.diag(sigma))) * dt / (2.0 * EPS_0)
+    else:
+        tensor = skew_matrix(skew_values(medium.permeability_matrix))
+        loss = medium.magnetic_conductivity_matrix * dt / (2.0 * MU_0)
+    return tensor, loss
+
+
+def coupled_operators(grid, box: YeeBox, dt, media):
+    """Pointwise ``(T + B)^-1`` and ``B`` of the full static tensors on a box.
+
+    ``T`` is the raster's tensor plus each medium's antisymmetric part, and
+    ``B = sigma dt / (2 eps0)`` (``mu0`` for H) the raster's diagonal loss plus
+    each medium's remaining conductivity, both volume-averaged by the medium's
+    cell fraction. Each support (component sites and the shared support)
+    inverts its own full tensor; diagonals stay on the sites and the cross
+    terms, split into symmetric and antisymmetric parts, on the shared
+    support, exactly like the symmetric full-tensor update. Returns
+    ``(inverse, damping)`` operators, ``damping`` None when ``B`` vanishes.
+    """
+    from beamz.design.anisotropic import packed_to_matrix
+
+    materials = grid.material_grid
+    components = box.components
+    count = len(components)
+    index = [_axis_index(c) for c in components]
+    seams = _material_seams(box)
+    supports = tuple(zip(components, box.slices, box.shapes, strict=True))
+    site_parts = {c: (part, shape) for c, part, shape in supports}
+    if count > 1:
+        supports += ((box.shared, box.shared_slices, box.shared_shape),)
+
+    def move(value, source, target, shape):
+        if source == target:
+            return np.asarray(value, dtype=np.float64)
+        return np.asarray(
+            collocate_yee_component(
+                jnp.asarray(value),
+                source,
+                target,
+                shape,
+                cell_widths=box.widths,
+                seams=seams,
+            ),
+            dtype=np.float64,
+        )
+
+    if box.family == "E":
+        full = materials.uses_full_permittivity
+        names = {c: "eps_" + c[-1].lower() for c in components}
+        shared_name, packed = "eps_node", materials.yee_tensors
+        loss_names = {c: "sig_" + c[-1].lower() for c in components}
+        scale = dt / (2.0 * EPS_0)
+    else:
+        full = bool(materials.magnetic_tensors)
+        names = {c: "mu_h" + c[-1].lower() for c in components}
+        shared_name, packed = "mu_cell", materials.magnetic_tensors
+        loss_names = {c: "sigma_m_h" + c[-1].lower() for c in components}
+        scale = dt / (2.0 * MU_0)
+    cropped = np.asarray(
+        [np.asarray(f, dtype=np.float64)[box.cell_slices] for _, f in media]
+    )
+    extras = [_static_extras(medium, box.family, dt) for medium, _ in media]
+    inverses, losses = {}, {}
+    for support, part, shape in supports:
+        tensor = np.zeros((*shape, count, count))
+        loss = np.zeros((*shape, count, count))
+        if full:
+            name = names.get(support, shared_name)
+            values = expand_packed(packed[name])[(slice(None), *part)]
+            matrix = packed_to_matrix(np.moveaxis(values, 0, -1))
+            tensor += matrix[..., index, :][..., :, index]
+        for k, component in enumerate(components):
+            own_part, own_shape = site_parts[component]
+            if not full:
+                if box.family == "E":
+                    value = _crop_or_fill(
+                        getattr(grid, names[component]), own_part, own_shape
+                    )
+                    tensor[..., k, k] += move(value, component, support, shape)
+                else:
+                    tensor[..., k, k] += 1.0
+            sigma = _crop_or_fill(
+                getattr(grid, loss_names[component], 0.0), own_part, own_shape
+            )
+            if np.any(sigma != 0.0):
+                loss[..., k, k] += scale * move(sigma, component, support, shape)
+        for fraction, (extra_tensor, extra_loss) in zip(cropped, extras, strict=True):
+            weight = move(fraction, "Cell", support, shape)[..., None, None]
+            tensor += weight * extra_tensor[np.ix_(index, index)]
+            loss += weight * extra_loss[np.ix_(index, index)]
+        inverses[support] = np.linalg.inv(tensor + loss)
+        losses[support] = loss
+
+    def operator(matrices) -> InverseOperator:
+        diagonal = tuple(
+            jnp.asarray(matrices[c][..., k, k], dtype=jnp.float32)
+            for k, c in enumerate(components)
+        )
+        if count < 2:
+            return InverseOperator(diagonal, None)
+        shared = matrices[box.shared]
+        symmetric = np.zeros((*box.shared_shape, 3))
+        skew = np.zeros((*box.shared_shape, 3))
+        for row in range(count):
+            for col in range(row + 1, count):
+                pair = _PAIR[(index[row], index[col])]
+                upper, lower = shared[..., row, col], shared[..., col, row]
+                symmetric[..., pair] = 0.5 * (upper + lower)
+                skew[..., pair] = 0.5 * (upper - lower)
+        # Drop cross terms that are roundoff relative to the diagonal.
+        floor = 1e-12 * max(float(np.abs(d).max(initial=0.0)) for d in diagonal)
+
+        def cross(values):
+            if not np.any(np.abs(values) > floor):
+                return None
+            return jnp.asarray(values, dtype=jnp.float32)
+
+        return InverseOperator(diagonal, cross(symmetric), cross(skew))
+
+    damping = (
+        operator(losses) if any(np.any(m != 0.0) for m in losses.values()) else None
+    )
+    return operator(inverses), damping
+
+
+def static_electric_box(grid, periodic_axes=frozenset()) -> YeeBox | None:
+    """The E box of the full static-tensor update, or None without such media."""
+    media = static_media(grid, "E")
+    if not media:
+        return None
+    active = np.zeros(tuple(grid.material_grid.shape), dtype=bool)
+    for _, fraction in media:
+        active |= fraction > 1e-7
+    if not np.any(active):
+        return None
+    periodic = _seam_phases(grid, periodic_axes)
+    return _make_box(
+        "E",
+        _active_components("E", grid),
+        _cell_bounds(active, periodic),
+        grid,
+        periodic,
+    )
+
+
+def vacuum_coefficient_grid(grid, periodic_axes=frozenset()):
+    """Grid and full-tensor supports whose E coefficients are vacuum on the box.
+
+    The E kernel then returns ``E + inc`` there and the static plan applies
+    the full ``(T + B)^-1``. Returns ``(grid, yee_tensors)``; both are the
+    inputs unchanged without non-symmetric or off-diagonal-conductive media.
+    """
+    from dataclasses import replace
+
+    materials = grid.material_grid
+    box = static_electric_box(grid, periodic_axes)
+    if box is None:
+        return grid, materials.yee_tensors
+    changes = {}
+    for component, part in zip(box.components, box.slices, strict=True):
+        axis = component[-1].lower()
+        shape = tuple(grid.component_shapes[component])
+        for prefix, value in (("eps_", 1.0), ("sig_", 0.0)):
+            array = jnp.asarray(getattr(grid, prefix + axis))
+            array = jnp.broadcast_to(array, shape).at[part].set(value)
+            changes[prefix + axis] = array
+            if prefix == "eps_":
+                changes["eps_e" + axis] = array
+    tensors = materials.yee_tensors
+    if materials.uses_full_permittivity:
+        node = expand_packed(tensors["eps_node"])[(slice(None), *box.shared_slices)]
+        ring = np.zeros(box.shared_shape, dtype=bool)
+        seam_axes = {axis for axis, _ in box.seams}
+        for position, axis in enumerate(("z", "y", "x")[-len(box.shared_shape) :]):
+            if axis in seam_axes:
+                continue
+            for end in (0, -1):
+                edge: list[int | slice] = [slice(None)] * len(box.shared_shape)
+                edge[position] = end
+                ring[tuple(edge)] = True
+        if np.any(np.abs(node[3:][:, ring]) > 1e-10):
+            raise ValueError(
+                "Non-symmetric or off-diagonal-conductive media must stay at "
+                f"least {_HALO + 1} cells from other off-diagonal permittivity."
+            )
+        identity = _PACKED_IDENTITY.reshape((6,) + (1,) * len(box.shared_shape))
+        tensors = dict(tensors)
+        for component, part in zip(box.components, box.slices, strict=True):
+            name = "eps_" + component[-1].lower()
+            values = expand_packed(tensors[name]).copy()
+            values[(slice(None), *part)] = identity
+            tensors[name] = values
+        values = expand_packed(tensors["eps_node"]).copy()
+        values[(slice(None), *box.shared_slices)] = identity
+        tensors["eps_node"] = values
+    return replace(grid, **changes), tensors
+
+
 def _cropped_losses(losses, box: YeeBox):
     """Per-component box arrays of a loss mapping, or None when lossless."""
     if not any(np.any(np.asarray(loss) != 0.0) for loss in losses.values()):
@@ -568,7 +900,11 @@ def _cropped_losses(losses, box: YeeBox):
 
 def _compile_magnetic(grid, periodic_axes, dt, inverse_for_box) -> MagneticPlan | None:
     tensors = grid.material_grid.magnetic_tensors
-    _check_static_tensor_stability(grid, dt)
+    media = static_media(grid, "H")
+    if not tensors and not media:
+        return None
+    if tensors:
+        _check_static_tensor_stability(grid, dt)
     cell_shape = tuple(grid.material_grid.shape)
     components = _active_components("H", grid)
     active = np.zeros(cell_shape, dtype=bool)
@@ -583,13 +919,26 @@ def _compile_magnetic(grid, periodic_axes, dt, inverse_for_box) -> MagneticPlan 
             np.abs(values.reshape(6, -1) - _PACKED_IDENTITY[:, None]) > 1e-10, axis=0
         ).reshape(values.shape[1:])
         active |= _support_to_cells(differs, component, cell_shape)
+    for _, fraction in media:
+        active |= fraction > 1e-7
     if not np.any(active):
         return None
     box = _make_box(
         "H", components, _cell_bounds(active, periodic_axes), grid, periodic_axes
     )
     loss = _cropped_losses(magnetic_losses(grid, components, dt), box)
-    return MagneticPlan(box, inverse_for_box(box), loss)
+    if media:
+        inverse, damping = coupled_operators(grid, box, dt, media)
+        return StaticTensorPlan(box, inverse, loss, damping)
+    return StaticTensorPlan(box, inverse_for_box(box), loss)
+
+
+def _compile_electric(grid, periodic_axes, dt) -> StaticTensorPlan | None:
+    box = static_electric_box(grid, periodic_axes)
+    if box is None:
+        return None
+    inverse, damping = coupled_operators(grid, box, dt, static_media(grid, "E"))
+    return StaticTensorPlan(box, inverse, None, damping)
 
 
 def _check_static_tensor_stability(grid, dt):
@@ -630,70 +979,30 @@ def _pole_coefficients(poles, dt):
     return c1, c2, c3
 
 
-def coupled_pole_frequency(static, poles) -> float:
-    """Largest local (k = 0) normal-mode frequency of a pole set, in rad/s.
+def max_stable_timestep(medium, family, spacings, polarization=None) -> float:
+    """Largest stable dt for a medium's poles on a grid with these ``spacings``.
 
-    With the field slaved to the polarization (E = D - eps_inf^-1 sum p), each
-    pole obeys p_p'' = -omega_p^2 p_p - W_p eps_inf^-1 sum_q p_q; the
-    eigenvalues of that 3P x 3P matrix are the squared normal-mode frequencies.
+    A von Neumann analysis of the implemented scheme (see
+    :mod:`beamz.simulation.pole_stability`); with two spacings,
+    ``polarization`` (``"te"`` or ``"tm"``) keeps only the simulated field
+    components, both when None.
     """
-    from beamz.design.anisotropic import packed_to_matrix
+    from beamz.simulation import pole_stability
 
-    inverse = np.linalg.inv(packed_to_matrix(np.asarray(static)))
-    count = len(poles)
-    matrix = np.zeros((3 * count, 3 * count))
-    for row, pole in enumerate(poles):
-        coupling = pole.weight_matrix @ inverse
-        for column in range(count):
-            matrix[3 * row : 3 * row + 3, 3 * column : 3 * column + 3] = coupling
-        matrix[3 * row : 3 * row + 3, 3 * row : 3 * row + 3] += (
-            pole.resonance** 2 * np.eye(3)
-        )
-    return float(np.sqrt(max(0.0, np.max(np.linalg.eigvals(matrix).real))))
-
-
-def max_stable_timestep(medium, family, spacings) -> float:
-    """Largest dt with S^2 + (Omega dt / 2)^2 < 1 for a medium's tensor poles.
-
-    ``S`` is the Courant number inside the medium, normalized to its CFL limit
-    (the vacuum limit scaled by sqrt(min eig eps_inf * min eig mu_inf)), and
-    ``Omega`` is :func:`coupled_pole_frequency`. This is the stability bound of
-    the explicit central-difference pole recurrence coupled to Yee leapfrog.
-    """
-    from beamz.design.anisotropic import packed_to_matrix
-
-    poles = medium.electric_poles if family == "E" else medium.magnetic_poles
-    static = medium.epsilon_r if family == "E" else medium.mu_r
-    floor = np.linalg.eigvalsh(packed_to_matrix(np.asarray(medium.epsilon_r)))[0]
-    floor *= np.linalg.eigvalsh(packed_to_matrix(np.asarray(medium.mu_r)))[0]
-    courant = LIGHT_SPEED**2 * sum(1.0 / h**2 for h in spacings) / floor
-    omega = coupled_pole_frequency(static, poles)
-    return float(1.0 / np.sqrt(courant + 0.25 * omega**2))
-
-
-def _check_pole_stability(medium, family, dt, grid):
-    geometry = grid.geometry
-    active = 3 if len(grid.material_grid.shape) == 3 else 2
-    spacings = tuple(geometry.min_spacings[:active])
-    limit = max_stable_timestep(medium, family, spacings)
-    if dt >= limit:
-        raise ValueError(
-            f"Tensor poles are unstable at dt={dt:.3e} s; this medium needs "
-            f"dt < {limit:.3e} s (S^2 + (Omega dt / 2)^2 < 1 with the in-medium "
-            "Courant number S and the fastest coupled pole frequency Omega)."
-        )
+    return pole_stability.max_stable_timestep(medium, family, spacings, polarization)
 
 
 def _compile_regions(
     medium, fraction, family, grid, dt, periodic_axes, inverse_for_box
 ) -> list:
     from beamz.design.anisotropic import GyrotropicPole
+    from beamz.simulation import pole_stability
 
     poles = medium.electric_poles if family == "E" else medium.magnetic_poles
     fraction = np.asarray(fraction, dtype=np.float64)
     if not poles or not np.any(fraction > 1e-7):
         return []
-    _check_pole_stability(medium, family, dt, grid)
+    pole_stability.check_stability(medium, family, dt, grid)
     tensor = [p for p in poles if not isinstance(p, GyrotropicPole)]
     gyrotropic = [p for p in poles if isinstance(p, GyrotropicPole)]
     box = _make_box(
@@ -706,7 +1015,14 @@ def _compile_regions(
     inverse = inverse_for_box(box)
     regions = []
     if tensor:
-        regions.append(_compile_tensor_region(tensor, fraction, box, dt, inverse))
+        region = _compile_tensor_region(tensor, fraction, box, dt, inverse)
+        if any(getattr(p, "has_edot", False) for p in tensor):
+            from beamz.simulation.ccpr import compile_ccpr_region
+
+            region = compile_ccpr_region(
+                region, tensor, fraction, grid, dt, periodic_axes
+            )
+        regions.append(region)
     if gyrotropic:
         regions.append(
             _compile_gyrotropic_region(gyrotropic, fraction, box, dt, inverse)
@@ -756,6 +1072,51 @@ def _compile_gyrotropic_region(poles, fraction, box, dt, inverse):
     )
 
 
+def tensor_pole_weights(fraction, drive, box: YeeBox):
+    """Per-site and shared-support pole strengths for a cropped cell fraction.
+
+    ``fraction`` is the medium's volume fraction on ``box.cell_slices`` (JAX or
+    NumPy; traced values are fine), ``drive`` the folded strengths (poles, 6).
+    Returns ``(diagonal per component, cross terms or None)``.
+    """
+    seams = _material_seams(box)
+    cell_ndim = len(box.shared_shape)
+    reshape = (-1,) + (1,) * cell_ndim
+    coupled = bool(np.any(drive[:, 3:] != 0.0)) and len(box.components) > 1
+    # Cross terms live on the shared support. With coupling, the diagonal weight
+    # of each site must be the shared weight averaged back to it: the operator
+    # is then a sum of per-support forms w * avg(E)^T W avg(E) (Jensen), hence
+    # positive semidefinite. Plain cell averages leave sites just outside a
+    # tilted medium with cross coupling but no diagonal, an indefinite operator
+    # that diverges for Drude (hyperbolic) poles.
+    if box.family == "H":
+        shared = fraction
+    else:
+        shared = _collocate(
+            fraction, "Cell", "Node", box.shared_shape, box.widths, seams
+        )
+    if coupled:
+        site_support, site_weight = box.shared, shared
+    else:
+        site_support, site_weight = "Cell", fraction
+    diagonal = []
+    for component, shape in zip(box.components, box.shapes, strict=True):
+        site = _collocate(
+            site_weight, site_support, component, shape, box.widths, seams
+        )
+        strength = drive[:, _axis_index(component)].reshape(reshape)
+        diagonal.append(jnp.asarray(strength, dtype=jnp.float32) * site[None])
+    offdiagonal = None
+    if coupled:
+        offdiagonal = (
+            jnp.asarray(drive[:, 3:], dtype=jnp.float32)[
+                (slice(None),) + (None,) * cell_ndim + (slice(None),)
+            ]
+            * shared[None, ..., None]
+        )
+    return tuple(diagonal), offdiagonal
+
+
 def _compile_tensor_region(poles, fraction, box, dt, inverse):
     weights = np.stack([np.asarray(p.weight) for p in poles])  # (poles, 6)
     if fraction.ndim == 2 and np.any(weights[:, 4:] != 0.0):
@@ -768,48 +1129,14 @@ def _compile_tensor_region(poles, fraction, box, dt, inverse):
     # they are ~1e-31 and ~1e31, and reverse-mode cotangents multiplied by the
     # tiny factor first would underflow float32.
     drive = weights * c3[:, None]
-    has_offdiagonal = bool(np.any(weights[:, 3:] != 0.0))
-    components = box.components
-    seams = _material_seams(box)
-    cropped = jnp.asarray(fraction[box.cell_slices], dtype=jnp.float32)
     reshape = (-1,) + (1,) * fraction.ndim
-    coupled = has_offdiagonal and len(components) > 1
-    # Cross terms live on the shared support. With coupling, the diagonal weight
-    # of each site must be the shared weight averaged back to it: the operator
-    # is then a sum of per-support forms w * avg(E)^T W avg(E) (Jensen), hence
-    # positive semidefinite. Plain cell averages leave sites just outside a
-    # tilted medium with cross coupling but no diagonal, an indefinite operator
-    # that diverges for Drude (hyperbolic) poles.
-    if box.family == "H":
-        shared = cropped
-    else:
-        shared = _collocate(
-            cropped, "Cell", "Node", box.shared_shape, box.widths, seams
-        )
-    if coupled:
-        site_support, site_weight = box.shared, shared
-    else:
-        site_support, site_weight = "Cell", cropped
-    diagonal = []
-    for component, shape in zip(components, box.shapes, strict=True):
-        site = _collocate(
-            site_weight, site_support, component, shape, box.widths, seams
-        )
-        strength = drive[:, _axis_index(component)].reshape(reshape)
-        diagonal.append(jnp.asarray(strength, dtype=jnp.float32) * site[None])
-    offdiagonal = None
-    if coupled:
-        offdiagonal = (
-            jnp.asarray(drive[:, 3:], dtype=jnp.float32)[
-                (slice(None),) + (None,) * fraction.ndim + (slice(None),)
-            ]
-            * shared[None, ..., None]
-        )
+    cropped = jnp.asarray(fraction[box.cell_slices], dtype=jnp.float32)
+    diagonal, offdiagonal = tensor_pole_weights(cropped, drive, box)
     return TensorPolarizationRegion(
         box,
         jnp.asarray(c1.reshape(reshape), dtype=jnp.float32),
         jnp.asarray(c2.reshape(reshape), dtype=jnp.float32),
-        tuple(diagonal),
+        diagonal,
         offdiagonal,
         inverse,
     )
@@ -867,8 +1194,8 @@ def compile_anisotropic(
     """Build static tensor-permeability and tensor-pole plans for a compiled grid."""
 
     material_grid = grid.material_grid
-    magnetic_coupling = material_grid._has_magnetic_coupling
-    if not magnetic_coupling and not material_grid.tensor_dispersion:
+    magnetic_update = material_grid.requires_magnetic_tensor_update
+    if not magnetic_update and not material_grid.tensor_dispersion:
         return None
     periodic = _seam_phases(grid, periodic_axes)
     _warn_on_absorber_overlap(grid)
@@ -886,7 +1213,7 @@ def compile_anisotropic(
                 electric_losses(grid, components, dt),
                 "Node",
             )
-        if family == "H" and magnetic_coupling:
+        if family == "H" and magnetic_update:
             tensors = material_grid.magnetic_tensors
             return lossy_tensor_inverse(
                 {c: tensors["mu_h" + c[-1].lower()] for c in components},
@@ -897,6 +1224,9 @@ def compile_anisotropic(
         return None
 
     def inverse_for_box(box):
+        media = static_media(grid, box.family)
+        if media:
+            return coupled_operators(grid, box, dt, media)[0]
         inverse = full_inverse(box.family)
         if inverse is not None:
             diagonal, cross = inverse
@@ -911,50 +1241,186 @@ def compile_anisotropic(
                     medium, fraction, family, grid, dt, periodic, inverse_for_box
                 )
             )
+    _reject_ccpr_static_overlap(grid, electric, "E")
+    _reject_ccpr_static_overlap(grid, magnetic, "H")
     return AnisotropicPlan(
         _compile_magnetic(grid, periodic, dt, inverse_for_box)
-        if magnetic_coupling
+        if magnetic_update
         else None,
         tuple(electric),
         tuple(magnetic),
+        _compile_electric(grid, periodic_axes, dt),
     )
+
+
+def _reject_ccpr_static_overlap(grid, regions, family: str) -> None:
+    """CCPR ``E'`` terms and full static-tensor boxes cannot share cells yet.
+
+    Both rewrite the same support's constitutive solve: the static box runs a
+    vacuum kernel, while the CCPR term augments the kernel's own tensor.
+    """
+    from beamz.simulation.ccpr import CCPRPolarizationRegion
+
+    ccpr = [r for r in regions if isinstance(r, CCPRPolarizationRegion)]
+    if not ccpr:
+        return
+    media = static_media(grid, family)
+    if not media:
+        return
+    static = np.zeros(grid.material_grid.shape, dtype=bool)
+    for _medium, fraction in media:
+        static |= np.asarray(fraction) > 1e-7
+    for region in ccpr:
+        reach = tuple(
+            slice(max(0, s.start - _HALO), s.stop + _HALO)
+            for s in region.box.cell_slices
+        )
+        if np.any(static[reach]):
+            raise ValueError(
+                "CCPR poles with an E' (b != 0) term cannot yet overlap media "
+                "with non-symmetric tensors or off-diagonal/magnetic "
+                f"conductivity (within {_HALO} cells)."
+            )
 
 
 def validate_mode_ports(material_grid, sources, monitors) -> None:
     """Reject mode ports whose modal solve cannot reproduce the propagation media.
 
-    Mode sources inside electric tensor-pole media are solved at their
-    frequency (see :func:`beamz.design.material_views.static_material_grid`).
-    Mode monitors project after
-    the run against one static material snapshot, so they must stay outside
-    tensor-pole media; every port must avoid non-unit permeability.
+    Mode sources and mode monitors inside tensor-pole media are solved at each
+    of their frequencies (see
+    :class:`beamz.design.material_views.DispersionFolding`), with electric
+    poles folded into permittivity and magnetic poles into permeability.
+    Diagonal and full symmetric permeability tensors are reproduced by the 3D
+    port solve; a 2D (line) port supports diagonal permeability only. Ports
+    must avoid gyrotropic media, whose poles cannot be frozen into static
+    reciprocal tensors, and media needing the full static-tensor update
+    (non-symmetric tensors, off-diagonal or magnetic conductivity).
     """
-
     if not sources and not monitors:
         return
 
-    magnetic = np.zeros(material_grid.shape, dtype=bool)
-    if material_grid.magnetic_tensors:
+    from beamz.design.material_views import foldable
+
+    # Only 2D TM line ports see in-plane (xy) magnetic coupling.
+    tm_2d = len(material_grid.shape) == 2 and material_grid.polarization == "tm"
+    in_plane_coupling = np.zeros(material_grid.shape, dtype=bool)
+    if material_grid.magnetic_tensors and tm_2d:
         cell = expand_packed(material_grid.magnetic_tensors["mu_cell"])
-        magnetic = np.any(
-            np.abs(cell - _PACKED_IDENTITY.reshape((6,) + (1,) * cell[0].ndim)) > 1e-10,
-            axis=0,
-        )
-    poles = np.zeros(material_grid.shape, dtype=bool)
-    for _medium, fraction in material_grid.tensor_dispersion:
-        poles |= np.asarray(fraction) > 1e-7
+        in_plane_coupling = np.abs(cell[3]) > 1e-10
+    unfoldable = np.zeros(material_grid.shape, dtype=bool)
+    static = np.zeros(material_grid.shape, dtype=bool)
+    for medium, fraction in material_grid.tensor_dispersion:
+        if medium.requires_static_correction:
+            static |= np.asarray(fraction) > 1e-7
+        if not foldable(medium):
+            unfoldable |= np.asarray(fraction) > 1e-7
+        elif tm_2d and any(
+            p.weight[3] != 0
+            or (getattr(p, "edot", None) is not None and p.edot[3] != 0)
+            for p in medium.magnetic_poles
+        ):
+            in_plane_coupling |= np.asarray(fraction) > 1e-7
     for kind, ports in (("ModeSource", sources), ("ModeMonitor", monitors)):
         for port in ports:
             cells = port_cells(material_grid, port.center, port.size)
-            if np.any(cells & magnetic):
+            if np.any(cells & in_plane_coupling):
                 raise ValueError(
-                    f"{kind} planes cannot yet overlap non-unit permeability; "
-                    "place the port in a nonmagnetic region."
+                    f"2D TM {kind} planes cannot yet overlap off-diagonal (xy) "
+                    "permeability; use a diagonal permeability tensor at the "
+                    "port or a 3D simulation."
                 )
-            if kind == "ModeMonitor" and np.any(cells & poles):
+            if np.any(cells & unfoldable):
                 raise ValueError(
-                    "ModeMonitor planes cannot yet lie in tensor-pole media: modal "
-                    "projection uses one static material snapshot for all "
-                    "frequencies. Move the monitor to a nondispersive region or "
-                    "use field/flux monitors."
+                    f"{kind} planes cannot yet overlap gyrotropic media; "
+                    "place the port outside them."
                 )
+            if np.any(cells & static):
+                raise ValueError(
+                    f"{kind} planes cannot yet overlap media with non-symmetric "
+                    "tensors, off-diagonal conductivity or magnetic "
+                    "conductivity; place the port outside them."
+                )
+
+
+# ---------------------------------------------------------------------------
+# Pytree registration: plans can be rebuilt from traced design parameters and
+# passed through jitted scans. Boxes are static metadata (slices are stored as
+# (start, stop) pairs because slices are unhashable on older Pythons); every
+# array is a leaf.
+
+
+def _slice_key(part):
+    return tuple((s.start, s.stop) for s in part)
+
+
+def _slice_value(key):
+    return tuple(slice(start, stop) for start, stop in key)
+
+
+def _flatten_box(box: YeeBox):
+    meta = (
+        box.family,
+        box.components,
+        tuple(_slice_key(part) for part in box.slices),
+        box.shapes,
+        box.shared_shape,
+        _slice_key(box.shared_slices),
+        _slice_key(box.cell_slices),
+        box.seams,
+    )
+    return (box.widths,), meta
+
+
+def _unflatten_box(meta, children):
+    family, components, slices, shapes, shared_shape, shared, cells, seams = meta
+    return YeeBox(
+        family,
+        components,
+        tuple(_slice_value(part) for part in slices),
+        shapes,
+        shared_shape,
+        _slice_value(shared),
+        _slice_value(cells),
+        children[0],
+        seams,
+    )
+
+
+def _register_fields(cls, data, meta=()):
+    def flatten(value):
+        children = tuple(getattr(value, f) for f in data)
+        aux = tuple(getattr(value, f) for f in meta)
+        return children, aux
+
+    def unflatten(aux, children):
+        return cls(
+            **dict(zip(data, children, strict=True)),
+            **dict(zip(meta, aux, strict=True)),
+        )
+
+    jax.tree_util.register_pytree_node(cls, flatten, unflatten)
+
+
+jax.tree_util.register_pytree_node(YeeBox, _flatten_box, _unflatten_box)
+_register_fields(InverseOperator, ("diagonal", "offdiagonal", "skew"))
+_register_fields(StaticTensorPlan, ("box", "inverse", "loss", "damping"))
+_register_fields(
+    TensorPolarizationRegion,
+    ("box", "c1", "c2", "diagonal", "offdiagonal", "inverse"),
+)
+_register_fields(
+    GyrotropicRegion,
+    (
+        "box",
+        "rotation",
+        "strength",
+        "resonance_squared",
+        "damping",
+        "weights",
+        "inverse",
+    ),
+    ("iterations",),
+)
+_register_fields(
+    AnisotropicPlan, ("magnetic", "electric_regions", "magnetic_regions", "electric")
+)

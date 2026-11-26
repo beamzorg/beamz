@@ -426,7 +426,9 @@ class MaterialGrid:
 
         entries = []
         for medium, fraction in self.tensor_dispersion:
-            if not isinstance(medium, AnisotropicMedium) or not medium.is_dispersive:
+            if not isinstance(medium, AnisotropicMedium) or not (
+                medium.is_dispersive or medium.requires_static_correction
+            ):
                 raise TypeError(
                     "Tensor dispersion entries require dispersive AnisotropicMedium values."
                 )
@@ -753,15 +755,35 @@ class MaterialGrid:
 
     @property
     def uses_magnetic_tensors(self) -> bool:
-        """Return whether propagation needs a non-unit permeability update."""
+        """Return whether the grid stores packed magnetic tensors."""
 
         return bool(self.magnetic_tensors)
 
     @property
-    def _has_magnetic_coupling(self) -> bool:
-        return any(
-            not _allclose_bounded(_tensor_off_diagonal(values), 0, rtol=0, atol=1e-10)
-            for values in self.magnetic_tensors.values()
+    def requires_magnetic_tensor_update(self) -> bool:
+        """Return whether the diagonal Yee coefficients cannot handle the update."""
+        for medium, _ in self.tensor_dispersion:
+            permeability = medium.permeability_matrix
+            if np.any(permeability != permeability.T) or np.any(
+                medium.magnetic_conductivity_matrix
+            ):
+                return True
+        return self.uses_magnetic_tensors and (
+            # Magnetic CCPR uses the tensor plan to map the vacuum H increment
+            # through the static permeability before applying the pole correction.
+            any(
+                getattr(pole, "has_edot", False)
+                for medium, _ in self.tensor_dispersion
+                for pole in medium.magnetic_poles
+            )
+            or not (self.magnetic_tensors.keys() - {"mu_cell"})
+            <= self.yee_materials.keys()
+            or any(
+                not _allclose_bounded(
+                    _tensor_off_diagonal(values), 0.0, rtol=0, atol=1e-10
+                )
+                for values in self.magnetic_tensors.values()
+            )
         )
 
     def canonical_spec(self):

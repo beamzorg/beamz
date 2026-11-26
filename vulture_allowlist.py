@@ -118,6 +118,13 @@ _.from_spec
 _.lorentz
 _.drude
 _.magnetized_plasma
+_.critical_point
+_.from_pole_residue
+_.from_complex_permittivity
+_.complex_permittivity
+_.complex_permeability
+_.fold_fast_poles
+
 # singledispatch invokes this registered source compiler.
 _lower_plane_wave_source
 

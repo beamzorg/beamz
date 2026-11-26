@@ -575,6 +575,22 @@ def local_3d_phasor_context(
         )
         for name, values in tensors.items()
     }
+    magnetic = getattr(fields, "magnetic_tensors", None)
+    if magnetic is None:
+        magnetic = getattr(material_grid, "magnetic_tensors", {})
+    local_fields.magnetic_tensors = {
+        name: np.asarray(values)[
+            (
+                slice(None),
+                *(
+                    cell_slice
+                    if name == "mu_cell"
+                    else component_slices["H" + name[-1]]
+                ),
+            )
+        ]
+        for name, values in magnetic.items()
+    }
 
     offset = (
         0.0
@@ -695,14 +711,77 @@ def advance_incident_h_3d(
     fields, state, dt, *, resolution: float
 ) -> dict[str, np.ndarray]:
     """Advance a static incident state with one compiled H half-step."""
+    grid = getattr(fields, "geometry", None)
     updated = _incident_h_step(
         {c: jnp.asarray(state[c]) for c in _FIELD_COMPONENTS_3D},
         tuple(jnp.asarray(getattr(fields, "sigma_m_h" + a)) for a in "xyz"),
         float(dt),
         resolution=resolution,
-        grid=getattr(fields, "geometry", None),
+        grid=grid,
     )
-    return dict(zip(_H_COMPONENTS_3D, map(np.asarray, updated), strict=True))
+    advanced: dict[str, np.ndarray] = dict(
+        zip(_H_COMPONENTS_3D, map(np.asarray, updated), strict=True)
+    )
+    return _map_through_permeability(fields, state, advanced, dt, grid)
+
+
+def _map_through_permeability(fields, before, after, dt, grid):
+    """Apply the propagation's tensor-permeability correction to an H advance.
+
+    The time step advances H with vacuum permeability and then maps the
+    (semi-implicit, possibly lossy) increment through the inverse of the packed
+    permeability tensor: diagonals on H sites, cross terms on cell centers.
+    The incident state must follow the same update, or a mode source in a
+    magnetic medium injects mu times the intended magnetic increment.
+    """
+    tensors = getattr(fields, "magnetic_tensors", None)
+    if tensors is None:
+        tensors = getattr(
+            getattr(fields, "material_grid", None), "magnetic_tensors", {}
+        )
+    if not tensors:
+        return after
+    from beamz.const import MU_0
+    from beamz.constitutive import apply_tensor_dense, lossy_tensor_inverse
+
+    components = _H_COMPONENTS_3D
+    losses = {
+        c: dt
+        * np.asarray(getattr(fields, "sigma_m_h" + c[-1].lower()), dtype=np.float64)
+        / (2.0 * MU_0)
+        for c in components
+    }
+    diagonal, cross = lossy_tensor_inverse(
+        {c: tensors["mu_h" + c[-1].lower()] for c in components},
+        tensors["mu_cell"],
+        losses,
+        "Cell",
+    )
+    increments = []
+    for c in components:
+        beta, old = losses[c], np.asarray(before[c])
+        increments.append(
+            jnp.asarray(
+                (after[c] - (1.0 - beta) / (1.0 + beta) * old) * (1.0 + beta)
+                - 2.0 * beta * old
+            )
+        )
+    mapped = apply_tensor_dense(
+        tuple(increments),
+        tuple(jnp.asarray(diagonal[c]) for c in components),
+        jnp.asarray(cross),
+        components,
+        "Cell",
+        cell_widths=(
+            tuple(np.asarray(grid.cell_widths(a)) for a in "xyz")
+            if grid is not None and grid.metric_kind != "isotropic_uniform"
+            else None
+        ),
+    )
+    return {
+        c: np.asarray(before[c]) + np.asarray(m)
+        for c, m in zip(components, mapped, strict=True)
+    }
 
 
 @partial(

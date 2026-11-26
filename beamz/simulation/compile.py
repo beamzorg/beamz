@@ -783,35 +783,43 @@ def _check_magnetic_cfl(request: Any = "") -> None:
         )
 
 
-def _validate_tensor_media(request: SimulationRequest, *, tensor_media: bool) -> None:
-    materials = request.materials
-    if not tensor_media and (
-        materials.tensor_dispersion or materials._has_magnetic_coupling
+def _magnetic_kernel_permeability(materials, fields):
+    if materials.requires_magnetic_tensor_update:
+        return (np.float32(1),) * 3
+    return fields.mu_hx, fields.mu_hy, fields.mu_hz
+
+
+def _validate_tensor_media(request: SimulationRequest) -> None:
+    if not (
+        request.materials.tensor_dispersion or request.materials.uses_magnetic_tensors
+    ):
+        return
+
+    from beamz.devices.monitors.monitors import ModeMonitor
+    from beamz.devices.sources.specs import ModeSource
+
+    from .anisotropic import validate_mode_ports
+
+    validate_mode_ports(
+        request.materials,
+        [s for s in request.sources if isinstance(s, ModeSource)],
+        [m for m in request.monitors if isinstance(m, ModeMonitor)],
+    )
+    if (
+        request.materials.tensor_dispersion
+        or request.materials.requires_magnetic_tensor_update
+    ) and (
+        request.run.backend not in {"jax", "cuda_streamed"} or request.run.sharding[0]
     ):
         raise ValueError(
-            "Off-diagonal magnetic coupling and tensor-pole media require "
-            "single-device JAX execution."
-        )
-    if tensor_media and (
-        materials.tensor_dispersion or materials.uses_magnetic_tensors
-    ):
-        from beamz.devices.monitors.monitors import ModeMonitor
-        from beamz.devices.sources.specs import ModeSource
-
-        from .anisotropic import validate_mode_ports
-
-        validate_mode_ports(
-            materials,
-            [s for s in request.sources if isinstance(s, ModeSource)],
-            [m for m in request.monitors if isinstance(m, ModeMonitor)],
+            "Tensor permeability and tensor-pole media require single-device "
+            "JAX or streamed CUDA execution."
         )
 
 
 @trace_preparation("compile_plan")
 def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     """Build an immutable executable plan from a simulation request."""
-    tensor_media = request.run.backend == "jax" and not request.run.sharding[0]
-    _validate_tensor_media(request, tensor_media=tensor_media)
     _check_magnetic_cfl(request)
     vector = bloch_wavevector(
         request.boundaries, is_3d=request.domain.is_3d, plane_2d=request.domain.plane_2d
@@ -844,6 +852,7 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             raise ValueError(
                 "Tensor modal workflows require single-device JAX or streamed CUDA execution"
             )
+    _validate_tensor_media(request)
     if request.materials.dispersion:
         from beamz.devices.monitors.monitors import ModeMonitor
         from beamz.devices.sources.specs import ModeSource
@@ -904,6 +913,16 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
     logical_grid = _compile_grid(request, boundary_data, region_setup=region_setup)
     setup = _prepare_compilation(request, logical_grid)
     fields = logical_grid
+    coefficient_tensors = request.materials.yee_tensors
+    if request.materials.tensor_dispersion:
+        from .anisotropic import vacuum_coefficient_grid
+
+        # Full static tensors (non-symmetric or off-diagonal-conductive media)
+        # are applied box-locally after a vacuum E update; the plan itself is
+        # compiled from ``logical_grid``.
+        fields, coefficient_tensors = vacuum_coefficient_grid(
+            logical_grid, boundary_data.periodic_axes
+        )
     dt = setup.dt
     sharding = setup.sharding
     sharding_layout = sharding.layout
@@ -958,20 +977,17 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
                     return packed[0][0], packed[1][0]
         return values
 
+    # The tensor plan maps a vacuum update through the inverse permeability.
+    # Ordinary diagonal material grids still use their direct Yee coefficients.
+    h_mu = _magnetic_kernel_permeability(request.materials, fields)
     empty3 = jnp.zeros((0, 0, 0), dtype=jnp.float32)
-    # The tensor update maps the vacuum H increment through the inverse tensor.
-    # Applying diagonal mu in the Yee kernel as well would scale the curl twice.
-    tensor_magnetic = tensor_media and request.materials._has_magnetic_coupling
     if use_3d_material_coefficients:
-        if not tensor_magnetic and (
-            request.run.backend in {"cuda_streamed", "cuda_mstep"}
-            or (
-                uniform_value(request.materials.permeability) != 1
-                or any(
-                    uniform_value(v) != 1
-                    for k, v in request.materials.yee_materials.items()
-                    if k.startswith("mu_h")
-                )
+        if request.run.backend in {"cuda_streamed", "cuda_mstep"} or (
+            uniform_value(request.materials.permeability) != 1
+            or any(
+                uniform_value(v) != 1
+                for k, v in request.materials.yee_materials.items()
+                if k.startswith("mu_h")
             )
         ):
             (
@@ -979,15 +995,9 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
                 (h_decay_y, h_source_y),
                 (h_decay_z, h_source_z),
             ) = (
-                _permeable_h_coefficients(
-                    fields.sigma_m_hx, fields.mu_hx, dt, precompute_h
-                ),
-                _permeable_h_coefficients(
-                    fields.sigma_m_hy, fields.mu_hy, dt, precompute_h
-                ),
-                _permeable_h_coefficients(
-                    fields.sigma_m_hz, fields.mu_hz, dt, precompute_h
-                ),
+                _permeable_h_coefficients(fields.sigma_m_hx, h_mu[0], dt, precompute_h),
+                _permeable_h_coefficients(fields.sigma_m_hy, h_mu[1], dt, precompute_h),
+                _permeable_h_coefficients(fields.sigma_m_hz, h_mu[2], dt, precompute_h),
             )
             h_decay_x, h_source_x, h_decay_y, h_source_y, h_decay_z, h_source_z = (
                 _elide_uniform_grid(value, compact=request._native_preparation)
@@ -1012,24 +1022,9 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             (h_decay_y, h_source_y),
             (h_decay_z, h_source_z),
         ) = (
-            _permeable_h_coefficients(
-                fields.sigma_m_hx,
-                np.float32(1) if tensor_magnetic else fields.mu_hx,
-                dt,
-                precompute_h,
-            ),
-            _permeable_h_coefficients(
-                fields.sigma_m_hy,
-                np.float32(1) if tensor_magnetic else fields.mu_hy,
-                dt,
-                precompute_h,
-            ),
-            _permeable_h_coefficients(
-                fields.sigma_m_hz,
-                np.float32(1) if tensor_magnetic else fields.mu_hz,
-                dt,
-                precompute_h,
-            ),
+            _permeable_h_coefficients(fields.sigma_m_hx, h_mu[0], dt, precompute_h),
+            _permeable_h_coefficients(fields.sigma_m_hy, h_mu[1], dt, precompute_h),
+            _permeable_h_coefficients(fields.sigma_m_hz, h_mu[2], dt, precompute_h),
         )
         h_sigma_m_x = h_sigma_m_y = h_sigma_m_z = empty3
 
@@ -1176,9 +1171,20 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
                 "Full-tensor permittivity with conductive or sponge-PML loss "
                 "requires backend='jax'; native CUDA updates are lossless."
             )
-        from .anisotropic import electric_losses, lossy_tensor_inverse
+        from .anisotropic import _seam_phases, electric_losses, lossy_tensor_inverse
+        from .ccpr import electric_kernel_tensors
 
-        support_tensors = request.materials.yee_tensors
+        # CCPR poles fold their implicit E' coupling into the kernel tensors,
+        # on top of any vacuum box owned by the static tensor plan.
+        support_tensors = (
+            electric_kernel_tensors(
+                fields,
+                dt,
+                _seam_phases(fields, boundary_data.periodic_axes),
+                base=coefficient_tensors,
+            )
+            or coefficient_tensors
+        )
         components = tuple(
             "E" + axis for axis in "xyz" if "eps_" + axis in support_tensors
         )
@@ -1189,7 +1195,8 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
             electric_losses(fields, components, dt) if lossy else {},
             "Node",
         )
-        electric_inverse = diagonal, cross
+        if support_tensors is request.materials.yee_tensors:
+            electric_inverse = diagonal, cross
         e_inverse_diagonal_x, e_inverse_diagonal_y, e_inverse_diagonal_z = (
             jnp.asarray(diagonal["E" + axis])
             if "E" + axis in diagonal
@@ -1330,7 +1337,6 @@ def compile_simulation(request: SimulationRequest) -> CompiledProgram:
         dt,
         boundary_data.periodic_axes,
         complex_fields=any(vector),
-        tensor_media=tensor_media,
         electric_inverse=electric_inverse,
     )
     program = CompiledProgram(
@@ -1433,24 +1439,27 @@ def compile_program(
                 "Rectilinear full-tensor updates with periodic/Bloch seams "
                 "require backend='jax'."
             )
-    cuda_magnetic_supported = not material_grid._has_magnetic_coupling
-    if not cuda_magnetic_supported:
-        if sharding_token[0]:
-            raise ValueError(
-                "Off-diagonal magnetic coupling requires single-device JAX."
-            )
-        if requested_backend not in {"auto", "jax"}:
-            raise CudaBackendUnavailable(
-                "Off-diagonal magnetic coupling requires backend='jax'."
-            )
-    has_dispersion = bool(material_grid.dispersion or material_grid.tensor_dispersion)
+    tensor_media = bool(
+        material_grid.tensor_dispersion or material_grid.requires_magnetic_tensor_update
+    )
+    has_dispersion = bool(material_grid.dispersion) or tensor_media
     if has_dispersion and sharding_token[0]:
         raise ValueError(
             "Dispersive media currently support single-device execution only."
         )
-    if has_dispersion and requested_backend not in {"auto", "jax"}:
+    if material_grid.dispersion and requested_backend not in {"auto", "jax"}:
         raise CudaBackendUnavailable(
             "Dispersive media require backend='jax' (including JAX GPU)."
+        )
+    # Tensor media run their corrections between streamed CUDA phases; the
+    # fused multi-step schedules cannot host them.
+    if tensor_media and (
+        requested_backend not in {"auto", "jax", "cuda", "cuda_streamed"}
+        or requested_schedule == "mstep"
+    ):
+        raise CudaBackendUnavailable(
+            "Tensor permeability and tensor-pole media require backend='jax' or "
+            "backend='cuda_streamed'."
         )
     cuda_grid_supported = simulation.is_3d
     multi_device = sharding_token[0] and sharding_token[2] != 1
@@ -1491,7 +1500,6 @@ def compile_program(
         and cuda_material_supported
         and cuda_sharding_supported
         and cuda_periodic_supported
-        and cuda_magnetic_supported
         and not has_dispersion
     )
     resolved_backend = (
@@ -1531,7 +1539,7 @@ def compile_program(
         cuda_graph_cache_capacity_from_env() if resolved_backend != "jax" else 0
     )
     if (
-        material_grid.uses_full_permittivity
+        (material_grid.uses_full_permittivity or tensor_media)
         and resolved_backend == "cuda_streamed"
         and not multi_device
     ):

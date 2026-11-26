@@ -66,7 +66,6 @@ def compile_dispersion(
     periodic_axes=frozenset(),
     *,
     complex_fields=False,
-    tensor_media=True,
     electric_inverse=None,
 ):
     regions = []
@@ -142,9 +141,7 @@ def compile_dispersion(
         tuple(coefficients),
         interfaces,
         complex_fields,
-        compile_anisotropic(grid, dt, periodic_axes, electric_inverse=electric_inverse)
-        if tensor_media
-        else None,
+        compile_anisotropic(grid, dt, periodic_axes, electric_inverse=electric_inverse),
     )
 
 
@@ -170,26 +167,26 @@ def initial_polarization(plan, continuation=None):
     return fresh
 
 
-def _update_tensor_states(update, old, state, plan):
+def _update_tensor_states(update, old, state, plan, native):
     """Run ``update`` on the tensor-pole states that follow the scalar ones."""
     head = state.polarization[: plan.scalar_state_count]
     tail = state.polarization[plan.scalar_state_count :]
-    state, tail = update(old, state, plan.anisotropic, tail)
+    state, tail = update(old, state, plan.anisotropic, tail, native)
     return state._replace(polarization=head + tuple(tail))
 
 
-def update_anisotropic_magnetic(old, state, plan):
+def update_anisotropic_magnetic(old, state, plan, native=False):
     """Apply tensor permeability and magnetic poles after the H kernel."""
     from beamz.simulation.anisotropic import update_magnetic
 
-    return _update_tensor_states(update_magnetic, old, state, plan)
+    return _update_tensor_states(update_magnetic, old, state, plan, native)
 
 
-def update_anisotropic_electric(old, state, plan):
+def update_anisotropic_electric(old, state, plan, native=False):
     """Apply electric tensor poles after the E kernel and its sources."""
     from beamz.simulation.anisotropic import update_electric
 
-    return _update_tensor_states(update_electric, old, state, plan)
+    return _update_tensor_states(update_electric, old, state, plan, native)
 
 
 def update_dispersion(old, state, plan):

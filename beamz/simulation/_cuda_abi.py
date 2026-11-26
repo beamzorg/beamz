@@ -10,6 +10,7 @@ __all__ = [
     "CUDA_MATERIAL_ADJOINT_TARGET",
     "CUDA_MSTEP_TARGET",
     "CUDA_MSTEP_FULL_INTERMEDIATES_TARGET",
+    "CUDA_TENSOR_MEDIA_TARGET",
     "CUDA_STREAMED_TARGETS",
     "CUDA_GRAPH_CACHE",
     "CUDA_FIELD_PAD32",
@@ -88,8 +89,8 @@ __all__ = [
     "CPML_FUSION_MIN_CELLS",
 ]
 
-CUDA_ABI_VERSION = 31
-CUDA_COMPONENT_VERSION = "0.31.0"
+CUDA_ABI_VERSION = 32
+CUDA_COMPONENT_VERSION = "0.32.0"
 CUDA_STREAMED_TARGET = "beamz_cuda_streamed"
 CUDA_SHARDED_TARGET = "beamz_cuda_sharded"
 CUDA_PROGRAM_TARGET = "beamz_cuda_program"
@@ -97,6 +98,7 @@ CUDA_ADJOINT_TARGET = "beamz_cuda_adjoint"
 CUDA_MATERIAL_ADJOINT_TARGET = "beamz_cuda_material_adjoint"
 CUDA_MSTEP_TARGET = "beamz_cuda_mstep"
 CUDA_MSTEP_FULL_INTERMEDIATES_TARGET = "beamz_cuda_mstep_full_intermediates_v1"
+CUDA_TENSOR_MEDIA_TARGET = "beamz_cuda_tensor_media"
 
 CUDA_STREAMED_TARGETS = frozenset(
     (
@@ -105,6 +107,7 @@ CUDA_STREAMED_TARGETS = frozenset(
         CUDA_PROGRAM_TARGET,
         CUDA_ADJOINT_TARGET,
         CUDA_MATERIAL_ADJOINT_TARGET,
+        CUDA_TENSOR_MEDIA_TARGET,
     )
 )
 

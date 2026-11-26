@@ -622,15 +622,65 @@ def test_mode_source_in_tensor_pole_core_matches_static_equivalent():
     assert error < 0.02, error
 
 
-def test_mode_monitors_must_stay_outside_tensor_pole_media():
+def _modal_to_flux_ratio(core, source_frequency, frequencies):
+    plane = {"center": (4.5e-6, 1.5e-6, 0.0), "size": (0.0, 2.0e-6, 1.0e-6)}
+    simulation = _guide(core, source_frequency).updated_copy(
+        monitors=[
+            bz.ModeMonitor(
+                **plane,
+                mode_spec=bz.ModeSpec(polarization="tm"),
+                freqs=frequencies,
+                name="port",
+            ),
+            bz.FluxMonitor(**plane, freqs=frequencies, name="flux"),
+        ]
+    )
+    result = simulation.run(backend="jax", performance=False)
+    modal = result.mode("port").amps.sel(direction="+", mode_index=0).values
+    flux = np.asarray(result.monitor("flux").get_dft_flux()).ravel()
+    return np.abs(modal) ** 2 / np.abs(flux)
+
+
+def test_mode_monitor_in_tensor_pole_core_projects_per_frequency():
+    """A mode monitor inside a dispersive core uses eps_inf + Re chi(f) per f.
+
+    At each monitor frequency the modal-to-flux power ratio must equal that of
+    a static core with permittivity eps(f) (the shared few-percent excess is
+    this coarse grid's projection bias). One static snapshot for all
+    frequencies would not.
+    """
+
+    frequency = LIGHT_SPEED / 1e-6
+    omega = 2 * np.pi * frequency
+    core = bz.AnisotropicMedium(
+        2.0,
+        electric_poles=[
+            bz.TensorPole.lorentz(16.0 / 9.0, resonance=3 * omega, damping=0.0)
+        ],
+    )
+    frequencies = frequency * np.array([0.9, 1.1])
+    dispersive = _modal_to_flux_ratio(core, frequency, frequencies)
+    for index, f in enumerate(frequencies):
+        static_core = bz.Material(float(core.permittivity_tensor(f)[2, 2].real))
+        static = _modal_to_flux_ratio(static_core, frequency, frequencies)[index]
+        np.testing.assert_allclose(dispersive[index], static, rtol=1e-3)
+
+
+def test_mode_ports_reject_gyrotropic_media_at_compile_time():
     frequency = LIGHT_SPEED / 1e-6
     core = bz.AnisotropicMedium(
         2.0,
         electric_poles=[
-            bz.TensorPole.lorentz(1.0, resonance=6 * np.pi * frequency, damping=0.0)
+            bz.GyrotropicPole.lorentz(
+                1.0,
+                resonance=6 * np.pi * frequency,
+                damping=0.0,
+                gyration=(0.0, 0.0, 1e14),
+            )
         ],
     )
     simulation = _guide(core, frequency).updated_copy(
+        sources=[],
         monitors=[
             bz.ModeMonitor(
                 center=(4.5e-6, 1.5e-6, 0.0),
@@ -639,9 +689,9 @@ def test_mode_monitors_must_stay_outside_tensor_pole_media():
                 freqs=[frequency],
                 name="port",
             )
-        ]
+        ],
     )
-    with pytest.raises(ValueError, match="static material snapshot"):
+    with pytest.raises(ValueError, match="gyrotropic"):
         simulation.compile(backend="jax")
 
 
@@ -776,9 +826,9 @@ def test_permeability_tensor_packet_speed_on_graded_grid():
 
 
 def test_pole_timestep_bound_is_enforced_and_sufficient():
-    """S^2 + (Omega dt / 2)^2 < 1 guards the explicit recurrence: just below
-    the bound a lossless multi-pole tilted crystal stays bounded from random
-    initial fields; just above it, compilation is refused."""
+    """The von Neumann limit guards the explicit recurrence: just below it a
+    lossless multi-pole tilted crystal stays bounded from random initial
+    fields; just above it, compilation is refused."""
 
     from beamz.simulation.anisotropic import max_stable_timestep
 
@@ -796,7 +846,7 @@ def test_pole_timestep_bound_is_enforced_and_sufficient():
         ],
     ).rotated((0.0, 0.0, 0.5))
     spacing = 30e-9
-    limit = max_stable_timestep(medium, "E", (spacing, spacing))
+    limit = max_stable_timestep(medium, "E", (spacing, spacing), "te")
 
     def simulation(dt):
         return bz.Simulation(
@@ -821,6 +871,132 @@ def test_pole_timestep_bound_is_enforced_and_sufficient():
         state=state, num_steps=6000, backend="jax", performance=False
     ).state
     assert float(jnp.abs(final.ex).max()) < 20.0
+
+
+def _seeded_peaks(medium, spacing, dt, steps):
+    """Peak |Ex| of a seeded periodic 2D TE run after each third of ``steps``."""
+    simulation = bz.Simulation(
+        design=bz.Design(width=16 * spacing, height=16 * spacing, material=medium),
+        resolution=spacing,
+        time=np.arange(steps + 1) * dt,
+        polarization="te",
+        boundaries=[bz.Periodic(axes=("x", "y"))],
+        raster_options=RasterOptions(smoothing="farjadpour_full"),
+    )
+    state = simulation.initial_state()
+    rng = np.random.default_rng(0)
+    state = state._replace(
+        ex=jnp.asarray(rng.normal(size=state.ex.shape), dtype=jnp.float32),
+        ey=jnp.asarray(rng.normal(size=state.ey.shape), dtype=jnp.float32),
+    )
+    peaks = []
+    for _ in range(3):
+        state = simulation.advance(
+            state=state, num_steps=steps // 3, backend="jax", performance=False
+        ).state
+        peaks.append(float(jnp.abs(state.ex).max()))
+    return np.array(peaks)
+
+
+def test_analytic_pole_bound_is_not_sufficient_for_multi_pole_crystals(monkeypatch):
+    """Regression: S^2 + (Omega dt / 2)^2 < 1 accepted timesteps that diverge.
+
+    The bound combines the in-medium Courant number with the fastest k = 0
+    pole frequency, but a stiff pole tilted against an anisotropic eps_inf
+    couples to the grid's dispersion at finite k. The von Neumann analysis of
+    the implemented scheme puts the limit about 11% lower here; a seeded run
+    diverges at 0.98 of the analytic bound and stays bounded at 0.98 of the
+    numeric one.
+    """
+    from beamz.design.anisotropic import packed_to_matrix
+    from beamz.simulation import pole_stability
+    from beamz.simulation.anisotropic import max_stable_timestep
+
+    spacing = 20e-9
+    rate = LIGHT_SPEED / spacing
+    eps_inf = bz.AnisotropicMedium((6.0, 2.0, 6.0)).rotated((0.0, 0.0, np.pi / 4))
+    medium = bz.AnisotropicMedium(
+        eps_inf.epsilon_r,
+        electric_poles=[
+            bz.TensorPole.lorentz((4.5, 4.7, 0.5), resonance=1.2 * rate, damping=0.0),
+            bz.TensorPole.lorentz(
+                (50.0, 0.2, 18.0), resonance=3.7 * rate, damping=0.0
+            ).rotated((0.0, 0.0, np.pi / 6)),
+        ],
+    )
+    # The former analytic bound, with Omega the largest k = 0 normal mode.
+    eps_matrix = packed_to_matrix(np.asarray(medium.epsilon_r))
+    inverse = np.linalg.inv(eps_matrix)
+    poles = medium.electric_poles
+    modes = np.block(
+        [
+            [
+                p.weight_matrix @ inverse + (p is q) * p.resonance**2 * np.eye(3)
+                for q in poles
+            ]
+            for p in poles
+        ]
+    )
+    omega = np.sqrt(np.linalg.eigvals(modes).real.max())
+    courant = 2.0 * LIGHT_SPEED**2 / spacing**2 / min(np.linalg.eigvalsh(eps_matrix))
+    analytic = 1.0 / np.sqrt(courant + 0.25 * omega**2)
+    limit = max_stable_timestep(medium, "E", (spacing, spacing), "te")
+    assert limit < 0.9 * analytic
+
+    def compile_at(dt):
+        bz.Simulation(
+            design=bz.Design(width=8 * spacing, height=8 * spacing, material=medium),
+            resolution=spacing,
+            time=np.arange(4) * dt,
+            polarization="te",
+            raster_options=RasterOptions(smoothing="farjadpour_full"),
+        ).compile(backend="jax")
+
+    compile_at(0.98 * limit)
+    with pytest.raises(ValueError, match="unstable") as error:
+        compile_at(0.98 * analytic)
+    assert "fold_fast_poles" in str(error.value)
+
+    stable = _seeded_peaks(medium, spacing, 0.98 * limit, 3000)
+    assert np.isfinite(stable).all() and stable.max() < 2 * stable[0], stable
+    # Bypass the check to watch the timestep the analytic bound accepted.
+    monkeypatch.setattr(pole_stability, "check_stability", lambda *args: None)
+    radius = pole_stability.amplification_radius(
+        medium, "E", 0.98 * analytic, (spacing, spacing), "te"
+    )
+    steps = 3 * int(np.ceil(15 / np.log(radius)))
+    unstable = _seeded_peaks(medium, spacing, 0.98 * analytic, steps)
+    assert not np.isfinite(unstable[-1]) or unstable[-1] > 1e4 * stable[0], unstable
+
+
+def test_von_neumann_limit_covers_gyrotropic_poles(monkeypatch):
+    """Gyrotropic poles enter the analysis with their Crank-Nicolson precession
+    and their separate eps_inf correction: a magnetized plasma next to a tilted
+    stiff Lorentz pole is bounded at 0.98 of the limit and diverges at 1.02."""
+    from beamz.simulation import pole_stability
+
+    spacing = 20e-9
+    rate = LIGHT_SPEED / spacing
+    medium = bz.AnisotropicMedium(
+        2.0,
+        electric_poles=[
+            bz.GyrotropicPole.magnetized_plasma(
+                3.0 * rate, (0.0, 0.0, 1.5 * rate), damping=0.0
+            ),
+            bz.TensorPole.lorentz(
+                (20.0, 0.5, 3.0), resonance=3.0 * rate, damping=0.0
+            ).rotated((0.0, 0.0, 0.5)),
+        ],
+    )
+    grid = ((spacing, spacing), "te")
+    limit = pole_stability.max_stable_timestep(medium, "E", *grid)
+    stable = _seeded_peaks(medium, spacing, 0.98 * limit, 3000)
+    assert np.isfinite(stable).all() and stable.max() < 2 * stable[0], stable
+    monkeypatch.setattr(pole_stability, "check_stability", lambda *args: None)
+    radius = pole_stability.amplification_radius(medium, "E", 1.02 * limit, *grid)
+    steps = 3 * int(np.ceil(15 / np.log(radius)))
+    unstable = _seeded_peaks(medium, spacing, 1.02 * limit, steps)
+    assert not np.isfinite(unstable[-1]) or unstable[-1] > 1e4 * stable[0], unstable
 
 
 def _ring_radius(medium, wavelength, polarization="te"):
@@ -1054,3 +1230,141 @@ def test_differentiable_simulation_through_tensor_poles_is_consistent():
     gradient = jax.grad(objective)(permittivity)
     reverse = sum(jnp.sum(g * t) for g, t in zip(gradient, tangent, strict=True))
     np.testing.assert_allclose(float(reverse), float(forward), rtol=1e-4)
+
+
+def test_dispersive_monitor_materials_survive_result_archives(tmp_path):
+    from beamz.simulation.result_io import load_results, save_results
+
+    frequency = LIGHT_SPEED / 1e-6
+    omega = 2 * np.pi * frequency
+    core = bz.AnisotropicMedium(
+        2.0,
+        electric_poles=[
+            bz.TensorPole.lorentz(16.0 / 9.0, resonance=3 * omega, damping=0.0)
+        ],
+    )
+    simulation = _guide(core, frequency).updated_copy(
+        monitors=[
+            bz.ModeMonitor(
+                center=(4.5e-6, 1.5e-6, 0.0),
+                size=(0.0, 2.0e-6, 1.0e-6),
+                mode_spec=bz.ModeSpec(polarization="tm"),
+                freqs=[frequency],
+                name="port",
+            )
+        ]
+    )
+    result = simulation.run(backend="jax", performance=False)
+    path = tmp_path / "result.npz"
+    save_results(result, path)
+    loaded = load_results(path)
+    region = loaded.monitor("port").material_region
+    assert region.dispersion_folding is not None
+    np.testing.assert_allclose(
+        region.at_frequency(frequency).permittivity,
+        result.monitor("port").material_region.at_frequency(frequency).permittivity,
+    )
+    np.testing.assert_allclose(
+        loaded.mode("port").amps.values, result.mode("port").amps.values
+    )
+
+
+def test_folding_fast_poles_keeps_low_frequency_response_and_relaxes_timestep():
+    """Ultraviolet Sellmeier poles can be slowed without changing the band.
+
+    Folding preserves the static limit exactly and the telecom-band
+    permittivity to ~1e-3, and lifts the pole timestep limit so a coarse-grid
+    run the original crystal rejects becomes stable.
+    """
+
+    from beamz.material_library import anisotropic_library
+    from beamz.simulation.anisotropic import max_stable_timestep
+
+    crystal = anisotropic_library["LiNbO3"].medium.rotated((0.0, np.pi / 2, 0.0))
+    folded = crystal.fold_fast_poles(2 * np.pi * LIGHT_SPEED / 0.4e-6)
+    near_static = np.array([1e9])
+    np.testing.assert_allclose(
+        folded.permittivity_tensor(near_static),
+        crystal.permittivity_tensor(near_static),
+        rtol=1e-9,
+        atol=1e-12,
+    )
+    band = LIGHT_SPEED / np.linspace(1.2e-6, 1.7e-6, 101)
+    reference = crystal.permittivity_tensor(band)
+    error = np.abs(folded.permittivity_tensor(band) - reference).max()
+    assert error < 2e-3 * np.abs(reference).max()
+    for pole in (*folded.electric_poles,):
+        assert (
+            np.linalg.eigvalsh(pole.weight_matrix).min()
+            > -1e-6 * np.abs(pole.weight_matrix).max()
+        )
+
+    spacing = 60e-9
+    original_limit = max_stable_timestep(crystal, "E", (spacing, spacing))
+    folded_limit = max_stable_timestep(folded, "E", (spacing, spacing))
+    dt = 0.95 * min(folded_limit, spacing / (LIGHT_SPEED * np.sqrt(2)))
+    assert dt > 1.3 * original_limit
+
+    def simulation(medium):
+        return bz.Simulation(
+            design=bz.Design(width=24 * spacing, height=24 * spacing, material=medium),
+            resolution=spacing,
+            time=np.arange(4001) * dt,
+            polarization="te",
+            boundaries=[bz.Periodic(axes=("x", "y"))],
+            raster_options=RasterOptions(smoothing="farjadpour_full"),
+        )
+
+    with pytest.raises(ValueError, match="fold_fast_poles"):
+        simulation(crystal).compile(backend="jax")
+    stable = simulation(folded)
+    state = stable.initial_state()
+    rng = np.random.default_rng(2)
+    state = state._replace(
+        ex=jnp.asarray(rng.normal(size=state.ex.shape), dtype=jnp.float32),
+        ey=jnp.asarray(rng.normal(size=state.ey.shape), dtype=jnp.float32),
+    )
+    final = stable.advance(
+        state=state, num_steps=4000, backend="jax", performance=False
+    ).state
+    assert float(jnp.abs(final.ex).max()) < 20.0
+
+
+def test_tensor_media_lower_to_jax_or_streamed_cuda_only():
+    from dataclasses import replace
+
+    from beamz.simulation.backend import CudaBackendUnavailable
+    from beamz.simulation.execute import scan_compiler_options
+
+    medium = bz.AnisotropicMedium(
+        2.0,
+        electric_poles=[
+            bz.TensorPole.lorentz((1.5, 0.5, 0.2), resonance=2.5e15, damping=1e13)
+        ],
+    ).rotated((0.2, 0.3, 0.4))
+    length = 1.2e-6
+    design = bz.Design(width=length, height=length, depth=length)
+    design += bz.Box(center=(length / 2,) * 3, size=(length / 3,) * 3, material=medium)
+    sim = bz.Simulation(
+        design=design,
+        resolution=0.1e-6,
+        time=np.arange(4) * 1e-17,
+        setup_device="cpu",
+    )
+    with pytest.raises(CudaBackendUnavailable, match="backend='cuda_streamed'"):
+        sim.compile(backend="cuda_mstep")
+    with pytest.raises(ValueError, match="single-device"):
+        sim.compile(backend="jax", sharding=True)
+
+    # XLA crashes executing CUDA graphs of some tensor-media scans.
+    program = sim.compile(backend="jax")
+    streamed = replace(program, config=replace(program.config, backend="cuda_streamed"))
+    for compiled in (program, streamed):
+        assert scan_compiler_options(compiled)["xla_gpu_enable_command_buffer"] == ""
+    static = bz.Simulation(
+        design=bz.Design(width=length, height=length, depth=length),
+        resolution=0.1e-6,
+        time=np.arange(4) * 1e-17,
+        setup_device="cpu",
+    ).compile(backend="jax")
+    assert "xla_gpu_enable_command_buffer" not in scan_compiler_options(static)

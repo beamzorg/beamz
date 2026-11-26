@@ -141,14 +141,14 @@ def rasterize_tensor_dispersion(
 ):
     """Return ``(medium, cell_fraction)`` for every dispersive tensor medium.
 
-    Painter order is preserved by rasterizing one indicator scene per medium;
-    the volume-smoothed indicator is the medium's fraction of each cell.
+    Media whose static tensors need the box-local update (non-symmetric
+    tensors, off-diagonal or magnetic conductivity) are included too. Painter
+    order is preserved by rasterizing one indicator scene per medium; the
+    volume-smoothed indicator is the medium's fraction of each cell.
     """
-    from beamz.design.anisotropic import AnisotropicMedium
-
     entries = []
     for index, medium in enumerate(scene.materials):
-        if not isinstance(medium, AnisotropicMedium) or not medium.is_dispersive:
+        if not _needs_fraction(medium):
             continue
         indicators = tuple(
             Material(1.0, conductivity=float(i == index))
@@ -177,8 +177,13 @@ def rasterize_tensor_dispersion(
 
 
 def has_tensor_dispersion(scene) -> bool:
+    return any(_needs_fraction(m) for m in scene.materials)
+
+
+def _needs_fraction(medium) -> bool:
+    """Tensor poles and box-local static tensor terms both need a cell fraction."""
     from beamz.design.anisotropic import AnisotropicMedium
 
-    return any(
-        isinstance(m, AnisotropicMedium) and m.is_dispersive for m in scene.materials
+    return isinstance(medium, AnisotropicMedium) and (
+        medium.is_dispersive or medium.requires_static_correction
     )

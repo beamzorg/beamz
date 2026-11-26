@@ -1,9 +1,11 @@
-"""Fourier reduction of the lossless full-tensor Yee electric update.
+"""Fourier reduction of the lossless full-tensor Yee updates.
 
 The normal-axis symbol of node/edge averaging is cos(beta dx/2), while
 that of a centered derivative is -2i sin(beta dx/2)/dx. Keeping both is
 necessary: replacing the constitutive operator by a cell tensor loses the
 normal averaging even in a spatially homogeneous anisotropic dielectric.
+Permeability mirrors permittivity: inverse diagonals on each H site and
+cross terms on cell centers, the shared magnetic support of the time step.
 """
 
 from __future__ import annotations
@@ -15,7 +17,10 @@ from scipy import sparse
 from scipy.sparse import linalg as spla
 
 from beamz.const import EPS_0, LIGHT_SPEED, MU_0
-from beamz.constitutive import electric_tensor_coefficients
+from beamz.constitutive import (
+    electric_tensor_coefficients,
+    magnetic_tensor_coefficients,
+)
 
 from ._yee import _yee_curl_operators
 from ._yee import transverse_grid_metrics as transverse_metrics
@@ -89,13 +94,81 @@ def inverse_operator(profiles, indices, tensors, *, beta, spacing, grid=None):
     return sparse.bmat(blocks, format="csc")
 
 
+def inverse_magnetic_operator(profiles, indices, tensors, *, beta, spacing, grid=None):
+    """Assemble H <- inverse-mu B on an x-normal cross section.
+
+    Hx sits on the normal nodes and averages onto cell centers with the same
+    cos(beta dx/2) symbol as Ex onto primal nodes; Hy and Hz reach cell
+    centers by transverse node-to-cell averaging, and return with the
+    cell-to-node extension used by the propagation.
+    """
+    diagonal, cross = magnetic_tensor_coefficients(tensors)
+    nz, ny = profiles["Hx"].shape
+    if profiles["Hy"].shape != (nz, ny + 1) or profiles["Hz"].shape != (nz + 1, ny):
+        raise ValueError("Tensor magnetic profiles do not share one cell aperture")
+    averages = (None, None)
+    if grid is not None:
+        if profiles["Ex"].shape != (nz + 1, ny + 1):
+            raise ValueError("Tensor magnetic profiles do not match the node aperture")
+        averages = transverse_metrics(indices, grid)[1]
+    c = np.cos(0.5 * beta * spacing)
+    to_cell = (
+        c * sparse.eye(nz * ny),
+        sparse.kron(sparse.eye(nz), _average(ny + 1)),
+        sparse.kron(_average(nz + 1), sparse.eye(ny)),
+    )
+    from_cell = (
+        c * sparse.eye(nz * ny),
+        sparse.kron(sparse.eye(nz), _extend(ny + 1, averages[1])),
+        sparse.kron(_extend(nz + 1, averages[0]), sparse.eye(ny)),
+    )
+    # The Hx index selects the cells sharing its transverse position; any
+    # normal cell is equivalent at a longitudinally invariant port.
+    z_index, y_index, x_index = indices["Hx"]
+    x_index = min(int(x_index), np.asarray(cross).shape[2] - 1)
+    cell_cross = np.asarray(cross[z_index, y_index, x_index])
+    if cell_cross.shape != (nz, ny, 3):
+        raise ValueError("Tensor cell context does not cover the mode aperture")
+    pair = {(0, 1): 0, (0, 2): 1, (1, 2): 2}
+    blocks = []
+    for row, component in enumerate(("Hx", "Hy", "Hz")):
+        line = []
+        for col in range(3):
+            if row == col:
+                values = np.asarray(diagonal[row][indices[component]])
+                if values.shape != profiles[component].shape:
+                    raise ValueError(
+                        "Tensor magnetic support does not cover the mode aperture"
+                    )
+                line.append(sparse.diags(values.reshape(-1)))
+            else:
+                values = cell_cross[..., pair[(min(row, col), max(row, col))]]
+                line.append(
+                    from_cell[row] @ sparse.diags(values.reshape(-1)) @ to_cell[col]
+                )
+        blocks.append(line)
+    return sparse.bmat(blocks, format="csc")
+
+
 def refine_tensor_mode(
-    profiles, indices, tensors, *, omega, dt, spacing, beta, direction_sign, grid=None
+    profiles,
+    indices,
+    tensors,
+    *,
+    omega,
+    dt,
+    spacing,
+    beta,
+    direction_sign,
+    grid=None,
+    magnetic_tensors=None,
 ):
     """Match the prescribed discrete frequency, tracking the seed by overlap.
 
     Failure is explicit; a failed coupled solve must never return its continuum
-    seed as an allegedly propagation-consistent port mode.
+    seed as an allegedly propagation-consistent port mode. ``magnetic_tensors``
+    (packed ``mu_hx``, ``mu_hy``, ``mu_hz`` and ``mu_cell``) adds the inverse
+    permeability of the propagation; without it the medium is nonmagnetic.
     """
     shapes = {k: np.asarray(v).shape for k, v in profiles.items()}
     electric_names, magnetic_names = ("Ex", "Ey", "Ez"), ("Hx", "Hy", "Hz")
@@ -117,7 +190,16 @@ def refine_tensor_mode(
         inv = inverse_operator(
             profiles, indices, tensors, beta=k, spacing=spacing, grid=grid
         )
-        op = inv @ ch @ ce
+        inv_mu = (
+            inverse_magnetic_operator(
+                profiles, indices, magnetic_tensors, beta=k, spacing=spacing, grid=grid
+            )
+            if magnetic_tensors
+            else sparse.eye(
+                sum(np.size(profiles[n]) for n in magnetic_names), format="csc"
+            )
+        )
+        op = inv @ ch @ inv_mu @ ce
         count = min(6, op.shape[0] - 2)
         values, vectors = cast(
             tuple[np.ndarray, np.ndarray],
@@ -148,12 +230,12 @@ def refine_tensor_mode(
             raise ValueError(
                 f"Tensor mode eigenpair failed residual check: {residual:.3g}"
             )
-        return float(value.real - 1), electric, ce, ch, inv
+        return float(value.real - 1), electric, ce, ch, inv, inv_mu
 
     k = abs(float(beta))
     previous = None
     for _iteration in range(15):
-        error, electric, ce, ch, inv = solve(k, seed)
+        error, electric, ce, ch, inv, inv_mu = solve(k, seed)
         if abs(error) < 2e-8:
             break
         if previous is None:
@@ -177,7 +259,7 @@ def refine_tensor_mode(
         raise ValueError(
             f"Tensor mode frequency mismatch did not converge: {error:.3g}"
         )
-    magnetic = 1j * (ce @ electric) / (MU_0 * omega_d)
+    magnetic = 1j * (inv_mu @ (ce @ electric)) / (MU_0 * omega_d)
     phase = np.angle(magnetic[np.argmax(np.abs(magnetic))])
     electric *= np.exp(-1j * phase)
     magnetic *= np.exp(-1j * phase)
@@ -189,13 +271,13 @@ def refine_tensor_mode(
             out[name] = vector[start : start + size].reshape(shapes[name])
             start += size
     # Both first-order equations, rather than only a second-order eigen-residual.
-    faraday = ce @ electric + 1j * MU_0 * omega_d * magnetic
+    faraday = inv_mu @ (ce @ electric) + 1j * MU_0 * omega_d * magnetic
     ampere = inv @ (ch @ magnetic) - 1j * EPS_0 * omega_d * electric
     diagnostics = {
         "tensor_frequency_error": abs(error),
         "tensor_iterations": _iteration + 1,
         "tensor_faraday_residual": float(
-            np.linalg.norm(faraday) / np.linalg.norm(ce @ electric)
+            np.linalg.norm(faraday) / np.linalg.norm(inv_mu @ (ce @ electric))
         ),
         "tensor_ampere_residual": float(
             np.linalg.norm(ampere) / (EPS_0 * omega_d * np.linalg.norm(electric))

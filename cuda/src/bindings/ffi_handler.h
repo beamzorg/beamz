@@ -9,6 +9,7 @@ extern "C" XLA_FFI_Error* beamz_cuda_program(XLA_FFI_CallFrame* call_frame);
 extern "C" XLA_FFI_Error* beamz_cuda_adjoint(XLA_FFI_CallFrame* call_frame);
 
 extern "C" XLA_FFI_Error* beamz_cuda_material_adjoint(XLA_FFI_CallFrame* call_frame);
+extern "C" XLA_FFI_Error* beamz_cuda_tensor_media(XLA_FFI_CallFrame* call_frame);
 
 extern "C" XLA_FFI_Error *beamz_cuda_mstep(XLA_FFI_CallFrame *call_frame);
 

@@ -193,3 +193,79 @@ def test_tensor_media_must_not_overlap_the_design_or_use_spectral_adjoint():
             problem.objective,
             gradient_backend="adjoint",
         )
+
+
+def _anisotropic_problem():
+    import beamz as bz
+    from beamz.optimization import TopologyProblem, TopologySpec
+
+    base = make_problem(polarization="te", reference=False)
+    omega = 2 * np.pi * bz.LIGHT_SPEED / 1.55e-6
+    crystal = bz.AnisotropicMedium(
+        (4.0, 3.0, 3.5),
+        electric_poles=[
+            bz.TensorPole.lorentz((0.8, 0.3, 0.0), resonance=2.2 * omega, damping=0.0)
+        ],
+    ).rotated((0.0, 0.0, 0.4))
+    spec = base.topology
+    topology = TopologySpec(
+        design=spec.design,
+        region_mask=spec.region_mask,
+        resolution=spec.resolution,
+        filter_radius=spec.filter_radius,
+        learning_rate=spec.learning_rate,
+        beta_schedule=spec.beta_schedule,
+        material_min=bz.Material(1.0),
+        material_max=crystal,
+    )
+    return TopologyProblem(
+        base.simulation,
+        topology,
+        base.objective,
+        checkpoint_interval=base.checkpoint_interval,
+    )
+
+
+def test_anisotropic_design_material_gradient_and_ordinary_run_agree():
+    """Density blends air and a tilted dispersive crystal inside the design.
+
+    The bound objective must equal an ordinary simulation of the same material
+    map, and its autodiff gradient must match finite differences and forward
+    mode.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    problem = _anisotropic_problem()
+    plan = problem.program.dispersion.anisotropic
+    assert problem.program.coefficients.e_inverse_offdiagonal.size
+    assert plan is not None and plan.electric_regions
+    density = initial_density(problem)
+    value, gradient = problem.value_and_grad(density, beta=2)
+    assert value > 1e-4
+    ordinary = problem.material_simulation(density, beta=2).run(
+        backend="jax", performance=False
+    )
+    expected = (
+        abs(ordinary.mode("output").amps.sel(direction="+", mode_index=1).item()) ** 2
+    )
+    np.testing.assert_allclose(value, expected, rtol=1e-5)
+    direction = np.random.default_rng(5).normal(size=density.shape)
+    direction *= problem.topology.region_mask
+    direction += 0.1 * np.linalg.norm(direction) * gradient / np.linalg.norm(gradient)
+    direction /= np.linalg.norm(direction)
+    adjoint = float(np.sum(gradient * direction))
+    h = 0.01
+    difference = (
+        problem.value(density + h * direction, beta=2)
+        - problem.value(density - h * direction, beta=2)
+    ) / (2 * h)
+    np.testing.assert_allclose(difference, adjoint, rtol=1e-3)
+    latent = problem._density(density)
+    beta = problem._beta(2.0)
+    _, forward = jax.jvp(
+        lambda z: problem._evaluate(z, beta),
+        (latent,),
+        (jnp.asarray(direction, dtype=latent.dtype),),
+    )
+    np.testing.assert_allclose(adjoint, float(forward), rtol=1e-4)
