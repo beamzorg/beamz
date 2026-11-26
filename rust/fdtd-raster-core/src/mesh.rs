@@ -329,46 +329,69 @@ impl MeshBvh {
     }
 
     fn aabb_candidates<'a>(&'a self, query: &'a Aabb) -> impl Iterator<Item = usize> + 'a {
-        let mut result = Vec::new();
-        let mut stack = vec![0usize];
-        while let Some(index) = stack.pop() {
-            let node = &self.nodes[index];
-            // BVH bounds can be flat (e.g. a leaf containing only a mesh cap).
-            // Use closed intersection here; callers decide whether touching
-            // a support boundary contributes area, flux, or neither.
-            if (0..3).any(|axis| {
-                node.bounds.max[axis] < query.min[axis] || node.bounds.min[axis] > query.max[axis]
-            }) {
-                continue;
-            }
-            match &node.kind {
-                BvhKind::Leaf(indices) => result.extend(indices),
-                BvhKind::Branch(left, right) => {
-                    stack.push(*left);
-                    stack.push(*right);
-                }
-            }
-        }
-        result.into_iter()
+        // BVH bounds can be flat (e.g. a leaf containing only a mesh cap).
+        // Use closed intersection here; callers decide whether touching
+        // a support boundary contributes area, flux, or neither.
+        self.candidates(move |bounds| {
+            (0..3).all(|axis| {
+                bounds.max[axis] >= query.min[axis] && bounds.min[axis] <= query.max[axis]
+            })
+        })
     }
 
-    fn ray_candidates(&self, origin: Vec3, direction: Vec3) -> Vec<usize> {
-        let mut result = Vec::new();
-        let mut stack = vec![0usize];
-        while let Some(index) = stack.pop() {
-            let node = &self.nodes[index];
-            if !ray_intersects_aabb(origin, direction, &node.bounds) {
+    fn ray_candidates(&self, origin: Vec3, direction: Vec3) -> impl Iterator<Item = usize> + '_ {
+        self.candidates(move |bounds| ray_intersects_aabb(origin, direction, bounds))
+    }
+
+    /// Leaf triangles of the nodes `visit` accepts, depth first, without allocating.
+    fn candidates<F: Fn(&Aabb) -> bool>(&self, visit: F) -> Candidates<'_, F> {
+        Candidates {
+            nodes: &self.nodes,
+            stack: [0; BVH_STACK],
+            depth: 1,
+            leaf: [].iter(),
+            visit,
+        }
+    }
+}
+
+/// Median splits halve every branch, so a stack this deep covers any mesh
+/// with fewer than 2^60 triangles.
+const BVH_STACK: usize = 64;
+
+struct Candidates<'a, F> {
+    nodes: &'a [BvhNode],
+    stack: [usize; BVH_STACK],
+    depth: usize,
+    leaf: std::slice::Iter<'a, usize>,
+    visit: F,
+}
+
+impl<F: Fn(&Aabb) -> bool> Iterator for Candidates<'_, F> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        loop {
+            if let Some(&index) = self.leaf.next() {
+                return Some(index);
+            }
+            if self.depth == 0 {
+                return None;
+            }
+            self.depth -= 1;
+            let node = &self.nodes[self.stack[self.depth]];
+            if !(self.visit)(&node.bounds) {
                 continue;
             }
             match &node.kind {
-                BvhKind::Leaf(indices) => result.extend(indices),
+                BvhKind::Leaf(indices) => self.leaf = indices.iter(),
                 BvhKind::Branch(left, right) => {
-                    stack.push(*left);
-                    stack.push(*right);
+                    self.stack[self.depth] = *left;
+                    self.stack[self.depth + 1] = *right;
+                    self.depth += 2;
                 }
             }
         }
-        result
     }
 }
 
