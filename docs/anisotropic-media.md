@@ -169,8 +169,13 @@ advance.
   JAX can run on a GPU with a CUDA-enabled jaxlib.
 - Native CUDA uses the standard Yee coefficients for diagonal permeability on
   supported 3D grids. Lossless full-tensor permittivity can use explicit
-  `backend="cuda_streamed"` on supported 3D grids and boundaries. Native
-  `cuda_mstep` and native CUDA autodiff do not support full-tensor permittivity.
+  `backend="cuda_streamed"` on supported 3D grids and boundaries. Native CUDA
+  autodiff for full-tensor permittivity requires the JAX backend.
+- On a compatible native CUDA build, `backend="cuda", schedule="mstep"` requests
+  temporal blocking for supported 3D runs, including diagonal permeability and
+  lossless full-tensor permittivity. Full-tensor runs use four-step blocks with
+  ordinary steps for the tail. The native auto scheduler selects ordinary
+  execution for full tensors. The legacy CUDA mstep binding excludes full tensors.
 - Off-diagonal `eps_inf` needs `RasterOptions(smoothing="farjadpour_full")`.
   Off-diagonal permeability or pole tensors also work with `"volume"`.
 - 2D simulations require tensors without `xz` or `yz` coupling, and gyration
