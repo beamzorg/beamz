@@ -152,6 +152,7 @@ def native_model(monkeypatch):
         *,
         observation_origin,
         observation_step_offset,
+        batch_dft_phases=False,
     ):
         for i in range(nsteps):
             time = (

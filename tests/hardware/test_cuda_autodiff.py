@@ -666,3 +666,71 @@ def test_native_fixed_material_state_chunk_needs_no_primal_tape(
         jax.tree.leaves(outcomes[1]), jax.tree.leaves(outcomes[0]), strict=True
     ):
         assert_close(actual, expected)
+
+
+@pytest.mark.parametrize(
+    "metric_kind,cpml,mixed",
+    [
+        ("isotropic_uniform", True, False),
+        ("isotropic_uniform", False, False),
+        ("axis_uniform", True, True),
+        ("rectilinear", True, True),
+    ],
+)
+def test_cuda_lossless_checkpoint_replay_matches_exact_vjp(metric_kind, cpml, mixed):
+    sim, epsilon = make_simulation(
+        cpml=cpml,
+        mixed=mixed,
+        metric_kind=metric_kind,
+        sources=True,
+        monitors=True,
+        timesteps=12,
+    )
+    sim = sim.updated_copy(
+        material_grid=replace(
+            sim.material_grid,
+            conductivity=np.zeros(sim.material_grid.shape, np.float32),
+        )
+    )
+    exact = sim.differentiable(backend="jax", checkpoint_interval=0)
+    cuda = sim.differentiable(backend="cuda", checkpoint_interval=5)
+    plan = cuda.execution_plan
+    assert plan["forward"] == "native_checkpoint_graph"
+    from beamz.simulation.backend import _load_extension
+
+    if getattr(_load_extension(), "compiled_adjoint_general_replay", False):
+        assert plan["material_replay"] == "native_direct_tape"
+    if getattr(_load_extension(), "compiled_adjoint_chunk", False):
+        assert plan["material_reverse"] == "native_chunk"
+    state = seeded_state(exact)
+
+    def objective(solver, eps, ex, psi):
+        state_in = state._replace(ex=ex, cpml_psi_e_terms=psi)
+        out = solver(eps, state=state_in)
+        return (
+            field_loss(out)
+            + 0.01 * jnp.sum(jnp.abs(solver.monitor_fields(out, "output")) ** 2)
+            + 0.001 * sum(jnp.sum(p**2) for p in out.cpml_psi_e_terms)
+        )
+
+    args = (epsilon, state.ex, state.cpml_psi_e_terms)
+
+    def evaluate(solver):
+        return jax.jit(
+            jax.value_and_grad(lambda *a: objective(solver, *a), argnums=(0, 1, 2))
+        )
+
+    actual, expected = evaluate(cuda)(*args), evaluate(exact)(*args)
+    for a, e in zip(jax.tree.leaves(actual), jax.tree.leaves(expected), strict=True):
+        assert_close(a, e)
+
+    gradient = actual[1][0]
+    grad_norm = jnp.sqrt(sum(jnp.vdot(g, g) for g in jax.tree.leaves(gradient)))
+    assert float(grad_norm) > 0
+    delta = 0.02
+    high = jax.tree.map(lambda eps, g: eps + delta * g / grad_norm, epsilon, gradient)
+    low = jax.tree.map(lambda eps, g: eps - delta * g / grad_norm, epsilon, gradient)
+    fd = (objective(cuda, high, *args[1:]) - objective(cuda, low, *args[1:])) / (
+        2 * delta
+    )
+    np.testing.assert_allclose(grad_norm, fd, rtol=0.012, atol=1e-6)

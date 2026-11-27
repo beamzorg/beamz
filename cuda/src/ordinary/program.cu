@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "abi_layout.h"
+#include "adjoint_replay.h"
 #include "graph.h"
 #include "kernels.h"
 #include "launch.h"
@@ -400,6 +401,19 @@ int LaunchInPlaceProgram(void* raw_stream, const BeamzProgramLaunch& program,
     cudaError_t error = cudaSuccess;
     const bool split_cpml =
         ScheduleFlagEnabled(program, kNativeScheduleCombinedCpmlCore);
+    const bool batched_phases =
+        monitors && program.nsteps > 1 && program.nsteps <= 65535 &&
+        monitors->phase_sin.dims[0] >=
+            int64_t{program.nsteps} * monitors->monitor_count &&
+        int64_t{program.nsteps} * monitors->monitor_count *
+                monitors->frequencies.dims[1] <=
+            INT32_MAX;
+    if (batched_phases) {
+      error = BeamzEnqueueDftPhases(stream, h_launch.dt, *monitors, 0,
+                                    program.nsteps);
+      if (error != cudaSuccess)
+        return error;
+    }
     auto enqueue_sources = [&](int timing, int32_t step) {
       error = EnqueueProgramSources(stream, program, h_launch, e_launch, timing, step);
       if (error == cudaSuccess && effects)
@@ -435,7 +449,11 @@ int LaunchInPlaceProgram(void* raw_stream, const BeamzProgramLaunch& program,
         if (error != cudaSuccess) break;
       }
       if (monitors != nullptr) {
-        error = ObserveProgramStep(stream, program, h_launch, e_launch, step);
+        error =
+            batched_phases
+                ? BeamzEnqueueBatchedDftGroups(stream, h_launch, e_launch,
+                                               *monitors, step)
+                : ObserveProgramStep(stream, program, h_launch, e_launch, step);
         if (error != cudaSuccess) break;
       }
       if (effects) {
@@ -907,8 +925,7 @@ int BeamzEnqueueProgramStepAtWithEffects(void* stream,const BeamzProgramLaunch& 
 int BeamzLaunchReplayTape(void* raw_stream, const BeamzProgramLaunch& program,
                          const BeamzBuffer* magnetic_tape,
                          const BeamzBuffer* electric_psi_tape) {
-  if (program.field_bank_count != 1 || program.monitors || program.e_ab.tensor ||
-      (program.e_ab.nterms && program.e_ab.uniform_cpml_thickness <= 0))
+  if (program.field_bank_count != 1 || program.monitors || program.e_ab.tensor)
     return cudaErrorInvalidValue;
   if (auto error = ValidateProgram(program); error != cudaSuccess) return error;
   const auto stream = reinterpret_cast<cudaStream_t>(raw_stream);
@@ -963,6 +980,63 @@ int BeamzLaunchReplayTape(void* raw_stream, const BeamzProgramLaunch& program,
     return cudaSuccess;
   };
   return BeamzLaunchGraph(stream, key, FlagEnabled(program.h_ab, kBeamzGraphCache),
+                          program.graph_cache_capacity, enqueue);
+}
+
+int BeamzLaunchCurlTape(void *raw_stream, const BeamzProgramLaunch &program,
+                        const BeamzBuffer *curls, const BeamzBuffer *old_e) {
+  if (program.field_bank_count != 1 || program.monitors || program.e_ab.tensor)
+    return cudaErrorInvalidValue;
+  if (auto error = ValidateProgram(program); error != cudaSuccess)
+    return error;
+  const auto stream = static_cast<cudaStream_t>(raw_stream);
+  const auto &h = program.h_ab;
+  const auto &e = program.e_ab;
+  auto key = BeamzGraphKey("adjoint-electric-curl-tape", raw_stream, program);
+  for (int c = 0; c < 3; ++c) {
+    if (!ValidReplayTape(curls[c], e.outputs[c], program.nsteps) ||
+        e.inputs[9 + c].element_type != kBeamzF32)
+      return cudaErrorInvalidValue;
+    BeamzAppendBufferKey(&key, curls[c]);
+    if (old_e) {
+      if (!ValidReplayTape(old_e[c], e.outputs[c], program.nsteps))
+        return cudaErrorInvalidValue;
+      BeamzAppendBufferKey(&key, old_e[c]);
+    }
+  }
+  const bool split_cpml =
+      ScheduleFlagEnabled(program, kNativeScheduleCombinedCpmlCore);
+  const auto enqueue = [&]() {
+    for (int step = 0; step < program.nsteps; ++step) {
+      auto error = EnqueueProgramSources(stream, program, h, e, 0, step);
+      if (error != cudaSuccess)
+        return error;
+      error = split_cpml ? BeamzEnqueueCpmlPhase(stream, h)
+                         : BeamzEnqueuePhase(raw_stream, h);
+      if (error != cudaSuccess)
+        return error;
+      error = EnqueueProgramSources(stream, program, h, e, 1, step);
+      if (error != cudaSuccess)
+        return error;
+      BeamzBuffer frames[3];
+      for (int c = 0; c < 3; ++c)
+        frames[c] = ReplayFrame(curls[c], e.outputs[c], step);
+      BeamzBuffer old_fields[3];
+      if (old_e)
+        for (int c = 0; c < 3; ++c)
+          old_fields[c] = ReplayFrame(old_e[c], e.outputs[c], step);
+      const bool last_step = step == program.nsteps - 1;
+      error = BeamzEnqueueElectricCurl(stream, e, frames,
+                                       old_e ? old_fields : nullptr, last_step);
+      if (error != cudaSuccess || last_step)
+        return error;
+      error = EnqueueProgramSources(stream, program, h, e, 2, step);
+      if (error != cudaSuccess)
+        return error;
+    }
+    return cudaSuccess;
+  };
+  return BeamzLaunchGraph(stream, key, FlagEnabled(h, kBeamzGraphCache),
                           program.graph_cache_capacity, enqueue);
 }
 

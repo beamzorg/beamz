@@ -5,8 +5,8 @@
 #include <limits>
 
 #include "kernels.h"
-#include "native_runtime.h"
 #include "launch.h"
+#include "native_runtime.h"
 
 namespace {
 
@@ -409,9 +409,10 @@ __global__ void PrepareDftPhases(DftFields fields, BeamzDftGroupLaunch monitors,
   static_cast<float *>(monitors.phase_cos.data)[phase_offset] = phase_cos;
 }
 
-__global__ void ScatterDftTranspose(
-    const __grid_constant__ DftFields fields,
-    const __grid_constant__ BeamzDftGroupLaunch monitors) {
+__global__ void
+ScatterDftTranspose(const __grid_constant__ DftFields fields,
+                    const __grid_constant__ BeamzDftGroupLaunch monitors,
+                    int step) {
   const int point = blockIdx.x * blockDim.x + threadIdx.x;
   const int monitor = blockIdx.y / 6, component = blockIdx.y % 6;
   const auto* counts = static_cast<const int32_t*>(monitors.counts.data) + 5 * monitor;
@@ -424,7 +425,7 @@ __global__ void ScatterDftTranspose(
     return;
   const int slot = BeamzDftSlot(monitors, monitor, component, storage.compact);
   if (slot < 0) return;
-  const int phase_offset = monitor * max_nf;
+  const int phase_offset = (step * monitors.monitor_count + monitor) * max_nf;
   float scale = static_cast<const float*>(monitors.phase_window.data)[phase_offset];
   if (scale == 0.f) return;
   const auto* codes = static_cast<const int32_t*>(monitors.codes.data);
@@ -838,7 +839,8 @@ __global__ void AccumulateDftPacked(
 
 cudaError_t LaunchDftGroups(cudaStream_t stream, const BeamzLaunch &h_launch,
                             const BeamzLaunch &e_launch,
-                            const BeamzDftGroupLaunch &monitors, int32_t step) {
+                            BeamzDftGroupLaunch monitors, int32_t step,
+                            bool batched_phases = false) {
   const DftFields fields = MakeDftFields(h_launch, e_launch);
   const int frequency_threads =
       monitors.monitor_count == 1 && monitors.frequencies.dims[1] == 3 ? 3 : 2;
@@ -851,9 +853,15 @@ cudaError_t LaunchDftGroups(cudaStream_t stream, const BeamzLaunch &h_launch,
   // calls from every 32-point block. Small plans keep the original fused path
   // so an extra kernel launch cannot dominate a short gather.
   const bool cache_phase =
-      BeamzDftPointCapacity(monitors.indices) > kTileX ||
+      batched_phases || BeamzDftPointCapacity(monitors.indices) > kTileX ||
       monitors.monitor_count * monitors.frequencies.dims[1] >= 32;
-  if (cache_phase) {
+  if (batched_phases) {
+    const int offset =
+        step * monitors.monitor_count * monitors.frequencies.dims[1];
+    for (auto *phase :
+         {&monitors.phase_sin, &monitors.phase_cos, &monitors.phase_window})
+      phase->data = static_cast<float *>(phase->data) + offset;
+  } else if (cache_phase) {
     const dim3 phase_threads(kTileX);
     const dim3 phase_blocks(
         (monitors.frequencies.dims[1] + phase_threads.x - 1) / phase_threads.x,
@@ -959,23 +967,43 @@ cudaError_t BeamzEnqueueDftGroups(cudaStream_t stream,
   return LaunchDftGroups(stream, h_launch, e_launch, monitors, step);
 }
 
-cudaError_t BeamzEnqueueDftTranspose(cudaStream_t stream,
-                                    const BeamzBuffer* field_cotangents,
-                                    float dt, const BeamzDftGroupLaunch& monitors,
-                                    int32_t step) {
+cudaError_t BeamzEnqueueBatchedDftGroups(cudaStream_t stream,
+                                         const BeamzLaunch &h_launch,
+                                         const BeamzLaunch &e_launch,
+                                         const BeamzDftGroupLaunch &monitors,
+                                         int32_t step) {
+  return LaunchDftGroups(stream, h_launch, e_launch, monitors, step, true);
+}
+
+cudaError_t BeamzEnqueueDftPhases(cudaStream_t stream, float dt,
+                                  const BeamzDftGroupLaunch &monitors,
+                                  int32_t first_step, int32_t steps) {
   DftFields fields{};
   fields.dt = dt;
-  for (int c = 0; c < 6; ++c) fields.values[c] = field_cotangents[c];
   const int frequencies = monitors.frequencies.dims[1];
-  constexpr int phase_threads = 32, point_threads = 128;
+  constexpr int phase_threads = 32;
   const dim3 phase_blocks((frequencies + phase_threads - 1) / phase_threads,
-                          monitors.monitor_count);
-  PrepareDftPhases<<<phase_blocks, phase_threads, 0, stream>>>(fields, monitors, step);
-  if (auto error = cudaGetLastError(); error != cudaSuccess) return error;
+                          monitors.monitor_count, steps);
+  PrepareDftPhases<<<phase_blocks, phase_threads, 0, stream>>>(fields, monitors,
+                                                               first_step);
+  return cudaGetLastError();
+}
+
+cudaError_t BeamzEnqueueDftTranspose(cudaStream_t stream,
+                                     const BeamzBuffer *field_cotangents,
+                                     float dt,
+                                     const BeamzDftGroupLaunch &monitors,
+                                     int32_t phase_step) {
+  DftFields fields{};
+  fields.dt = dt;
+  for (int c = 0; c < 6; ++c)
+    fields.values[c] = field_cotangents[c];
+  constexpr int point_threads = 128;
   const dim3 point_blocks((BeamzDftPointCapacity(monitors.indices) + point_threads - 1) /
                               point_threads,
                           6 * monitors.monitor_count);
-  ScatterDftTranspose<<<point_blocks, point_threads, 0, stream>>>(fields, monitors);
+  ScatterDftTranspose<<<point_blocks, point_threads, 0, stream>>>(
+      fields, monitors, phase_step);
   return cudaGetLastError();
 }
 

@@ -1,15 +1,16 @@
 #include <cuda_runtime_api.h>
 
-#include <cuda_pipeline.h>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <limits>
-#include <type_traits>
 #include "abi_layout.h"
+#include "adjoint_replay.h"
 #include "kernels.h"
 #include "launch.h"
 #include "yee_primitives.cuh"
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cuda_pipeline.h>
+#include <limits>
+#include <type_traits>
 #ifndef BEAMZ_CUDA_MSTEP_TRACED_CELL
 #define BEAMZ_CUDA_MSTEP_TRACED_CELL 0
 #endif
@@ -470,11 +471,15 @@ __device__ __forceinline__ float CorrectCpml(float derivative, int z, int y,
 
 // Only mstep edge kernels opt into compact field addressing.
 template <int Phase, int Component, bool Cpml, int MetricKind,
-          bool HasMetallicEdges = true, bool UniformCpml = false, bool PackedLosslessMaterial = false, bool Compact = false,
-          bool Tensor = false, int ActiveAxes = -1, int CoefficientLayout = 0>
-__device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
-                                                int z, int y, int x,
-                                                const BeamzTensorLaunch* tensor = nullptr) {
+          bool HasMetallicEdges = true, bool UniformCpml = false,
+          bool PackedLosslessMaterial = false, bool Compact = false,
+          bool Tensor = false, int ActiveAxes = -1, int CoefficientLayout = 0,
+          bool RecordCurl = false>
+__device__ __forceinline__ void
+UpdateComponent(const BeamzLaunch &launch, int z, int y, int x,
+                const BeamzTensorLaunch *tensor = nullptr,
+                float *curl_tape = nullptr, float *old_e_tape = nullptr,
+                bool last_step = false) {
   const BeamzBuffer& input = launch.inputs[Component];
   const BeamzBuffer& output = launch.outputs[Component];
   if (z >= output.dims[0] || y >= output.dims[1] || x >= output.dims[2]) return;
@@ -486,7 +491,7 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
     zero_on_wall = beamz::cuda::yee::PecConstrained(
         output, Phase, Component, launch.metallic_edges, z, y, x);
   }
-  if constexpr (!Cpml && !Tensor) {
+  if constexpr (!Cpml && !Tensor && !RecordCurl) {
     if (zero_on_wall) {
       static_cast<float*>(output.data)[BeamzOffset3D<Compact>(output, z, y, x)] = 0.0f;
       return;
@@ -534,6 +539,13 @@ __device__ __forceinline__ void UpdateComponent(const BeamzLaunch& launch,
     }
   } else {
     curl = derivative0 - derivative1;
+  }
+  if constexpr (RecordCurl) {
+    curl_tape[linear] = curl;
+    if (old_e_tape)
+      old_e_tape[linear] = static_cast<const float *>(input.data)[linear];
+    if (last_step)
+      return;
   }
   if constexpr (Tensor) {
     const auto* origin = static_cast<const int32_t*>(tensor->origin.data);
@@ -594,6 +606,49 @@ __global__ void UpdateFusedComponents(BeamzLaunch launch) {
   UpdateComponent<Phase, 0, Cpml, MetricKind, HasMetallicEdges, UniformCpml, PackedLosslessMaterial>(launch, z, y, x);
   UpdateComponent<Phase, 1, Cpml, MetricKind, HasMetallicEdges, UniformCpml, PackedLosslessMaterial>(launch, z, y, x);
   UpdateComponent<Phase, 2, Cpml, MetricKind, HasMetallicEdges, UniformCpml, PackedLosslessMaterial>(launch, z, y, x);
+}
+
+template <bool Cpml, int MetricKind, bool HasMetallicEdges, bool UniformCpml>
+__global__ void RecordElectricCurl(const __grid_constant__ BeamzLaunch launch,
+                                   float *curl_x, float *curl_y, float *curl_z,
+                                   float *old_x, float *old_y, float *old_z,
+                                   bool last_step) {
+  const int x = blockIdx.x * blockDim.x + threadIdx.x;
+  const int y = blockIdx.y * blockDim.y + threadIdx.y;
+  const int z = blockIdx.z * blockDim.z + threadIdx.z;
+  UpdateComponent<1, 0, Cpml, MetricKind, HasMetallicEdges, UniformCpml, false,
+                  false, false, -1, 0, true>(launch, z, y, x, nullptr, curl_x,
+                                             old_x, last_step);
+  UpdateComponent<1, 1, Cpml, MetricKind, HasMetallicEdges, UniformCpml, false,
+                  false, false, -1, 0, true>(launch, z, y, x, nullptr, curl_y,
+                                             old_y, last_step);
+  UpdateComponent<1, 2, Cpml, MetricKind, HasMetallicEdges, UniformCpml, false,
+                  false, false, -1, 0, true>(launch, z, y, x, nullptr, curl_z,
+                                             old_z, last_step);
+}
+
+template <int MetricKind, bool HasMetallicEdges>
+void LaunchElectricCurl(cudaStream_t stream, const BeamzLaunch &launch,
+                        dim3 blocks, dim3 threads, const BeamzBuffer *curls,
+                        const BeamzBuffer *old_e, bool last_step) {
+  auto *x = static_cast<float *>(curls[0].data);
+  auto *y = static_cast<float *>(curls[1].data);
+  auto *z = static_cast<float *>(curls[2].data);
+  auto *old_x = old_e ? static_cast<float *>(old_e[0].data) : nullptr;
+  auto *old_y = old_e ? static_cast<float *>(old_e[1].data) : nullptr;
+  auto *old_z = old_e ? static_cast<float *>(old_e[2].data) : nullptr;
+  if (!launch.nterms)
+    RecordElectricCurl<false, MetricKind, HasMetallicEdges, false>
+        <<<blocks, threads, 0, stream>>>(launch, x, y, z, old_x, old_y, old_z,
+                                         last_step);
+  else if (launch.uniform_cpml_thickness)
+    RecordElectricCurl<true, MetricKind, HasMetallicEdges, true>
+        <<<blocks, threads, 0, stream>>>(launch, x, y, z, old_x, old_y, old_z,
+                                         last_step);
+  else
+    RecordElectricCurl<true, MetricKind, HasMetallicEdges, false>
+        <<<blocks, threads, 0, stream>>>(launch, x, y, z, old_x, old_y, old_z,
+                                         last_step);
 }
 
 template <int Phase>
@@ -1244,6 +1299,42 @@ int BeamzLaunchStreamed(void* raw_stream, const BeamzLaunch& launch) {
     }
   }
   return static_cast<int>(cudaPeekAtLastError());
+}
+
+cudaError_t BeamzEnqueueElectricCurl(cudaStream_t stream,
+                                     const BeamzLaunch &launch,
+                                     const BeamzBuffer *curls,
+                                     const BeamzBuffer *old_e, bool last_step) {
+  int size[3]{};
+  for (int c = 0; c < 3; ++c)
+    for (int axis = 0; axis < 3; ++axis)
+      size[axis] =
+          std::max(size[axis], static_cast<int>(launch.outputs[c].dims[axis]));
+  const dim3 threads(32, 4, 1);
+  const dim3 blocks((size[2] + 31) / 32, (size[1] + 3) / 4, size[0]);
+  if (launch.metric_kind == 0) {
+    if (launch.metallic_edges)
+      LaunchElectricCurl<0, true>(stream, launch, blocks, threads, curls, old_e,
+                                  last_step);
+    else
+      LaunchElectricCurl<0, false>(stream, launch, blocks, threads, curls,
+                                   old_e, last_step);
+  } else if (launch.metric_kind == 1) {
+    if (launch.metallic_edges)
+      LaunchElectricCurl<1, true>(stream, launch, blocks, threads, curls, old_e,
+                                  last_step);
+    else
+      LaunchElectricCurl<1, false>(stream, launch, blocks, threads, curls,
+                                   old_e, last_step);
+  } else {
+    if (launch.metallic_edges)
+      LaunchElectricCurl<2, true>(stream, launch, blocks, threads, curls, old_e,
+                                  last_step);
+    else
+      LaunchElectricCurl<2, false>(stream, launch, blocks, threads, curls,
+                                   old_e, last_step);
+  }
+  return cudaPeekAtLastError();
 }
 
 cudaError_t BeamzEnqueuePhase(void* raw_stream, const BeamzLaunch& launch) {

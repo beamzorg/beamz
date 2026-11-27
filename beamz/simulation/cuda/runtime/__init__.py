@@ -227,6 +227,12 @@ def _phase_with_vjp(arguments, result_values, attributes):
     return phase_call(*arguments)
 
 
+def _dft_phase_steps(packed_monitors, steps):
+    # Limit the three workspaces to 3 MiB in total and fit CUDA grid.z.
+    monitors, frequencies = packed_monitors[2].shape
+    return steps if steps <= 65535 and steps * monitors * frequencies <= 262144 else 1
+
+
 def reverse_material_step(
     cotangent,
     known_h,
@@ -241,6 +247,9 @@ def reverse_material_step(
     packed_monitors=None,
     observation_origin=None,
     observation_step_offset=None,
+    batch_dft_phases=False,
+    saved_curl=False,
+    old_e=(),
 ):
     """Transpose one step or an entire taped checkpoint through the same kernels.
 
@@ -274,7 +283,7 @@ def reverse_material_step(
         *old_psi_e,
         *fields,
         *psi_banks,
-        *gradients,
+        *gradients[:3],
         iteration,
     )
     cotangent_start = 23 + 7 * nterms
@@ -297,6 +306,12 @@ def reverse_material_step(
             if active
         }
     )
+    if old_e:
+        decay_gradients = gradients[3:]
+        decay_out = len(results)
+        aliases.update({len(arguments) + 3 + c: decay_out + c for c in range(3)})
+        arguments += (*old_e, *decay_gradients)
+        results += decay_gradients
     if packed_monitors is not None:
         arguments += (
             *packed_monitors,
@@ -307,7 +322,11 @@ def reverse_material_step(
             cotangent.current_step,
             observation_step_offset,
         )
-        phase = jax.ShapeDtypeStruct(packed_monitors[2].shape, jnp.float32)
+        monitors, frequencies = packed_monitors[2].shape
+        steps = (
+            _dft_phase_steps(packed_monitors, iteration.size) if batch_dft_phases else 1
+        )
+        phase = jax.ShapeDtypeStruct((monitors * steps, frequencies), jnp.float32)
         results += (phase,) * 3
     call = _ffi_call(abi.CUDA_MATERIAL_ADJOINT_TARGET, results, aliases)
     outputs = call(
@@ -326,6 +345,8 @@ def reverse_material_step(
         metric_kind=_metric_kind_code(ctx),
         e_gradient_mask=np.int32(
             sum(1 << index for index, active in enumerate(axes) if active)
+            | (8 if saved_curl else 0)
+            | (16 if old_e else 0)
         ),
     )
     state = cotangent._replace(
@@ -333,11 +354,11 @@ def reverse_material_step(
         cpml_psi_h_terms=cotangent.cpml_psi_h_terms,
         cpml_psi_e_terms=cotangent.cpml_psi_e_terms,
     )
-    return (
-        state,
-        tuple(outputs[material_start : material_start + 3]),
-        tuple(outputs[6 : 6 + 2 * nterms]),
-    )
+    material = tuple(outputs[material_start : material_start + 3])
+    if old_e:
+        material += tuple(outputs[decay_out : decay_out + 3])
+    result = (state, material, tuple(outputs[6 : 6 + 2 * nterms]))
+    return result
 
 
 def _discard(values):
@@ -1060,13 +1081,28 @@ def run_source_group_steps(state, ctx, coeffs, groups, nsteps: int) -> Simulatio
     return _replace_fields(state, outputs)
 
 
-def replay_source_group_steps(state, ctx, coeffs, groups, nsteps):
+def replay_source_group_steps(
+    state, ctx, coeffs, groups, nsteps, *, record_curl=False, record_decay=False
+):
     """Write the material-adjoint tape directly from the shared CUDA step."""
-    arguments, _, state_aliases = _graph_io(state, ctx, coeffs)
+    arguments, state_results, state_aliases = _graph_io(state, ctx, coeffs)
     inputs = (*arguments, *_source_group_arguments(groups), state.current_step)
     # A taped checkpoint replays the ordinary one-step transition; the time
     # dimension of the tape does not change the physical field-bank layout.
     plan = _native_schedule_plan(state, ctx, coeffs, 1, kind="source", groups=groups)
+    if record_curl:
+        tape = tuple(
+            jax.ShapeDtypeStruct((nsteps, *value.shape), value.dtype)
+            for value in (state.ex, state.ey, state.ez)
+        )
+        outputs = _ffi_call(
+            _program_target(ctx),
+            (*state_results, *(tape * (2 if record_decay else 1))),
+            state_aliases,
+        )(*inputs, **_program_attributes(ctx, nsteps, plan))
+        start = len(state_results)
+        records = (outputs[start : start + 3], (_EMPTY,) * len(state.cpml_psi_e_terms))
+        return (*records, outputs[start + 3 :]) if record_decay else records
     # In the replay packet, only E fields and magnetic CPML are writable
     # scratch. H fields and electric CPML write directly into their tapes.
     scratch_positions = {
@@ -1388,6 +1424,7 @@ def run_program_steps(
     *,
     observation_origin=None,
     observation_step_offset: int | jax.Array = 0,
+    batch_dft_phases=False,
 ) -> SimulationState:
     """Advance arbitrary slab sources and packed vector DFTs in one CUDA graph."""
     if nsteps < 1:
@@ -1411,6 +1448,15 @@ def run_program_steps(
         else _graph_io(state, ctx, coeffs)
     )
     arguments = (*arguments, *source_arguments)
+    phase_steps = plan.temporal_steps
+    # The CPML12 traced launcher and the temporal launcher manage their own
+    # monitor phase slots.
+    if (
+        batch_dft_phases
+        and not use_temporal_cpml
+        and _uniform_cpml_thickness(ctx) != 12
+    ):
+        phase_steps = _dft_phase_steps(packed_monitors, nsteps)
     arguments, result_values, aliases, state_output_count, _ = _monitor_io(
         state,
         packed_monitors,
@@ -1421,7 +1467,7 @@ def run_program_steps(
         if observation_origin is None
         else observation_origin,
         observation_step_offset=observation_step_offset,
-        phase_steps=plan.temporal_steps,
+        phase_steps=phase_steps,
     )
     if plan.temporal_steps == 2:
         result_values = (

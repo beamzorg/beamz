@@ -76,13 +76,21 @@ cudaError_t BeamzEnqueueDftGroups(cudaStream_t stream,
                                   const BeamzDftGroupLaunch &monitors,
                                   int32_t step);
 
+cudaError_t BeamzEnqueueBatchedDftGroups(
+    cudaStream_t stream, const BeamzLaunch& h_launch, const BeamzLaunch& e_launch,
+    const BeamzDftGroupLaunch& monitors, int32_t step);
+
+cudaError_t BeamzEnqueueDftPhases(cudaStream_t stream, float dt,
+                                          const BeamzDftGroupLaunch& monitors,
+                                          int32_t first_step, int32_t steps);
+
 // Transpose the linear vector-DFT acquisition, adding directly to the six
 // incoming field cotangents in Ex/Ey/Ez/Hx/Hy/Hz order.
 cudaError_t BeamzEnqueueDftTranspose(cudaStream_t stream,
                                     const BeamzBuffer* field_cotangents,
                                     float dt,
                                     const BeamzDftGroupLaunch& monitors,
-                                    int32_t step);
+                                    int32_t phase_step);
 
 cudaError_t BeamzEnqueueDftPair(cudaStream_t stream, const BeamzLaunch &h1,
                                 const BeamzLaunch &e1, const BeamzLaunch &h2,

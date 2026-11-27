@@ -6,6 +6,7 @@
 #include "abi_layout.h"
 #include "launch.h"
 #ifndef BEAMZ_CUDA_CPU_CONTRACT
+#include "adjoint_replay.h"
 #include "kernels.h"
 #endif
 #include "xla/ffi/api/ffi.h"
@@ -510,15 +511,20 @@ ffi::Error MaterialAdjointHandler(void* stream, ffi::RemainingArgs args,
   if (nterms != 0 && nterms != 6)
     return ffi::Error::InvalidArgument("invalid material-adjoint CPML term count");
   constexpr size_t observation_inputs = kMonitorInputCount - 3;
-  const int base_args = 33 + 9 * nterms;
-  const int base_rets = 12 + 2 * nterms;
+  const bool saved_decay = e_gradient_mask == 31;
+  const bool saved_curl = e_gradient_mask == 15 || saved_decay;
+  const int old_e = 33 + 9 * nterms;
+  const int base_args = old_e + (saved_decay ? 6 : 0);
+  const int base_rets = 12 + 2 * nterms + (saved_decay ? 3 : 0);
   const bool observe = args.size() == base_args + observation_inputs;
+  if (saved_curl)
+    e_gradient_mask = 7;
   if (abi_version != kAbiVersion || metric_kind < 0 || metric_kind > 2 ||
       e_gradient_mask < 0 ||
       e_gradient_mask > 7 || (!observe && args.size() != base_args) ||
       rets.size() != base_rets + (observe ? 3 : 0))
     return ffi::Error::InvalidArgument("invalid material-adjoint attributes/counts");
-  BeamzBuffer in[87 + observation_inputs]{}, out[27]{};
+  BeamzBuffer in[93 + observation_inputs]{}, out[30]{};
   if (auto error = DecodeArgs(args, in, args.size()); error.failure()) return error;
   if (auto error = DecodeRets(rets, out, rets.size()); error.failure()) return error;
   BeamzBuffer empty{}; empty.rank = 1;
@@ -547,7 +553,8 @@ ffi::Error MaterialAdjointHandler(void* stream, ffi::RemainingArgs args,
   };
   const auto& iteration = in[accumulated + 3];
   const bool chunk = iteration.rank == 1;
-  if ((!chunk && iteration.rank != 0) || (observe && !chunk) ||
+  if ((!chunk && iteration.rank != 0) ||
+      ((observe || saved_curl) && !chunk) ||
       iteration.element_type != kBeamzS32 || !iteration.data ||
       (chunk && (iteration.dims[0] < 1 || iteration.dims[0] > INT32_MAX)))
     return ffi::Error::InvalidArgument("reverse iteration must be an int32 scalar or vector");
@@ -559,7 +566,9 @@ ffi::Error MaterialAdjointHandler(void* stream, ffi::RemainingArgs args,
     h.phase.inputs[c] = in[cot_fields + 3 + c];
     h.phase.inputs[3 + c] = in[cot_fields + c];
     e.phase.inputs[c] = in[cot_fields + c];
-    e.phase.inputs[3 + c] = (e_gradient_mask ? in[known_h + c] : in[cot_fields + 3 + c]);
+    e.phase.inputs[3 + c] =
+        (e_gradient_mask && !saved_curl ? in[known_h + c]
+                                        : in[cot_fields + 3 + c]);
     for (int k = 0; k < 2; ++k) {
       h.phase.inputs[6 + 3 * k + c] = in[3 * k + c];
       e.phase.inputs[6 + 3 * k + c] = in[6 + 3 * k + c];
@@ -594,7 +603,8 @@ ffi::Error MaterialAdjointHandler(void* stream, ffi::RemainingArgs args,
     const auto hp = logical_psi(in[cot_psi_h + t]);
     const auto ep = logical_psi(in[cot_psi_e + t]);
     h.phase.inputs[13 + 3 * nterms + t] = hp;
-    e.phase.inputs[13 + 3 * nterms + t] = e_gradient_mask ? in[old_psi_e + t] : ep;
+    e.phase.inputs[13 + 3 * nterms + t] =
+        e_gradient_mask && !saved_curl ? in[old_psi_e + t] : ep;
     h.phase.outputs[3 + t] = hp; e.phase.outputs[3 + t] = ep;
     h.gradients[13 + 3 * nterms + t] = logical_psi(out[6 + t]);
     e.gradients[13 + 3 * nterms + t] = logical_psi(out[6 + nterms + t]);
@@ -636,11 +646,30 @@ ffi::Error MaterialAdjointHandler(void* stream, ffi::RemainingArgs args,
       if (tape.dims[axis + 1] != field.dims[axis]) return false;
     return tape.data || field.dims[0] * field.dims[1] * field.dims[2] == 0;
   };
+  const int decay_out = workspace + 3;
+  if (saved_decay) {
+    for (int c = 0; c < 3; ++c) {
+      const auto &target = in[cot_fields + c];
+      const auto &decay = e.phase.inputs[6 + c];
+      const auto &gradient = out[decay_out + c];
+      if (!valid_tape(in[old_e + c], target) || decay.rank != 3 ||
+          gradient.rank != 3 || gradient.element_type != kBeamzF32 ||
+          gradient.data != in[old_e + 3 + c].data)
+        return ffi::Error::InvalidArgument(
+            "invalid electric decay adjoint tape/accumulator");
+      for (int axis = 0; axis < 3; ++axis)
+        if (decay.dims[axis] != target.dims[axis] ||
+            gradient.dims[axis] != target.dims[axis])
+          return ffi::Error::InvalidArgument(
+              "decay adjoint requires dense Yee coefficients");
+    }
+  }
   if (chunk && e_gradient_mask) {
     for (int c = 0; c < 3; ++c)
-      if (!valid_tape(in[known_h + c], in[cot_fields + c + 3]))
-        return ffi::Error::InvalidArgument("invalid magnetic adjoint tape");
-    for (int term = 0; term < nterms; ++term)
+      if (!valid_tape(in[known_h + c],
+                      in[cot_fields + c + (saved_curl ? 0 : 3)]))
+        return ffi::Error::InvalidArgument("invalid material adjoint tape");
+    for (int term = 0; !saved_curl && term < nterms; ++term)
       if (!valid_tape(in[old_psi_e + term], logical_psi(in[cot_psi_e + term])))
         return ffi::Error::InvalidArgument("invalid electric CPML adjoint tape");
   }
@@ -652,7 +681,15 @@ ffi::Error MaterialAdjointHandler(void* stream, ffi::RemainingArgs args,
   };
   // E writes a separate intermediate H cotangent bank. H then consumes it,
   // updates aliased E cotangents, and writes H's diagonal into the old H bank.
-  int error = 0;
+  const auto cuda_stream = static_cast<cudaStream_t>(stream);
+  const bool batched_phases =
+      observe && steps <= 65535 &&
+      monitors.phase_sin.dims[0] >= int64_t{steps} * monitors.monitor_count &&
+      int64_t{steps} * monitors.monitor_count * monitors.frequencies.dims[1] <=
+          INT32_MAX;
+  int error = batched_phases
+                  ? BeamzEnqueueDftPhases(cuda_stream, dt, monitors, 0, steps)
+                  : 0;
   for (int reverse = 0; reverse < steps && error == 0; ++reverse) {
     const int index = steps - 1 - reverse;
     h.reverse_iteration = e.reverse_iteration = iteration;
@@ -660,17 +697,32 @@ ffi::Error MaterialAdjointHandler(void* stream, ffi::RemainingArgs args,
       h.reverse_iteration.rank = e.reverse_iteration.rank = 0;
       h.reverse_iteration.data = e.reverse_iteration.data =
           static_cast<int32_t*>(iteration.data) + reverse;
-      if (e_gradient_mask) {
+      if (e_gradient_mask && !saved_curl) {
         for (int c = 0; c < 3; ++c)
           e.phase.inputs[3 + c] = frame(in[known_h + c], index);
         for (int term = 0; term < nterms; ++term)
           e.phase.inputs[13 + 3 * nterms + term] = frame(in[old_psi_e + term], index);
       }
     }
-    if (observe)
-      error = BeamzEnqueueDftTranspose(
-          static_cast<cudaStream_t>(stream), in + cot_fields, dt, monitors, index);
-    if (error == 0) error = BeamzLaunchAdjoint(stream, e);
+    if (observe && !batched_phases)
+      error = BeamzEnqueueDftPhases(cuda_stream, dt, monitors, index, 1);
+    if (observe && error == 0)
+      error = BeamzEnqueueDftTranspose(cuda_stream, in + cot_fields, dt,
+                                       monitors, batched_phases ? index : 0);
+    if (error == 0 && saved_curl) {
+      BeamzBuffer curls[3];
+      for (int c = 0; c < 3; ++c)
+        curls[c] = frame(in[known_h + c], index);
+      BeamzBuffer old_fields[3];
+      if (saved_decay)
+        for (int c = 0; c < 3; ++c)
+          old_fields[c] = frame(in[old_e + c], index);
+      error = BeamzLaunchAdjointFromCurl(
+          stream, e, curls, saved_decay ? old_fields : nullptr,
+          saved_decay ? out + decay_out : nullptr);
+    } else if (error == 0) {
+      error = BeamzLaunchAdjoint(stream, e);
+    }
     if (error == 0) error = BeamzLaunchAdjoint(stream, h);
   }
   return error == 0 ? ffi::Error::Success() :
@@ -839,7 +891,7 @@ ffi::Error StreamedSourceGroupsCpmlStepsHandler(
       kSourceGroupBufferCount * kSourceGroupCount + 1;
   constexpr size_t kInputCapacity = kCpmlGraphInputCount + kSourceInputCount;
   BeamzBuffer inputs[kInputCapacity]{};
-  BeamzBuffer outputs[kCpmlGraphOutputCount]{};
+  BeamzBuffer outputs[kCpmlGraphOutputCount + 6]{};
   const size_t graph_input_count =
       cpml_enabled ? kCpmlGraphInputCount : kYeeGraphInputCount;
   const size_t graph_output_count =
@@ -847,8 +899,15 @@ ffi::Error StreamedSourceGroupsCpmlStepsHandler(
   if (auto error = DecodeArgs(args, inputs,
                               graph_input_count + kSourceInputCount);
       error.failure()) return error;
-  if (auto error = DecodeRets(rets, outputs, graph_output_count);
-      error.failure()) return error;
+  const bool decay_replay = rets.size() == graph_output_count + 6;
+  const bool curl_replay =
+      rets.size() == graph_output_count + 3 || decay_replay;
+  if (auto error = DecodeRets(rets, outputs,
+                              graph_output_count + (decay_replay  ? 6
+                                                    : curl_replay ? 3
+                                                                  : 0));
+      error.failure())
+    return error;
 
   // The replay variant has the same input ABI. Its final result is a
   // time-major rank-four tape rather than an ordinary rank-three state leaf.
@@ -882,7 +941,15 @@ ffi::Error StreamedSourceGroupsCpmlStepsHandler(
   const auto program = InPlaceProgram(launches, nsteps, groups, kSourceGroupCount,
                                       nullptr, graph_cache_capacity, schedule_flags);
   int error;
-  if (replay) {
+  if (curl_replay) {
+#ifdef BEAMZ_CUDA_CPU_CONTRACT
+    return ffi::Error::InvalidArgument("adjoint replay requires CUDA");
+#else
+    error = BeamzLaunchCurlTape(stream, program, outputs + graph_output_count,
+                                decay_replay ? outputs + graph_output_count + 3
+                                             : nullptr);
+#endif
+  } else if (replay) {
 #ifdef BEAMZ_CUDA_CPU_CONTRACT
     return ffi::Error::InvalidArgument("adjoint replay requires CUDA");
 #else
