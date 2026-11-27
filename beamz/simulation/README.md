@@ -231,6 +231,19 @@ It returns a JAX-native `SimulationState` with differentiable monitor accumulato
 `solver.monitor_fields(state, name)` and `solver.monitor_flux(state, name)` for
 frequency-domain objectives. The [optimization guide](../optimization/README.md)
 covers checkpointing, native CUDA reverse mode, and parameter restrictions.
+
+`solver.execution_plan` reports the metric kind, checkpoint interval, forward
+route, and available reverse routes. With fixed source profiles and clock,
+gradients of the electric source coefficients can use native checkpoint
+replay and transpose for uniform and rectilinear metrics. When a tape of
+corrected electric curls uses less storage than magnetic fields and electric
+CPML memories, dense material gradients use the curl tape. Joint gradients of
+all six dense electric source and decay coefficients also record the old
+electric fields. Source amplitudes, clocks, and other coefficient layouts use
+the per-step VJP. Set `BEAMZ_CUDA_ADJOINT_CURL_REPLAY=0` to select the
+magnetic-field tape and the per-step loss gradient.
+
+
 ## Broadband dispersive materials
 
 `bz.PoleResidue(epsilon_inf, poles, frequency_range=(fmin, fmax))` describes

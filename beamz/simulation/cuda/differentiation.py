@@ -14,7 +14,7 @@ from jax.core import ShapedArray
 from jax.typing import DTypeLike
 
 from beamz.devices.sources.compiler import BatchedSlabGroup
-from beamz.simulation.backend import _load_extension
+from beamz.simulation.backend import _env_enabled, _load_extension
 from beamz.simulation.cuda.runtime import (
     _EMPTY,
     _uniform_cpml_thickness,
@@ -38,6 +38,12 @@ class _Columns:
 class _NativeStepper:
     step: Callable[..., Any]
     chunk_factory: Callable[[int], Callable[..., Any]]
+    replay: str
+    transpose: str
+    compact_transpose: bool
+    batch_dft_phases: bool
+    curl_replay: bool
+    decay_replay: bool
 
     def __call__(self, *arguments):
         return self.step(*arguments)
@@ -61,24 +67,30 @@ def _materialize_cotangents(cotangents, values):
     )
 
 
-def build_native_step(program, context, update_kernel, split_dft, pack_dft):
-    """Return a differentiable native step, or None for unsupported recorders."""
-    if context.config.backend != "cuda_streamed" or bool(
-        jax.config.read("jax_enable_x64")
-    ):
-        return None
-    batches = compiled_source_batches(program.sources)
-    if any(rest for _group, rest in batches.values()):
-        return None
-    if any(
+def _unsupported_monitor(mon):
+    return (
         mon.recorder_index >= 0
         or mon.accumulate_power
         or mon.accumulate_frequency
         or not mon.dft_enabled
         or mon.freq_count <= 0
         or mon.dft_point_count <= 0
-        for mon in program.monitors
-    ):
+    )
+
+
+def _supports_native_graph(program, context, batches):
+    return (
+        context.config.backend == "cuda_streamed"
+        and not jax.config.read("jax_enable_x64")
+        and not any(rest for _group, rest in batches.values())
+        and not any(_unsupported_monitor(mon) for mon in program.monitors)
+    )
+
+
+def build_native_step(program, context, update_kernel, split_dft, pack_dft):
+    """Return a differentiable native step, or None for unsupported recorders."""
+    batches = compiled_source_batches(program.sources)
+    if not _supports_native_graph(program, context, batches):
         return None
     keys = tuple(batches)
     templates = tuple(batches[key][0] for key in keys)
@@ -88,11 +100,37 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
     native_replay = (
         context.config.cuda_program_target is None
         and getattr(module, "compiled_adjoint_replay", False)
-        and (not context.boundary.cpml.enabled or _uniform_cpml_thickness(context) > 0)
+        and (
+            getattr(module, "compiled_adjoint_general_replay", False)
+            or not context.boundary.cpml.enabled
+            or _uniform_cpml_thickness(context) > 0
+        )
+    )
+    batch_dft_phases = context.config.cuda_program_target is None and getattr(
+        module, "compiled_adjoint_batched_dft", False
     )
     native_transpose = context.config.cuda_program_target is None and getattr(
         module, "compiled_adjoint_chunk", False
     )
+
+    curl_replay = (
+        native_replay
+        and native_transpose
+        and getattr(module, "compiled_adjoint_curl_replay", False)
+        and _env_enabled("BEAMZ_CUDA_ADJOINT_CURL_REPLAY", default=True)
+    )
+
+    decay_replay = curl_replay and getattr(
+        module, "compiled_adjoint_decay_replay", False
+    )
+
+    def dense_coefficients(state, coeffs, kinds):
+        return all(
+            getattr(coeffs, f"e_{kind}_{axis}").shape
+            == getattr(state, f"e{axis}").shape
+            for kind in kinds
+            for axis in "xyz"
+        )
 
     def source_values(ctx):
         return tuple(
@@ -141,6 +179,7 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
                 nsteps,
                 observation_origin=clock[0],
                 observation_step_offset=clock[1],
+                batch_dft_phases=batch_dft_phases,
             )
             if observe and packed_monitors is not None
             else run_source_group_steps(packed, ctx, coeffs, groups, nsteps)
@@ -298,11 +337,24 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
             )
         )
 
-    def material_backward(inputs, cotangents, flags, nsteps):
+    def material_backward(inputs, cotangents, flags, nsteps, *, record_decay=False):
         state, coeffs, sources, clock = inputs
         ctx, groups = restore_context(sources)
         axes = tuple(getattr(flags[1], f"e_source_{axis}") for axis in "xyz")
         train_material = any(axes)
+        # A curl frame displaces an H/psi frame. H/psi still need a scratch
+        # frame while the electric update records the curl.
+        field_values = sum(getattr(state, f"e{axis}").size for axis in "xyz")
+        replay_values = sum(getattr(state, f"h{axis}").size for axis in "xyz") + sum(
+            psi.size for psi in state.cpml_psi_e_terms
+        )
+        record_curl = record_decay or (
+            curl_replay
+            and all(axes)
+            and dense_coefficients(state, coeffs, ("source",))
+            and nsteps * field_values + replay_values < nsteps * replay_values
+        )
+        old_e = ()
         initial_step = state.current_step
 
         def replay(carry, index):
@@ -315,10 +367,18 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
 
         indices = jnp.arange(nsteps, dtype=jnp.int32)
         if train_material and native_replay:
-            records = (
-                indices,
-                *replay_source_group_steps(state, ctx, coeffs, groups, nsteps),
+            tape = replay_source_group_steps(
+                state,
+                ctx,
+                coeffs,
+                groups,
+                nsteps,
+                record_curl=record_curl,
+                record_decay=record_decay,
             )
+            records = (indices, *tape[:2])
+            if record_decay:
+                old_e = tape[2]
         elif train_material:
             _final, tape = jax.lax.scan(replay, state, indices)
             records = (indices, *tape)
@@ -330,6 +390,10 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
             jnp.zeros_like(getattr(coeffs, f"e_source_{axis}")) if active else _EMPTY
             for axis, active in zip("xyz", axes, strict=True)
         )
+        if record_decay:
+            gradients += tuple(
+                jnp.zeros_like(getattr(coeffs, f"e_decay_{axis}")) for axis in "xyz"
+            )
         initial_cotangents = _materialize_cotangents(cotangents, state)
         psi_banks = tuple(
             jnp.stack((value, jnp.zeros_like(value)))
@@ -391,6 +455,7 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
             )
             return (next_dy, next_accumulated, next_banks), None
 
+        source_gradient = jax.tree.map(lambda _value: None, sources)
         if native_transpose:
             known_h, old_psi_e = (
                 records[1:]
@@ -410,6 +475,9 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
                 packed_monitors=packed_monitors,
                 observation_origin=clock[0],
                 observation_step_offset=clock[1],
+                batch_dft_phases=batch_dft_phases,
+                saved_curl=record_curl,
+                old_e=old_e,
             )
             state_gradient = split_dft(state_gradient)
         else:
@@ -426,17 +494,13 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
             cpml_psi_h_terms=tuple(value[nsteps & 1] for value in final_banks[:nterms]),
             cpml_psi_e_terms=tuple(value[nsteps & 1] for value in final_banks[nterms:]),
         )
+        material_columns = tuple(f"e_source_{axis}" for axis in "xyz")
+        if record_decay:
+            material_columns += tuple(f"e_decay_{axis}" for axis in "xyz")
+        column_gradients = dict(zip(material_columns, material_gradient, strict=True))
         coefficient_gradient = coeffs._replace(
-            **{
-                name: (
-                    material_gradient["xyz".index(name[-1])]
-                    if name in {"e_source_x", "e_source_y", "e_source_z"}
-                    else None
-                )
-                for name in coeffs._fields
-            }
+            **{name: column_gradients.get(name) for name in coeffs._fields}
         )
-        source_gradient = jax.tree.map(lambda _value: None, sources)
         gradients = (
             state_gradient,
             coefficient_gradient,
@@ -490,16 +554,35 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
             inputs, columns = residuals
             leaves, tree = jax.tree.flatten(inputs)
             flags = tree.unflatten(list(columns.flags))
-            if (
-                not any(jax.tree.leaves(flags[2]))
-                and not any(jax.tree.leaves(flags[3]))
-                and not any(
-                    getattr(flags[1], name)
-                    for name in flags[1]._fields
-                    if name not in {"e_source_x", "e_source_y", "e_source_z"}
-                )
-            ):
-                return (material_backward(inputs, cotangents, flags, nsteps),)
+            if not any(jax.tree.leaves((flags[2], flags[3]))):
+                active_coeffs = {
+                    name for name in flags[1]._fields if getattr(flags[1], name)
+                }
+                electric_source = {f"e_source_{axis}" for axis in "xyz"}
+                electric_decay = {f"e_decay_{axis}" for axis in "xyz"}
+                if active_coeffs <= electric_source:
+                    return (
+                        material_backward(
+                            inputs,
+                            cotangents,
+                            flags,
+                            nsteps,
+                        ),
+                    )
+                if (
+                    decay_replay
+                    and active_coeffs == electric_source | electric_decay
+                    and dense_coefficients(inputs[0], inputs[1], ("source", "decay"))
+                ):
+                    return (
+                        material_backward(
+                            inputs,
+                            cotangents,
+                            flags,
+                            nsteps,
+                            record_decay=True,
+                        ),
+                    )
             active = tuple(
                 value for value, flag in zip(leaves, columns.flags, strict=True) if flag
             )
@@ -555,4 +638,13 @@ def build_native_step(program, context, update_kernel, split_dft, pack_dft):
 
         return chunk
 
-    return _NativeStepper(step, build_chunk)
+    return _NativeStepper(
+        step,
+        build_chunk,
+        "native_direct_tape" if native_replay else "per_step_scan",
+        "native_chunk" if native_transpose else "per_step_scan",
+        native_transpose and getattr(module, "compiled_adjoint_compact", False),
+        batch_dft_phases and packed_monitors is not None,
+        curl_replay,
+        decay_replay,
+    )

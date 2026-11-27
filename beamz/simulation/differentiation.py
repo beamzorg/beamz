@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import operator
 from dataclasses import replace
+from types import MappingProxyType
 
 import jax
 import jax.numpy as jnp
@@ -280,7 +281,50 @@ def build_differentiable_scan(program: CompiledProgram, *, checkpoint_interval=N
             )(out)
         return pack_dft(out)
 
-    return jax.jit(run)
+    compiled = jax.jit(run)
+    plan = {
+        "backend": cfg.backend,
+        "metric": cfg.metric_kind,
+        "checkpoint_interval": interval,
+    }
+    if cfg.backend == "jax":
+        plan.update(forward="jax_scan", reverse="jax_vjp")
+    elif native_step is None:
+        plan.update(
+            forward="cuda_phases",
+            reverse="phase_vjp",
+            reason="Native step graphs require streamed float32 CUDA, slab sources, "
+            "and vector DFT monitors without power accumulation or recorders.",
+        )
+    elif not interval:
+        plan.update(forward="native_step_scan", reverse="step_vjp")
+    else:
+        plan.update(
+            forward="native_checkpoint_graph",
+            material_replay=native_step.replay,
+            material_reverse=native_step.transpose,
+            compact_material_transpose=native_step.compact_transpose,
+            batched_dft_phases=native_step.batch_dft_phases,
+            material_tape="electric_curl_when_smaller"
+            if native_step.curl_replay
+            else "magnetic_field_and_electric_cpml",
+            dense_loss_reverse="native_chunk"
+            if native_step.decay_replay
+            else "step_vjp",
+            other_reverse="step_vjp",
+            material_reverse_requires="Fixed sources and clock. "
+            "Native loss gradients require all six dense electric coefficients.",
+        )
+        if native_step.replay != "native_direct_tape":
+            plan["replay_reason"] = (
+                "Direct replay is unavailable in this CUDA extension or program target."
+            )
+        if native_step.transpose != "native_chunk":
+            plan["reverse_reason"] = (
+                "Chunk transpose is unavailable in this CUDA extension or program target."
+            )
+    compiled.execution_plan = MappingProxyType(plan)
+    return compiled
 
 
 class DifferentiableSimulation:
@@ -304,6 +348,11 @@ class DifferentiableSimulation:
         )
         self.initial_state = initial_program_state(program, t=t0, current_step=0)
         self._run = jax.jit(self._advance)
+
+    @property
+    def execution_plan(self):
+        """Report forward dispatch and the VJP selected for each input class."""
+        return self.run_coefficients.execution_plan
 
     def _sample(self, values, components):
         grid = self.program.grid

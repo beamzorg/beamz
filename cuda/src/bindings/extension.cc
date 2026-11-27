@@ -13,7 +13,12 @@ NB_MODULE(_cuda, module) {
   RegisterNativeCuda(module);
   module.attr("coherent_backend_version")=1;
   module.attr("compiled_adjoint_replay") = true;
+  module.attr("compiled_adjoint_general_replay") = true;
+  module.attr("compiled_adjoint_curl_replay") = true;
+  module.attr("compiled_adjoint_decay_replay") = true;
   module.attr("compiled_adjoint_chunk") = true;
+  module.attr("compiled_adjoint_compact") = true;
+  module.attr("compiled_adjoint_batched_dft") = true;
   module.attr("__version__") = kComponentVersion;
   module.attr("__abi_version__") = kAbiVersion;
   module.def("registrations", []() {

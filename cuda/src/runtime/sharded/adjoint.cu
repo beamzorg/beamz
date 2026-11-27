@@ -6,8 +6,10 @@
 #include <initializer_list>
 #include <limits>
 
+#include "adjoint_replay.h"
 #include "kernels.h"
 #include "launch.h"
+#include "yee_primitives.cuh"
 
 namespace {
 
@@ -343,8 +345,350 @@ __global__ void PhaseAdjoint(BeamzAdjointLaunch launch) {
   ComponentAdjoint<Phase, 2, CoefficientMode>(launch, p);
 }
 
+// The chunk transpose has fixed active columns and contiguous Yee fields.
+// Prepare their addressing once, outside the kernel, including zero strides
+// for broadcast coefficients. The generic kernel still handles all other VJPs.
+struct AdjointView {
+  float *data;
+  int stride[3];
+};
+
+struct AdjointField {
+  AdjointView view;
+  int size[3];
+};
+
+struct MaterialAdjoint {
+  AdjointField target[3], source[3];
+  AdjointView target_cotangent[3], target_gradient[3];
+  AdjointView source_cotangent[3], source_gradient[3], source_decay[3];
+  AdjointView decay[3], coefficient[3], material_gradient[3], curl[3], old_e[3],
+      decay_gradient[3];
+  AdjointView psi_old[6], psi_cotangent[6], psi_gradient[6];
+  AdjointView cpml_a[6], cpml_b[6], cpml_k[6];
+  const float *metric[3];
+  const int *metadata;
+  int uniform_cpml_thickness;
+  int metallic_edges;
+  int psi_bank_stride[6];
+  const int *reverse_iteration;
+};
+
+AdjointView View(const BeamzBuffer &buffer, bool broadcast = false) {
+  AdjointView result{static_cast<float *>(buffer.data), {0, 0, 0}};
+  if (buffer.rank == 3) {
+    result.stride[0] =
+        broadcast && buffer.dims[0] == 1 ? 0 : buffer.plane_stride;
+    result.stride[1] = broadcast && buffer.dims[1] == 1 ? 0 : buffer.row_stride;
+    result.stride[2] = broadcast && buffer.dims[2] == 1 ? 0 : 1;
+  }
+  return result;
+}
+
+AdjointField Field(const BeamzBuffer &buffer) {
+  return {View(buffer),
+          {int(buffer.dims[0]), int(buffer.dims[1]), int(buffer.dims[2])}};
+}
+
+MaterialAdjoint PrepareMaterialAdjoint(const BeamzAdjointLaunch &launch,
+                                       const BeamzBuffer *curls,
+                                       const BeamzBuffer *old_e,
+                                       const BeamzBuffer *decay_gradients) {
+  MaterialAdjoint result{};
+  const auto &phase = launch.phase;
+  result.metallic_edges = phase.metallic_edges;
+  result.metadata = static_cast<const int *>(phase.inputs[12].data);
+  result.uniform_cpml_thickness = phase.uniform_cpml_thickness;
+  result.reverse_iteration =
+      static_cast<const int *>(launch.reverse_iteration.data);
+  for (int c = 0; c < 3; ++c) {
+    result.target[c] = Field(phase.inputs[c]);
+    result.source[c] = Field(phase.inputs[3 + c]);
+    result.target_cotangent[c] = View(phase.outputs[c]);
+    result.target_gradient[c] = View(launch.gradients[c]);
+    result.source_cotangent[c] = View(launch.source_cotangents[c]);
+    result.source_gradient[c] = View(launch.gradients[3 + c]);
+    result.source_decay[c] = View(launch.source_decays[c], true);
+    result.decay[c] = View(phase.inputs[6 + c], true);
+    result.coefficient[c] = View(phase.inputs[9 + c], true);
+    result.material_gradient[c] = View(launch.gradients[9 + c]);
+    if (curls)
+      result.curl[c] = View(curls[c]);
+    if (old_e) {
+      result.old_e[c] = View(old_e[c]);
+      result.decay_gradient[c] = View(decay_gradients[c]);
+    }
+    const auto &metric = phase.metrics[c];
+    result.metric[c] = phase.metric_kind == 0
+                           ? nullptr
+                           : static_cast<const float *>(metric.data);
+  }
+  for (int t = 0; t < phase.nterms; ++t) {
+    const int psi = 13 + 3 * phase.nterms + t;
+    result.psi_old[t] = View(phase.inputs[psi]);
+    result.psi_cotangent[t] = View(phase.outputs[3 + t]);
+    result.psi_gradient[t] = View(launch.gradients[psi]);
+    result.psi_bank_stride[t] = launch.psi_bank_stride[t];
+    result.cpml_a[t] = View(phase.inputs[13 + 3 * t], true);
+    result.cpml_b[t] = View(phase.inputs[14 + 3 * t], true);
+    result.cpml_k[t] = View(phase.inputs[15 + 3 * t], true);
+  }
+  return result;
+}
+
+template <int Term> __host__ __device__ constexpr auto CurlTerm() {
+  if constexpr (Term & 1)
+    return beamz::cuda::yee::SecondCurlTerm(Term / 2);
+  return beamz::cuda::yee::FirstCurlTerm(Term / 2);
+}
+
+__device__ __forceinline__ int Index(const AdjointView &view, const int *p) {
+  return p[0] * view.stride[0] + p[1] * view.stride[1] + p[2] * view.stride[2];
+}
+
+__device__ __forceinline__ float Read(const AdjointView &view, const int *p) {
+  return view.data[Index(view, p)];
+}
+
+__device__ __forceinline__ bool Contains(const AdjointField &field,
+                                         const int *p) {
+  return p[0] < field.size[0] && p[1] < field.size[1] && p[2] < field.size[2];
+}
+
+template <int Phase, int Component>
+__device__ __forceinline__ bool Wall(int edges, const AdjointField &field,
+                                     const int *p) {
+  return beamz::cuda::yee::PecConstrained(field.size, Phase, Component, edges,
+                                          p[0], p[1], p[2]);
+}
+
+template <int Term, bool UniformSlabs>
+__device__ __forceinline__ int PackedCoordinate(const MaterialAdjoint &data,
+                                                int size, int p) {
+  const int low =
+      UniformSlabs ? data.uniform_cpml_thickness : data.metadata[5 * Term + 2];
+  const int high = UniformSlabs ? low : data.metadata[5 * Term + 3];
+  return p < low ? p : (p >= size - high ? low + p - size + high : -1);
+}
+
+template <int Axis, int Metric>
+__device__ __forceinline__ float MetricAt(const MaterialAdjoint &data,
+                                          float inv_dx, int p) {
+  if constexpr (Metric == 0)
+    return inv_dx;
+  if constexpr (Metric == 1)
+    return data.metric[Axis][0];
+  return data.metric[Axis][p];
+}
+
+template <int Phase, int Term, int Metric, bool Cpml, bool UniformSlabs>
+__device__ __forceinline__ float WeightedCotangent(const MaterialAdjoint &data,
+                                                   const int *p, float inv_dx,
+                                                   int bank) {
+  constexpr int component = Term / 2;
+  constexpr int axis = CurlTerm<Term>().derivative_axis;
+  const auto &target = data.target[component];
+  constexpr float sign =
+      ((Term & 1) ? -1.0f : 1.0f) * (Phase == 0 ? -1.0f : 1.0f);
+  const float g = Wall<Phase, component>(data.metallic_edges, target, p)
+                      ? 0.0f
+                      : Read(data.target_cotangent[component], p);
+  float weighted = sign * Read(data.coefficient[component], p) * g;
+  if constexpr (Cpml) {
+    const int packed =
+        PackedCoordinate<Term, UniformSlabs>(data, target.size[axis], p[axis]);
+    if (packed >= 0) {
+      int q[3] = {p[0], p[1], p[2]};
+      q[axis] = packed;
+      const auto &psi = data.psi_cotangent[Term];
+      const float gp =
+          psi.data[Index(psi, q) + bank * data.psi_bank_stride[Term]] +
+          weighted;
+      weighted = Read(data.cpml_k[Term], q) * weighted +
+                 Read(data.cpml_a[Term], q) * gp;
+    }
+  }
+  return MetricAt<axis, Metric>(data, inv_dx, p[axis]) * weighted;
+}
+
+template <int Phase, int Term, int Metric, bool Cpml, bool UniformSlabs>
+__device__ __forceinline__ float Gather(const MaterialAdjoint &data,
+                                        const AdjointField &source,
+                                        const int *p, float inv_dx, int bank) {
+  constexpr int axis = CurlTerm<Term>().derivative_axis;
+  const int coord = p[axis];
+  int neighbor[3] = {p[0], p[1], p[2]};
+  float g = 0.0f;
+  // Phase validation proves equal transverse extents and an exact one-cell
+  // offset along this derivative axis. The source-coordinate tests below
+  // therefore bound every target sample before WeightedCotangent reads it.
+  if constexpr (Phase == 0) {
+    if (coord > 0) {
+      --neighbor[axis];
+      g += WeightedCotangent<Phase, Term, Metric, Cpml, UniformSlabs>(
+          data, neighbor, inv_dx, bank);
+    }
+    if (coord + 1 < source.size[axis])
+      g -= WeightedCotangent<Phase, Term, Metric, Cpml, UniformSlabs>(
+          data, p, inv_dx, bank);
+  } else {
+    if (coord > 0 || (data.metallic_edges & (1 << (2 * axis))))
+      g += WeightedCotangent<Phase, Term, Metric, Cpml, UniformSlabs>(
+          data, p, inv_dx, bank);
+    if (coord + 1 < source.size[axis] ||
+        (data.metallic_edges & (1 << (2 * axis + 1)))) {
+      ++neighbor[axis];
+      g -= WeightedCotangent<Phase, Term, Metric, Cpml, UniformSlabs>(
+          data, neighbor, inv_dx, bank);
+    }
+  }
+  return g;
+}
+
+template <int Term, int Metric>
+__device__ __forceinline__ float
+PrimalElectricDifference(const MaterialAdjoint &data, const int *p,
+                         float inv_dx) {
+  constexpr int axis = CurlTerm<Term>().derivative_axis;
+  const auto &source = data.source[CurlTerm<Term>().source_component];
+  const int coord = p[axis];
+  int neighbor[3] = {p[0], p[1], p[2]};
+  --neighbor[axis];
+  const bool high = coord < source.size[axis] &&
+                    (coord > 0 || (data.metallic_edges & (1 << (2 * axis))));
+  const bool low = coord > 0 && (coord < source.size[axis] ||
+                                 (data.metallic_edges & (1 << (2 * axis + 1))));
+  const float raw = (high ? Read(source.view, p) : 0.0f) -
+                    (low ? Read(source.view, neighbor) : 0.0f);
+  return raw * MetricAt<axis, Metric>(data, inv_dx, coord);
+}
+
+template <int Phase, int Term, int Metric, bool Cpml, bool UniformSlabs,
+          bool SavedCurl>
+__device__ __forceinline__ float
+TransposeRecurrence(const MaterialAdjoint &data, const AdjointField &target,
+                    const int *p, float inv_dx, int bank, float gcurl) {
+  constexpr int axis = CurlTerm<Term>().derivative_axis;
+  const float derivative =
+      Phase == 1 && !SavedCurl
+          ? PrimalElectricDifference<Term, Metric>(data, p, inv_dx)
+          : 0.0f;
+  if constexpr (Cpml) {
+    const int packed =
+        PackedCoordinate<Term, UniformSlabs>(data, target.size[axis], p[axis]);
+    if (packed >= 0) {
+      int q[3] = {p[0], p[1], p[2]};
+      q[axis] = packed;
+      const float b = Read(data.cpml_b[Term], q);
+      const auto &psi = data.psi_cotangent[Term];
+      const auto &gradient = data.psi_gradient[Term];
+      const int stride = data.psi_bank_stride[Term];
+      const float gp = psi.data[Index(psi, q) + bank * stride] +
+                       ((Term & 1) ? -gcurl : gcurl);
+      gradient.data[Index(gradient, q) + (bank ^ 1) * stride] = b * gp;
+      if constexpr (Phase == 1 && !SavedCurl)
+        return Read(data.cpml_k[Term], q) * derivative +
+               (b * Read(data.psi_old[Term], q) +
+                Read(data.cpml_a[Term], q) * derivative);
+    }
+  }
+  return derivative;
+}
+
+template <int Phase, int Component, int Metric, bool Cpml, bool UniformSlabs,
+          bool SavedCurl>
+__device__ __forceinline__ void
+TransposeMaterialComponent(const MaterialAdjoint &data, const int *p,
+                           float inv_dx, int bank) {
+  const auto &source = data.source[Component];
+  if (Contains(source, p)) {
+    constexpr int first[3] = {2, 1, 0}, second[3] = {5, 4, 3};
+    const float gathered =
+        Gather<Phase, first[Component], Metric, Cpml, UniformSlabs>(
+            data, source, p, inv_dx, bank) +
+        Gather<Phase, second[Component], Metric, Cpml, UniformSlabs>(
+            data, source, p, inv_dx, bank);
+    float base = Read(data.source_cotangent[Component], p);
+    if constexpr (Phase == 0) {
+      if (Wall<1, Component>(data.metallic_edges, source, p))
+        base = 0.0f;
+      base *= Read(data.source_decay[Component], p);
+    }
+    const auto &gradient = data.source_gradient[Component];
+    gradient.data[Index(gradient, p)] = gathered + base;
+  }
+
+  const auto &target = data.target[Component];
+  if (!Contains(target, p))
+    return;
+  const float g = Wall<Phase, Component>(data.metallic_edges, target, p)
+                      ? 0.0f
+                      : Read(data.target_cotangent[Component], p);
+  constexpr float sign = Phase == 0 ? -1.0f : 1.0f;
+  const float gcurl = sign * Read(data.coefficient[Component], p) * g;
+  const float first =
+      TransposeRecurrence<Phase, 2 * Component, Metric, Cpml, UniformSlabs,
+                          SavedCurl>(data, target, p, inv_dx, bank, gcurl);
+  const float second =
+      TransposeRecurrence<Phase, 2 * Component + 1, Metric, Cpml, UniformSlabs,
+                          SavedCurl>(data, target, p, inv_dx, bank, gcurl);
+  if constexpr (Phase == 0) {
+    const auto &gradient = data.target_gradient[Component];
+    gradient.data[Index(gradient, p)] = Read(data.decay[Component], p) * g;
+  } else {
+    const auto &gradient = data.material_gradient[Component];
+    const float curl =
+        SavedCurl ? Read(data.curl[Component], p) : first - second;
+    gradient.data[Index(gradient, p)] += curl * g;
+    if constexpr (SavedCurl) {
+      const auto &decay_gradient = data.decay_gradient[Component];
+      if (decay_gradient.data)
+        decay_gradient.data[Index(decay_gradient, p)] +=
+            Read(data.old_e[Component], p) * g;
+    }
+  }
+}
+
+template <int Phase, int Metric, bool Cpml, bool UniformSlabs, bool SavedCurl>
+__global__ void
+PhaseAdjointMaterial(const __grid_constant__ MaterialAdjoint data,
+                     float inv_dx) {
+  const int p[3] = {static_cast<int>(blockIdx.z),
+                    static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y),
+                    static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x)};
+  const int bank = data.reverse_iteration ? (*data.reverse_iteration & 1) : 0;
+  TransposeMaterialComponent<Phase, 0, Metric, Cpml, UniformSlabs, SavedCurl>(
+      data, p, inv_dx, bank);
+  TransposeMaterialComponent<Phase, 1, Metric, Cpml, UniformSlabs, SavedCurl>(
+      data, p, inv_dx, bank);
+  TransposeMaterialComponent<Phase, 2, Metric, Cpml, UniformSlabs, SavedCurl>(
+      data, p, inv_dx, bank);
+}
+
+template <int Phase, int Metric, bool SavedCurl>
+void EnqueueMaterialAdjoint(cudaStream_t stream,
+                            const BeamzAdjointLaunch &launch, dim3 blocks,
+                            dim3 threads, const BeamzBuffer *curls,
+                            const BeamzBuffer *old_e = nullptr,
+                            const BeamzBuffer *decay_gradients = nullptr) {
+  const auto data =
+      PrepareMaterialAdjoint(launch, curls, old_e, decay_gradients);
+  const float inv_dx = launch.phase.inv_resolution;
+  if (!launch.phase.nterms)
+    PhaseAdjointMaterial<Phase, Metric, false, false, SavedCurl>
+        <<<blocks, threads, 0, stream>>>(data, inv_dx);
+  else if (launch.phase.uniform_cpml_thickness)
+    PhaseAdjointMaterial<Phase, Metric, true, true, SavedCurl>
+        <<<blocks, threads, 0, stream>>>(data, inv_dx);
+  else
+    PhaseAdjointMaterial<Phase, Metric, true, false, SavedCurl>
+        <<<blocks, threads, 0, stream>>>(data, inv_dx);
+}
+
 template <int Phase>
-cudaError_t LaunchPhase(cudaStream_t stream, const BeamzAdjointLaunch& launch) {
+cudaError_t LaunchPhase(cudaStream_t stream, const BeamzAdjointLaunch &launch,
+                        const BeamzBuffer *curls, const BeamzBuffer *old_e,
+                        const BeamzBuffer *decay_gradients) {
   int sizes[3] = {};
   for (int field = 0; field < 6; ++field)
     for (int axis = 0; axis < 3; ++axis)
@@ -358,6 +702,44 @@ cudaError_t LaunchPhase(cudaStream_t stream, const BeamzAdjointLaunch& launch) {
       (((uint64_t{1} << 31) - 1) & ~((uint64_t{1} << 6) - 1) & ~(uint64_t{1} << 12)) |
       (uint64_t{7} << 37);
   const uint64_t coefficients = launch.gradient_mask & coefficient_bits;
+  const uint64_t psi_mask = launch.phase.nterms ? uint64_t{63} << 31 : 0;
+  const bool material =
+      launch.accumulate_sources &&
+      (Phase == 0
+           ? launch.gradient_mask == (psi_mask | 63)
+           : launch.accumulate_material &&
+                 launch.gradient_mask == (psi_mask | 56 | (uint64_t{7} << 9)) &&
+                 SameShape(launch.gradients[9], launch.phase.inputs[0]) &&
+                 SameShape(launch.gradients[10], launch.phase.inputs[1]) &&
+                 SameShape(launch.gradients[11], launch.phase.inputs[2]));
+  if (material) {
+    if constexpr (Phase == 1) {
+      if (curls) {
+        if (launch.phase.metric_kind == 0)
+          EnqueueMaterialAdjoint<1, 0, true>(stream, launch, blocks, threads,
+                                             curls, old_e, decay_gradients);
+        else if (launch.phase.metric_kind == 1)
+          EnqueueMaterialAdjoint<1, 1, true>(stream, launch, blocks, threads,
+                                             curls, old_e, decay_gradients);
+        else
+          EnqueueMaterialAdjoint<1, 2, true>(stream, launch, blocks, threads,
+                                             curls, old_e, decay_gradients);
+        return cudaPeekAtLastError();
+      }
+    }
+    if (launch.phase.metric_kind == 0)
+      EnqueueMaterialAdjoint<Phase, 0, false>(stream, launch, blocks, threads,
+                                              nullptr);
+    else if (launch.phase.metric_kind == 1)
+      EnqueueMaterialAdjoint<Phase, 1, false>(stream, launch, blocks, threads,
+                                              nullptr);
+    else
+      EnqueueMaterialAdjoint<Phase, 2, false>(stream, launch, blocks, threads,
+                                              nullptr);
+    return cudaPeekAtLastError();
+  }
+  if (curls)
+    return cudaErrorInvalidValue;
   if (coefficients == 0)
     PhaseAdjoint<Phase, 0><<<blocks, threads, 0, stream>>>(launch);
   else if (coefficients == (uint64_t{7} << 9))
@@ -375,7 +757,9 @@ cudaError_t Zero(cudaStream_t stream, const BeamzBuffer& value) {
 
 }  // namespace
 
-int BeamzLaunchAdjoint(void* stream, const BeamzAdjointLaunch& launch) {
+static int LaunchAdjoint(void *stream, const BeamzAdjointLaunch &launch,
+                         const BeamzBuffer *curls, const BeamzBuffer *old_e,
+                         const BeamzBuffer *decay_gradients) {
   const auto& phase = launch.phase;
   if (auto error = BeamzValidatePhase(phase); error != cudaSuccess) return error;
   const int payload = 13 + 4 * phase.nterms;
@@ -424,6 +808,19 @@ int BeamzLaunchAdjoint(void* stream, const BeamzAdjointLaunch& launch) {
   for (const auto& metric : launch.metric_gradients) {
     if (auto error = Zero(cuda_stream, metric); error != cudaSuccess) return error;
   }
-  return phase.phase == 0 ? LaunchPhase<0>(cuda_stream, launch) :
-                            LaunchPhase<1>(cuda_stream, launch);
+  return phase.phase == 0 ? LaunchPhase<0>(cuda_stream, launch, curls, old_e,
+                                           decay_gradients)
+                          : LaunchPhase<1>(cuda_stream, launch, curls, old_e,
+                                           decay_gradients);
+}
+
+int BeamzLaunchAdjoint(void *stream, const BeamzAdjointLaunch &launch) {
+  return LaunchAdjoint(stream, launch, nullptr, nullptr, nullptr);
+}
+
+int BeamzLaunchAdjointFromCurl(void *stream, const BeamzAdjointLaunch &launch,
+                               const BeamzBuffer *curls,
+                               const BeamzBuffer *old_e,
+                               const BeamzBuffer *decay_gradients) {
+  return LaunchAdjoint(stream, launch, curls, old_e, decay_gradients);
 }
